@@ -7,20 +7,20 @@ import {
   Download,
   LogOut,
   Store,
-  CreditCard,
-  Wallet,
   Truck,
-  CheckCircle,
-  BarChart3,
   Tag,
   ShieldAlert,
   ChevronDown,
   Settings,
   FolderInput,
-  Calculator,
-  Landmark,
   KeyRound,
   SearchX,
+  TrendingUp,
+  ShoppingCart,
+  LayoutDashboard,
+  Sparkles,
+  Search,
+  FileSpreadsheet,
 } from "lucide-react"
 import {
   Sidebar,
@@ -77,20 +77,16 @@ interface NavSection {
 // ---------------------------------------------------------------------------
 const sections: NavSection[] = [
   {
-    id: "config",
-    title: "Configurações e Tabelas",
-    sectionIcon: Settings,
+    id: "simulador",
+    title: "Simulador da Reforma Tributária",
+    sectionIcon: TrendingUp,
     items: [
-      { title: "Tabela de Alíquotas",    url: "/config/aliquotas",        icon: Table },
-      { title: "Tabela CFOP",             url: "/config/cfop",              icon: Table },
-      { title: "Simples Nacional",        url: "/config/forn-simples",      icon: Store },
-      { title: "Apelidos de Filiais",     url: "/config/apelidos-filiais",  icon: Tag },
-      { title: "Gestores de Relatórios",  url: "/config/gestores",          icon: Users },
-      { title: "Gestão de Ambiente",      url: "/config/ambiente",          icon: Building },
-      { title: "Credenciais API RFB",     url: "/rfb/credenciais",          icon: KeyRound, adminOnly: true },
-      { title: "Credenciais ERP Bridge",  url: "/config/erp-bridge",        icon: KeyRound, adminOnly: true },
-      { title: "Gestão de Usuários",      url: "/config/usuarios",          icon: Users,    adminOnly: true },
-      { title: "Limpar Dados",            url: "/config/limpar-dados",      icon: ShieldAlert, adminOnly: true, danger: true },
+      { title: "Importar SPEDs",            url: "/importar-efd",                  icon: FileSpreadsheet },
+      { title: "Operações Comerciais",      url: "/mercadorias",                   icon: ShoppingCart },
+      { title: "Operações Simples Nacional",url: "/operacoes/simples",             icon: Store },
+      { title: "Dashboard Reforma",         url: "/dashboards",                    icon: LayoutDashboard },
+      { title: "Resumo Executivo IA",       url: "/relatorios/resumo-executivo",   icon: Sparkles },
+      { title: "Consulta Inteligente",      url: "/relatorios/consulta-inteligente", icon: Search },
     ],
   },
   {
@@ -107,28 +103,6 @@ const sections: NavSection[] = [
     ],
   },
   {
-    id: "importar",
-    title: "Importar XMLs",
-    sectionIcon: Upload,
-    adminOnly: true,
-    items: [
-      { title: "Entradas Mod. 55",     url: "/apuracao/entrada",     icon: Upload },
-      { title: "CT-e — Entradas",      url: "/apuracao/cte-entrada", icon: Upload },
-      { title: "Serviços — Entradas",  url: "#",                     icon: Upload, disabled: true },
-    ],
-  },
-  {
-    id: "escrituracao",
-    title: "Escrituração de Entradas",
-    sectionIcon: Calculator,
-    adminOnly: true,
-    items: [
-      { title: "Créditos em Risco",   url: "/apuracao/creditos-perdidos", icon: ShieldAlert, danger: true },
-      { title: "Apuração IBS — mês",  url: "/rfb/apuracao-ibs",          icon: BarChart3 },
-      { title: "Apuração CBS — mês",  url: "/rfb/apuracao-cbs",          icon: BarChart3 },
-    ],
-  },
-  {
     id: "malha",
     title: "Malha Fina",
     sectionIcon: SearchX,
@@ -140,18 +114,19 @@ const sections: NavSection[] = [
     ],
   },
   {
-    id: "rfb",
-    title: "Receita Federal",
-    sectionIcon: Landmark,
-    adminOnly: true,
+    id: "config",
+    title: "Configurações e Tabelas",
+    sectionIcon: Settings,
     items: [
-      { title: "Gestão IBS/CBS",             url: "/rfb/gestao-creditos",         icon: BarChart3 },
-      { title: "Importar movimento CBS",     url: "/rfb/apuracao",                icon: Download },
-      { title: "Débitos Acumulados",         url: "/rfb/debitos",                 icon: FileText },
-      { title: "Créditos CBS — mês",         url: "/rfb/creditos-cbs",            icon: CreditCard,  disabled: true },
-      { title: "Pagamentos CBS — mês",       url: "/rfb/pagamentos-cbs",          icon: Wallet,      disabled: true },
-      { title: "Pgtos CBS a Fornecedores",   url: "/rfb/pagamentos-fornecedores", icon: Truck,       disabled: true },
-      { title: "Concluir apuração mês ant.", url: "/rfb/concluir-apuracao",       icon: CheckCircle, disabled: true },
+      { title: "Tabela de Alíquotas",    url: "/config/aliquotas",        icon: Table },
+      { title: "Tabela CFOP",            url: "/config/cfop",              icon: Table },
+      { title: "Simples Nacional",       url: "/config/forn-simples",      icon: Store },
+      { title: "Apelidos de Filiais",    url: "/config/apelidos-filiais",  icon: Tag },
+      { title: "Gestores de Relatórios", url: "/config/gestores",          icon: Users },
+      { title: "Gestão de Ambiente",     url: "/config/ambiente",          icon: Building },
+      { title: "Credenciais ERP Bridge", url: "/config/erp-bridge",        icon: KeyRound, adminOnly: true },
+      { title: "Gestão de Usuários",     url: "/config/usuarios",          icon: Users,    adminOnly: true },
+      { title: "Limpar Dados",           url: "/config/limpar-dados",      icon: ShieldAlert, adminOnly: true, danger: true },
     ],
   },
 ]
@@ -228,7 +203,7 @@ export function AppSidebar() {
           <div className="grid flex-1 text-left leading-tight">
             <span className="font-bold text-sm truncate">FBTax Cloud</span>
             <span className="text-[10px] text-muted-foreground truncate">
-              Escrituração de Entradas
+              Simulador da Reforma Tributária
             </span>
           </div>
         </div>
