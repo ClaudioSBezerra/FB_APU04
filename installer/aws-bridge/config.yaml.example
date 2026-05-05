@@ -1,0 +1,25 @@
+# ============================================================
+# ERP Bridge — FB_APU04 Simulador RT
+# ATENÇÃO: Renomeie para config.yaml e preencha os valores.
+#          Não compartilhe este arquivo (contém senhas).
+# ============================================================
+
+erp_type: sap_s4hana
+
+# ── FBTax Cloud (Simulador RT) ───────────────────────────────
+fbtax:
+  url:        https://simu.fbtax.cloud
+  email:      claudio.bezerra@ferreiracosta.com.br
+  password:   "TROQUE_AQUI"
+  company_id: "SEU_COMPANY_ID_AQUI"
+  api_key:    ""   # opcional — gerar em Configurações > Cred. ERP Bridge
+
+# ── Período padrão ao rodar sem --data ──────────────────────
+dias_padrao: 1
+
+# ── Oracle SAP S/4HANA (FCCORP) ─────────────────────────────
+oracle:
+  nome:    "FC - FCCORP (SAP S/4HANA)"
+  dsn:     "ORACLE_HOST:1521/FCCORP"
+  usuario: "ORACLE_USUARIO"
+  senha:   "ORACLE_SENHA"

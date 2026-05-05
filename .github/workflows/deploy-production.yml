@@ -1,4 +1,4 @@
-name: Deploy to Production (Coolify + Hostinger)
+name: Deploy to Production (Coolify + AWS Bridge)
 
 on:
   push:
@@ -11,21 +11,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Backup antes do deploy
-  backup:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - name: Backup Database
-        run: |
-          echo "🔄 Iniciando backup pré-deploy..."
-          echo "Este step pode ser expandido com script de backup"
-          echo "Data: $(date)"
-
-  # Build e Push da imagem combinada (Coolify)
+  # ── Build imagem combinada (Coolify) ──────────────────────────────────────────
   build-and-push:
-    needs: backup
-    if: always() && (needs.backup.result == 'success' || needs.backup.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -69,10 +56,8 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-  # Build e Push das imagens separadas (Instalador)
+  # ── Build imagens separadas (API + Web) ───────────────────────────────────────
   build-installer-images:
-    needs: backup
-    if: always() && (needs.backup.result == 'success' || needs.backup.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -136,17 +121,81 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-  # Notificação (Coolify deploya automaticamente via webhook próprio)
-  notify:
-    needs: [build-and-push, build-installer-images]
+  # ── Build imagem ERP Bridge ───────────────────────────────────────────────────
+  build-bridge:
     runs-on: ubuntu-latest
-    if: always()
+    permissions:
+      contents: read
+      packages: write
 
     steps:
-      - name: Deploy Notification
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (Bridge)
+        id: meta-bridge
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-bridge
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Bridge image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./erp-bridge-aws
+          file: ./erp-bridge-aws/Dockerfile
+          push: true
+          tags: ${{ steps.meta-bridge.outputs.tags }}
+          labels: ${{ steps.meta-bridge.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+  # ── Deploy ERP Bridge no servidor AWS (self-hosted runner) ───────────────────
+  deploy-aws-bridge:
+    needs: build-bridge
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, cliente-aws]
+
+    steps:
+      - name: Pull latest bridge image
+        working-directory: /opt/apps/fbtax/bridge-apu04
+        run: docker compose pull
+
+      - name: Restart bridge container
+        working-directory: /opt/apps/fbtax/bridge-apu04
+        run: docker compose up -d --force-recreate
+
+      - name: Verify bridge is running
         run: |
-          echo "🎉 Build concluído!"
-          echo "Commit: ${{ github.sha }}"
-          echo "Branch/Tag: ${{ github.ref_name }}"
-          echo "Data: $(date)"
-          echo "Coolify faz deploy automático via webhook configurado na interface."
+          sleep 5
+          if docker ps | grep fbtax-bridge-apu04; then
+            echo "Bridge APU04 rodando."
+            docker logs fbtax-bridge-apu04 --tail 20
+          else
+            echo "Bridge APU04 falhou ao iniciar."
+            docker compose --project-directory /opt/apps/fbtax/bridge-apu04 logs --tail 50
+            exit 1
+          fi
+
+      - name: Notify result
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "Deploy bridge-apu04 concluido. Commit: ${{ github.sha }}"
+          else
+            echo "Deploy bridge-apu04 falhou. Verifique os logs acima."
+          fi

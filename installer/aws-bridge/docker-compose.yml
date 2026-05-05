@@ -1,0 +1,19 @@
+services:
+  bridge:
+    image: ghcr.io/claudiosbezerra/fb_apu04-bridge:latest
+    container_name: fbtax-bridge-apu04
+    restart: always
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - bridge_data:/app/data
+    environment:
+      - TZ=America/Recife
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  bridge_data:
+    driver: local
