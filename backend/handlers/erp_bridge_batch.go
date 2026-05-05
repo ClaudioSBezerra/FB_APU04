@@ -44,6 +44,9 @@ type batchDoc struct {
 	VIbsMun          float64 `json:"v_ibs_mun"`
 	VIbs             float64 `json:"v_ibs"`
 	VCbs             float64 `json:"v_cbs"`
+	VIpi             float64 `json:"v_ipi"`
+	VPis             float64 `json:"v_pis"`
+	VCofins          float64 `json:"v_cofins"`
 }
 
 type batchRequest struct {
@@ -189,6 +192,7 @@ func batchInsertNFeSaida(db *sql.DB, companyID string, doc batchDoc, modelo stri
 			emit_cnpj, dest_cnpj_cpf,
 			v_nf,
 			v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cbs,
+			v_ipi, v_pis, v_cofins,
 			cancelado, tipo_cfop, cfop
 		) VALUES (
 			$1,$2,$3,$4,$5,
@@ -196,25 +200,30 @@ func batchInsertNFeSaida(db *sql.DB, companyID string, doc batchDoc, modelo stri
 			$9,$10,
 			$11,
 			$12,$13,$14,$15,$16,
-			$17,
-			COALESCE(NULLIF($18,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($19,'')), 'O'),
-			NULLIF($19,'')
+			$17,$18,$19,
+			$20,
+			COALESCE(NULLIF($21,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($22,'')), 'O'),
+			NULLIF($22,'')
 		)
 		ON CONFLICT ON CONSTRAINT uq_nfe_saidas_company_chave
 		DO UPDATE SET
-			cancelado = EXCLUDED.cancelado,
-			tipo_cfop = COALESCE(
-				NULLIF($18,''),
-				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($19,'')),
+			cancelado  = EXCLUDED.cancelado,
+			v_ipi      = EXCLUDED.v_ipi,
+			v_pis      = EXCLUDED.v_pis,
+			v_cofins   = EXCLUDED.v_cofins,
+			tipo_cfop  = COALESCE(
+				NULLIF($21,''),
+				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($22,'')),
 				nfe_saidas.tipo_cfop,
 				'O'
 			),
-			cfop = COALESCE(NULLIF($19,''), nfe_saidas.cfop)`,
+			cfop = COALESCE(NULLIF($22,''), nfe_saidas.cfop)`,
 		companyID, doc.Chave, modInt, doc.Serie, doc.Numero,
 		nullDate(doc.DataEmissao), nullDate(doc.DataAutorizacao), doc.MesAno,
 		doc.EmitCNPJ, doc.DestCNPJ,
 		doc.VTotal,
 		doc.VBcIbsCbs, doc.VIbsUf, doc.VIbsMun, doc.VIbs, doc.VCbs,
+		doc.VIpi, doc.VPis, doc.VCofins,
 		cancelado, tipoCFOP, cfopCode,
 	)
 	if err != nil {
@@ -238,6 +247,7 @@ func batchInsertNFeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo st
 			forn_cnpj, dest_cnpj_cpf,
 			v_nf,
 			v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cbs,
+			v_ipi, v_pis, v_cofins,
 			cancelado, tipo_cfop, cfop
 		) VALUES (
 			$1,$2,$3,$4,$5,
@@ -245,25 +255,30 @@ func batchInsertNFeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo st
 			$9,$10,
 			$11,
 			$12,$13,$14,$15,$16,
-			$17,
-			COALESCE(NULLIF($18,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($19,'')), 'C'),
-			NULLIF($19,'')
+			$17,$18,$19,
+			$20,
+			COALESCE(NULLIF($21,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($22,'')), 'C'),
+			NULLIF($22,'')
 		)
 		ON CONFLICT ON CONSTRAINT uq_nfe_entradas_company_chave
 		DO UPDATE SET
-			cancelado = EXCLUDED.cancelado,
-			tipo_cfop = COALESCE(
-				NULLIF($18,''),
-				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($19,'')),
+			cancelado  = EXCLUDED.cancelado,
+			v_ipi      = EXCLUDED.v_ipi,
+			v_pis      = EXCLUDED.v_pis,
+			v_cofins   = EXCLUDED.v_cofins,
+			tipo_cfop  = COALESCE(
+				NULLIF($21,''),
+				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($22,'')),
 				nfe_entradas.tipo_cfop,
 				'C'
 			),
-			cfop = COALESCE(NULLIF($19,''), nfe_entradas.cfop)`,
+			cfop = COALESCE(NULLIF($22,''), nfe_entradas.cfop)`,
 		companyID, doc.Chave, modInt, doc.Serie, doc.Numero,
 		nullDate(doc.DataEmissao), nullDate(doc.DataAutorizacao), doc.MesAno,
 		doc.EmitCNPJ, doc.DestCNPJ,
 		doc.VTotal,
 		doc.VBcIbsCbs, doc.VIbsUf, doc.VIbsMun, doc.VIbs, doc.VCbs,
+		doc.VIpi, doc.VPis, doc.VCofins,
 		cancelado, tipoCFOP, cfopCode,
 	)
 	if err != nil {
