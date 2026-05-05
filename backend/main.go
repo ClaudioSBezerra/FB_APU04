@@ -24,10 +24,9 @@ import (
 )
 
 // Version information for backend deployment validation
-// Force rebuild: 2026-03-18 - v5.9.14 - Fix XHR X-Company-ID header no upload SPED
 const (
-	BackendVersion = "5.9.14"
-	FeatureSet     = "Z.AI GLM Integration, AI Executive Reports, Email Estruturado, NF-e Entradas, Creditos em Risco, Tax Reform Projection, Simples Nacional Dashboard, Apelidos de Filiais, Filtro Multi-Filial Global"
+	BackendVersion = "1.0.0"
+	FeatureSet     = "Escrituração de Entradas EFD, Importação ERP Bridge, NF-e Entradas, CT-e Entradas, Enriquecimento PIS/COFINS/IPI, Malha Fina, Apuração IBS/CBS, Créditos em Risco, SPED layout 020"
 )
 
 func GetVersionInfo() string {
@@ -311,7 +310,7 @@ func main() {
 		response := HealthResponse{
 			Status:    "running",
 			Timestamp: time.Now().Format(time.RFC3339),
-			Service:   "FB_APU01 Fiscal Engine",
+			Service:   "FB_APU04 Fiscal Engine",
 			Version:   BackendVersion,
 			Features:  FeatureSet,
 			Database:  fmt.Sprintf("%s (%s)", dbStatus, dbStats),
@@ -573,6 +572,35 @@ func main() {
 		http.HandleFunc("/api/apuracao/painel", withAuth(handlers.ApuracaoPainelHandler, ""))
 	}
 
+	// ERP Bridge — importação via daemon (autenticação mista: JWT + X-API-Key)
+	http.HandleFunc("/api/erp-bridge/config/generate-api-key", withAuth(handlers.ERPBridgeGenerateAPIKeyHandler, "admin"))
+	http.HandleFunc("/api/erp-bridge/config", withAuth(handlers.ERPBridgeConfigHandler, ""))
+	http.HandleFunc("/api/erp-bridge/trigger", withAuth(handlers.ERPBridgeTriggerHandler, ""))
+	http.HandleFunc("/api/erp-bridge/pending", withAuth(handlers.ERPBridgePendingHandler, ""))
+	http.HandleFunc("/api/erp-bridge/servidores/registrar", withAuth(handlers.ERPBridgeRegistrarServidoresHandler, ""))
+	http.HandleFunc("/api/erp-bridge/servidores", withAuth(handlers.ERPBridgeServidoresHandler, ""))
+	http.HandleFunc("/api/erp-bridge/runs/", withAuth(handlers.ERPBridgeRunHandler, ""))
+	http.HandleFunc("/api/erp-bridge/runs", withAuth(handlers.ERPBridgeRunsHandler, ""))
+	// Endpoints públicos do daemon (auth via X-API-Key, sem JWT)
+	http.HandleFunc("/api/erp-bridge/credentials", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.ERPBridgeCredentialsHandler(database).ServeHTTP(w, r)
+	})
+	http.HandleFunc("/api/erp-bridge/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.ERPBridgeHeartbeatHandler(database).ServeHTTP(w, r)
+	})
+	http.HandleFunc("/api/erp-bridge/import/batch", withDB(handlers.ERPBridgeBatchImportHandler))
+	http.HandleFunc("/api/erp-bridge/parceiros/sync", withDB(handlers.ERPBridgeParceirosSyncHandler))
+
 	// Managers Endpoints (Gestores para relatorios IA)
 	http.HandleFunc("/api/managers", withAuth(handlers.ListManagersHandler, ""))
 	http.HandleFunc("/api/managers/create", withAuth(handlers.CreateManagerHandler, ""))
@@ -614,7 +642,7 @@ func main() {
 		fmt.Println("Serving frontend from ./static")
 	}
 
-	fmt.Printf("FB_APU01 Fiscal Engine (Go) starting on port %s...\n", port)
+	fmt.Printf("FB_APU04 Fiscal Engine (Go) starting on port %s...\n", port)
 
 	// Print Version
 	fmt.Println("==================================================")

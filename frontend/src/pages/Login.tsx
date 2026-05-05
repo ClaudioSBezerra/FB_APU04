@@ -11,10 +11,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 
 const FEATURES = [
-  "Importação e análise de SPEDs EFD",
-  "Simulador de impacto do IBS e CBS",
-  "Integração direta com a Receita Federal",
-  "Acompanhamento inteligente de riscos de créditos",
+  "Importação de NF-e via ERP Bridge com PIS, COFINS e IPI",
+  "Escrituração de entradas EFD com valores tributários completos",
+  "Rastreabilidade NF-e → lançamento EFD para auditoria fiscal",
+  "Malha fina e créditos em risco por período de apuração",
+  "Conformidade SPED layout 020 (vigência Janeiro/2026)",
 ];
 
 const Login = () => {
@@ -107,19 +108,19 @@ const Login = () => {
               border: "1px solid rgba(255,255,255,0.15)",
             }}
           >
-            Gestão da Reforma Tributária
+            Escrituração Fiscal de Entradas
           </span>
 
           {/* Título */}
           <h1 className="text-white text-5xl font-bold leading-tight mt-5">
-            Apuração Assistida
+            FBTax Cloud
             <br />
-            IBS/CBS
+            EFD Entradas
           </h1>
 
           {/* Subtítulo */}
           <p className="mt-5 text-base leading-relaxed" style={{ color: "#9ca3af" }}>
-            Controle total sobre créditos, débitos e impactos da Reforma Tributária na sua empresa.
+            Escrituração de entradas EFD enriquecida com PIS, COFINS e IPI direto do ERP — rastreabilidade total até a NF-e de origem.
           </p>
 
           {/* Bullets de features */}

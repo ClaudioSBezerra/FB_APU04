@@ -4,16 +4,14 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: fb_apu01-api
+    container_name: fb_apu04-api
     restart: always
-    # ports:
-    #   - "8080:8080"
     ports:
-      - "8081:8081"
+      - "8084:8084"
     expose:
-      - "8081"
+      - "8084"
     environment:
-      - PORT=8081
+      - PORT=8084
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
       - REDIS_ADDR=redis:6379
       - SMTP_HOST=${SMTP_HOST}
@@ -21,11 +19,11 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM=${SMTP_FROM}
-      - APP_URL=${APP_URL:-http://localhost:3000}
+      - APP_URL=${APP_URL:-http://localhost:3003}
       - ZAI_API_KEY=${ZAI_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
-      - APP_MODULE=${APP_MODULE:-simulador}
+      - APP_MODULE=${APP_MODULE:-apuracao}
     depends_on:
       db:
         condition: service_healthy
@@ -41,18 +39,19 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_APP_MODULE=${VITE_APP_MODULE:-simulador}
+        - VITE_APP_MODULE=${VITE_APP_MODULE:-apuracao}
+    container_name: fb_apu04-web
     restart: always
     expose:
       - "80"
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=coolify"
-      - "traefik.http.routers.simulador.rule=Host(`simulador.fbtax.cloud`)"
-      - "traefik.http.routers.simulador.entrypoints=https"
-      - "traefik.http.routers.simulador.tls=true"
-      - "traefik.http.routers.simulador.tls.certresolver=letsencrypt"
-      - "traefik.http.services.simulador.loadbalancer.server.port=80"
+      - "traefik.http.routers.simu.rule=Host(`simu.fbtax.cloud`)"
+      - "traefik.http.routers.simu.entrypoints=https"
+      - "traefik.http.routers.simu.tls=true"
+      - "traefik.http.routers.simu.tls.certresolver=letsencrypt"
+      - "traefik.http.services.simu.loadbalancer.server.port=80"
     depends_on:
       - api
     networks:
@@ -62,16 +61,14 @@ services:
   # Banco de Dados
   db:
     image: postgres:15-alpine
-    container_name: fb_apu01-db
+    container_name: fb_apu04-db
     restart: always
     environment:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}
-    # ports:
-    #   - "127.0.0.1:5433:5432"  # local dev only — uncomment if needed
     volumes:
-      - postgres_data_v2:/var/lib/postgresql/data
+      - postgres_data_apu04:/var/lib/postgresql/data
     networks:
       - fb_net
     healthcheck:
@@ -83,12 +80,10 @@ services:
   # Redis
   redis:
     image: redis:alpine
-    container_name: fb_apu01-redis
+    container_name: fb_apu04-redis
     restart: always
     sysctls:
       - net.core.somaxconn=1024
-    # ports:
-    #   - "${REDIS_PORT}:6379"
     networks:
       - fb_net
 
@@ -99,5 +94,5 @@ networks:
     external: true
 
 volumes:
-  postgres_data_v2:
+  postgres_data_apu04:
   api_uploads:

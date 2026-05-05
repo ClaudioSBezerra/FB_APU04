@@ -27,6 +27,9 @@ import ConsultaCTesEntradas from './pages/ConsultaCTesEntradas';
 import ApuracaoCredPerdidos from './pages/ApuracaoCredPerdidos';
 import ConsultaInteligente from './pages/ConsultaInteligente';
 import AdminUsers from './pages/AdminUsers';
+import ERPBridgeConfig from './pages/ERPBridgeConfig';
+import ERPBridgeLogs from './pages/ERPBridgeLogs';
+import ERPBridgeCredenciais from './pages/ERPBridgeCredenciais';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -43,7 +46,7 @@ const queryClient = new QueryClient();
 function Home() {
   return (
     <div className="p-8 space-y-4">
-      <h1 className="text-3xl font-bold">Bem-vindo ao FB_APU01</h1>
+      <h1 className="text-3xl font-bold">Bem-vindo ao FB_APU04</h1>
       <p className="text-muted-foreground">Sistema de Apuração Assistida - Reforma Tributária</p>
       <div className="flex gap-4">
         <Link to="/importar-efd">
@@ -149,6 +152,17 @@ function AppLayout() {
             <Route path="/apuracao/creditos-perdidos" element={<ApuracaoCredPerdidos />} />
             <Route path="/apuracao/nfse" element={<ComingSoon title="Importar XMLs NFS-e" />} />
             
+            {/* ERP Bridge */}
+            <Route path="/importacoes/erp-bridge" element={
+              <AdminRoute><ERPBridgeConfig /></AdminRoute>
+            } />
+            <Route path="/importacoes/erp-bridge/logs" element={
+              <AdminRoute><ERPBridgeLogs /></AdminRoute>
+            } />
+            <Route path="/config/erp-bridge" element={
+              <AdminRoute><ERPBridgeCredenciais /></AdminRoute>
+            } />
+
             {/* RFB */}
             <Route path="/rfb/credenciais" element={<RFBCredentials />} />
             <Route path="/rfb/apuracao" element={<RFBApuracao />} />
@@ -169,7 +183,7 @@ function AppLayout() {
 }
 
 function App() {
-  console.log("App Version: 5.9.14 - Fix XHR X-Company-ID header no upload SPED");
+  console.log("App Version: 1.0.0 - FB_APU04 EFD Entradas com ERP Bridge");
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
