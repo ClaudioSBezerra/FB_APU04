@@ -219,23 +219,20 @@ func onDBConnected() {
 		}
 	}
 
-	// Start Background Worker (only for Simulador — SPED worker not needed in Apuração)
-	appModule := os.Getenv("APP_MODULE")
-	if appModule != "apuracao" {
-		worker.StartWorker(database)
+	// Start Background Worker (SPED processing — always active in FB_APU04 Simulador)
+	worker.StartWorker(database)
 
-		// Trigger async refresh of materialized views (Startup — Simulador only)
-		go func() {
-			time.Sleep(5 * time.Second)
-			log.Println("Background: Triggering initial view refresh (mv_mercadorias_agregada)...")
-			_, err := database.Exec("REFRESH MATERIALIZED VIEW mv_mercadorias_agregada")
-			if err != nil {
-				log.Printf("Background: Initial view refresh failed: %v", err)
-			} else {
-				log.Println("Background: Initial view refresh completed successfully.")
-			}
-		}()
-	}
+	// Trigger async refresh of materialized views at startup
+	go func() {
+		time.Sleep(5 * time.Second)
+		log.Println("Background: Triggering initial view refresh (mv_mercadorias_agregada)...")
+		_, err := database.Exec("REFRESH MATERIALIZED VIEW mv_mercadorias_agregada")
+		if err != nil {
+			log.Printf("Background: Initial view refresh failed: %v", err)
+		} else {
+			log.Println("Background: Initial view refresh completed successfully.")
+		}
+	}()
 }
 
 // Middleware to check if DB is ready
@@ -371,58 +368,56 @@ func main() {
 	// Filiais Endpoint (global branch selector)
 	http.HandleFunc("/api/filiais", withAuth(handlers.GetFiliaisHandler, ""))
 
-	// ── Simulador da Reforma Tributária (SPED) — routes skipped in APP_MODULE=apuracao ──
-	if appModule != "apuracao" {
-		// Report Endpoints
-		http.HandleFunc("/api/reports/mercadorias", withAuth(handlers.GetMercadoriasReportHandler, ""))
-		http.HandleFunc("/api/reports/energia", withAuth(handlers.GetEnergiaReportHandler, ""))
-		http.HandleFunc("/api/reports/transporte", withAuth(handlers.GetTransporteReportHandler, ""))
-		http.HandleFunc("/api/reports/comunicacoes", withAuth(handlers.GetComunicacoesReportHandler, ""))
-		http.HandleFunc("/api/dashboard/projection", withAuth(handlers.GetDashboardProjectionHandler, ""))
-		http.HandleFunc("/api/dashboard/simples-nacional", withAuth(handlers.GetSimplesDashboardHandler, ""))
+	// ── Simulador da Reforma Tributária (SPED) ──
+	// Report Endpoints
+	http.HandleFunc("/api/reports/mercadorias", withAuth(handlers.GetMercadoriasReportHandler, ""))
+	http.HandleFunc("/api/reports/energia", withAuth(handlers.GetEnergiaReportHandler, ""))
+	http.HandleFunc("/api/reports/transporte", withAuth(handlers.GetTransporteReportHandler, ""))
+	http.HandleFunc("/api/reports/comunicacoes", withAuth(handlers.GetComunicacoesReportHandler, ""))
+	http.HandleFunc("/api/dashboard/projection", withAuth(handlers.GetDashboardProjectionHandler, ""))
+	http.HandleFunc("/api/dashboard/simples-nacional", withAuth(handlers.GetSimplesDashboardHandler, ""))
 
-		// AI-Powered Report Endpoints
-		http.HandleFunc("/api/reports/available-periods", withAuth(handlers.GetAvailablePeriodsHandler, ""))
-		http.HandleFunc("/api/reports/executive-summary", withAuth(handlers.GetExecutiveSummaryHandler, ""))
-		http.HandleFunc("/api/insights/daily", withAuth(handlers.GetDailyInsightHandler, ""))
-		http.HandleFunc("/api/ai/query", withAuth(handlers.AIQueryHandler, ""))
+	// AI-Powered Report Endpoints
+	http.HandleFunc("/api/reports/available-periods", withAuth(handlers.GetAvailablePeriodsHandler, ""))
+	http.HandleFunc("/api/reports/executive-summary", withAuth(handlers.GetExecutiveSummaryHandler, ""))
+	http.HandleFunc("/api/insights/daily", withAuth(handlers.GetDailyInsightHandler, ""))
+	http.HandleFunc("/api/ai/query", withAuth(handlers.AIQueryHandler, ""))
 
-		// Saved AI Reports
-		http.HandleFunc("/api/reports", withAuth(handlers.ListSavedAIReportsHandler, ""))
-		http.HandleFunc("/api/reports/", withAuth(handlers.GetSavedAIReportHandler, ""))
+	// Saved AI Reports
+	http.HandleFunc("/api/reports", withAuth(handlers.ListSavedAIReportsHandler, ""))
+	http.HandleFunc("/api/reports/", withAuth(handlers.GetSavedAIReportHandler, ""))
 
-		// SPED Upload Handler
-		http.HandleFunc("/api/upload", withAuth(handlers.UploadHandler, ""))
+	// SPED Upload Handler
+	http.HandleFunc("/api/upload", withAuth(handlers.UploadHandler, ""))
 
-		// Check Duplicity Handler
-		http.HandleFunc("/api/check-duplicity", withAuth(handlers.CheckDuplicityHandler, ""))
+	// Check Duplicity Handler
+	http.HandleFunc("/api/check-duplicity", withAuth(handlers.CheckDuplicityHandler, ""))
 
-		// Job Status Handlers
-		http.HandleFunc("/api/jobs", withAuth(handlers.ListJobsHandler, ""))
+	// Job Status Handlers
+	http.HandleFunc("/api/jobs", withAuth(handlers.ListJobsHandler, ""))
 
-		// Custom wrapper for jobs/id (supports /participants and /cancel sub-routes)
-		http.HandleFunc("/api/jobs/", func(w http.ResponseWriter, r *http.Request) {
-			database := getDB()
-			if database == nil {
-				jsonServiceUnavailable(w)
+	// Custom wrapper for jobs/id (supports /participants and /cancel sub-routes)
+	http.HandleFunc("/api/jobs/", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+			path := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
+			if strings.HasSuffix(path, "/participants") {
+				handlers.GetJobParticipantsHandler(database)(w, r)
 				return
 			}
-			handlers.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
-				path := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
-				if strings.HasSuffix(path, "/participants") {
-					handlers.GetJobParticipantsHandler(database)(w, r)
-					return
-				}
-				if strings.HasSuffix(path, "/cancel") {
-					handlers.CancelJobHandler(database)(w, r)
-					return
-				}
-				handlers.GetJobStatusHandler(database)(w, r)
-			}, "")(w, r)
-		})
+			if strings.HasSuffix(path, "/cancel") {
+				handlers.CancelJobHandler(database)(w, r)
+				return
+			}
+			handlers.GetJobStatusHandler(database)(w, r)
+		}, "")(w, r)
+	})
 
-		http.HandleFunc("/api/mercadorias", withAuth(handlers.GetMercadoriasReportHandler, ""))
-	}
+	http.HandleFunc("/api/mercadorias", withAuth(handlers.GetMercadoriasReportHandler, ""))
 
 	// Auth Routes
 	http.HandleFunc("/api/auth/register", withDB(handlers.RegisterHandler))
