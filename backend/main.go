@@ -646,7 +646,7 @@ func main() {
 
 	// Print Version
 	fmt.Println("==================================================")
-	fmt.Printf("   FB_APU01 BACKEND - %s\n", BackendVersion)
+	fmt.Printf("   FB_APU04 BACKEND - %s\n", BackendVersion)
 	fmt.Println("==================================================")
 
 	// Use custom server with timeouts (Inspired by production best practices)
