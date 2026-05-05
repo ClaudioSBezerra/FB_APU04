@@ -23,7 +23,7 @@ services:
       - ZAI_API_KEY=${ZAI_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
-      - APP_MODULE=${APP_MODULE:-apuracao}
+      - APP_MODULE=${APP_MODULE:-simulador}
     depends_on:
       db:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_APP_MODULE=${VITE_APP_MODULE:-apuracao}
+        - VITE_APP_MODULE=${VITE_APP_MODULE:-simu}
     container_name: fb_apu04-web
     restart: always
     expose:
