@@ -1,0 +1,339 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+func Atoi(s string) int {
+	var n int
+	fmt.Sscanf(s, "%d", &n)
+	return n
+}
+
+type UploadResponse struct {
+	JobID         string `json:"job_id"`
+	Message       string `json:"message"`
+	Filename      string `json:"filename"`
+	DetectedLines string `json:"detected_lines"`
+}
+
+func UploadHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// CORS Headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// STANDARD STREAMING UPLOAD LOGIC
+		// Uses ParseMultipartForm with 64MB memory limit, spilling to disk for larger files.
+		// Nginx handles the absolute max body size (2GB+).
+		r.ParseMultipartForm(64 << 20)
+
+		// Get User Context
+		userID := GetUserIDFromContext(r)
+		if userID == "" {
+			http.Error(w, "Unauthorized: User ID not found", http.StatusUnauthorized)
+			return
+		}
+
+		// Determine Target Company
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "Error getting user company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "Error retrieving the file: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		// Validate extension
+		ext := strings.ToLower(filepath.Ext(header.Filename))
+		if ext != ".txt" && ext != ".xml" {
+			http.Error(w, "Invalid file type. Only .txt and .xml are allowed.", http.StatusBadRequest)
+			return
+		}
+
+		// CHUNKED UPLOAD LOGIC
+		// Check if this is a chunked upload
+		isChunked := r.FormValue("is_chunked") == "true"
+		uploadID := r.FormValue("upload_id")
+		chunkIndex := r.FormValue("chunk_index")
+		totalChunks := r.FormValue("total_chunks")
+
+		var safeFilename string
+		var savePath string
+		var written int64
+
+		if isChunked {
+			// Chunked: We use a temporary filename based on upload_id
+			if uploadID == "" {
+				http.Error(w, "Missing upload_id for chunked upload", http.StatusBadRequest)
+				return
+			}
+			safeFilename = uploadID + "_" + filepath.Base(header.Filename)
+			savePath = filepath.Join("uploads", safeFilename)
+
+			// Open in Append mode or Create if it's the first chunk
+			flags := os.O_APPEND | os.O_CREATE | os.O_WRONLY
+			if chunkIndex == "0" {
+				flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+			}
+
+			dst, err := os.OpenFile(savePath, flags, 0644)
+			if err != nil {
+				log.Printf("Chunk Upload Error: %v\n", err)
+				http.Error(w, "Failed to open chunk file", http.StatusInternalServerError)
+				return
+			}
+
+			// Copy chunk
+			wBytes, err := io.Copy(dst, file)
+			dst.Close()
+			if err != nil {
+				http.Error(w, "Failed to write chunk", http.StatusInternalServerError)
+				return
+			}
+			written = wBytes
+
+			// If this is NOT the last chunk, return success immediately (don't create job yet)
+			if chunkIndex != fmt.Sprintf("%d", Atoi(totalChunks)-1) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]string{"status": "chunk_received", "chunk": chunkIndex})
+				return
+			}
+
+			// If it IS the last chunk, proceed to Job Creation logic below...
+			log.Printf("Chunked Upload Complete: %s\n", safeFilename)
+
+		} else {
+			// STANDARD UPLOAD (Legacy / Small files)
+			originalName := filepath.Base(header.Filename)
+			timestamp := time.Now().Format("20060102_150405")
+			safeFilename = fmt.Sprintf("%s_%s", timestamp, originalName)
+			savePath = filepath.Join("uploads", safeFilename)
+
+			// Create uploads directory if it doesn't exist
+			if err := os.MkdirAll("uploads", 0755); err != nil {
+				http.Error(w, "Failed to create upload directory", http.StatusInternalServerError)
+				return
+			}
+
+			// Save file to disk
+			dst, err := os.Create(savePath)
+			if err != nil {
+				http.Error(w, "Unable to create the file on server", http.StatusInternalServerError)
+				return
+			}
+
+			wBytes, err := io.Copy(dst, file)
+			dst.Close()
+			if err != nil {
+				http.Error(w, "Unable to save the file content", http.StatusInternalServerError)
+				return
+			}
+			written = wBytes
+		}
+
+		// Verify size
+		log.Printf("Upload Debug: Header Size: %d, Written: %d\n", header.Size, written)
+		if written != header.Size {
+			log.Printf("WARNING: Upload size mismatch! Header says %d but wrote %d bytes.\n", header.Size, written)
+		}
+
+		// --- Integrity Check (Storage Verification) ---
+		expectedLines := r.FormValue("expected_lines")
+		expectedSize := r.FormValue("expected_size")
+		actualLines := "not_found"
+
+		// Read last 16KB to find |9999| (Handling Digital Signatures)
+		if fi, err := os.Stat(savePath); err == nil {
+			written := fi.Size()
+			tailBuf := make([]byte, 16384) // 16KB buffer
+			startPos := int64(0)
+			if written > 16384 {
+				startPos = written - 16384
+			}
+
+			if fCheck, err := os.Open(savePath); err == nil {
+				fCheck.ReadAt(tailBuf, startPos)
+				fCheck.Close()
+
+				tailStr := string(tailBuf)
+
+				// Look for last valid |9999| occurrence
+				// Regex to find |9999|COUNT|
+				// We search from end manually or iterate
+				lines := strings.Split(tailStr, "\n")
+				for i := len(lines) - 1; i >= 0; i-- {
+					// STRICT CHECK: Must START with |9999| (LPAD style) to avoid false positives in descriptions
+					trimmed := strings.TrimSpace(lines[i])
+					if strings.HasPrefix(trimmed, "|9999|") {
+						parts := strings.Split(trimmed, "|")
+						// |9999|COUNT| -> index 0 is empty, 1 is 9999, 2 is COUNT
+						// Check if count > 100 to ensure it's a valid SPED trailer and not a random occurrence
+						if len(parts) >= 3 && parts[1] == "9999" {
+							// Parse count to ensure it's numeric and reasonably large
+							if countVal, err := strconv.Atoi(parts[2]); err == nil && countVal > 100 {
+								actualLines = parts[2]
+								break // Found the trailer, ignore subsequent garbage/signatures
+							}
+						}
+					}
+				}
+
+				fmt.Printf("LOG API Integrity: File=%s\n", safeFilename)
+				fmt.Printf("LOG API Frontend: Expected Lines=%s, Expected Size=%s\n", expectedLines, expectedSize)
+				fmt.Printf("LOG API Storage:  Registro Final %s, tamanho recebido final %d\n", actualLines, written)
+
+				if expectedLines != "unknown" && expectedLines != actualLines {
+					fmt.Printf("LOG API WARNING: Line count mismatch! Frontend says %s, Storage found %s\n", expectedLines, actualLines)
+				}
+			}
+		}
+		// ---------------------------------------------
+
+		// Insert job into database (with expected_lines from frontend for progress tracking)
+		var jobID string
+		expLines := 0
+		if expectedLines != "" && expectedLines != "unknown" && expectedLines != "not_found" {
+			expLines, _ = strconv.Atoi(expectedLines)
+		}
+		query := `INSERT INTO import_jobs (filename, status, message, company_id, expected_lines) VALUES ($1, $2, $3, $4, $5) RETURNING id`
+		err = db.QueryRow(query, safeFilename, "pending", "File received and saved", companyID, expLines).Scan(&jobID)
+		if err != nil {
+			// Try to cleanup file if DB fails
+			os.Remove(savePath)
+			log.Printf("Database Error: %v\n", err)
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("Upload Success: Job %s created for file %s\n", jobID, safeFilename)
+
+		fmt.Printf("File saved: %s (Size: %d bytes) -> Job ID: %s\n", savePath, header.Size, jobID)
+
+		response := UploadResponse{
+			JobID:         jobID,
+			Message:       "File uploaded and saved successfully",
+			Filename:      safeFilename,
+			DetectedLines: actualLines,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}
+}
+
+type DuplicityResponse struct {
+	Exists   bool   `json:"exists"`
+	JobID    string `json:"job_id,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	Message  string `json:"message,omitempty"`
+}
+
+func CheckDuplicityHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// CORS Headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Get User Context
+		userID := GetUserIDFromContext(r)
+		if userID == "" {
+			http.Error(w, "Unauthorized: User ID not found", http.StatusUnauthorized)
+			return
+		}
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "Error getting user company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		cnpj := r.URL.Query().Get("cnpj")
+		dtIniStr := r.URL.Query().Get("dt_ini") // Expecting format YYYY-MM-DD or DDMMYYYY
+
+		if cnpj == "" || dtIniStr == "" {
+			http.Error(w, "Missing cnpj or dt_ini parameters", http.StatusBadRequest)
+			return
+		}
+
+		// Clean CNPJ
+		cnpj = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(cnpj, ".", ""), "/", ""), "-", "")
+
+		// Parse date
+		var date time.Time
+		if len(dtIniStr) == 8 {
+			date, err = time.Parse("02012006", dtIniStr)
+		} else {
+			date, err = time.Parse("2006-01-02", dtIniStr)
+		}
+
+		if err != nil {
+			http.Error(w, "Invalid date format (use YYYY-MM-DD or DDMMYYYY)", http.StatusBadRequest)
+			return
+		}
+
+		// Query: Check if there is any COMPLETED job for this CNPJ where
+		// EXTRACT(MONTH FROM dt_ini) = Month AND EXTRACT(YEAR FROM dt_ini) = Year
+		// AND status = 'completed' AND company_id = $4
+
+		var jobID, filename string
+		query := `
+			SELECT id, filename 
+			FROM import_jobs 
+			WHERE status = 'completed' 
+			AND cnpj = $1 
+			AND EXTRACT(MONTH FROM dt_ini) = $2 
+			AND EXTRACT(YEAR FROM dt_ini) = $3
+			AND company_id = $4
+			LIMIT 1
+		`
+
+		err = db.QueryRow(query, cnpj, int(date.Month()), date.Year(), companyID).Scan(&jobID, &filename)
+
+		resp := DuplicityResponse{Exists: false}
+		if err == nil {
+			resp.Exists = true
+			resp.JobID = jobID
+			resp.Filename = filename
+			resp.Message = fmt.Sprintf("Já existe um arquivo importado para esta filial (%s) e competência (%02d/%d).", cnpj, int(date.Month()), date.Year())
+		} else if err != sql.ErrNoRows {
+			log.Printf("Error checking duplicity: %v", err)
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}
+}

@@ -1,0 +1,187 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type ProjectionPoint struct {
+	Ano           int     `json:"ano"`
+	Icms          float64 `json:"vl_icms"`
+	Ibs           float64 `json:"vl_ibs"`
+	Cbs           float64 `json:"vl_cbs"`
+	Saldo         float64 `json:"vl_saldo"`
+	BaseCalculo   float64 `json:"vl_base"`
+	PercReducIcms float64 `json:"perc_reduc_icms"`
+}
+
+func GetDashboardProjectionHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		// Get User Context
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "Error getting user company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		mesAno := r.URL.Query().Get("mes_ano")
+		filiaisParam := r.URL.Query().Get("filiais")
+
+		// 1. Get Base Data (Current Reality) Split by Type (Entrada vs Saida)
+		// We also need to separate "Taxable" base (Excluding T and O) for IBS/CBS calculation
+		var queryBase string
+		var args []interface{}
+
+		if mesAno != "" {
+			queryBase = `
+				SELECT
+					tipo,
+					COALESCE(SUM(valor_contabil), 0) as total_valor,
+					COALESCE(SUM(vl_icms_origem), 0) as total_icms,
+					COALESCE(SUM(CASE WHEN tipo_cfop NOT IN ('T', 'O') THEN valor_contabil ELSE 0 END), 0) as taxable_valor,
+					COALESCE(SUM(CASE WHEN tipo_cfop NOT IN ('T', 'O') THEN vl_icms_origem ELSE 0 END), 0) as taxable_icms
+				FROM mv_mercadorias_agregada
+				WHERE mes_ano = $1 AND company_id = $2`
+			args = append(args, mesAno, companyID)
+		} else {
+			queryBase = `
+				SELECT
+					tipo,
+					COALESCE(SUM(valor_contabil), 0) as total_valor,
+					COALESCE(SUM(vl_icms_origem), 0) as total_icms,
+					COALESCE(SUM(CASE WHEN tipo_cfop NOT IN ('T', 'O') THEN valor_contabil ELSE 0 END), 0) as taxable_valor,
+					COALESCE(SUM(CASE WHEN tipo_cfop NOT IN ('T', 'O') THEN vl_icms_origem ELSE 0 END), 0) as taxable_icms
+				FROM mv_mercadorias_agregada
+				WHERE company_id = $1`
+			args = append(args, companyID)
+		}
+
+		// Optionally restrict to specific filiais
+		if filiaisParam != "" {
+			var cnpjs []string
+			for _, c := range strings.Split(filiaisParam, ",") {
+				if t := strings.TrimSpace(c); t != "" {
+					cnpjs = append(cnpjs, t)
+				}
+			}
+			if len(cnpjs) > 0 {
+				placeholders := make([]string, len(cnpjs))
+				for i, c := range cnpjs {
+					args = append(args, c)
+					placeholders[i] = fmt.Sprintf("$%d", len(args))
+				}
+				queryBase += fmt.Sprintf(" AND filial_cnpj IN (%s)", strings.Join(placeholders, ", "))
+			}
+		}
+		queryBase += "\n\t\t\t\tGROUP BY tipo"
+
+		rowsBase, err := db.Query(queryBase, args...)
+		if err != nil {
+			http.Error(w, "Error querying base data: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer rowsBase.Close()
+
+		var (
+			valSaida, icmsSaida             float64
+			valEntrada, icmsEntrada         float64
+			valSaidaTaxable, icmsSaidaTaxable     float64
+			valEntradaTaxable, icmsEntradaTaxable float64
+		)
+
+		for rowsBase.Next() {
+			var tipo string
+			var val, icms, valTax, icmsTax float64
+			if err := rowsBase.Scan(&tipo, &val, &icms, &valTax, &icmsTax); err != nil {
+				continue
+			}
+			if tipo == "SAIDA" {
+				valSaida += val
+				icmsSaida += icms
+				valSaidaTaxable += valTax
+				icmsSaidaTaxable += icmsTax
+			} else if tipo == "ENTRADA" {
+				valEntrada += val
+				icmsEntrada += icms
+				valEntradaTaxable += valTax
+				icmsEntradaTaxable += icmsTax
+			}
+		}
+
+		// 2. Get Future Aliquotas (2027-2033)
+		rows, err := db.Query(`
+			SELECT ano, perc_reduc_icms, perc_ibs_uf, perc_ibs_mun, perc_cbs
+			FROM tabela_aliquotas
+			WHERE ano BETWEEN 2027 AND 2033
+			ORDER BY ano
+		`)
+		if err != nil {
+			http.Error(w, "Error querying aliquotas: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		var points []ProjectionPoint
+		for rows.Next() {
+			var ano int
+			var reducIcms, ibsUf, ibsMun, cbs float64
+			
+			if err := rows.Scan(&ano, &reducIcms, &ibsUf, &ibsMun, &cbs); err != nil {
+				continue
+			}
+
+			// Calculation Logic (Net = Debit - Credit)
+			
+			// ICMS Projected (Debit & Credit) - Applies to ALL operations
+			icmsProjDebit := icmsSaida * (1.0 - (reducIcms / 100.0))
+			icmsProjCredit := icmsEntrada * (1.0 - (reducIcms / 100.0))
+			icmsNet := icmsProjDebit - icmsProjCredit
+			
+			// Base for IBS/CBS (Debit & Credit) - Applies only to Taxable (Non-T/O) operations
+			// Base = ValorTaxable - ICMS Projected (on Taxable portion)
+			icmsProjDebitTaxable := icmsSaidaTaxable * (1.0 - (reducIcms / 100.0))
+			icmsProjCreditTaxable := icmsEntradaTaxable * (1.0 - (reducIcms / 100.0))
+
+			baseDebit := valSaidaTaxable - icmsProjDebitTaxable
+			baseCredit := valEntradaTaxable - icmsProjCreditTaxable
+			
+			// IBS/CBS Rates
+			ibsRate := (ibsUf + ibsMun) / 100.0
+			cbsRate := cbs / 100.0
+			
+			// IBS/CBS Projected
+			ibsNet := (baseDebit * ibsRate) - (baseCredit * ibsRate)
+			cbsNet := (baseDebit * cbsRate) - (baseCredit * cbsRate)
+			
+			// Total Saldo a Pagar
+			saldo := icmsNet + ibsNet + cbsNet
+
+			points = append(points, ProjectionPoint{
+				Ano:           ano,
+				Icms:          icmsNet,
+				Ibs:           ibsNet,
+				Cbs:           cbsNet,
+				Saldo:         saldo,
+				BaseCalculo:   baseDebit - baseCredit, // Net Base
+				PercReducIcms: reducIcms,
+			})
+		}
+
+		json.NewEncoder(w).Encode(points)
+	}
+}

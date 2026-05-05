@@ -1,0 +1,270 @@
+package handlers
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type JobStatusResponse struct {
+	ID        string `json:"id"`
+	Filename  string `json:"filename"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type Participant struct {
+	ID      string `json:"id"`
+	CodPart string `json:"cod_part"`
+	Nome    string `json:"nome"`
+	CNPJ    string `json:"cnpj"`
+	CPF     string `json:"cpf"`
+	UF      string `json:"uf"` // Using cod_mun prefix or lookup ideally, but simple for now
+	IE      string `json:"ie"`
+}
+
+func GetJobParticipantsHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Get User Context
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "Error getting user company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		pathParts := strings.Split(r.URL.Path, "/")
+		// Expected: /api/jobs/{id}/participants
+		if len(pathParts) < 5 {
+			http.Error(w, "Invalid URL", http.StatusBadRequest)
+			return
+		}
+		jobID := pathParts[3]
+
+		// Use context with timeout to prevent query from hanging during heavy imports
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		// Verify Job Ownership
+		var exists bool
+		err = db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM import_jobs WHERE id = $1 AND company_id = $2)", jobID, companyID).Scan(&exists)
+		if err != nil {
+			http.Error(w, "Database error checking ownership: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !exists {
+			http.Error(w, "Job not found or access denied", http.StatusNotFound)
+			return
+		}
+
+		rows, err := db.QueryContext(ctx, `
+			SELECT id, cod_part, nome, cnpj, cpf, ie
+			FROM participants
+			WHERE job_id = $1
+			ORDER BY nome ASC
+		`, jobID)
+		if err != nil {
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		var participants []Participant
+		for rows.Next() {
+			var p Participant
+			if err := rows.Scan(&p.ID, &p.CodPart, &p.Nome, &p.CNPJ, &p.CPF, &p.IE); err != nil {
+				continue
+			}
+			participants = append(participants, p)
+		}
+
+		json.NewEncoder(w).Encode(participants)
+	}
+}
+
+func ListJobsHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Get User Context
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "Error getting user company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Use context with timeout to prevent query from hanging during heavy imports
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		rows, err := db.QueryContext(ctx, `
+			SELECT id, filename, status, message, created_at, updated_at
+			FROM import_jobs
+			WHERE company_id = $1
+			ORDER BY created_at DESC
+			LIMIT 100
+		`, companyID)
+		if err != nil {
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		jobs := []JobStatusResponse{}
+		for rows.Next() {
+			var job JobStatusResponse
+			if err := rows.Scan(&job.ID, &job.Filename, &job.Status, &job.Message, &job.CreatedAt, &job.UpdatedAt); err != nil {
+				continue
+			}
+			jobs = append(jobs, job)
+		}
+
+		json.NewEncoder(w).Encode(jobs)
+	}
+}
+
+func GetJobStatusHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// CORS Headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Get User Context
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "Error getting user company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Extract ID from URL (simple path parsing)
+		// Expected path: /api/jobs/{id}
+		pathParts := strings.Split(r.URL.Path, "/")
+		if len(pathParts) < 4 {
+			http.Error(w, "Invalid job ID", http.StatusBadRequest)
+			return
+		}
+		jobID := pathParts[3]
+
+		// Use context with timeout to prevent query from hanging during heavy imports
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		var job JobStatusResponse
+		query := `SELECT id, filename, status, message, created_at, updated_at FROM import_jobs WHERE id = $1 AND company_id = $2`
+
+		err = db.QueryRowContext(ctx, query, jobID, companyID).Scan(&job.ID, &job.Filename, &job.Status, &job.Message, &job.CreatedAt, &job.UpdatedAt)
+		if err == sql.ErrNoRows {
+			http.Error(w, "Job not found", http.StatusNotFound)
+			return
+		} else if err != nil {
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(job)
+	}
+}
+
+func CancelJobHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "Error getting user company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Extract job ID: /api/jobs/{id}/cancel
+		pathParts := strings.Split(r.URL.Path, "/")
+		if len(pathParts) < 5 {
+			http.Error(w, "Invalid URL", http.StatusBadRequest)
+			return
+		}
+		jobID := pathParts[3]
+
+		// Only cancel jobs that are pending or processing, and belong to this company
+		res, err := db.Exec(
+			"UPDATE import_jobs SET status = 'cancelling', message = 'Cancelamento solicitado pelo usuário', updated_at = NOW() WHERE id = $1 AND company_id = $2 AND status IN ('pending', 'processing')",
+			jobID, companyID,
+		)
+		if err != nil {
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		rows, _ := res.RowsAffected()
+		if rows == 0 {
+			http.Error(w, "Job not found or already completed", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "cancelling", "message": "Job cancellation requested"})
+	}
+}
