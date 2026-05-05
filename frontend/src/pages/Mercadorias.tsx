@@ -183,7 +183,7 @@ const Mercadorias = () => {
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
           <p className="font-bold">Erro ao carregar dados</p>
           <p>{error}</p>
-          <p className="text-sm mt-2">Verifique se o backend está rodando em http://localhost:8081</p>
+          <p className="text-sm mt-2">Verifique se o backend está rodando em http://localhost:8084</p>
         </div>
       </div>
     );
