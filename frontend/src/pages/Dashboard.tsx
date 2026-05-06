@@ -116,8 +116,8 @@ export default function Dashboard() {
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : data.length > 0 ? (
-              <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-                <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+              <div style={{ width: '100%', height: '180px' }}>
+                <ResponsiveContainer width="100%" height="100%">
                   <LineChart
                     data={data}
                     margin={{

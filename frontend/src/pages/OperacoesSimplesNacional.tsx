@@ -215,6 +215,7 @@ export default function OperacoesSimplesNacional() {
           </CardDescription>
         </CardHeader>
         <CardContent className="h-[200px] md:h-[250px] w-full p-2">
+          <div style={{ width: '100%', height: '200px' }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -234,6 +235,7 @@ export default function OperacoesSimplesNacional() {
               <Bar dataKey="Valor" fill="#cbd5e1" radius={[4, 4, 0, 0]} name="Valor Total" />
             </BarChart>
           </ResponsiveContainer>
+          </div>
         </CardContent>
       </Card>
 

@@ -548,24 +548,20 @@ func main() {
 		// RFB Webhook (PUBLIC - no JWT auth, called by Receita Federal)
 		http.HandleFunc("/api/rfb/webhook", withDB(handlers.RFBWebhookHandler))
 
-		// Apuração Assistida — NF-e Saídas
-		http.HandleFunc("/api/nfe-saidas/upload", withAuth(handlers.NfeSaidasUploadHandler, ""))
-		http.HandleFunc("/api/nfe-saidas", withAuth(handlers.NfeSaidasListHandler, ""))
-
-		// Apuração Assistida — NF-e Entradas
-		http.HandleFunc("/api/nfe-entradas/upload", withAuth(handlers.NfeEntradasUploadHandler, ""))
-		http.HandleFunc("/api/nfe-entradas", withAuth(handlers.NfeEntradasListHandler, ""))
-
-		// Apuração Assistida — CT-e Entradas
-		http.HandleFunc("/api/cte-entradas/upload", withAuth(handlers.CteEntradasUploadHandler, ""))
-		http.HandleFunc("/api/cte-entradas", withAuth(handlers.CteEntradasListHandler, ""))
-
 		// Apuração Assistida — Créditos IBS/CBS em Risco
 		http.HandleFunc("/api/apuracao/creditos-perdidos", withAuth(handlers.CreditosPerdidosHandler, ""))
 
 		// Painel Apuração IBS/CBS
 		http.HandleFunc("/api/apuracao/painel", withAuth(handlers.ApuracaoPainelHandler, ""))
 	}
+
+	// Notas Importadas — NF-e e CT-e (sempre disponível)
+	http.HandleFunc("/api/nfe-saidas/upload", withAuth(handlers.NfeSaidasUploadHandler, ""))
+	http.HandleFunc("/api/nfe-saidas", withAuth(handlers.NfeSaidasListHandler, ""))
+	http.HandleFunc("/api/nfe-entradas/upload", withAuth(handlers.NfeEntradasUploadHandler, ""))
+	http.HandleFunc("/api/nfe-entradas", withAuth(handlers.NfeEntradasListHandler, ""))
+	http.HandleFunc("/api/cte-entradas/upload", withAuth(handlers.CteEntradasUploadHandler, ""))
+	http.HandleFunc("/api/cte-entradas", withAuth(handlers.CteEntradasListHandler, ""))
 
 	// ERP Bridge — importação via daemon (autenticação mista: JWT + X-API-Key)
 	http.HandleFunc("/api/erp-bridge/config/generate-api-key", withAuth(handlers.ERPBridgeGenerateAPIKeyHandler, "admin"))
