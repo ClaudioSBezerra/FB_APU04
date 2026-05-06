@@ -164,28 +164,3 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-  # ── Deploy ERP Bridge no servidor AWS via SSH ────────────────────────────────
-  deploy-aws-bridge:
-    needs: build-bridge
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:     ${{ secrets.AWS_BRIDGE_HOST }}
-          username: ${{ secrets.AWS_BRIDGE_USER }}
-          key:      ${{ secrets.AWS_BRIDGE_SSH_KEY }}
-          script: |
-            cd /opt/apps/fbtax/bridge-apu04
-            docker compose pull
-            docker compose up -d --force-recreate
-            sleep 5
-            if docker ps | grep fbtax-bridge-apu04; then
-              echo "Bridge APU04 OK."
-              docker logs fbtax-bridge-apu04 --tail 20
-            else
-              echo "Bridge APU04 falhou."
-              exit 1
-            fi
