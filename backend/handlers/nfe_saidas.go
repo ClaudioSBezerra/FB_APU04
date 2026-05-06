@@ -497,10 +497,10 @@ func NfeSaidasListHandler(db *sql.DB) http.HandlerFunc {
 				TO_CHAR(data_emissao, 'DD/MM/YYYY'), mes_ano, COALESCE(nat_op,''),
 				emit_cnpj, COALESCE(emit_nome,''), COALESCE(emit_uf,''), COALESCE(emit_municipio,''),
 				COALESCE(dest_cnpj_cpf,''), COALESCE(dest_nome,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''),
-				v_bc, v_icms, v_icms_deson, v_fcp,
-				v_bc_st, v_st, v_fcp_st, v_fcp_st_ret,
+				v_bc + COALESCE(base_icms, 0), v_icms + COALESCE(icms, 0), v_icms_deson, v_fcp,
+				v_bc_st, v_st + COALESCE(icms_st, 0), v_fcp_st, v_fcp_st_ret,
 				v_prod, v_frete, v_seg, v_desc,
-				v_ii, v_ipi, v_ipi_devol, v_pis, v_cofins, v_outro, v_nf,
+				v_ii, v_ipi + COALESCE(ipi, 0), v_ipi_devol, v_pis + COALESCE(pis, 0), v_cofins + COALESCE(cofins, 0), v_outro, v_nf,
 				v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cred_pres_ibs,
 				v_cbs, v_cred_pres_cbs
 			FROM nfe_saidas
