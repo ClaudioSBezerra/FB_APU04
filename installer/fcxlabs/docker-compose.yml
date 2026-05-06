@@ -7,7 +7,8 @@ services:
       - "8084"
     environment:
       - PORT=8084
-      - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+      # Usa o banco do APU02 (cliente-db na rede cliente_net)
+      - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@cliente-db:5432/${DB_NAME}?sslmode=disable
       - REDIS_ADDR=redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - SMTP_HOST=${SMTP_HOST}
@@ -19,20 +20,13 @@ services:
       - APP_MODULE=simulador
       - COOKIE_SECURE=true
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_started
     volumes:
       - api_uploads:/root/uploads
     networks:
-      - fbtax_net
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8084/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      - cliente_net   # rede do APU02 — acesso ao banco compartilhado
+      - fbtax_net     # rede interna para comunicação com web e redis
 
   web:
     image: ghcr.io/claudiosbezerra/fb_apu04-web:latest
@@ -44,25 +38,6 @@ services:
       - api
     networks:
       - fbtax_net
-
-  db:
-    image: postgres:15-alpine
-    container_name: fbtax-apu04-db
-    restart: always
-    environment:
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=${DB_NAME}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - fbtax_net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
   redis:
     image: redis:7-alpine
@@ -78,11 +53,10 @@ services:
 networks:
   fbtax_net:
     driver: bridge
+  cliente_net:
+    name: cliente-aws_cliente_net
+    external: true
 
 volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
   api_uploads:
     driver: local
