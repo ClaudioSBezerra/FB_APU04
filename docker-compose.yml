@@ -47,7 +47,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=coolify"
-      - "traefik.http.routers.simu.rule=Host(`simu.fbtax.cloud`)"
+      - "traefik.http.routers.simu.rule=Host(`simu.fcxlabs.com`) || Host(`simu.fbtax.cloud`)"
       - "traefik.http.routers.simu.entrypoints=https"
       - "traefik.http.routers.simu.tls=true"
       - "traefik.http.routers.simu.tls.certresolver=letsencrypt"
