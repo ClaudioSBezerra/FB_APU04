@@ -164,3 +164,16 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
+  # ── Deploy Coolify (Hostinger) — dispara após imagem pronta ──────────────────
+  deploy-coolify:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Coolify redeploy
+        run: |
+          curl -fsSL -X GET "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            --retry 3 --retry-delay 5
+          echo "Coolify redeploy disparado."
