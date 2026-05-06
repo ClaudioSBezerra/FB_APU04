@@ -11,10 +11,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 
 const FEATURES = [
+  "Importação de várias fontes: EFD ICMS, XMLs e planilhas",
   "Importação de NF-e via ERP Bridge com PIS, COFINS e IPI",
-  "Escrituração de entradas EFD com valores tributários completos",
+  "Dados escriturados visualizados em dashboards",
   "Rastreabilidade NF-e → lançamento EFD para auditoria fiscal",
-  "Malha fina e créditos em risco por período de apuração",
   "Conformidade SPED layout 020 (vigência Janeiro/2026)",
 ];
 
@@ -108,20 +108,15 @@ const Login = () => {
               border: "1px solid rgba(255,255,255,0.15)",
             }}
           >
-            Escrituração Fiscal de Entradas
+            Simulador da Reforma Tributária
           </span>
 
           {/* Título */}
           <h1 className="text-white text-5xl font-bold leading-tight mt-5">
             FBTax Cloud
             <br />
-            EFD Entradas
+            Soluções Inteligentes
           </h1>
-
-          {/* Subtítulo */}
-          <p className="mt-5 text-base leading-relaxed" style={{ color: "#9ca3af" }}>
-            Escrituração de entradas EFD enriquecida com PIS, COFINS e IPI direto do ERP — rastreabilidade total até a NF-e de origem.
-          </p>
 
           {/* Bullets de features */}
           <ul className="mt-6 space-y-3">
