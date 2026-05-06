@@ -22,7 +22,6 @@ func GetAllowedOrigins() map[string]bool {
 			"https://simulador.fbtax.cloud",
 			"https://apuracao.fbtax.cloud",
 			"https://simu.fcxlabs.com",
-			"https://fctax.fcxlabs.com",
 			"http://localhost:3000",
 			"http://localhost:5173",
 		}
