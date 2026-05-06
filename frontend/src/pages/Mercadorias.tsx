@@ -653,8 +653,8 @@ const Mercadorias = () => {
         </CardHeader>
         <CardContent className="h-[200px] md:h-[250px] w-full">
           {projectionData.length > 0 ? (
-            <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-              <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+            <div style={{ width: '100%', height: '200px' }}>
+              <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={projectionData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
