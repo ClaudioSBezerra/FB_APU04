@@ -237,6 +237,9 @@ SELECT
     SUM(CASE WHEN ni.TAXTYP IN ('IPI2') THEN ni.TAXVAL ELSE 0 END)                 AS v_ipi,
     SUM(CASE WHEN ni.TAXTYP IN ('IPIS') THEN ni.TAXVAL ELSE 0 END)                 AS v_pis,
     SUM(CASE WHEN ni.TAXTYP IN ('ICOF') THEN ni.TAXVAL ELSE 0 END)                 AS v_cofins,
+    MAX(CASE WHEN ni.TAXTYP = 'ICMS' THEN ni.BASE  ELSE 0 END)                    AS v_bc_icms,
+    SUM(CASE WHEN ni.TAXTYP = 'ICMS' THEN ni.TAXVAL ELSE 0 END)                   AS v_icms,
+    SUM(CASE WHEN ni.TAXTYP = 'ICST' THEN ni.TAXVAL ELSE 0 END)                   AS v_icms_st,
     (
       SELECT cfop4 FROM (
         SELECT SUBSTR(it2.cfop, 1, 4) AS cfop4, COUNT(*) AS cnt
@@ -250,7 +253,7 @@ SELECT
 FROM s4i_nfe nn
 LEFT JOIN s4i_nfe_impostos ni
   ON ni.NFEID = nn.NFEID
- AND ni.TAXTYP IN ('CBS1','CBS2','CBS3','IB1M','IB2M','IB3M','IB1S','IB2S','IB3S','IPI2','IPIS','ICOF')
+ AND ni.TAXTYP IN ('CBS1','CBS2','CBS3','IB1M','IB2M','IB3M','IB1S','IB2S','IB3S','IPI2','IPIS','ICOF','ICMS','ICST')
  AND ni.TAXVAL > 0
 LEFT JOIN s4i_nfe_it it
   ON it.NFEID = nn.NFEID
@@ -683,9 +686,12 @@ def processar_sap(
                 "v_ibs_mun":        f(r.get("v_ibs_mun")),
                 "v_ibs":            f(r.get("v_ibs")),
                 "v_cbs":            f(r.get("v_cbs")),
-                "v_ipi":            f(r.get("v_ipi")),
-                "v_pis":            f(r.get("v_pis")),
-                "v_cofins":         f(r.get("v_cofins")),
+                "ipi":              f(r.get("v_ipi")),
+                "pis":              f(r.get("v_pis")),
+                "cofins":           f(r.get("v_cofins")),
+                "base_icms":        f(r.get("v_bc_icms")),
+                "icms":             f(r.get("v_icms")),
+                "icms_st":          f(r.get("v_icms_st")),
                 "cfop":             s(r.get("cfop_dom")),
             })
 
