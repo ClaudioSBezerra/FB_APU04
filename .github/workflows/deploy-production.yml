@@ -164,6 +164,27 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
+  # ── Deploy fcxlabs (98.88.223.220) via self-hosted runner ───────────────────
+  deploy-fcxlabs:
+    needs: [build-installer-images]
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, cliente-aws]
+
+    steps:
+      - name: Deploy simu.fcxlabs.com
+        run: |
+          cd /opt/apps/fbtax/simu-apu04
+          docker compose pull
+          docker compose up -d --force-recreate
+          sleep 8
+          if docker ps | grep fbtax-apu04-web; then
+            echo "simu.fcxlabs.com OK."
+            curl -f http://localhost:3007/api/health
+          else
+            echo "Deploy falhou."
+            exit 1
+          fi
+
   # ── Deploy Coolify (Hostinger) — dispara após imagem pronta ──────────────────
   deploy-coolify:
     needs: build-and-push
