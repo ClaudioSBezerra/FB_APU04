@@ -107,7 +107,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             localStorage.setItem('user', JSON.stringify(userData));
           }
         })
-        .catch(err => console.error('Session restore error:', err))
+        .catch(err => {
+          if (err.message !== 'Session expired') {
+            // API unreachable — clear stale session so ProtectedRoute redirects to /login
+            localStorage.clear();
+            setUser(null);
+          }
+        })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
