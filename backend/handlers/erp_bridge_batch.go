@@ -24,34 +24,36 @@ import (
 
 // batchDoc representa um documento fiscal já agregado vindo do bridge Python.
 type batchDoc struct {
-	Direct          string  `json:"direct"`           // "1" = entrada, "2" = saída
-	Chave           string  `json:"chave"`            // 44 dígitos
-	Modelo          string  `json:"modelo"`           // "55","57","65",...
-	Serie           string  `json:"serie"`
-	Numero          string  `json:"numero"`
-	DataEmissao     string  `json:"data_emissao"`     // "YYYY-MM-DD"
-	DataAutorizacao string  `json:"data_autorizacao"` // "YYYY-MM-DD"
-	MesAno          string  `json:"mes_ano"`          // "MM/YYYY"
-	EmitCNPJ        string  `json:"emit_cnpj"`
-	DestCNPJ        string  `json:"dest_cnpj"`
-	Cancelado       string  `json:"cancelado"`        // "S" = cancelada, demais = normal
-	NomeParceiro    string  `json:"nome_parceiro"`    // forn.razsoc (DIRECT=1) ou clie.razsoc (DIRECT=2)
-	CFOP            string  `json:"cfop"`             // código CFOP 4 dígitos (ex: "1102")
-	TipoCFOP        string  `json:"tipo_cfop"`        // C=Consumo,R=Revenda,A=Ativo,T=Transferência,O=Outros
-	VTotal          float64 `json:"v_total"`
-	VBcIbsCbs       float64 `json:"v_bc_ibs_cbs"`
-	VIbsUf          float64 `json:"v_ibs_uf"`
-	VIbsMun         float64 `json:"v_ibs_mun"`
-	VIbs            float64 `json:"v_ibs"`
-	VCbs            float64 `json:"v_cbs"`
-	BaseIcms        float64 `json:"base_icms"`        // base de cálculo ICMS
-	Icms            float64 `json:"icms"`             // valor ICMS
-	IcmsSt          float64 `json:"icms_st"`          // valor ICMS-ST
-	Ipi             float64 `json:"ipi"`              // valor IPI
-	BasePis         float64 `json:"base_pis"`         // base de cálculo PIS
-	Pis             float64 `json:"pis"`              // valor PIS
-	BaseCofins      float64 `json:"base_cofins"`      // base de cálculo COFINS
-	Cofins          float64 `json:"cofins"`           // valor COFINS
+	Direct           string  `json:"direct"`            // "1" = entrada, "2" = saída
+	Chave            string  `json:"chave"`             // 44 dígitos
+	Modelo           string  `json:"modelo"`            // "55","57","65",...
+	Serie            string  `json:"serie"`
+	Numero           string  `json:"numero"`
+	DataEmissao      string  `json:"data_emissao"`      // "YYYY-MM-DD"
+	DataAutorizacao  string  `json:"data_autorizacao"`  // "YYYY-MM-DD"
+	MesAno           string  `json:"mes_ano"`           // "MM/YYYY"
+	EmitCNPJ         string  `json:"emit_cnpj"`
+	DestCNPJ         string  `json:"dest_cnpj"`
+	Cancelado        string  `json:"cancelado"`         // "S" = cancelada, demais = normal
+	NomeParceiro     string  `json:"nome_parceiro"`     // forn.razsoc (DIRECT=1) ou clie.razsoc (DIRECT=2)
+	CFOP             string  `json:"cfop"`              // código CFOP 4 dígitos (ex: "1102")
+	TipoCFOP         string  `json:"tipo_cfop"`         // C=Consumo,R=Revenda,A=Ativo Imobilizado,T=Transferência,O=Outros,S=Serviços
+	VTotal           float64 `json:"v_total"`
+	VBcIbsCbs        float64 `json:"v_bc_ibs_cbs"`
+	VIbsUf           float64 `json:"v_ibs_uf"`
+	VIbsMun          float64 `json:"v_ibs_mun"`
+	VIbs             float64 `json:"v_ibs"`
+	VCbs             float64 `json:"v_cbs"`
+	BaseIcms         float64 `json:"base_icms"`
+	Icms             float64 `json:"icms"`
+	IcmsSt           float64 `json:"icms_st"`
+	Ipi              float64 `json:"ipi"`
+	BasePis          float64 `json:"base_pis"`
+	Pis              float64 `json:"pis"`
+	BaseCofins       float64 `json:"base_cofins"`
+	Cofins           float64 `json:"cofins"`
+	BasePartilha     float64 `json:"base_partilha"`
+	IcmsPartilha     float64 `json:"icms_partilha"`
 }
 
 type batchRequest struct {
@@ -197,8 +199,9 @@ func batchInsertNFeSaida(db *sql.DB, companyID string, doc batchDoc, modelo stri
 			emit_cnpj, dest_cnpj_cpf,
 			v_nf,
 			v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cbs,
-			base_icms, icms, icms_st,
-			ipi, base_pis, pis, base_cofins, cofins,
+			base_icms, icms, icms_st, ipi,
+			base_pis, pis, base_cofins, cofins,
+			base_partilha, icms_partilha,
 			cancelado, tipo_cfop, cfop
 		) VALUES (
 			$1,$2,$3,$4,$5,
@@ -206,35 +209,41 @@ func batchInsertNFeSaida(db *sql.DB, companyID string, doc batchDoc, modelo stri
 			$9,$10,
 			$11,
 			$12,$13,$14,$15,$16,
-			$17,$18,$19,
-			$20,$21,$22,$23,$24,
-			$25,
-			COALESCE(NULLIF($26,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($27,'')), 'O'),
-			NULLIF($27,'')
+			$17,$18,$19,$20,
+			$21,$22,$23,$24,
+			$25,$26,
+			$27,
+			COALESCE(NULLIF($28,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($29,'')), 'O'),
+			NULLIF($29,'')
 		)
 		ON CONFLICT ON CONSTRAINT uq_nfe_saidas_company_chave
 		DO UPDATE SET
-			cancelado   = EXCLUDED.cancelado,
-			base_icms   = EXCLUDED.base_icms,
-			icms        = EXCLUDED.icms,
-			icms_st     = EXCLUDED.icms_st,
-			ipi         = EXCLUDED.ipi,
-			pis         = EXCLUDED.pis,
-			cofins      = EXCLUDED.cofins,
-			tipo_cfop   = COALESCE(
-				NULLIF($26,''),
-				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($27,'')),
+			cancelado      = EXCLUDED.cancelado,
+			base_icms      = EXCLUDED.base_icms,
+			icms           = EXCLUDED.icms,
+			icms_st        = EXCLUDED.icms_st,
+			ipi            = EXCLUDED.ipi,
+			base_pis       = EXCLUDED.base_pis,
+			pis            = EXCLUDED.pis,
+			base_cofins    = EXCLUDED.base_cofins,
+			cofins         = EXCLUDED.cofins,
+			base_partilha  = EXCLUDED.base_partilha,
+			icms_partilha  = EXCLUDED.icms_partilha,
+			tipo_cfop = COALESCE(
+				NULLIF($28,''),
+				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($29,'')),
 				nfe_saidas.tipo_cfop,
 				'O'
 			),
-			cfop = COALESCE(NULLIF($27,''), nfe_saidas.cfop)`,
+			cfop = COALESCE(NULLIF($29,''), nfe_saidas.cfop)`,
 		companyID, doc.Chave, modInt, doc.Serie, doc.Numero,
 		nullDate(doc.DataEmissao), nullDate(doc.DataAutorizacao), doc.MesAno,
 		doc.EmitCNPJ, doc.DestCNPJ,
 		doc.VTotal,
 		doc.VBcIbsCbs, doc.VIbsUf, doc.VIbsMun, doc.VIbs, doc.VCbs,
-		doc.BaseIcms, doc.Icms, doc.IcmsSt,
-		doc.Ipi, doc.BasePis, doc.Pis, doc.BaseCofins, doc.Cofins,
+		doc.BaseIcms, doc.Icms, doc.IcmsSt, doc.Ipi,
+		doc.BasePis, doc.Pis, doc.BaseCofins, doc.Cofins,
+		doc.BasePartilha, doc.IcmsPartilha,
 		cancelado, tipoCFOP, cfopCode,
 	)
 	if err != nil {
@@ -248,6 +257,7 @@ func batchInsertNFeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo st
 	modInt, _ := strconv.Atoi(modelo)
 	cancelado := doc.Cancelado
 	if cancelado != "S" { cancelado = "N" }
+	// tipo_cfop: usa valor explícito do payload; se vazio, faz lookup na tabela cfop via SQL
 	tipoCFOP := strings.TrimSpace(doc.TipoCFOP)
 	cfopCode := strings.TrimSpace(doc.CFOP)
 	res, err := db.Exec(`
@@ -257,8 +267,9 @@ func batchInsertNFeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo st
 			forn_cnpj, dest_cnpj_cpf,
 			v_nf,
 			v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cbs,
-			base_icms, icms, icms_st,
-			ipi, base_pis, pis, base_cofins, cofins,
+			base_icms, icms, icms_st, ipi,
+			base_pis, pis, base_cofins, cofins,
+			base_partilha, icms_partilha,
 			cancelado, tipo_cfop, cfop
 		) VALUES (
 			$1,$2,$3,$4,$5,
@@ -266,35 +277,41 @@ func batchInsertNFeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo st
 			$9,$10,
 			$11,
 			$12,$13,$14,$15,$16,
-			$17,$18,$19,
-			$20,$21,$22,$23,$24,
-			$25,
-			COALESCE(NULLIF($26,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($27,'')), 'C'),
-			NULLIF($27,'')
+			$17,$18,$19,$20,
+			$21,$22,$23,$24,
+			$25,$26,
+			$27,
+			COALESCE(NULLIF($28,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($29,'')), 'C'),
+			NULLIF($29,'')
 		)
 		ON CONFLICT ON CONSTRAINT uq_nfe_entradas_company_chave
 		DO UPDATE SET
-			cancelado   = EXCLUDED.cancelado,
-			base_icms   = EXCLUDED.base_icms,
-			icms        = EXCLUDED.icms,
-			icms_st     = EXCLUDED.icms_st,
-			ipi         = EXCLUDED.ipi,
-			pis         = EXCLUDED.pis,
-			cofins      = EXCLUDED.cofins,
-			tipo_cfop   = COALESCE(
-				NULLIF($26,''),
-				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($27,'')),
+			cancelado      = EXCLUDED.cancelado,
+			base_icms      = EXCLUDED.base_icms,
+			icms           = EXCLUDED.icms,
+			icms_st        = EXCLUDED.icms_st,
+			ipi            = EXCLUDED.ipi,
+			base_pis       = EXCLUDED.base_pis,
+			pis            = EXCLUDED.pis,
+			base_cofins    = EXCLUDED.base_cofins,
+			cofins         = EXCLUDED.cofins,
+			base_partilha  = EXCLUDED.base_partilha,
+			icms_partilha  = EXCLUDED.icms_partilha,
+			tipo_cfop = COALESCE(
+				NULLIF($28,''),
+				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($29,'')),
 				nfe_entradas.tipo_cfop,
 				'C'
 			),
-			cfop = COALESCE(NULLIF($27,''), nfe_entradas.cfop)`,
+			cfop = COALESCE(NULLIF($29,''), nfe_entradas.cfop)`,
 		companyID, doc.Chave, modInt, doc.Serie, doc.Numero,
 		nullDate(doc.DataEmissao), nullDate(doc.DataAutorizacao), doc.MesAno,
 		doc.EmitCNPJ, doc.DestCNPJ,
 		doc.VTotal,
 		doc.VBcIbsCbs, doc.VIbsUf, doc.VIbsMun, doc.VIbs, doc.VCbs,
-		doc.BaseIcms, doc.Icms, doc.IcmsSt,
-		doc.Ipi, doc.BasePis, doc.Pis, doc.BaseCofins, doc.Cofins,
+		doc.BaseIcms, doc.Icms, doc.IcmsSt, doc.Ipi,
+		doc.BasePis, doc.Pis, doc.BaseCofins, doc.Cofins,
+		doc.BasePartilha, doc.IcmsPartilha,
 		cancelado, tipoCFOP, cfopCode,
 	)
 	if err != nil {
