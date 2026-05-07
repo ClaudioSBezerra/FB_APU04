@@ -41,6 +41,8 @@ interface NfeEntradaRow {
   data_emissao: string;
   mes_ano: string;
   nat_op: string;
+  tipo_cfop: string;
+  cfop: string;
   forn_cnpj: string;
   forn_nome: string;
   forn_uf: string;
@@ -472,7 +474,9 @@ export default function ConsultaNFesEntradas() {
                     <TableHead className="py-1.5 px-2 text-[11px] text-center">Série</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-center">Nº Nota</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-center">Mod</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-center">CFOP</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-right">Valor Total (vNF)</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">ICMS</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-right">IPI</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-right">PIS</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-right">COFINS</TableHead>
@@ -508,8 +512,20 @@ export default function ConsultaNFesEntradas() {
                       <TableCell className="py-1 px-2 text-center">
                         <Badge variant="outline" className="text-[10px] px-1 py-0">{row.modelo}</Badge>
                       </TableCell>
+                      <TableCell className="py-1 px-2 text-center">
+                        {row.tipo_cfop ? (
+                          <Badge variant="outline" className={`text-[10px] px-1 py-0 ${
+                            row.tipo_cfop === 'R' ? 'border-blue-300 text-blue-700' :
+                            row.tipo_cfop === 'C' ? 'border-green-300 text-green-700' :
+                            row.tipo_cfop === 'A' ? 'border-purple-300 text-purple-700' : ''
+                          }`}>{row.tipo_cfop}</Badge>
+                        ) : '—'}
+                      </TableCell>
                       <TableCell className="py-1 px-2 text-[11px] text-right font-semibold">
                         {fmtBRL(row.v_nf)}
+                      </TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                        {fmtBRL(row.v_icms || null)}
                       </TableCell>
                       <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
                         {fmtBRL(row.v_ipi || null)}

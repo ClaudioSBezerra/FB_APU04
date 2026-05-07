@@ -149,6 +149,11 @@ func ERPBridgeBatchImportHandler(db *sql.DB) http.HandlerFunc {
 				inserted, insertErr = batchInsertNFeSaida(db, companyID, doc, modelo)
 
 			case direct == "1" && modelosNFeEntrada[modelo]:
+				// Filtra por CFOP.tipo: importa apenas R (Revenda), C (Consumo), A (Ativo)
+				if t := strings.TrimSpace(doc.TipoCFOP); t != "" && t != "R" && t != "C" && t != "A" {
+					result.Ignored++
+					continue
+				}
 				// Entrada NF-e → nfe_entradas (forn_cnpj = emitente, dest = filial)
 				inserted, insertErr = batchInsertNFeEntrada(db, companyID, doc, modelo)
 

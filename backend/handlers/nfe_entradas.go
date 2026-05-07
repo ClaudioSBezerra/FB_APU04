@@ -49,6 +49,8 @@ type nfeEntradaRow struct {
 	DestNome    string `json:"dest_nome"`
 	DestUF      string `json:"dest_uf"`
 	DestCMun    string `json:"dest_c_mun"`
+	TipoCFOP   string  `json:"tipo_cfop"`
+	CFOP       string  `json:"cfop"`
 	// ICMSTot
 	VBC        float64 `json:"v_bc"`
 	VICMS      float64 `json:"v_icms"`
@@ -288,6 +290,7 @@ func NfeEntradasListHandler(db *sql.DB) http.HandlerFunc {
 				COALESCE(NULLIF(ne.dest_nome,''), pd.nome, '') AS dest_nome,
 				COALESCE(NULLIF(ne.dest_uf,''), '') AS dest_uf,
 				COALESCE(ne.dest_c_mun,''),
+				COALESCE(ne.tipo_cfop,''), COALESCE(ne.cfop,''),
 				ne.v_bc + COALESCE(ne.base_icms, 0), ne.v_icms + COALESCE(ne.icms, 0), ne.v_icms_deson, ne.v_fcp,
 				ne.v_bc_st, ne.v_st + COALESCE(ne.icms_st, 0), ne.v_fcp_st, ne.v_fcp_st_ret,
 				ne.v_prod, ne.v_frete, ne.v_seg, ne.v_desc,
@@ -332,6 +335,7 @@ func NfeEntradasListHandler(db *sql.DB) http.HandlerFunc {
 				&row.DataEmissao, &row.MesAno, &row.NatOp,
 				&row.FornCNPJ, &row.FornNome, &row.FornUF, &row.FornMunicipio,
 				&row.DestCNPJCPF, &row.DestNome, &row.DestUF, &row.DestCMun,
+				&row.TipoCFOP, &row.CFOP,
 				&row.VBC, &row.VICMS, &row.VICMSDeson, &row.VFCP,
 				&row.VBcST, &row.VST, &row.VFcpST, &row.VFcpSTRet,
 				&row.VProd, &row.VFrete, &row.VSeg, &row.VDesc,
