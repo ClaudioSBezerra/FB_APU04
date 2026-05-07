@@ -467,21 +467,21 @@ export default function ConsultaNFesEntradas() {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="py-1.5 px-2 text-[11px]">CNPJ Fornecedor</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px]">Fornecedor / UF</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px]">Destinatário (Filial)</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px]">Data</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-center">Série</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-center">Nº Nota</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-center">Mod</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-center">CFOP</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-right">Valor Total (vNF)</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-right">ICMS</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-right">IPI</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-right">PIS</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-right">COFINS</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-right">ST</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px] text-right">ICMS Partilha</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px]">CNPJ Fornecedor</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px]">Fornecedor / UF</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px]">Destinatário</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px]">Data</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-center">Sér.</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-center">Nº</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-center">Mod</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-center">CFOP</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-right">vNF</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-right">ICMS</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-right">IPI</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-right">PIS</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-right">COFINS</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-right">ST</TableHead>
+                    <TableHead className="py-1 px-1.5 text-[10px] text-right">Partilha</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -491,55 +491,51 @@ export default function ConsultaNFesEntradas() {
                       className="cursor-pointer hover:bg-muted/50 h-8"
                       onClick={() => setSelected(row)}
                     >
-                      <TableCell className="py-1 px-2 font-mono text-[11px]">
+                      <TableCell className="py-0.5 px-1.5 font-mono text-[10px] whitespace-nowrap">
                         {fmtCNPJ(row.forn_cnpj)}
                       </TableCell>
-                      <TableCell className="py-1 px-2">
-                        <div className="text-[11px] font-medium leading-tight">{row.forn_nome || '—'}</div>
-                        <div className="text-[10px] text-muted-foreground leading-tight">{row.forn_uf}</div>
+                      <TableCell className="py-0.5 px-1.5 text-[10px] whitespace-nowrap">
+                        {row.forn_nome || '—'}{row.forn_uf ? ` / ${row.forn_uf}` : ''}
                       </TableCell>
-                      <TableCell className="py-1 px-2">
-                        <div className="text-[11px] font-medium leading-tight">{row.dest_nome || '—'}</div>
-                        <div className="text-[10px] text-muted-foreground font-mono leading-tight">
-                          {fmtCNPJ(row.dest_cnpj_cpf)}
-                        </div>
+                      <TableCell className="py-0.5 px-1.5 text-[10px] whitespace-nowrap">
+                        {row.dest_nome || '—'}
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] whitespace-nowrap">
+                      <TableCell className="py-0.5 px-1.5 text-[10px] whitespace-nowrap">
                         {row.data_emissao}
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] text-center">{row.serie}</TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] text-center font-mono">{row.numero_nfe}</TableCell>
-                      <TableCell className="py-1 px-2 text-center">
-                        <Badge variant="outline" className="text-[10px] px-1 py-0">{row.modelo}</Badge>
+                      <TableCell className="py-0.5 px-1.5 text-[10px] text-center">{row.serie}</TableCell>
+                      <TableCell className="py-0.5 px-1.5 text-[10px] text-center font-mono">{row.numero_nfe}</TableCell>
+                      <TableCell className="py-0.5 px-1.5 text-center">
+                        <Badge variant="outline" className="text-[9px] px-1 py-0">{row.modelo}</Badge>
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-center">
+                      <TableCell className="py-0.5 px-1.5 text-center">
                         {row.tipo_cfop ? (
-                          <Badge variant="outline" className={`text-[10px] px-1 py-0 ${
+                          <Badge variant="outline" className={`text-[9px] px-1 py-0 ${
                             row.tipo_cfop === 'R' ? 'border-blue-300 text-blue-700' :
                             row.tipo_cfop === 'C' ? 'border-green-300 text-green-700' :
                             row.tipo_cfop === 'A' ? 'border-purple-300 text-purple-700' : ''
                           }`}>{row.tipo_cfop}</Badge>
                         ) : '—'}
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] text-right font-semibold">
+                      <TableCell className="py-0.5 px-1.5 text-[10px] text-right font-semibold whitespace-nowrap">
                         {fmtBRL(row.v_nf)}
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                      <TableCell className="py-0.5 px-1.5 text-[10px] text-right text-muted-foreground whitespace-nowrap">
                         {fmtBRL(row.v_icms || null)}
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                      <TableCell className="py-0.5 px-1.5 text-[10px] text-right text-muted-foreground whitespace-nowrap">
                         {fmtBRL(row.v_ipi || null)}
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                      <TableCell className="py-0.5 px-1.5 text-[10px] text-right text-muted-foreground whitespace-nowrap">
                         {fmtBRL(row.v_pis || null)}
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                      <TableCell className="py-0.5 px-1.5 text-[10px] text-right text-muted-foreground whitespace-nowrap">
                         {fmtBRL(row.v_cofins || null)}
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                      <TableCell className="py-0.5 px-1.5 text-[10px] text-right text-muted-foreground whitespace-nowrap">
                         {fmtBRL(row.v_st || null)}
                       </TableCell>
-                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                      <TableCell className="py-0.5 px-1.5 text-[10px] text-right text-muted-foreground whitespace-nowrap">
                         {fmtBRL(row.icms_partilha || null)}
                       </TableCell>
                     </TableRow>

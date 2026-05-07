@@ -252,6 +252,21 @@ func ResetDatabaseHandler(db *sql.DB) http.HandlerFunc {
 			log.Printf("Warning: could not clear filial_apelidos: %v", err)
 		}
 
+		// Notas importadas via ERP Bridge ou upload XML (independentes do SPED)
+		for _, tbl := range []string{"nfe_entradas", "nfe_saidas", "cte_entradas", "parceiros"} {
+			if _, err := tx.Exec("TRUNCATE TABLE " + tbl + " CASCADE"); err != nil {
+				log.Printf("Warning: could not truncate %s: %v", tbl, err)
+			}
+		}
+
+		// Histórico de runs do ERP Bridge (preserva config e credenciais)
+		if _, err := tx.Exec("TRUNCATE TABLE erp_bridge_run_items CASCADE"); err != nil {
+			log.Printf("Warning: could not truncate erp_bridge_run_items: %v", err)
+		}
+		if _, err := tx.Exec("DELETE FROM erp_bridge_runs"); err != nil {
+			log.Printf("Warning: could not clear erp_bridge_runs: %v", err)
+		}
+
 		if err := tx.Commit(); err != nil {
 			log.Printf("Error committing transaction: %v", err)
 			http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
