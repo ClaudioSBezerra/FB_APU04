@@ -353,3 +353,83 @@ func NfeEntradasListHandler(db *sql.DB) http.HandlerFunc {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// NfeEntradasImpostosHandler — GET /api/nfe-entradas/impostos
+// Retorna vw_nfe_entradas_impostos agregada por filial+mes_ano.
+// Fonte independente do SPED — usada pelo Painel Comercial para exibir IPI.
+// ---------------------------------------------------------------------------
+
+type nfeImpostosRow struct {
+	FilialCNPJ    string  `json:"filial_cnpj"`
+	MesAno        string  `json:"mes_ano"`
+	TotalIPI      float64 `json:"total_ipi"`
+	TotalICMSST   float64 `json:"total_icms_st"`
+	TotalICMSPart float64 `json:"total_icms_part"`
+	TotalPIS      float64 `json:"total_pis"`
+	TotalCOFINS   float64 `json:"total_cofins"`
+	QtdNotas      int     `json:"qtd_notas"`
+}
+
+func NfeEntradasImpostosHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa: "+err.Error())
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT filial_cnpj, mes_ano,
+			       total_ipi, total_icms_st, total_icms_part,
+			       total_pis, total_cofins, qtd_notas
+			FROM vw_nfe_entradas_impostos
+			WHERE company_id = $1
+			ORDER BY mes_ano, filial_cnpj
+		`, companyID)
+		if err != nil {
+			log.Printf("NfeEntradasImpostos error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar banco")
+			return
+		}
+		defer rows.Close()
+
+		list := []nfeImpostosRow{}
+		for rows.Next() {
+			var row nfeImpostosRow
+			if err := rows.Scan(
+				&row.FilialCNPJ, &row.MesAno,
+				&row.TotalIPI, &row.TotalICMSST, &row.TotalICMSPart,
+				&row.TotalPIS, &row.TotalCOFINS, &row.QtdNotas,
+			); err != nil {
+				log.Printf("NfeEntradasImpostos scan error: %v", err)
+				continue
+			}
+			list = append(list, row)
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"total": len(list),
+			"items": list,
+		})
+	}
+}

@@ -559,6 +559,7 @@ func main() {
 	http.HandleFunc("/api/nfe-saidas/upload", withAuth(handlers.NfeSaidasUploadHandler, ""))
 	http.HandleFunc("/api/nfe-saidas", withAuth(handlers.NfeSaidasListHandler, ""))
 	http.HandleFunc("/api/nfe-entradas/upload", withAuth(handlers.NfeEntradasUploadHandler, ""))
+	http.HandleFunc("/api/nfe-entradas/impostos", withAuth(handlers.NfeEntradasImpostosHandler, ""))
 	http.HandleFunc("/api/nfe-entradas", withAuth(handlers.NfeEntradasListHandler, ""))
 	http.HandleFunc("/api/cte-entradas/upload", withAuth(handlers.CteEntradasUploadHandler, ""))
 	http.HandleFunc("/api/cte-entradas", withAuth(handlers.CteEntradasListHandler, ""))
