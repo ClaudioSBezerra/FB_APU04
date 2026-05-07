@@ -42,5 +42,12 @@ backups/
 *.dump
 *.bak
 
+# ERP Bridge — configs com credenciais e dados de rastreamento
+erp-bridge-aws/config.yaml
+erp-bridge-aws/config-apu02.yaml
+erp-bridge-aws/config-apu04.yaml
+erp-bridge-aws/tracker*.db
+erp-bridge-aws/logs*/
+
 # Temporary
 temp_lovable_analysis/

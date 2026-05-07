@@ -38,11 +38,30 @@ except ImportError:
     sys.exit(1)
 
 # ─── Caminhos ────────────────────────────────────────────────────────────────
+# Detecta --config antes do argparse para que LOG_DIR e TRACKER_DB sejam
+# isolados por config desde o início do módulo (logging é módulo-level).
+
+def _early_config_path() -> Path | None:
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if arg == "--config" and i < len(sys.argv):
+            return Path(sys.argv[i + 1])
+        if arg.startswith("--config="):
+            return Path(arg.split("=", 1)[1])
+    return None
 
 BASE_DIR   = Path(__file__).parent
-CONFIG_F   = BASE_DIR / "config.yaml"
-TRACKER_DB = BASE_DIR / "tracker.db"
-LOG_DIR    = BASE_DIR / "logs"
+_cfg_arg   = _early_config_path()
+
+if _cfg_arg:
+    CONFIG_F   = _cfg_arg if _cfg_arg.is_absolute() else BASE_DIR / _cfg_arg
+    _stem      = CONFIG_F.stem                          # ex: "config-apu02"
+    TRACKER_DB = CONFIG_F.parent / f"tracker-{_stem}.db"
+    LOG_DIR    = CONFIG_F.parent / f"logs-{_stem}"
+else:
+    CONFIG_F   = BASE_DIR / "config.yaml"
+    TRACKER_DB = BASE_DIR / "tracker.db"
+    LOG_DIR    = BASE_DIR / "logs"
+
 LOG_DIR.mkdir(exist_ok=True)
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
@@ -890,6 +909,7 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="ERP Bridge Linux — Oracle ERP -> FBTax Apuracao Assistida"
     )
+    p.add_argument("--config",    metavar="ARQUIVO",    help="Arquivo de config (padrão: config.yaml). Isola tracker.db e logs por instância.")
     p.add_argument("--data",      metavar="YYYY-MM-DD", help="Data inicial")
     p.add_argument("--data-fim",  metavar="YYYY-MM-DD", help="Data final (exclusiva)")
     p.add_argument("--mes",       metavar="YYYY-MM",    help="Mes completo")
