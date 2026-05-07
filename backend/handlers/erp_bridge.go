@@ -644,10 +644,11 @@ func ERPBridgeTriggerHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		var req struct {
-			DataIni        string   `json:"data_ini"`
-			DataFim        string   `json:"data_fim"`
-			FiliaisFilter  []string `json:"filiais_filter"`
-			OnlyParceiros  bool     `json:"only_parceiros"`
+			DataIni         string   `json:"data_ini"`
+			DataFim         string   `json:"data_fim"`
+			FiliaisFilter   []string `json:"filiais_filter"`
+			OnlyParceiros   bool     `json:"only_parceiros"`
+			SomenteEntradas bool     `json:"somente_entradas"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DataIni == "" || req.DataFim == "" {
 			http.Error(w, "data_ini e data_fim são obrigatórios", http.StatusBadRequest)
@@ -673,10 +674,10 @@ func ERPBridgeTriggerHandler(db *sql.DB) http.HandlerFunc {
 		var id string
 		err = db.QueryRow(`
 			INSERT INTO erp_bridge_runs
-			    (company_id, data_ini, data_fim, origem, status, filiais_filter, only_parceiros)
-			VALUES ($1, $2::DATE, $3::DATE, 'manual', 'pending', $4, $5)
+			    (company_id, data_ini, data_fim, origem, status, filiais_filter, only_parceiros, somente_entradas)
+			VALUES ($1, $2::DATE, $3::DATE, 'manual', 'pending', $4, $5, $6)
 			RETURNING id
-		`, companyID, req.DataIni, req.DataFim, filiaisJSON, req.OnlyParceiros).Scan(&id)
+		`, companyID, req.DataIni, req.DataFim, filiaisJSON, req.OnlyParceiros, req.SomenteEntradas).Scan(&id)
 		if err != nil {
 			log.Printf("ERPBridgeTrigger insert error: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -699,7 +700,9 @@ func ERPBridgePendingHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		rows, err := db.Query(`
-			SELECT id, data_ini, data_fim, filiais_filter, COALESCE(only_parceiros, FALSE)
+			SELECT id, data_ini, data_fim, filiais_filter,
+			       COALESCE(only_parceiros, FALSE),
+			       COALESCE(somente_entradas, FALSE)
 			FROM erp_bridge_runs
 			WHERE company_id = $1 AND status = 'pending'
 			ORDER BY iniciado_em ASC
@@ -710,16 +713,17 @@ func ERPBridgePendingHandler(db *sql.DB) http.HandlerFunc {
 		}
 		defer rows.Close()
 		type PendingRun struct {
-			ID             string  `json:"id"`
-			DataIni        *string `json:"data_ini"`
-			DataFim        *string `json:"data_fim"`
-			FiliaisFilter  *string `json:"filiais_filter"`
-			OnlyParceiros  bool    `json:"only_parceiros"`
+			ID              string  `json:"id"`
+			DataIni         *string `json:"data_ini"`
+			DataFim         *string `json:"data_fim"`
+			FiliaisFilter   *string `json:"filiais_filter"`
+			OnlyParceiros   bool    `json:"only_parceiros"`
+			SomenteEntradas bool    `json:"somente_entradas"`
 		}
 		var items []PendingRun
 		for rows.Next() {
 			var p PendingRun
-			if rows.Scan(&p.ID, &p.DataIni, &p.DataFim, &p.FiliaisFilter, &p.OnlyParceiros) == nil {
+			if rows.Scan(&p.ID, &p.DataIni, &p.DataFim, &p.FiliaisFilter, &p.OnlyParceiros, &p.SomenteEntradas) == nil {
 				items = append(items, p)
 			}
 		}

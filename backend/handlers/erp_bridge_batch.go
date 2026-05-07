@@ -57,7 +57,8 @@ type batchDoc struct {
 }
 
 type batchRequest struct {
-	Documents []batchDoc `json:"documents"`
+	Documents       []batchDoc `json:"documents"`
+	SomenteEntradas bool       `json:"somente_entradas"`
 }
 
 type batchResult struct {
@@ -140,6 +141,10 @@ func ERPBridgeBatchImportHandler(db *sql.DB) http.HandlerFunc {
 
 			switch {
 			case direct == "2":
+				if req.SomenteEntradas {
+					result.Ignored++
+					continue
+				}
 				// Saída → nfe_saidas (emit_cnpj = filial emitente)
 				inserted, insertErr = batchInsertNFeSaida(db, companyID, doc, modelo)
 

@@ -153,6 +153,7 @@ export default function ERPBridgeConfig() {
   const [triggerFim, setTriggerFim]               = useState(today);
   const [triggerQueued, setTriggerQueued]         = useState(false);
   const [onlyParceiros, setOnlyParceiros]         = useState(false);
+  const [somenteEntradas, setSomenteEntradas]     = useState(false);
 
   useEffect(() => {
     if (cfg) {
@@ -189,6 +190,7 @@ const abortMutation = useMutation({
           data_fim: triggerFim,
           filiais_filter: [],
           only_parceiros: onlyParceiros,
+          somente_entradas: somenteEntradas,
         }),
       });
       if (res.status === 409) throw new Error('Já existe uma importação em andamento. Aguarde a conclusão.');
@@ -497,6 +499,20 @@ const abortMutation = useMutation({
                 disabled={triggerMutation.isPending || !!activeRun} />
             </div>
           </div>
+
+          {/* Somente Entradas — visível sempre */}
+          <label className="flex items-center gap-2 cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={somenteEntradas}
+              onChange={e => { setSomenteEntradas(e.target.checked); setTriggerQueued(false); }}
+              disabled={triggerMutation.isPending || !!activeRun}
+              className="h-3.5 w-3.5 accent-blue-500"
+            />
+            <span className="text-xs text-muted-foreground">
+              Somente Entradas — ignora NF-e de saída (DIRECT=2)
+            </span>
+          </label>
 
           {/* Apenas Parceiros — visível somente para SAP S/4HANA */}
           {cfg?.erp_type === 'sap_s4hana' && (

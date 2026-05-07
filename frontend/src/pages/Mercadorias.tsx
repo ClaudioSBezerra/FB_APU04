@@ -324,40 +324,31 @@ const Mercadorias = () => {
     const isTaxable = item.tipo_cfop !== 'T' && item.tipo_cfop !== 'O';
 
     if (item.tipo === 'SAIDA') {
-      acc.saidas.valor   += item.valor;
-      acc.saidas.icms    += item.icms;
-      acc.saidas.ipi     += (item.vl_ipi    || 0);
-      acc.saidas.pis     += (item.vl_pis    || 0);
-      acc.saidas.cofins  += (item.vl_cofins || 0);
+      acc.saidas.valor    += item.valor;
+      acc.saidas.icms     += item.icms;
       acc.saidas.icmsProj += item.vl_icms_projetado;
       acc.saidas.ibsProj  += item.vl_ibs_projetado;
       acc.saidas.cbsProj  += item.vl_cbs_projetado;
       if (isTaxable) {
-        acc.saidas.valorTaxable  += item.valor;
-        acc.saidas.icmsTaxable   += item.icms;
-        acc.saidas.pisTaxable    += (item.vl_pis    || 0);
-        acc.saidas.cofinsTaxable += (item.vl_cofins || 0);
+        acc.saidas.valorTaxable += item.valor;
+        acc.saidas.icmsTaxable  += item.icms;
       }
     } else {
-      acc.entradas.valor   += item.valor;
-      acc.entradas.icms    += item.icms;
-      acc.entradas.ipi     += (item.vl_ipi    || 0);
-      acc.entradas.pis     += (item.vl_pis    || 0);
-      acc.entradas.cofins  += (item.vl_cofins || 0);
+      acc.entradas.valor    += item.valor;
+      acc.entradas.icms     += item.icms;
+      acc.entradas.ipi      += (item.vl_ipi || 0);
       acc.entradas.icmsProj += item.vl_icms_projetado;
       acc.entradas.ibsProj  += item.vl_ibs_projetado;
       acc.entradas.cbsProj  += item.vl_cbs_projetado;
       if (isTaxable) {
-        acc.entradas.valorTaxable  += item.valor;
-        acc.entradas.icmsTaxable   += item.icms;
-        acc.entradas.pisTaxable    += (item.vl_pis    || 0);
-        acc.entradas.cofinsTaxable += (item.vl_cofins || 0);
+        acc.entradas.valorTaxable += item.valor;
+        acc.entradas.icmsTaxable  += item.icms;
       }
     }
     return acc;
   }, {
-    saidas:   { valor: 0, icms: 0, ipi: 0, pis: 0, cofins: 0, icmsProj: 0, ibsProj: 0, cbsProj: 0, valorTaxable: 0, icmsTaxable: 0, pisTaxable: 0, cofinsTaxable: 0 },
-    entradas: { valor: 0, icms: 0, ipi: 0, pis: 0, cofins: 0, icmsProj: 0, ibsProj: 0, cbsProj: 0, valorTaxable: 0, icmsTaxable: 0, pisTaxable: 0, cofinsTaxable: 0 }
+    saidas:   { valor: 0, icms: 0, icmsProj: 0, ibsProj: 0, cbsProj: 0, valorTaxable: 0, icmsTaxable: 0 },
+    entradas: { valor: 0, icms: 0, ipi: 0, icmsProj: 0, ibsProj: 0, cbsProj: 0, valorTaxable: 0, icmsTaxable: 0 }
   });
 
   // Projection Logic for 2027-2033 (based on currently filtered totals)
@@ -377,10 +368,8 @@ const Mercadorias = () => {
       // So we use totals.saidas.icms for ICMS Projection (display purpose)
       const icmsProjSaida = totals.saidas.icms * reductionFactor;
       
-      // BASE IBS/CBS = valorTaxable − ICMS_proj − PIS − COFINS
       const icmsProjSaidaTaxable = totals.saidas.icmsTaxable * reductionFactor;
-      const baseIbsCbsSaida = totals.saidas.valorTaxable - icmsProjSaidaTaxable
-        - totals.saidas.pisTaxable - totals.saidas.cofinsTaxable;
+      const baseIbsCbsSaida = totals.saidas.valorTaxable - icmsProjSaidaTaxable;
 
       const ibsSaida = baseIbsCbsSaida * ibsRate;
       const cbsSaida = baseIbsCbsSaida * cbsRate;
@@ -390,8 +379,7 @@ const Mercadorias = () => {
       const icmsProjEntrada = totals.entradas.icms * reductionFactor;
 
       const icmsProjEntradaTaxable = totals.entradas.icmsTaxable * reductionFactor;
-      const baseIbsCbsEntrada = totals.entradas.valorTaxable - icmsProjEntradaTaxable
-        - totals.entradas.pisTaxable - totals.entradas.cofinsTaxable;
+      const baseIbsCbsEntrada = totals.entradas.valorTaxable - icmsProjEntradaTaxable;
 
       const ibsEntrada = baseIbsCbsEntrada * ibsRate;
       const cbsEntrada = baseIbsCbsEntrada * cbsRate;
@@ -409,13 +397,13 @@ const Mercadorias = () => {
   const totalCreditos = totals.entradas.icmsProj + totals.entradas.ibsProj + totals.entradas.cbsProj;
   const saldoReforma = totalDebitos - totalCreditos;
 
-  const totalDebitosAtual = totals.saidas.icms + totals.saidas.pis + totals.saidas.cofins;
-  const totalCreditosAtual = totals.entradas.icms + totals.entradas.pis + totals.entradas.cofins;
+  const totalDebitosAtual = totals.saidas.icms;
+  const totalCreditosAtual = totals.entradas.icms;
   const saldoAtual = totalDebitosAtual - totalCreditosAtual;
 
   const handleExport = () => {
     const exportData = filteredData.map(item => {
-      const totalAtual = (item.icms || 0) + (item.vl_pis || 0) + (item.vl_cofins || 0);
+      const totalAtual = item.icms || 0;
       const totalReforma = (item.vl_icms_projetado || 0) + (item.vl_ibs_projetado || 0) + (item.vl_cbs_projetado || 0);
       const diferenca = totalAtual - totalReforma;
 
@@ -425,13 +413,10 @@ const Mercadorias = () => {
         'Detalhe': item.tipo_operacao || '',
         'Valor': item.valor,
         'ICMS': item.icms,
-        'IPI': item.vl_ipi || 0,
-        'PIS': item.vl_pis || 0,
-        'COFINS': item.vl_cofins || 0,
         'ICMS Proj.': item.vl_icms_projetado,
         'IBS Proj.': item.vl_ibs_projetado,
         'CBS Proj.': item.vl_cbs_projetado,
-        'Total Atual (ICMS+PIS+COF)': totalAtual,
+        'Total Atual (ICMS)': totalAtual,
         'Total Reforma': totalReforma,
         'Diferença': diferenca
       };
@@ -446,8 +431,7 @@ const Mercadorias = () => {
     // Tax Reform Values
     const taxValue = curr.vl_icms_projetado + curr.vl_ibs_projetado + curr.vl_cbs_projetado;
     
-    // Current Values (ICMS + PIS + COFINS)
-    const currentTaxValue = curr.icms + (curr.vl_pis || 0) + (curr.vl_cofins || 0);
+    const currentTaxValue = curr.icms;
 
     if (existing) {
       if (curr.tipo === 'SAIDA') {
@@ -546,14 +530,6 @@ const Mercadorias = () => {
                 <span className="text-gray-500">Valor de ICMS:</span>
                 <span className="font-medium">{formatCurrency(totals.saidas.icms)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-orange-600">Valor de PIS:</span>
-                <span className="font-medium text-orange-600">{formatCurrency(totals.saidas.pis)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-orange-600">Valor de COFINS:</span>
-                <span className="font-medium text-orange-600">{formatCurrency(totals.saidas.cofins)}</span>
-              </div>
 
               <div className="my-2 border-t border-dashed border-gray-200"></div>
 
@@ -595,16 +571,8 @@ const Mercadorias = () => {
                 <span className="font-medium">{formatCurrency(totals.entradas.icms)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Valor de IPI:</span>
-                <span className="font-medium">{formatCurrency(totals.entradas.ipi)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-orange-600">Valor de PIS:</span>
-                <span className="font-medium text-orange-600">{formatCurrency(totals.entradas.pis)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-orange-600">Valor de COFINS:</span>
-                <span className="font-medium text-orange-600">{formatCurrency(totals.entradas.cofins)}</span>
+                <span className="text-gray-500">Valor de IPI (inf.):</span>
+                <span className="font-medium text-gray-400">{formatCurrency(totals.entradas.ipi)}</span>
               </div>
 
               <div className="my-2 border-t border-dashed border-gray-200"></div>
@@ -758,7 +726,7 @@ const Mercadorias = () => {
         </CardHeader>
         <CardContent>
           <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[1500px]">
+            <Table className="min-w-[1200px]">
               <TableHeader>
                 <TableRow className="h-8">
                   <TableHead className="w-[100px] whitespace-nowrap py-1">Filial</TableHead>
@@ -766,9 +734,6 @@ const Mercadorias = () => {
                   <TableHead className="w-[150px] whitespace-nowrap py-1">Detalhe</TableHead>
                   <TableHead className="text-right whitespace-nowrap py-1">Valor</TableHead>
                   <TableHead className="text-right text-xs whitespace-nowrap py-1">ICMS</TableHead>
-                  <TableHead className="text-right text-xs whitespace-nowrap py-1">IPI</TableHead>
-                  <TableHead className="text-right text-xs text-orange-700 whitespace-nowrap py-1">PIS</TableHead>
-                  <TableHead className="text-right text-xs text-orange-700 whitespace-nowrap py-1">COFINS</TableHead>
                   <TableHead className="text-right text-xs bg-blue-50 whitespace-nowrap py-1">ICMS Proj.</TableHead>
                   <TableHead className="text-right text-xs bg-blue-50 whitespace-nowrap py-1">Base IBS/CBS</TableHead>
                   <TableHead className="text-right text-xs bg-blue-50 whitespace-nowrap py-1">IBS Proj.</TableHead>
@@ -778,7 +743,7 @@ const Mercadorias = () => {
                   <TableHead className="text-right font-bold whitespace-nowrap py-1">
                     <div className="flex items-center justify-end gap-1">
                       Diferença
-                      <div title="Total Atual (ICMS+PIS+COFINS) − Total Reforma (ICMS Proj.+IBS+CBS)">
+                      <div title="Total Atual (ICMS) − Total Reforma (ICMS Proj.+IBS+CBS)">
                         <Info className="h-3 w-3 text-gray-500 cursor-help" />
                       </div>
                     </div>
@@ -787,8 +752,8 @@ const Mercadorias = () => {
               </TableHeader>
               <TableBody>
                 {filteredData.map((row, i) => {
-                  const totalAtual = (row.icms || 0) + (row.vl_pis || 0) + (row.vl_cofins || 0);
-                  const baseIbsCbs = (row.valor || 0) - (row.vl_icms_projetado || 0) - (row.vl_pis || 0) - (row.vl_cofins || 0);
+                  const totalAtual = row.icms || 0;
+                  const baseIbsCbs = (row.valor || 0) - (row.vl_icms_projetado || 0);
                   const totalReforma = (row.vl_icms_projetado || 0) + (row.vl_ibs_projetado || 0) + (row.vl_cbs_projetado || 0);
                   const diferenca = totalAtual - totalReforma;
 
@@ -805,15 +770,12 @@ const Mercadorias = () => {
                       </TableCell>
                       <TableCell className="text-right text-[9px] whitespace-nowrap py-0.5">{formatNumber(row.valor)}</TableCell>
                       <TableCell className="text-right text-[9px] text-gray-500 whitespace-nowrap py-0.5">{formatNumber(row.icms)}</TableCell>
-                      <TableCell className="text-right text-[9px] text-gray-500 whitespace-nowrap py-0.5">{formatNumber(row.vl_ipi || 0)}</TableCell>
-                      <TableCell className="text-right text-[9px] text-orange-600 whitespace-nowrap py-0.5">{formatNumber(row.vl_pis || 0)}</TableCell>
-                      <TableCell className="text-right text-[9px] text-orange-600 whitespace-nowrap py-0.5">{formatNumber(row.vl_cofins || 0)}</TableCell>
                       <TableCell className="text-right text-[9px] text-blue-600 bg-blue-50 whitespace-nowrap py-0.5">{formatNumber(row.vl_icms_projetado)}</TableCell>
                       <TableCell className="text-right text-[9px] text-gray-400 bg-blue-50 whitespace-nowrap py-0.5">{formatNumber(baseIbsCbs)}</TableCell>
                       <TableCell className="text-right text-[9px] text-blue-600 bg-blue-50 whitespace-nowrap py-0.5">{formatNumber(row.vl_ibs_projetado)}</TableCell>
                       <TableCell className="text-right text-[9px] text-blue-600 bg-blue-50 whitespace-nowrap py-0.5">{formatNumber(row.vl_cbs_projetado)}</TableCell>
 
-                      <TableCell className="text-right text-[9px] font-bold border-l border-r bg-gray-50 whitespace-nowrap py-0.5" title="ICMS + PIS + COFINS">{formatNumber(totalAtual)}</TableCell>
+                      <TableCell className="text-right text-[9px] font-bold border-l border-r bg-gray-50 whitespace-nowrap py-0.5" title="ICMS">{formatNumber(totalAtual)}</TableCell>
                       <TableCell className="text-right text-[9px] font-bold bg-blue-100 text-blue-800 border-r border-blue-200 whitespace-nowrap py-0.5">{formatNumber(totalReforma)}</TableCell>
 
                       <TableCell className={`text-right text-[9px] font-bold whitespace-nowrap py-0.5 ${diferenca > 0 ? 'text-green-600' : 'text-red-600'}`}>
