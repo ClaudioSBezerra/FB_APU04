@@ -23,7 +23,7 @@ type Company struct {
 }
 
 func main() {
-	connStr := "postgres://postgres:postgres@localhost:5432/fiscal_db?sslmode=disable"
+	connStr := "postgres://postgres:postgres@localhost:5432/fiscal_apu04_db?sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)

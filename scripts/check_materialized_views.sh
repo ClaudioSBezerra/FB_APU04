@@ -3,7 +3,7 @@
 # SCRIPT DE VERIFICAÇÃO DE MATERIALIZED VIEWS
 # FB_APU01 - Sistema de Reforma Tributária
 
-DB_NAME="fiscal_db"
+DB_NAME="fiscal_apu04_db"
 DB_USER="postgres"
 
 # Cores para output
@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo -e "${BLUE}=================================================="
-echo "VERIFICAÇÃO DE MATERIALIZED VIEWS - FB_APU01"
+echo "VERIFICAÇÃO DE MATERIALIZED VIEWS - FB_APU04"
 echo "Data/Hora: $(date)"
 echo "==================================================${NC}"
 

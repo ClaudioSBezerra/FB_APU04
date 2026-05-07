@@ -13,7 +13,7 @@ import (
 
 func main() {
 	// Configuração da conexão
-	connStr := "postgres://postgres:postgres@localhost:5432/fiscal_db?sslmode=disable"
+	connStr := "postgres://postgres:postgres@localhost:5432/fiscal_apu04_db?sslmode=disable"
 	if envUrl := os.Getenv("DATABASE_URL"); envUrl != "" {
 		connStr = envUrl
 	}

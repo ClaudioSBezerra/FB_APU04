@@ -27,11 +27,11 @@ su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'postgres';\""
 su - postgres -c "psql -c \"ALTER USER postgres WITH SUPERUSER;\""
 
 # Cria banco se não existir
-if ! su - postgres -c "psql -lqt" | cut -d \| -f 1 | grep -qw fiscal_db; then
-    echo ">>> Criando banco de dados fiscal_db..."
-    su - postgres -c "createdb fiscal_db"
+if ! su - postgres -c "psql -lqt" | cut -d \| -f 1 | grep -qw fiscal_apu04_db; then
+    echo ">>> Criando banco de dados fiscal_apu04_db..."
+    su - postgres -c "createdb fiscal_apu04_db"
 else
-    echo ">>> Banco de dados fiscal_db já existe."
+    echo ">>> Banco de dados fiscal_apu04_db já existe."
 fi
 
 echo ">>> Ambiente WSL Configurado com Sucesso!"

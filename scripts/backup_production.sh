@@ -5,15 +5,15 @@
 # Data: $(date +%Y-%m-%d %H:%M:%S)
 
 # CONFIGURAÇÕES
-BACKUP_DIR="/opt/fb_apu01/backups"
-DB_NAME="fiscal_db"
+BACKUP_DIR="/opt/fb_apu04/backups"
+DB_NAME="fiscal_apu04_db"
 DB_USER="postgres"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="fb_apu01_full_backup_${TIMESTAMP}.sql"
+BACKUP_FILE="fb_apu04_full_backup_${TIMESTAMP}.sql"
 COMPRESSED_FILE="${BACKUP_FILE}.tar.gz"
 
 echo "==================================================="
-echo "BACKUP COMPLETO DO BANCO DE DADOS - FB_APU01"
+echo "BACKUP COMPLETO DO BANCO DE DADOS - FB_APU04"
 echo "Data/Hora: $(date)"
 echo "==================================================="
 
@@ -79,7 +79,7 @@ echo ""
 echo "4. Limpando backups antigos (manter últimos 7 dias)..."
 
 # Remover backups mais antigos que 7 dias
-find ${BACKUP_DIR} -name "fb_apu01_full_backup_*.tar.gz" -mtime +7 -delete
+find ${BACKUP_DIR} -name "fb_apu04_full_backup_*.tar.gz" -mtime +7 -delete
 
 echo "✅ Limpeza concluída!"
 
@@ -103,4 +103,4 @@ echo "==================================================="
 # Listar backups disponíveis
 echo ""
 echo "📋 Backups disponíveis em ${BACKUP_DIR}:"
-ls -lh ${BACKUP_DIR}/fb_apu01_full_backup_*.tar.gz
+ls -lh ${BACKUP_DIR}/fb_apu04_full_backup_*.tar.gz

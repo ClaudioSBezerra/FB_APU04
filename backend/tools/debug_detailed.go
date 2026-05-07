@@ -14,7 +14,7 @@ import (
 func main() {
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
-		connStr = "postgres://postgres:postgres@localhost:5432/fiscal_db?sslmode=disable"
+		connStr = "postgres://postgres:postgres@localhost:5432/fiscal_apu04_db?sslmode=disable"
 	}
 
 	db, err := sql.Open("postgres", connStr)
