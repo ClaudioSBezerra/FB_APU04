@@ -276,34 +276,42 @@ func NfeEntradasListHandler(db *sql.DB) http.HandlerFunc {
 
 		query := `
 			SELECT
-				id, chave_nfe, modelo, serie, numero_nfe,
-				TO_CHAR(data_emissao, 'DD/MM/YYYY'), mes_ano, COALESCE(nat_op,''),
-				forn_cnpj, COALESCE(forn_nome,''), COALESCE(forn_uf,''), COALESCE(forn_municipio,''),
-				COALESCE(dest_cnpj_cpf,''), COALESCE(dest_nome,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''),
-				v_bc + COALESCE(base_icms, 0), v_icms + COALESCE(icms, 0), v_icms_deson, v_fcp,
-				v_bc_st, v_st + COALESCE(icms_st, 0), v_fcp_st, v_fcp_st_ret,
-				v_prod, v_frete, v_seg, v_desc,
-				v_ii, v_ipi + COALESCE(ipi, 0), v_ipi_devol, v_pis + COALESCE(pis, 0), v_cofins + COALESCE(cofins, 0), v_outro, v_nf,
-				v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cred_pres_ibs,
-				v_cbs, v_cred_pres_cbs
-			FROM nfe_entradas
-			WHERE company_id = $1`
+				ne.id, ne.chave_nfe, ne.modelo, ne.serie, ne.numero_nfe,
+				TO_CHAR(ne.data_emissao, 'DD/MM/YYYY'), ne.mes_ano, COALESCE(ne.nat_op,''),
+				ne.forn_cnpj,
+				COALESCE(NULLIF(ne.forn_nome,''), pf.nome, '') AS forn_nome,
+				COALESCE(NULLIF(ne.forn_uf,''), '') AS forn_uf,
+				COALESCE(ne.forn_municipio,''),
+				COALESCE(ne.dest_cnpj_cpf,''),
+				COALESCE(NULLIF(ne.dest_nome,''), pd.nome, '') AS dest_nome,
+				COALESCE(NULLIF(ne.dest_uf,''), '') AS dest_uf,
+				COALESCE(ne.dest_c_mun,''),
+				ne.v_bc + COALESCE(ne.base_icms, 0), ne.v_icms + COALESCE(ne.icms, 0), ne.v_icms_deson, ne.v_fcp,
+				ne.v_bc_st, ne.v_st + COALESCE(ne.icms_st, 0), ne.v_fcp_st, ne.v_fcp_st_ret,
+				ne.v_prod, ne.v_frete, ne.v_seg, ne.v_desc,
+				ne.v_ii, ne.v_ipi + COALESCE(ne.ipi, 0), ne.v_ipi_devol, ne.v_pis + COALESCE(ne.pis, 0), ne.v_cofins + COALESCE(ne.cofins, 0), ne.v_outro, ne.v_nf,
+				ne.v_bc_ibs_cbs, ne.v_ibs_uf, ne.v_ibs_mun, ne.v_ibs, ne.v_cred_pres_ibs,
+				ne.v_cbs, ne.v_cred_pres_cbs
+			FROM nfe_entradas ne
+			LEFT JOIN vw_parceiros pf ON pf.company_id = ne.company_id AND pf.cnpj = ne.forn_cnpj
+			LEFT JOIN vw_parceiros pd ON pd.company_id = ne.company_id AND pd.cnpj = ne.dest_cnpj_cpf
+			WHERE ne.company_id = $1`
 
 		args := []interface{}{companyID}
 		idx := 2
 
 		if mesAno != "" {
-			query += fmt.Sprintf(" AND mes_ano = $%d", idx)
+			query += fmt.Sprintf(" AND ne.mes_ano = $%d", idx)
 			args = append(args, mesAno)
 			idx++
 		}
 		if fornCNPJ != "" {
-			query += fmt.Sprintf(" AND forn_cnpj = $%d", idx)
+			query += fmt.Sprintf(" AND ne.forn_cnpj = $%d", idx)
 			args = append(args, fornCNPJ)
 			idx++
 		}
 
-		query += " ORDER BY data_emissao DESC, numero_nfe DESC LIMIT 500"
+		query += " ORDER BY ne.data_emissao DESC, ne.numero_nfe DESC LIMIT 500"
 
 		rows, err := db.Query(query, args...)
 		if err != nil {
