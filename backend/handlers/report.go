@@ -24,6 +24,8 @@ type MercadoriasReport struct {
 	IbsProjetado  float64 `json:"vl_ibs_projetado"`
 	CbsProjetado  float64 `json:"vl_cbs_projetado"`
 	VlIpi         float64 `json:"vl_ipi"`
+	VlPis         float64 `json:"vl_pis"`
+	VlCofins      float64 `json:"vl_cofins"`
 }
 
 func GetMercadoriasReportHandler(db *sql.DB) http.HandlerFunc {
@@ -85,7 +87,7 @@ func GetMercadoriasReportHandler(db *sql.DB) http.HandlerFunc {
 		// - VL_ICMS_PROJ = VL_ICMS_ORIGEM * (1 - Reducao)
 
 		query := fmt.Sprintf(`
-			SELECT 
+			SELECT
 				mv.filial_nome,
 				mv.filial_cnpj,
 				mv.mes_ano,
@@ -93,22 +95,32 @@ func GetMercadoriasReportHandler(db *sql.DB) http.HandlerFunc {
 				mv.tipo_cfop,
 				mv.origem,
 				mv.tipo_operacao,
-				SUM(mv.valor_contabil) as valor,
-				SUM(mv.vl_icms_origem) as icms,
-				SUM(mv.vl_icms_origem * (1 - (COALESCE(ta.perc_reduc_icms, 0) / 100.0))) as icms_projetado,
+				SUM(mv.valor_contabil)    AS valor,
+				SUM(mv.vl_icms_origem)    AS icms,
+				SUM(mv.vl_icms_origem * (1 - (COALESCE(ta.perc_reduc_icms, 0) / 100.0))) AS icms_projetado,
 				SUM(
-					CASE 
-						WHEN mv.tipo_cfop IN ('T', 'O') THEN 0
-						ELSE (mv.valor_contabil - (mv.vl_icms_origem * (1 - (COALESCE(ta.perc_reduc_icms, 0) / 100.0)))) * ((COALESCE(NULLIF(ta.perc_ibs_uf, 0), 9.0) + COALESCE(NULLIF(ta.perc_ibs_mun, 0), 8.7)) / 100.0)
+					CASE WHEN mv.tipo_cfop IN ('T', 'O') THEN 0
+					ELSE (
+						mv.valor_contabil
+						- (mv.vl_icms_origem * (1 - (COALESCE(ta.perc_reduc_icms, 0) / 100.0)))
+						- mv.vl_pis_origem
+						- mv.vl_cofins_origem
+					) * ((COALESCE(NULLIF(ta.perc_ibs_uf, 0), 9.0) + COALESCE(NULLIF(ta.perc_ibs_mun, 0), 8.7)) / 100.0)
 					END
-				) as ibs_projetado,
+				) AS ibs_projetado,
 				SUM(
-					CASE 
-						WHEN mv.tipo_cfop IN ('T', 'O') THEN 0
-						ELSE (mv.valor_contabil - (mv.vl_icms_origem * (1 - (COALESCE(ta.perc_reduc_icms, 0) / 100.0)))) * (COALESCE(NULLIF(ta.perc_cbs, 0), 8.80) / 100.0)
+					CASE WHEN mv.tipo_cfop IN ('T', 'O') THEN 0
+					ELSE (
+						mv.valor_contabil
+						- (mv.vl_icms_origem * (1 - (COALESCE(ta.perc_reduc_icms, 0) / 100.0)))
+						- mv.vl_pis_origem
+						- mv.vl_cofins_origem
+					) * (COALESCE(NULLIF(ta.perc_cbs, 0), 8.80) / 100.0)
 					END
-				) as cbs_projetado,
-				SUM(mv.vl_ipi_origem) as vl_ipi
+				) AS cbs_projetado,
+				SUM(mv.vl_ipi_origem)    AS vl_ipi,
+				SUM(mv.vl_pis_origem)    AS vl_pis,
+				SUM(mv.vl_cofins_origem) AS vl_cofins
 			FROM mv_mercadorias_agregada mv
 			LEFT JOIN tabela_aliquotas ta ON ta.ano = COALESCE($1, mv.ano)
 			WHERE mv.company_id = $2 AND %s
@@ -126,7 +138,7 @@ func GetMercadoriasReportHandler(db *sql.DB) http.HandlerFunc {
 		var reports []MercadoriasReport
 		for rows.Next() {
 			var r MercadoriasReport
-			if err := rows.Scan(&r.FilialNome, &r.FilialCNPJ, &r.MesAno, &r.Tipo, &r.TipoCfop, &r.Origem, &r.TipoOperacao, &r.Valor, &r.Icms, &r.IcmsProjetado, &r.IbsProjetado, &r.CbsProjetado, &r.VlIpi); err != nil {
+			if err := rows.Scan(&r.FilialNome, &r.FilialCNPJ, &r.MesAno, &r.Tipo, &r.TipoCfop, &r.Origem, &r.TipoOperacao, &r.Valor, &r.Icms, &r.IcmsProjetado, &r.IbsProjetado, &r.CbsProjetado, &r.VlIpi, &r.VlPis, &r.VlCofins); err != nil {
 				fmt.Printf("Error scanning mercadorias report: %v\n", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
