@@ -70,13 +70,15 @@ type nfeEntradaRow struct {
 	VOutro     float64 `json:"v_outro"`
 	VNF        float64 `json:"v_nf"`
 	// IBSCBSTot — sempre float64 (nunca null): fornecedores sem tags ficam com 0
-	VBCIbsCbs   float64 `json:"v_bc_ibs_cbs"`
-	VIBSuf      float64 `json:"v_ibs_uf"`
-	VIBSMun     float64 `json:"v_ibs_mun"`
-	VIBS        float64 `json:"v_ibs"`
+	VBCIbsCbs    float64 `json:"v_bc_ibs_cbs"`
+	VIBSuf       float64 `json:"v_ibs_uf"`
+	VIBSMun      float64 `json:"v_ibs_mun"`
+	VIBS         float64 `json:"v_ibs"`
 	VCredPresIBS float64 `json:"v_cred_pres_ibs"`
 	VCBS         float64 `json:"v_cbs"`
 	VCredPresCBS float64 `json:"v_cred_pres_cbs"`
+	// Partilha ICMS (operações interestaduais com consumidor final)
+	IcmsPartilha float64 `json:"icms_partilha"`
 }
 
 // ---------------------------------------------------------------------------
@@ -291,7 +293,8 @@ func NfeEntradasListHandler(db *sql.DB) http.HandlerFunc {
 				ne.v_prod, ne.v_frete, ne.v_seg, ne.v_desc,
 				ne.v_ii, ne.v_ipi + COALESCE(ne.ipi, 0), ne.v_ipi_devol, ne.v_pis + COALESCE(ne.pis, 0), ne.v_cofins + COALESCE(ne.cofins, 0), ne.v_outro, ne.v_nf,
 				ne.v_bc_ibs_cbs, ne.v_ibs_uf, ne.v_ibs_mun, ne.v_ibs, ne.v_cred_pres_ibs,
-				ne.v_cbs, ne.v_cred_pres_cbs
+				ne.v_cbs, ne.v_cred_pres_cbs,
+				COALESCE(ne.icms_partilha, 0)
 			FROM nfe_entradas ne
 			LEFT JOIN vw_parceiros pf ON pf.company_id = ne.company_id AND pf.cnpj = ne.forn_cnpj
 			LEFT JOIN vw_parceiros pd ON pd.company_id = ne.company_id AND pd.cnpj = ne.dest_cnpj_cpf
@@ -335,6 +338,7 @@ func NfeEntradasListHandler(db *sql.DB) http.HandlerFunc {
 				&row.VII, &row.VIPI, &row.VIPIDevol, &row.VPIS, &row.VCOFINS, &row.VOutro, &row.VNF,
 				&row.VBCIbsCbs, &row.VIBSuf, &row.VIBSMun, &row.VIBS, &row.VCredPresIBS,
 				&row.VCBS, &row.VCredPresCBS,
+				&row.IcmsPartilha,
 			)
 			if err != nil {
 				log.Printf("NfeEntradasList scan error: %v", err)

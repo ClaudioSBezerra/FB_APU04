@@ -69,6 +69,8 @@ interface NfeEntradaRow {
   v_cofins: number;
   v_outro: number;
   v_nf: number;
+  // Partilha ICMS
+  icms_partilha: number;
   // IBSCBSTot — nunca null (DEFAULT 0)
   v_bc_ibs_cbs: number;
   v_ibs_uf: number;
@@ -186,6 +188,9 @@ function DetalheNFe({ nfe, onClose }: { nfe: NfeEntradaRow; onClose: () => void 
             <LinhaBRL label="vST" value={nfe.v_st} />
             <LinhaBRL label="vFCPST" value={nfe.v_fcp_st} />
             <LinhaBRL label="vFCPSTRet" value={nfe.v_fcp_st_ret} />
+            {nfe.icms_partilha > 0 && (
+              <LinhaBRL label="ICMS Partilha" value={nfe.icms_partilha} />
+            )}
           </Secao>
 
           <Secao title="IBSCBSTot — Reforma Tributária">
@@ -468,6 +473,11 @@ export default function ConsultaNFesEntradas() {
                     <TableHead className="py-1.5 px-2 text-[11px] text-center">Nº Nota</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-center">Mod</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-right">Valor Total (vNF)</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">IPI</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">PIS</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">COFINS</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">ST</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">ICMS Partilha</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -500,6 +510,21 @@ export default function ConsultaNFesEntradas() {
                       </TableCell>
                       <TableCell className="py-1 px-2 text-[11px] text-right font-semibold">
                         {fmtBRL(row.v_nf)}
+                      </TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                        {fmtBRL(row.v_ipi || null)}
+                      </TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                        {fmtBRL(row.v_pis || null)}
+                      </TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                        {fmtBRL(row.v_cofins || null)}
+                      </TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                        {fmtBRL(row.v_st || null)}
+                      </TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-right text-muted-foreground">
+                        {fmtBRL(row.icms_partilha || null)}
                       </TableCell>
                     </TableRow>
                   ))}
