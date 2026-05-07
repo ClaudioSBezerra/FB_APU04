@@ -27,8 +27,6 @@ export const modules: Record<string, ModuleConfig> = {
     label: 'Notas Importadas',
     tabs: [
       { label: 'NF-e Entradas',       path: '/apuracao/entrada/notas' },
-      { label: 'CT-e Entradas',       path: '/apuracao/cte-entrada/notas' },
-      { label: 'NFS-e Entradas',      path: '#', disabled: true },
       { label: 'Importar via ERP',    path: '/importacoes/erp-bridge',      adminOnly: true },
       { label: 'Logs de Importação',  path: '/importacoes/erp-bridge/logs', adminOnly: true },
     ],
