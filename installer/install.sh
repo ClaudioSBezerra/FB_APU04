@@ -93,14 +93,14 @@ echo ""
 echo "[INFO] Aguardando sistema iniciar..."
 MAX_ATTEMPTS=20
 for i in $(seq 1 $MAX_ATTEMPTS); do
-    if curl -sf http://localhost:8081/api/health > /dev/null 2>&1; then
+    if curl -sf http://localhost:8084/api/health > /dev/null 2>&1; then
         echo ""
         echo "========================================="
         echo "  FBTax Cloud instalado com sucesso!"
         echo "========================================="
         echo ""
         echo "  Acesse: http://$(hostname -I | awk '{print $1}')"
-        echo "  API:    http://$(hostname -I | awk '{print $1}'):8081/api/health"
+        echo "  API:    http://$(hostname -I | awk '{print $1}'):8084/api/health"
         echo ""
         echo "  Comandos uteis:"
         echo "    docker compose logs -f    # Ver logs"

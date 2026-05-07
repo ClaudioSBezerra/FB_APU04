@@ -26,7 +26,7 @@ docker compose up -d
 echo "[INFO] Verificando sistema..."
 MAX_ATTEMPTS=20
 for i in $(seq 1 $MAX_ATTEMPTS); do
-    if curl -sf http://localhost:8081/api/health > /dev/null 2>&1; then
+    if curl -sf http://localhost:8084/api/health > /dev/null 2>&1; then
         echo ""
         echo "[OK] Atualizacao concluida com sucesso!"
         echo ""

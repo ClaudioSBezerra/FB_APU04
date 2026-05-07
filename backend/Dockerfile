@@ -23,6 +23,6 @@ FROM alpine:latest
 WORKDIR /root/
 COPY --from=builder /app/server .
 COPY --from=builder /app/migrations ./migrations
-EXPOSE 8081
+EXPOSE 8084
 CMD ["./server"]
 # Force Rebuild v5.5.0 - Z.AI Migration

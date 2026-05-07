@@ -5,9 +5,9 @@ services:
     container_name: fbtax-api
     restart: always
     expose:
-      - "8081"
+      - "8084"
     environment:
-      - PORT=8081
+      - PORT=8084
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
       - REDIS_ADDR=redis:6379
       - JWT_SECRET=${JWT_SECRET}
@@ -29,7 +29,7 @@ services:
     networks:
       - fbtax_net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8084/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

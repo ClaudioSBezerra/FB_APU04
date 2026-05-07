@@ -18,7 +18,7 @@ if [ -z "$TOKEN" ]; then
 fi
 
 echo "Fazendo push para o GitHub..."
-git push https://ClaudioSBezerra:$TOKEN@github.com/ClaudioSBezerra/FB_APU01.git main
+git push https://ClaudioSBezerra:$TOKEN@github.com/ClaudioSBezerra/FB_APU04.git main
 
 echo ""
 echo "Se o push foi bem-sucedido, você pode configurar o git para não precisar do token novamente:"

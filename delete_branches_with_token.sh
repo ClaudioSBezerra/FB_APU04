@@ -21,11 +21,11 @@ echo "Branch de segurança já criado: backup-seguranca-antes-limpeza-20260206"
 echo ""
 
 echo "1. Deletando backup-02022026..."
-git push https://ClaudioSBezerra:$TOKEN@github.com/ClaudioSBezerra/FB_APU01.git --delete backup-02022026
+git push https://ClaudioSBezerra:$TOKEN@github.com/ClaudioSBezerra/FB_APU04.git --delete backup-02022026
 
 echo ""
 echo "2. Deletando backup/power-outage-save..."
-git push https://ClaudioSBezerra:$TOKEN@github.com/ClaudioSBezerra/FB_APU01.git --delete backup/power-outage-save
+git push https://ClaudioSBezerra:$TOKEN@github.com/ClaudioSBezerra/FB_APU04.git --delete backup/power-outage-save
 
 echo ""
 echo "✅ Limpeza concluída!"
