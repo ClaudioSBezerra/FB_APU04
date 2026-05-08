@@ -7,6 +7,7 @@ import { CheckCircle, Clock, FileText, Loader2, Upload, XCircle, Trash2, FolderO
 import { toast } from 'sonner';
 import { UploadProgressDisplay, UploadProgressType } from '@/components/UploadProgress';
 import { useAuth } from '@/contexts/AuthContext';
+import { ResetDatabaseDialog } from '@/components/ResetDatabaseDialog';
 
 interface ImportJob {
   id: string;
@@ -39,6 +40,8 @@ export default function ImportarEFD() {
 
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [scanStats, setScanStats] = useState({ scanned: 0, relevant: 0, phase: 'idle' });
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -472,24 +475,38 @@ export default function ImportarEFD() {
     }
   };
 
-  const handleResetDatabase = async () => {
-    if (!window.confirm('ATENÇÃO: Tem certeza que deseja APAGAR TODOS os dados importados? Essa ação não pode ser desfeita.')) {
-        return;
-    }
-
+  const handleResetDatabaseConfirm = async (body: { confirmation: string }) => {
+    setResetLoading(true);
     try {
-        const res = await fetch('/api/admin/reset-db', {
-            method: 'DELETE',
-        });
-        if (res.ok) {
-            toast.success('Base de dados limpa com sucesso!');
-            setJobs([]); // Clear list immediately
-        } else {
-            toast.error('Erro ao limpar base de dados.');
-        }
+      const res = await fetch('/api/admin/reset-db', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      if (res.ok) {
+        toast.success('Base de dados limpa com sucesso. Backup gerado em /backups/.');
+        setJobs([]);
+        setResetOpen(false);
+        return;
+      }
+      // Mensagens específicas por status
+      if (res.status === 400) {
+        toast.error('Token de confirmação rejeitado pelo servidor.');
+      } else if (res.status === 403) {
+        toast.error('Apenas administradores globais podem zerar a base.');
+      } else if (res.status === 429) {
+        toast.error('Limite de 1 reset por hora atingido. Aguarde antes de tentar novamente.');
+      } else if (res.status === 503) {
+        toast.error(`Servidor recusou: ${text || 'banco conectado fora do allowlist'}.`);
+      } else {
+        toast.error(`Erro ${res.status}: ${text || 'falha ao zerar base'}.`);
+      }
     } catch (error) {
-        console.error('Error resetting database:', error);
-        toast.error('Erro de conexão.');
+      console.error('Error resetting database:', error);
+      toast.error('Erro de conexão.');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -543,7 +560,7 @@ export default function ImportarEFD() {
         
         <div className="flex gap-2">
             {user?.role === 'admin' && (
-                <Button variant="destructive" size="sm" onClick={handleResetDatabase} className="gap-2">
+                <Button variant="destructive" size="sm" onClick={() => setResetOpen(true)} className="gap-2">
                     <Trash2 className="h-4 w-4" />
                     Zerar Tudo (Admin)
                 </Button>
@@ -786,6 +803,13 @@ export default function ImportarEFD() {
           </CardContent>
         </Card>
       </div>
+
+      <ResetDatabaseDialog
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        onConfirm={handleResetDatabaseConfirm}
+        loading={resetLoading}
+      />
     </div>
   );
 }
