@@ -23,6 +23,7 @@ services:
       - SMTP_FROM=${SMTP_FROM}
       - APP_URL=${APP_URL:-https://simu.fbtax.cloud}
       - ZAI_API_KEY=${ZAI_API_KEY:-}
+      - ALLOWED_DESTRUCTIVE_DBS=${ALLOWED_DESTRUCTIVE_DBS:-fiscal_apu04_db}
     depends_on:
       db:
         condition: service_healthy
@@ -30,6 +31,7 @@ services:
         condition: service_started
     volumes:
       - api_uploads:/root/uploads
+      - api_backups:/backups
     networks:
       - fb_net
     healthcheck:
@@ -109,4 +111,6 @@ volumes:
   redis_data:
     driver: local
   api_uploads:
+    driver: local
+  api_backups:
     driver: local

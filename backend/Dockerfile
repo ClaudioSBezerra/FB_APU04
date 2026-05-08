@@ -20,6 +20,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -v -ldflags="-w -s" -o server 
 
 # Run Stage
 FROM alpine:latest
+RUN apk add --no-cache postgresql-client
 WORKDIR /root/
 COPY --from=builder /app/server .
 COPY --from=builder /app/migrations ./migrations
