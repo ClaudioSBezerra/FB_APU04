@@ -141,6 +141,8 @@ var (
 	LoginRL          = newRateLimiter(5, 15*time.Minute)
 	RegisterRL       = newRateLimiter(10, time.Hour)
 	ForgotPasswordRL = newRateLimiter(3, time.Hour)
+	// ResetDBRateLimiter limita 1 reset/hora/usuário (STAB-05).
+	ResetDBRateLimiter = newRateLimiter(1, time.Hour)
 )
 
 // Allow checks AND records one attempt. Returns false if limit is exceeded.
