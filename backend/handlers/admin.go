@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -211,101 +212,222 @@ func RefreshViewsHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// ResetDatabaseHandler deletes all records from import_jobs,
-// which cascades to all related SPED data tables (participants, regs, aggregations).
-// It preserves system configuration tables like cfop and tabela_aliquotas.
+// ResetDatabaseHandler — protegido por 5 gates (STAB-01..05).
+// Ordem: verificações mais baratas primeiro para falhar rápido e evitar linhas de audit ruidosas.
 func ResetDatabaseHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		if r.Method != http.MethodDelete {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
 
-		log.Println("Admin: Initiating full database reset (clearing imported data)...")
+		// Extrai claims (já validados pelo AuthMiddleware na cadeia withAuth).
+		claims, ok := ctx.Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		role, _ := claims["role"].(string)
+		clientIP := GetClientIP(r)
+		userEmail := ResolveUserEmail(db, userID)
 
-		// Execute the deletion in a transaction for safety
+		// Helper closure: registra audit + responde com erro estruturado.
+		auditAndReject := func(status string, httpCode int, msg string) {
+			InsertDestructiveAuditRow(db, DestructiveAuditRow{
+				UserID:       userID,
+				UserEmail:    userEmail,
+				Action:       "reset_db",
+				Scope:        "global",
+				Status:       status,
+				ErrorMessage: msg,
+				ClientIP:     clientIP,
+			})
+			jsonErr(w, httpCode, msg)
+		}
+
+		// Gate 1 (STAB-04): Apenas role admin global.
+		// withAuth("admin") já barra non-admins, mas reforçamos aqui para registrar
+		// TENTATIVA bloqueada no audit caso o middleware seja bypassado.
+		if role != "admin" {
+			auditAndReject("rejected_role", http.StatusForbidden,
+				"Forbidden: only global admin can reset the database")
+			return
+		}
+
+		// Gate 2 (STAB-01): Token de confirmação obrigatório no body JSON.
+		var body struct {
+			Confirmation string `json:"confirmation"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+			auditAndReject("rejected_token", http.StatusBadRequest,
+				"Invalid request body: confirmation token required")
+			return
+		}
+		if body.Confirmation != ConfirmationToken {
+			auditAndReject("rejected_token", http.StatusBadRequest,
+				fmt.Sprintf("Confirmation token must be exactly %q", ConfirmationToken))
+			return
+		}
+
+		// Gate 3 (STAB-05): Rate limit 1 reset/hora/usuário.
+		if !ResetDBRateLimiter.Allow(userID) {
+			InsertDestructiveAuditRow(db, DestructiveAuditRow{
+				UserID:       userID,
+				UserEmail:    userEmail,
+				Action:       "reset_db",
+				Scope:        "global",
+				Status:       "rejected_rate",
+				ClientIP:     clientIP,
+				ErrorMessage: "rate limit exceeded (1 reset per hour per user)",
+			})
+			jsonErr(w, http.StatusTooManyRequests,
+				"Rate limit exceeded: only 1 database reset per hour per user")
+			return
+		}
+
+		// Gate 4: DB allowlist (mitigação direta do incidente 2026-05-07).
+		// Recusa executar se o banco conectado não estiver em ALLOWED_DESTRUCTIVE_DBS.
+		allowed, dbName, allowlist := IsDBAllowed(ctx, db)
+		if !allowed {
+			// NÃO contar essa tentativa contra o rate limit — é guard estrutural, não user error.
+			ResetDBRateLimiter.Reset(userID)
+			auditAndReject("rejected_db", http.StatusServiceUnavailable,
+				fmt.Sprintf("Refusing to reset: connected DB %q not in ALLOWED_DESTRUCTIVE_DBS=%v",
+					dbName, allowlist))
+			return
+		}
+
+		// Snapshot de rows antes do reset (para audit log).
+		rowsBefore, _ := RowsBefore(ctx, db, ResetTables)
+
+		// Gate 5 (STAB-02): Backup ANTES de qualquer TRUNCATE.
+		// Se o backup falhar, recusa truncar.
+		backupPath, err := RunPgDumpBackup(ctx, ResetTables)
+		if err != nil {
+			InsertDestructiveAuditRow(db, DestructiveAuditRow{
+				UserID:         userID,
+				UserEmail:      userEmail,
+				Action:         "reset_db",
+				Scope:          "global",
+				TablesAffected: ResetTables,
+				RowsBefore:     rowsBefore,
+				Status:         "failed_backup",
+				ErrorMessage:   err.Error(),
+				ClientIP:       clientIP,
+			})
+			jsonErr(w, http.StatusInternalServerError,
+				"Backup failed; refusing to truncate. See server logs.")
+			return
+		}
+
+		// === TODOS os gates passaram. Executar truncate em transação. ===
+		log.Printf("ResetDatabase: user=%s db=%s backup=%s", userID, dbName, backupPath)
+
 		tx, err := db.Begin()
 		if err != nil {
-			log.Printf("Error starting transaction: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			InsertDestructiveAuditRow(db, DestructiveAuditRow{
+				UserID:         userID,
+				UserEmail:      userEmail,
+				Action:         "reset_db",
+				Scope:          "global",
+				TablesAffected: ResetTables,
+				RowsBefore:     rowsBefore,
+				Status:         "failed_truncate",
+				ErrorMessage:   "begin tx: " + err.Error(),
+				ClientIP:       clientIP,
+				BackupPath:     backupPath,
+			})
+			jsonErr(w, http.StatusInternalServerError, "Failed to start transaction")
 			return
 		}
 		defer tx.Rollback()
 
-		// Optimize: Use TRUNCATE CASCADE for instant clearing of large datasets.
-		// TRUNCATE is much faster than DELETE because it doesn't scan tables or log individual row deletions.
-		// CASCADE ensures all dependent tables (reg_*, aggregations) are also cleared.
-		_, err = tx.Exec("TRUNCATE TABLE import_jobs CASCADE")
-		if err != nil {
-			log.Printf("Error truncating import_jobs: %v", err)
-			// Fallback to DELETE if TRUNCATE fails (e.g. permissions)
-			_, err = tx.Exec("DELETE FROM import_jobs")
-			if err != nil {
-				log.Printf("Error deleting import_jobs (fallback): %v", err)
-				http.Error(w, "Failed to reset database", http.StatusInternalServerError)
+		// Truncate na mesma ordem de ResetTables (compatibilidade com versão anterior).
+		truncSQL := []string{
+			"TRUNCATE TABLE import_jobs CASCADE",
+			"DELETE FROM filial_apelidos",
+			"TRUNCATE TABLE nfe_entradas CASCADE",
+			"TRUNCATE TABLE nfe_saidas CASCADE",
+			"TRUNCATE TABLE cte_entradas CASCADE",
+			"TRUNCATE TABLE parceiros CASCADE",
+			"TRUNCATE TABLE erp_bridge_run_items CASCADE",
+			"DELETE FROM erp_bridge_runs",
+		}
+		for _, stmt := range truncSQL {
+			if _, e := tx.Exec(stmt); e != nil {
+				InsertDestructiveAuditRow(db, DestructiveAuditRow{
+					UserID:         userID,
+					UserEmail:      userEmail,
+					Action:         "reset_db",
+					Scope:          "global",
+					TablesAffected: ResetTables,
+					RowsBefore:     rowsBefore,
+					Status:         "failed_truncate",
+					ErrorMessage:   stmt + ": " + e.Error(),
+					ClientIP:       clientIP,
+					BackupPath:     backupPath,
+				})
+				jsonErr(w, http.StatusInternalServerError, "Failed: "+stmt)
 				return
 			}
 		}
 
-		// Apelidos de filiais (NOT cascaded by import_jobs — delete explicitly)
-		if _, err := tx.Exec("DELETE FROM filial_apelidos"); err != nil {
-			log.Printf("Warning: could not clear filial_apelidos: %v", err)
-		}
-
-		// Notas importadas via ERP Bridge ou upload XML (independentes do SPED)
-		for _, tbl := range []string{"nfe_entradas", "nfe_saidas", "cte_entradas", "parceiros"} {
-			if _, err := tx.Exec("TRUNCATE TABLE " + tbl + " CASCADE"); err != nil {
-				log.Printf("Warning: could not truncate %s: %v", tbl, err)
-			}
-		}
-
-		// Histórico de runs do ERP Bridge (preserva config e credenciais)
-		if _, err := tx.Exec("TRUNCATE TABLE erp_bridge_run_items CASCADE"); err != nil {
-			log.Printf("Warning: could not truncate erp_bridge_run_items: %v", err)
-		}
-		if _, err := tx.Exec("DELETE FROM erp_bridge_runs"); err != nil {
-			log.Printf("Warning: could not clear erp_bridge_runs: %v", err)
-		}
-
 		if err := tx.Commit(); err != nil {
-			log.Printf("Error committing transaction: %v", err)
-			http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+			InsertDestructiveAuditRow(db, DestructiveAuditRow{
+				UserID:         userID,
+				UserEmail:      userEmail,
+				Action:         "reset_db",
+				Scope:          "global",
+				TablesAffected: ResetTables,
+				RowsBefore:     rowsBefore,
+				Status:         "failed_truncate",
+				ErrorMessage:   "commit: " + err.Error(),
+				ClientIP:       clientIP,
+				BackupPath:     backupPath,
+			})
+			jsonErr(w, http.StatusInternalServerError, "Failed to commit transaction")
 			return
 		}
 
-		log.Printf("Database reset successful (TRUNCATE).")
+		// Refresh das materialized views em goroutine não-bloqueante.
+		go refreshMVsAfterReset(db)
 
-		// REFRESH VIEWS: Ensure views are empty after truncating data
-		log.Println("Admin: Refreshing Materialized Views after reset...")
-
-		// Refresh mv_mercadorias_agregada
-		if _, err := db.Exec("REFRESH MATERIALIZED VIEW mv_mercadorias_agregada"); err != nil {
-			log.Printf("Error refreshing mv_mercadorias_agregada after reset: %v", err)
-		} else {
-			log.Println("Admin: mv_mercadorias_agregada refreshed successfully (Empty).")
-		}
-
-		// Refresh mv_operacoes_simples (Simples Nacional)
-		if _, err := db.Exec("REFRESH MATERIALIZED VIEW mv_operacoes_simples"); err != nil {
-			log.Printf("Error refreshing mv_operacoes_simples after reset: %v", err)
-		} else {
-			log.Println("Admin: mv_operacoes_simples refreshed successfully (Empty).")
-		}
-
-		// Refresh mv_compras_fornecedores (todos os fornecedores)
-		if _, err := db.Exec("REFRESH MATERIALIZED VIEW mv_compras_fornecedores"); err != nil {
-			log.Printf("Error refreshing mv_compras_fornecedores after reset: %v", err)
-		} else {
-			log.Println("Admin: mv_compras_fornecedores refreshed successfully (Empty).")
-		}
+		// Audit: sucesso.
+		InsertDestructiveAuditRow(db, DestructiveAuditRow{
+			UserID:         userID,
+			UserEmail:      userEmail,
+			Action:         "reset_db",
+			Scope:          "global",
+			TablesAffected: ResetTables,
+			RowsBefore:     rowsBefore,
+			Status:         "success",
+			ClientIP:       clientIP,
+			BackupPath:     backupPath,
+		})
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"message":      "Database reset successfully",
-			"jobs_deleted": -1, // TRUNCATE doesn't return count
+			"message":     "Database reset successfully",
+			"backup_path": backupPath,
+			"rows_before": rowsBefore,
 		})
 	}
 }
+
+// refreshMVsAfterReset atualiza todas as materialized views após reset (goroutine).
+func refreshMVsAfterReset(db *sql.DB) {
+	for _, mv := range []string{"mv_mercadorias_agregada", "mv_operacoes_simples", "mv_compras_fornecedores"} {
+		if _, err := db.Exec("REFRESH MATERIALIZED VIEW " + mv); err != nil {
+			log.Printf("Admin: error refreshing %s after reset: %v", mv, err)
+		} else {
+			log.Printf("Admin: %s refreshed (empty)", mv)
+		}
+	}
+}
+
 
 // CreateUserRequest struct
 type CreateUserRequest struct {
