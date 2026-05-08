@@ -30,7 +30,7 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 Plans:
 - [x] 01-01: Proteções backend no ResetDatabaseHandler (confirmação, backup, audit, role, rate-limit)
 - [ ] 01-02: UI de confirmação destrutiva no frontend com avisos visuais explícitos
-- [ ] 01-03: Diagnóstico e correção do cache stale em simu.fcxlabs.com/login
+- [x] 01-03: Diagnóstico e correção do cache stale em simu.fcxlabs.com/login
 
 ### Phase 2: Upload de XMLs (Drag-and-Drop)
 **Goal**: Adicionar segunda fonte de dados (XML SEFAZ) alimentando as mesmas tabelas do ERP Bridge, com prioridade do XML em conflitos por chave de acesso.
@@ -104,7 +104,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Estabilização Crítica (Reset + Cache) | 1/3 | In Progress|  |
+| 1. Estabilização Crítica (Reset + Cache) | 2/3 | In Progress|  |
 | 2. Upload de XMLs (Drag-and-Drop) | 0/4 | Not started | - |
 | 3. Estabilização Adicional | 0/4 | Not started | - |
 | 4. Conciliação Bridge vs XML | 0/2 | Not started | - |
