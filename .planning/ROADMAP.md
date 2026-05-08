@@ -10,11 +10,11 @@ Estabilizar o produto pós-incidente, entregar a nova capacidade de upload XML c
 
 ## Phase Structure
 
-### Phase 1 — Estabilização Crítica do Reset
+### Phase 1 — Estabilização Crítica (Reset + Cache)
 
-**Goal:** Tornar impossível repetir o incidente de 2026-05-07. Qualquer operação destrutiva no banco deve ter confirmação, backup e auditoria.
+**Goal:** Tornar impossível repetir o incidente de 2026-05-07 E resolver o bug de cache em `simu.fcxlabs.com/login` que serve a página do app anterior (FC Bots) na primeira visita.
 
-**Scope:**
+**Scope (Reset):**
 - Confirmação obrigatória no `ResetDatabaseHandler` (token textual digitado)
 - Backup automático antes de TRUNCATE para `/backups/reset-{timestamp}.sql`
 - Audit log em `admin_destructive_actions` (usuário, timestamp, scope, registros impactados)
@@ -22,18 +22,30 @@ Estabilizar o produto pós-incidente, entregar a nova capacidade de upload XML c
 - Rate limit (1 reset/hora/usuário)
 - Tela frontend de confirmação com avisos visuais explícitos do impacto
 
-**Requirements:** STAB-01, STAB-02, STAB-03, STAB-04, STAB-05
+**Scope (Cache `simu.fcxlabs.com/login`):**
+- Investigar e diagnosticar — service worker do app anterior (FC Bots) ainda registrado no navegador dos usuários? Cache do Traefik/Coolify servindo HTML antigo? Cache do nginx? Hipótese principal: SW persistente do FC Bots interceptando requests no domínio.
+- Adicionar "service worker killer" no app React do FB_APU04 — script que registra um SW que se auto-desregistra e limpa caches existentes, forçando o navegador a buscar a versão atual
+- Configurar header `Clear-Site-Data: "cache","cookies","storage","executionContexts"` no nginx para o caminho `/login` na primeira visita após deploy (ou via meta tag HTML)
+- Verificar `frontend/nginx.conf` se `index.html` realmente não está cacheado em produção (já tem `Cache-Control: no-store`)
+- Verificar Coolify/Traefik para qualquer rota antiga apontando para o app anterior
 
-**Success Criteria:**
+**Requirements:** STAB-01, STAB-02, STAB-03, STAB-04, STAB-05, STAB-10
+
+**Success Criteria (Reset):**
 - Reset não executa sem token de confirmação correto
 - Backup gerado e armazenado antes de qualquer TRUNCATE
 - Audit log auditável via query SQL
 - Apenas admins globais conseguem reset completo via UI e API
 - Tentativas de reset em <1h retornam erro 429
 
+**Success Criteria (Cache):**
+- Usuário acessando `simu.fcxlabs.com/login` pela primeira vez (sem `Ctrl+Shift+R`) vê a tela do FB_APU04, não a do FC Bots
+- Usuários com SW antigo do FC Bots já registrado também recebem a versão correta na próxima visita
+- Diagnóstico documentado em `.planning/phases/01-*/CACHE-DIAGNOSIS.md` (qual era a causa raiz: SW, Traefik, ou outro)
+
 **Dependencies:** Nenhuma (fundação)
 
-**Estimated effort:** 1-2 plans
+**Estimated effort:** 2-3 plans
 
 ---
 
@@ -158,8 +170,8 @@ Phase 5 (Observabilidade)
 
 ## Coverage
 
-- **v1 requirements:** 24 total
-- **Mapped to phases:** 24 (100%)
+- **v1 requirements:** 25 total
+- **Mapped to phases:** 25 (100%)
 - **Phases:** 5
 - **Average requirements per phase:** ~5
 
