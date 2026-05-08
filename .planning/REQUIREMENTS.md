@@ -9,11 +9,11 @@ Requisitos do ciclo atual, organizados pelas frentes do PROJECT.md em ordem de p
 
 ### Estabilização (prioridade 1) — Pós-incidente APU02 + bug de cache
 
-- [ ] **STAB-01**: `ResetDatabaseHandler` exige confirmação obrigatória (token de confirmação ou prompt textual `DELETE-FB_APU04` digitado pelo usuário) antes de executar TRUNCATE
-- [ ] **STAB-02**: Backup automático do estado atual antes de qualquer execução de `ResetDatabaseHandler` (dump das tabelas afetadas para `/backups/reset-{timestamp}.sql`)
-- [ ] **STAB-03**: Audit log de toda execução de reset (usuário, timestamp, registros impactados, scope) gravado em tabela `admin_destructive_actions`
-- [ ] **STAB-04**: Restrição de role — apenas role `admin` global (não Environment Admin) pode invocar reset de banco completo; Environment Admin restrito a `ResetCompanyDataHandler`
-- [ ] **STAB-05**: Rate limit no endpoint de reset (1 execução por hora por usuário) para evitar reset acidental em loop
+- [x] **STAB-01**: `ResetDatabaseHandler` exige confirmação obrigatória (token de confirmação ou prompt textual `DELETE-FB_APU04` digitado pelo usuário) antes de executar TRUNCATE
+- [x] **STAB-02**: Backup automático do estado atual antes de qualquer execução de `ResetDatabaseHandler` (dump das tabelas afetadas para `/backups/reset-{timestamp}.sql`)
+- [x] **STAB-03**: Audit log de toda execução de reset (usuário, timestamp, registros impactados, scope) gravado em tabela `admin_destructive_actions`
+- [x] **STAB-04**: Restrição de role — apenas role `admin` global (não Environment Admin) pode invocar reset de banco completo; Environment Admin restrito a `ResetCompanyDataHandler`
+- [x] **STAB-05**: Rate limit no endpoint de reset (1 execução por hora por usuário) para evitar reset acidental em loop
 - [ ] **STAB-10**: Resolver bug de cache em `simu.fcxlabs.com/login` — primeira visita mostra página de login do app anterior (FC Bots) ao invés do FB_APU04; usuários precisam dar `Ctrl+Shift+R` para ver a página correta. Investigar service worker stale do app anterior, cache do Traefik/Coolify, e cache do nginx; aplicar correção que invalida SW antigo e força reload da página correta na primeira visita
 
 ### Importação XML (prioridade 2) — Nova fonte de dados
