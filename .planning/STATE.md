@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
 status: in_progress
-last_updated: "2026-05-08T17:46:17.016Z"
+last_updated: "2026-05-08T17:51:26.979Z"
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 67
+  completed_plans: 3
+  percent: 100
 ---
 
 # State: FB_APU04
@@ -29,7 +29,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **Roadmap:** 5 phases (Coarse granularity)
 - **Active phase:** Phase 1 — Plan 01 COMPLETED
 - **Completed phases:** 0
-- **Last session:** 2026-05-08T17:46:17.007Z
+- **Last session:** 2026-05-08T17:51:26.970Z
 
 ## Current Phase
 
@@ -37,19 +37,22 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 - Goal: Tornar impossível repetir o incidente de 2026-05-07
 - Requirements: STAB-01 a STAB-05
-- Status: Plan 01 COMPLETED (commits 060992c, dff6b5e, b3f7c57)
+- Status: Plan 01 COMPLETED (commits 060992c, dff6b5e, b3f7c57); Plan 02 COMPLETED tasks 1-2 (commits 07622e1, 66d6372, a66d296) — Task 3 aguarda checkpoint:human-verify
 
 ## Decisions Made
 
 - **Token de confirmação estático `DELETE-FB_APU04`:** simplicidade auditável; defesa real é combinação de 5 gates independentes (aceite T-01-02 do threat model)
 - **Backup falha recusa truncar sem exceção:** fail-safe sobre disponibilidade — integridade dos dados prioritária
 - **Gate DB allowlist reseta rate limiter quando disparado:** guard estrutural não penaliza o usuário
+- **Vitest 1.6.x (não 4.x):** compatibilidade com Node 18.19 — 4.x requer styleText de node:util indisponível no Node 18
+- **Modal AlertDialog sem AlertDialogTrigger:** abertura programática via setState do componente pai (ImportarEFD.tsx)
 
 ## Recent History
 
 - 2026-05-07: Incidente — APU04 apontava para banco do APU02 via `APU02_DB_HOST`. Reset apagou 4 meses de produção do APU02. Toda infraestrutura separada nos commits `90d1b93`, `947de42`, `14b455b`. ResetDatabase ainda sem proteção.
 - 2026-05-08: Inicialização do GSD. Codebase mapeado, PROJECT/REQUIREMENTS/ROADMAP criados.
 - 2026-05-08: Phase 01 Plan 01 executado — ResetDatabaseHandler reescrito com 5 gates (STAB-01 a STAB-05), migration 073, audit log admin_destructive_actions, volume api_backups, ALLOWED_DESTRUCTIVE_DBS.
+- 2026-05-08: Phase 01 Plan 02 executado (tasks 1-2) — ResetDatabaseDialog criado com TDD RED/GREEN, integrado ao ImportarEFD.tsx. Infraestrutura vitest instalada. Task 3 (checkpoint) aguarda verificação humana.
 
 ## Configuration
 
@@ -63,7 +66,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Next Action
 
-Phase 01 Plan 01 completo. Próximo: verificar se há mais plans na fase 01 ou avançar para fase 02.
+Phase 01 Plan 02 tasks 1-2 completos. Aguardando verificação humana (Task 3 checkpoint:human-verify) do fluxo end-to-end em ambiente de homolog. Após aprovação, Phase 01 está encerrada.
 
 ---
 *Last updated: 2026-05-08*

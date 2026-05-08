@@ -6,7 +6,7 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 
 ## Phases
 
-- [ ] **Phase 1: Estabilização Crítica (Reset + Cache)** - Proteger ResetDatabase e resolver bug de cache em simu.fcxlabs.com/login
+- [x] **Phase 1: Estabilização Crítica (Reset + Cache)** - Proteger ResetDatabase e resolver bug de cache em simu.fcxlabs.com/login (completed 2026-05-08)
 - [ ] **Phase 2: Upload de XMLs (Drag-and-Drop)** - Segunda fonte de dados alimentando as mesmas tabelas do ERP Bridge, com prioridade do XML em conflitos
 - [ ] **Phase 3: Estabilização Adicional** - Tirar credenciais do código, bootstrap de testes Go/React, retry/reconnect no Bridge SAP S4
 - [ ] **Phase 4: Conciliação Bridge vs XML** - Relatório de divergências e dashboard de cobertura por fonte
@@ -29,7 +29,7 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 
 Plans:
 - [x] 01-01: Proteções backend no ResetDatabaseHandler (confirmação, backup, audit, role, rate-limit)
-- [ ] 01-02: UI de confirmação destrutiva no frontend com avisos visuais explícitos
+- [x] 01-02: UI de confirmação destrutiva no frontend com avisos visuais explícitos
 - [x] 01-03: Diagnóstico e correção do cache stale em simu.fcxlabs.com/login
 
 ### Phase 2: Upload de XMLs (Drag-and-Drop)
@@ -104,7 +104,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Estabilização Crítica (Reset + Cache) | 2/3 | In Progress|  |
+| 1. Estabilização Crítica (Reset + Cache) | 3/3 | Complete   | 2026-05-08 |
 | 2. Upload de XMLs (Drag-and-Drop) | 0/4 | Not started | - |
 | 3. Estabilização Adicional | 0/4 | Not started | - |
 | 4. Conciliação Bridge vs XML | 0/2 | Not started | - |
