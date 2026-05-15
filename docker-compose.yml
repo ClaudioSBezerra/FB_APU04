@@ -34,8 +34,9 @@ services:
       - api_uploads:/root/uploads
       - api_backups:/backups
     networks:
-      - fb_net
-      - coolify
+      fb_net:
+        aliases:
+          - apu04-api
 
   # Frontend (React)
   web:
