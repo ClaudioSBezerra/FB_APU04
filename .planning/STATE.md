@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
-status: in_progress
+status: ready_to_plan
 last_updated: "2026-05-08T17:51:26.979Z"
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 3
   completed_plans: 3
-  percent: 100
+  percent: 40
 ---
 
 # State: FB_APU04
