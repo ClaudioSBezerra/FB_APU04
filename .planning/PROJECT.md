@@ -32,7 +32,8 @@ A escrituração fiscal precisa ser **completa e auditável** — todos os valor
 <!-- Foco dos próximos meses, em ordem de prioridade -->
 
 **Estabilizar (prioridade 1):**
-- [ ] Proteção no `ResetDatabaseHandler` — confirmação obrigatória, soft-delete, backup-before-truncate, audit log
+- ✓ Proteção no `ResetDatabaseHandler` — 5 gates (token DELETE-FB_APU04, pg_dump backup, audit log, role gate, rate-limit 1/h) + ALLOWED_DESTRUCTIVE_DBS — Validado em Phase 1 (2026-05-15)
+- ✓ Correção cache simu.fcxlabs.com/login (SW órfão FC Bots) — unregister-sw.js + nginx headers — Validado em Phase 1 (2026-05-15)
 
 **Expandir (prioridade 2):**
 - [ ] Importação de XMLs via upload manual (drag-and-drop) alimentando as mesmas tabelas do ERP Bridge — fonte unificada de identificação tributária
