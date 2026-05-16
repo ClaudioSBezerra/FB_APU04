@@ -65,7 +65,7 @@ Plans:
 - [x] 03-01-PLAN.md — Remoção de credenciais hardcoded: backend/.env, installer/.env, erp-bridge-aws/config-apu04.yaml
 - [x] 03-02-PLAN.md — Bootstrap de testes Go: AuthMiddleware, ERPBridgeBatchImportHandler, rateLimiter (cobertura >=30%)
 - [x] 03-03-PLAN.md — Bootstrap de testes React: formatFilial.ts (11 funções puras) e navigation.ts (getActiveModule)
-- [ ] 03-04-PLAN.md — Retry/reconnect Oracle no bridge.py: _connect_oracle() + _is_dpy4011() + substituição nos dois sites
+- [x] 03-04-PLAN.md — Retry/reconnect Oracle no bridge.py: _connect_oracle() + _is_dpy4011() + substituição nos dois sites
 
 ### Phase 4: Conciliação Bridge vs XML
 **Goal**: Aproveitar as duas fontes de dados (Bridge + XML) para gerar valor fiscal direto: conciliação, divergências, cobertura.
@@ -106,7 +106,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Estabilização Crítica (Reset + Cache) | 3/3 | Complete   | 2026-05-08 |
 | 2. Upload de XMLs (Drag-and-Drop) | 4/4 | Complete   | 2026-05-16 |
-| 3. Estabilização Adicional | 3/4 | In Progress|  |
+| 3. Estabilização Adicional | 4/4 | Complete   | 2026-05-16 |
 | 4. Conciliação Bridge vs XML | 0/2 | Not started | - |
 | 5. Observabilidade e Alertas | 0/2 | Not started | - |
 

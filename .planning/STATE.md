@@ -27,8 +27,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **Initialized:** 2026-05-08
 - **Codebase mapped:** 2026-05-08 (7 documents, 1920 lines in `.planning/codebase/`)
 - **Roadmap:** 5 phases (Coarse granularity)
-- **Active phase:** Phase 03 — Estabilização Adicional (próxima)
-- **Completed phases:** 2
+- **Active phase:** Phase 04 — Conciliação Bridge vs XML (próxima)
+- **Completed phases:** 3
 - **Last session:** 2026-05-16T18:51:57.592Z
 
 ## Current Phase
