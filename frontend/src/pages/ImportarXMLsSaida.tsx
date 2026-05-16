@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useState } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import {
   Table,
   TableBody,
@@ -12,248 +13,266 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Upload, FolderOpen, FileText, CheckCircle, AlertCircle, SkipForward } from 'lucide-react';
+import { Upload, CloudUpload, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-interface UploadError {
-  arquivo: string;
-  erro: string;
-}
+type UploadState = 'idle' | 'uploading' | 'polling' | 'done' | 'error';
 
-interface UploadResult {
-  importados: number;
-  ignorados: number;
-  erros: UploadError[];
-}
-
-interface NfeSaidaRow {
+interface BatchStatus {
   id: string;
-  chave_nfe: string;
-  modelo: number;
-  serie: string;
-  numero_nfe: string;
-  data_emissao: string;
-  mes_ano: string;
-  nat_op: string;
-  emit_cnpj: string;
-  emit_nome: string;
-  emit_uf: string;
-  dest_cnpj_cpf: string;
-  dest_nome: string;
-  dest_uf: string;
-  dest_c_mun: string;
-  v_prod: number;
-  v_desc: number;
-  v_nf: number;
-  v_bc: number;
-  v_icms: number;
-  v_pis: number;
-  v_cofins: number;
-  v_bc_ibs_cbs: number | null;
-  v_ibs: number | null;
-  v_cbs: number | null;
+  status: 'pending' | 'processing' | 'done' | 'failed';
+  total_count: number;
+  processed_count: number;
+  imported_count: number;
+  rejected_count: number;
+  error_details: { filename: string; motivo: string }[] | null;
+}
+
+interface BatchHistoryRow {
+  id: string;
+  created_at: string;
+  filename: string;
+  tipo: string;
+  total_count: number;
+  imported_count: number;
+  rejected_count: number;
+  status: string;
+  user_email: string;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function fmtBRL(v: number | null | undefined): string {
-  if (v == null) return '—';
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+function fmtDateTime(iso: string): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function fmtCNPJ(v: string): string {
-  if (!v || v.length !== 14) return v || '—';
-  return `${v.slice(0,2)}.${v.slice(2,5)}.${v.slice(5,8)}/${v.slice(8,12)}-${v.slice(12)}`;
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; className: string }> = {
+    done:       { label: 'Concluído',   className: 'bg-green-100 text-green-700 border-green-200' },
+    processing: { label: 'Processando', className: 'bg-blue-100 text-blue-700 border-blue-200' },
+    failed:     { label: 'Erro',        className: 'bg-red-100 text-red-700 border-red-200' },
+    pending:    { label: 'Aguardando',  className: 'bg-gray-100 text-gray-500 border-gray-200' },
+  };
+  const s = map[status] ?? { label: status, className: 'bg-gray-100 text-gray-600' };
+  return (
+    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${s.className}`}>{s.label}</Badge>
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 export default function ImportarXMLsSaida() {
-  const { token, companyId } = useAuth();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const TIPO = 'saidas';
 
-  const [xmlFiles, setXmlFiles] = useState<File[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<UploadResult | null>(null);
-  const [nfeList, setNfeList] = useState<NfeSaidaRow[]>([]);
-  const [loadingList, setLoadingList] = useState(false);
-  const [filterMes, setFilterMes] = useState('');
+  const [uploadState, setUploadState] = useState<UploadState>('idle');
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [uploadResult, setUploadResult] = useState<{
+    imported: number; rejected: number; total: number;
+    errorDetails: { filename: string; motivo: string }[] | null;
+  } | null>(null);
+  const [progress, setProgress] = useState(0);
 
-  const authHeaders = {
-    Authorization: `Bearer ${token}`,
-    'X-Company-ID': companyId || '',
-  };
+  // ── Polling do status do batch ─────────────────────────────────────────────
+  const { data: batchStatus } = useQuery<BatchStatus>({
+    queryKey: ['xml-batch', batchId],
+    queryFn: async () => {
+      const res = await fetch(`/api/xml/upload-batches/${batchId}/status`);
+      if (!res.ok) throw new Error(res.statusText);
+      return res.json();
+    },
+    enabled: !!batchId && uploadState === 'polling',
+    refetchInterval: uploadState === 'polling' ? 2000 : false,
+    select: (data) => {
+      const pct = data.total_count > 0
+        ? Math.round((data.processed_count / data.total_count) * 100)
+        : 0;
+      setProgress(pct);
+      if (data.status === 'done') {
+        setUploadState('done');
+        setUploadResult({
+          imported: data.imported_count,
+          rejected: data.rejected_count,
+          total: data.total_count,
+          errorDetails: data.error_details,
+        });
+        toast.success(
+          `Upload concluído: ${data.imported_count} NF-e(s) importadas, ${data.rejected_count} rejeitadas.`
+        );
+      } else if (data.status === 'failed') {
+        setUploadState('error');
+        toast.error('Processamento falhou. Verifique os detalhes abaixo.');
+      }
+      return data;
+    },
+  });
 
-  // ── Seleção de pasta / arquivos ──────────────────────────────────────────
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter(f =>
-      f.name.toLowerCase().endsWith('.xml')
-    );
-    setXmlFiles(files);
-    setResult(null);
-  }, []);
+  // ── Histórico de uploads ───────────────────────────────────────────────────
+  const { data: historico, refetch: refetchHistorico } = useQuery<{ items: BatchHistoryRow[] }>({
+    queryKey: ['xml-historico', TIPO],
+    queryFn: async () => {
+      const res = await fetch(`/api/xml/upload-batches?tipo=${TIPO}&limit=10`);
+      if (!res.ok) throw new Error(res.statusText);
+      return res.json();
+    },
+    refetchInterval: uploadState === 'polling' ? 3000 : false,
+  });
 
-  // ── Upload ───────────────────────────────────────────────────────────────
-  const handleUpload = async () => {
-    if (xmlFiles.length === 0) {
-      toast.error('Selecione uma pasta com arquivos XML antes de importar.');
-      return;
-    }
+  // ── Upload handler ─────────────────────────────────────────────────────────
+  const handleUpload = async (files: File[]) => {
+    if (files.length === 0) return;
 
-    setUploading(true);
-    setResult(null);
+    setUploadState('uploading');
+    setUploadResult(null);
+    setBatchId(null);
+    setProgress(0);
 
     try {
       const formData = new FormData();
-      xmlFiles.forEach(f => formData.append('xmls', f));
+      formData.append('tipo', TIPO);
+      files.forEach(f => formData.append('file', f));
 
-      const res = await fetch('/api/nfe-saidas/upload', {
+      const res = await fetch('/api/xml/upload', {
         method: 'POST',
-        headers: authHeaders,
         body: formData,
       });
 
-      const data: UploadResult = await res.json();
-
-      if (!res.ok) {
-        toast.error('Erro no upload: ' + ((data as unknown as { error: string }).error || res.statusText));
+      if (res.status === 413) {
+        toast.error('Arquivo excede o limite de 100MB.');
+        setUploadState('error');
         return;
       }
 
-      setResult(data);
+      const data = await res.json();
 
-      if (data.importados > 0) {
-        toast.success(`${data.importados} NF-e(s) importada(s) com sucesso.`);
-        fetchList();
-      } else if (data.ignorados > 0 && data.importados === 0) {
-        toast.info('Todas as NF-es já estavam importadas (duplicatas ignoradas).');
+      if (!res.ok) {
+        toast.error('Erro no upload: ' + (data.error || res.statusText));
+        setUploadState('error');
+        return;
       }
 
-      if (data.erros && data.erros.length > 0) {
-        toast.warning(`${data.erros.length} arquivo(s) com erro — veja detalhes abaixo.`);
+      if (res.status === 202 && data.batch_id) {
+        setBatchId(data.batch_id);
+        setUploadState('polling');
+        toast.success('Upload recebido. Processando em background...');
+      } else {
+        setUploadState('done');
+        setUploadResult({
+          imported: data.imported_count ?? data.importados ?? 0,
+          rejected: data.rejected_count ?? data.ignorados ?? 0,
+          total: data.total_count ?? data.total ?? 0,
+          errorDetails: data.error_details ?? null,
+        });
+        toast.success(`Upload concluído: ${data.imported_count ?? data.importados ?? 0} NF-e(s) importadas.`);
+        refetchHistorico();
       }
     } catch (err: unknown) {
       toast.error('Erro inesperado: ' + String(err));
-    } finally {
-      setUploading(false);
+      setUploadState('error');
     }
   };
 
-  // ── Buscar lista ─────────────────────────────────────────────────────────
-  const fetchList = async (mes?: string) => {
-    setLoadingList(true);
-    try {
-      const params = new URLSearchParams();
-      const mesFilter = mes ?? filterMes;
-      if (mesFilter) params.set('mes_ano', mesFilter);
+  // ── Dropzone ───────────────────────────────────────────────────────────────
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: {
+      'text/xml': ['.xml'],
+      'application/zip': ['.zip'],
+      'application/x-zip-compressed': ['.zip'],
+    },
+    maxSize: 100 * 1024 * 1024,
+    multiple: true,
+    onDropRejected: (rejected) => {
+      toast.error(`${rejected.length} arquivo(s) rejeitado(s). Apenas XML e ZIP até 100MB.`);
+    },
+    onDrop: handleUpload,
+    disabled: uploadState === 'uploading' || uploadState === 'polling',
+  });
 
-      const res = await fetch(`/api/nfe-saidas?${params}`, { headers: authHeaders });
-      if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
-      setNfeList(data.items || []);
-    } catch (err: unknown) {
-      toast.error('Erro ao carregar lista: ' + String(err));
-    } finally {
-      setLoadingList(false);
-    }
-  };
+  const isProcessing = uploadState === 'uploading' || uploadState === 'polling';
 
-  const handleFilterMes = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFilterMes(e.target.value);
-  };
-
-  const handleFilterSearch = () => fetchList(filterMes);
-
-  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Importar XMLs de Saída</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Importe NF-e (mod. 55) e NFC-e (mod. 65) de saída a partir de arquivos XML.
-          Selecione a pasta e clique em Importar.
+          Importe NF-e (mod. 55) e NFC-e (mod. 65) de saída. Arraste arquivos XML ou ZIP,
+          ou clique para selecionar. Limite: 100MB por envio.
         </p>
       </div>
 
-      {/* ── Card de upload ── */}
+      {/* ── Zona de drag-and-drop ── */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <FolderOpen className="h-4 w-4" />
-            Selecionar pasta de XMLs
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Input oculto com suporte a pasta */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            // @ts-expect-error webkitdirectory não está no tipo padrão
-            webkitdirectory=""
-            multiple
-            accept=".xml"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              <FolderOpen className="h-4 w-4 mr-2" />
-              Selecionar Pasta
-            </Button>
-
-            {xmlFiles.length > 0 && (
-              <span className="text-sm text-muted-foreground">
-                <FileText className="h-4 w-4 inline mr-1" />
-                {xmlFiles.length} arquivo(s) .xml encontrado(s)
-              </span>
+        <CardContent className="pt-6">
+          <div
+            {...getRootProps()}
+            className={[
+              'flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 cursor-pointer transition-colors',
+              isDragActive
+                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                : isProcessing
+                  ? 'border-muted bg-muted/30 cursor-not-allowed text-muted-foreground'
+                  : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/20 text-muted-foreground',
+            ].join(' ')}
+          >
+            <input {...getInputProps()} />
+            {isProcessing ? (
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            ) : isDragActive ? (
+              <CloudUpload className="h-8 w-8 text-blue-500" />
+            ) : (
+              <Upload className="h-8 w-8" />
             )}
-
-            <Button
-              onClick={handleUpload}
-              disabled={uploading || xmlFiles.length === 0}
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              {uploading ? 'Importando...' : 'Importar'}
-            </Button>
+            <div className="text-center">
+              {uploadState === 'uploading' && <p className="text-sm font-medium">Enviando arquivos...</p>}
+              {uploadState === 'polling' && <p className="text-sm font-medium">Processando XMLs...</p>}
+              {!isProcessing && isDragActive && <p className="text-sm font-medium">Solte os arquivos aqui</p>}
+              {!isProcessing && !isDragActive && (
+                <>
+                  <p className="text-sm font-medium">Arraste XMLs ou ZIP aqui, ou clique para selecionar</p>
+                  <p className="text-xs text-muted-foreground mt-1">Aceita .xml e .zip — máximo 100MB</p>
+                </>
+              )}
+            </div>
           </div>
 
+          {/* ── Barra de progresso durante polling ── */}
+          {uploadState === 'polling' && (
+            <div className="mt-4 space-y-1.5">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Processando... {batchStatus?.processed_count ?? 0} / {batchStatus?.total_count ?? '?'} XMLs</span>
+                <span>{progress}%</span>
+              </div>
+              <Progress value={progress} className="h-2" />
+            </div>
+          )}
+
           {/* ── Resultado do upload ── */}
-          {result && (
-            <div className="rounded-lg border p-4 space-y-3">
-              <div className="flex gap-4 flex-wrap">
+          {uploadResult && (uploadState === 'done' || uploadState === 'error') && (
+            <div className="mt-4 rounded-lg border p-4 space-y-3">
+              <div className="flex gap-4 flex-wrap items-center">
                 <div className="flex items-center gap-2">
                   <CheckCircle className="h-4 w-4 text-green-600" />
                   <span className="text-sm font-medium">Importados:</span>
-                  <Badge variant="default" className="bg-green-600">{result.importados}</Badge>
+                  <Badge className="bg-green-600">{uploadResult.imported}</Badge>
                 </div>
-                <div className="flex items-center gap-2">
-                  <SkipForward className="h-4 w-4 text-yellow-600" />
-                  <span className="text-sm font-medium">Ignorados (duplicatas):</span>
-                  <Badge variant="secondary">{result.ignorados}</Badge>
-                </div>
-                {result.erros.length > 0 && (
+                {uploadResult.rejected > 0 && (
                   <div className="flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4 text-red-600" />
-                    <span className="text-sm font-medium">Erros:</span>
-                    <Badge variant="destructive">{result.erros.length}</Badge>
+                    <XCircle className="h-4 w-4 text-red-500" />
+                    <span className="text-sm font-medium">Rejeitados:</span>
+                    <Badge variant="destructive">{uploadResult.rejected}</Badge>
                   </div>
                 )}
+                <span className="text-xs text-muted-foreground ml-auto">Total: {uploadResult.total}</span>
               </div>
-
-              {result.erros.length > 0 && (
-                <div className="text-xs space-y-1 max-h-40 overflow-auto">
-                  {result.erros.map((e, i) => (
-                    <div key={i} className="text-red-600">
-                      <span className="font-medium">{e.arquivo}:</span> {e.erro}
+              {uploadResult.errorDetails && uploadResult.errorDetails.length > 0 && (
+                <div className="text-xs space-y-1 max-h-40 overflow-auto bg-red-50 rounded p-2">
+                  {uploadResult.errorDetails.map((e, i) => (
+                    <div key={i} className="text-red-700">
+                      <span className="font-medium">{e.filename}:</span> {e.motivo}
                     </div>
                   ))}
                 </div>
@@ -263,81 +282,40 @@ export default function ImportarXMLsSaida() {
         </CardContent>
       </Card>
 
-      {/* ── Card de listagem ── */}
+      {/* ── Histórico de uploads ── */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <CardTitle className="text-base">NF-e Saídas Importadas</CardTitle>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="MM/YYYY"
-                value={filterMes}
-                onChange={handleFilterMes}
-                className="h-8 w-28 rounded-md border border-input bg-background px-3 py-1 text-sm"
-              />
-              <Button size="sm" variant="outline" onClick={handleFilterSearch} disabled={loadingList}>
-                {loadingList ? 'Buscando...' : 'Buscar'}
-              </Button>
-            </div>
-          </div>
+          <CardTitle className="text-base">Histórico de Uploads — NF-e Saídas</CardTitle>
         </CardHeader>
         <CardContent>
-          {nfeList.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              {loadingList
-                ? 'Carregando...'
-                : 'Nenhuma NF-e importada. Faça uma importação ou filtre por Mês/Ano.'}
+          {!historico || historico.items.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              Nenhum upload registrado ainda.
             </p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Mod</TableHead>
-                    <TableHead>Série/Nº</TableHead>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Emitente</TableHead>
-                    <TableHead>UF</TableHead>
-                    <TableHead>Destinatário</TableHead>
-                    <TableHead>Mun. IBGE</TableHead>
-                    <TableHead className="text-right">vProd</TableHead>
-                    <TableHead className="text-right">vNF</TableHead>
-                    <TableHead className="text-right">vBC / vICMS</TableHead>
-                    <TableHead className="text-right">vBCIBSCBS</TableHead>
-                    <TableHead className="text-right">vIBS</TableHead>
-                    <TableHead className="text-right">vCBS</TableHead>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="py-1.5 px-2 text-[11px]">Data</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px]">Arquivo</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px]">Total</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-green-700">Importados</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-red-600">Rejeitados</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px]">Status</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px]">Usuário</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {nfeList.map(row => (
-                    <TableRow key={row.id}>
-                      <TableCell>
-                        <Badge variant="outline">{row.modelo}</Badge>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {row.serie}/{row.numero_nfe}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">{row.data_emissao}</TableCell>
-                      <TableCell>
-                        <div className="font-medium text-xs">{row.emit_nome}</div>
-                        <div className="text-muted-foreground text-xs">{fmtCNPJ(row.emit_cnpj)}</div>
-                      </TableCell>
-                      <TableCell>{row.emit_uf}</TableCell>
-                      <TableCell>
-                        <div className="text-xs">{row.dest_nome}</div>
-                        <div className="text-muted-foreground text-xs">{fmtCNPJ(row.dest_cnpj_cpf)}</div>
-                      </TableCell>
-                      <TableCell className="text-xs">{row.dest_c_mun || '—'}</TableCell>
-                      <TableCell className="text-right text-xs">{fmtBRL(row.v_prod)}</TableCell>
-                      <TableCell className="text-right text-xs font-medium">{fmtBRL(row.v_nf)}</TableCell>
-                      <TableCell className="text-right text-xs">
-                        <div>{fmtBRL(row.v_bc)}</div>
-                        <div className="text-muted-foreground">{fmtBRL(row.v_icms)}</div>
-                      </TableCell>
-                      <TableCell className="text-right text-xs">{fmtBRL(row.v_bc_ibs_cbs)}</TableCell>
-                      <TableCell className="text-right text-xs">{fmtBRL(row.v_ibs)}</TableCell>
-                      <TableCell className="text-right text-xs">{fmtBRL(row.v_cbs)}</TableCell>
+                  {historico.items.map(row => (
+                    <TableRow key={row.id} className="h-8">
+                      <TableCell className="py-1 px-2 text-[11px] whitespace-nowrap">{fmtDateTime(row.created_at)}</TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] max-w-[200px] truncate" title={row.filename}>{row.filename}</TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-center">{row.total_count}</TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-center text-green-700 font-medium">{row.imported_count}</TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-center text-red-600">{row.rejected_count || '—'}</TableCell>
+                      <TableCell className="py-1 px-2"><StatusBadge status={row.status} /></TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-muted-foreground truncate max-w-[140px]">{row.user_email || '—'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
