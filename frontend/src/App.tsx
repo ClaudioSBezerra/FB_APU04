@@ -19,6 +19,7 @@ import ImportarXMLsEntrada from './pages/ImportarXMLsEntrada'
 import ImportarXMLsSaida from './pages/ImportarXMLsSaida'
 import ImportarXMLsCTe from './pages/ImportarXMLsCTe'
 import PainelXMLs from './pages/PainelXMLs'
+import RelatorioSaneamento from './pages/RelatorioSaneamento'
 import ERPBridgeConfig from './pages/ERPBridgeConfig'
 import ERPBridgeLogs from './pages/ERPBridgeLogs'
 import ERPBridgeCredenciais from './pages/ERPBridgeCredenciais'
@@ -160,6 +161,7 @@ function AppLayout() {
               <Route path="/importacoes/xml/saidas"            element={<AdminRoute><ImportarXMLsSaida /></AdminRoute>} />
               <Route path="/importacoes/xml/ctes"              element={<AdminRoute><ImportarXMLsCTe /></AdminRoute>} />
               <Route path="/painel/xmls"                       element={<PainelXMLs />} />
+              <Route path="/relatorios/saneamento-cclasstrib"  element={<RelatorioSaneamento />} />
 
               {/* Configurações */}
               <Route path="/config/aliquotas"                  element={<TabelaAliquotas />} />
