@@ -15,6 +15,10 @@ import GestaoAmbiente from './pages/GestaoAmbiente'
 import Managers from './pages/Managers'
 import ConsultaNFesEntradas from './pages/ConsultaNFesEntradas'
 import ConsultaCTesEntradas from './pages/ConsultaCTesEntradas'
+import ImportarXMLsEntrada from './pages/ImportarXMLsEntrada'
+import ImportarXMLsSaida from './pages/ImportarXMLsSaida'
+import ImportarXMLsCTe from './pages/ImportarXMLsCTe'
+import PainelXMLs from './pages/PainelXMLs'
 import ERPBridgeConfig from './pages/ERPBridgeConfig'
 import ERPBridgeLogs from './pages/ERPBridgeLogs'
 import ERPBridgeCredenciais from './pages/ERPBridgeCredenciais'
@@ -152,6 +156,10 @@ function AppLayout() {
               <Route path="/apuracao/nfse"                     element={<ComingSoon title="NFS-e Entradas" />} />
               <Route path="/importacoes/erp-bridge"            element={<AdminRoute><ERPBridgeConfig /></AdminRoute>} />
               <Route path="/importacoes/erp-bridge/logs"       element={<AdminRoute><ERPBridgeLogs /></AdminRoute>} />
+              <Route path="/importacoes/xml/entradas"          element={<AdminRoute><ImportarXMLsEntrada /></AdminRoute>} />
+              <Route path="/importacoes/xml/saidas"            element={<AdminRoute><ImportarXMLsSaida /></AdminRoute>} />
+              <Route path="/importacoes/xml/ctes"              element={<AdminRoute><ImportarXMLsCTe /></AdminRoute>} />
+              <Route path="/painel/xmls"                       element={<PainelXMLs />} />
 
               {/* Configurações */}
               <Route path="/config/aliquotas"                  element={<TabelaAliquotas />} />

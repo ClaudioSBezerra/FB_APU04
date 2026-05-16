@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -17,6 +16,13 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -86,6 +92,7 @@ export default function GestaoAmbiente() {
   const [newCompanyCNPJ, setNewCompanyCNPJ] = useState("");
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyTradeName, setNewCompanyTradeName] = useState("");
+  const [newCompanyRegime, setNewCompanyRegime] = useState("nao_informado");
 
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
@@ -268,7 +275,8 @@ export default function GestaoAmbiente() {
           group_id: selectedGroup.id,
           cnpj: newCompanyCNPJ,
           name: newCompanyName,
-          trade_name: newCompanyTradeName
+          trade_name: newCompanyTradeName,
+          regime_tributario: newCompanyRegime,
         }),
       });
 
@@ -279,6 +287,7 @@ export default function GestaoAmbiente() {
       setNewCompanyCNPJ("");
       setNewCompanyName("");
       setNewCompanyTradeName("");
+      setNewCompanyRegime("nao_informado");
       fetchCompanies(selectedGroup.id);
     } catch (error) {
       toast.error("Erro ao criar empresa");
@@ -605,6 +614,25 @@ export default function GestaoAmbiente() {
                   <div className="space-y-2">
                     <Label>Nome Fantasia</Label>
                     <Input value={newCompanyTradeName} onChange={(e) => setNewCompanyTradeName(e.target.value)} placeholder="Empresa X" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Regime Tributário</Label>
+                    <Select value={newCompanyRegime} onValueChange={setNewCompanyRegime}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o regime" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="nao_informado">Não informado</SelectItem>
+                        <SelectItem value="lucro_real">Lucro Real</SelectItem>
+                        <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
+                        <SelectItem value="simples_nacional">Simples Nacional</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {(newCompanyRegime === 'lucro_real' || newCompanyRegime === 'lucro_presumido') && (
+                      <p className="text-[11px] text-amber-600">
+                        Lucro Real e Presumido: importação de EFD ICMS obrigatória.
+                      </p>
+                    )}
                   </div>
                 </div>
                 <DialogFooter>

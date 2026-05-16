@@ -6,6 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Settings2, Clock, CalendarDays, CheckCircle2, XCircle, Loader2, AlertTriangle, RefreshCw, Zap, Ban, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -147,6 +154,12 @@ export default function ERPBridgeConfig() {
   const [horario, setHorario] = useState('02:00');
   const [diasRetro, setDiasRetro] = useState(1);
 
+  // ── Estado: tipo ERP (oracle_xml checkboxes) ──────────────────────────────
+  const [erpType, setErpType] = useState<string>('sap_s4hana');
+  const [oracleEntradas, setOracleEntradas] = useState(true);
+  const [oracleSaidas, setOracleSaidas] = useState(true);
+  const [oracleCtes, setOracleCtes] = useState(true);
+
 
   // ── Estado: trigger manual ────────────────────────────────────────────────
   const [triggerIni, setTriggerIni]               = useState(firstDayOfPrevMonth);
@@ -160,6 +173,7 @@ export default function ERPBridgeConfig() {
       setAtivo(cfg.ativo);
       setHorario(cfg.horario);
       setDiasRetro(cfg.dias_retroativos);
+      if (cfg.erp_type) setErpType(cfg.erp_type);
     }
   }, [cfg]);
 
@@ -566,6 +580,62 @@ const abortMutation = useMutation({
           </CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-5">
+
+          {/* Tipo ERP */}
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium">Tipo de integração ERP</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Selecione o método de integração com o ERP.
+              </p>
+            </div>
+            <Select value={erpType} onValueChange={setErpType}>
+              <SelectTrigger className="w-64 h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sap_s4hana">SAP S/4HANA</SelectItem>
+                <SelectItem value="oracle_xml">Oracle XML (Entradas/Saídas/CT-Es)</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {erpType === 'oracle_xml' && (
+              <div className="ml-1 space-y-2 border-l-2 border-blue-200 pl-4">
+                <p className="text-xs text-muted-foreground font-medium">Tipos de documento por servidor:</p>
+                <label className="flex items-center gap-2 cursor-pointer w-fit">
+                  <input
+                    type="checkbox"
+                    checked={oracleEntradas}
+                    onChange={e => setOracleEntradas(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-blue-500"
+                  />
+                  <span className="text-xs">Entradas (NF-e de Entradas)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer w-fit">
+                  <input
+                    type="checkbox"
+                    checked={oracleSaidas}
+                    onChange={e => setOracleSaidas(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-blue-500"
+                  />
+                  <span className="text-xs">Saídas (NF-e de Saídas)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer w-fit">
+                  <input
+                    type="checkbox"
+                    checked={oracleCtes}
+                    onChange={e => setOracleCtes(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-blue-500"
+                  />
+                  <span className="text-xs">CT-es (Conhecimentos de Frete)</span>
+                </label>
+                <p className="text-[11px] text-amber-600 mt-1">
+                  Nota: o backend de oracle_xml usa upload manual via /importacoes/xml/*.
+                  Estes checkboxes configuram quais tipos o servidor ERP encaminhará via API XML.
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* Ativo */}
           <div className="flex items-center justify-between">

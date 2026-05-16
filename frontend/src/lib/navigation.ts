@@ -26,9 +26,13 @@ export const modules: Record<string, ModuleConfig> = {
   notas: {
     label: 'Notas Importadas',
     tabs: [
-      { label: 'NF-e Entradas',       path: '/apuracao/entrada/notas' },
-      { label: 'Importar via ERP',    path: '/importacoes/erp-bridge',      adminOnly: true },
-      { label: 'Logs de Importação',  path: '/importacoes/erp-bridge/logs', adminOnly: true },
+      { label: 'NF-e Entradas',          path: '/apuracao/entrada/notas' },
+      { label: 'Importar via ERP',       path: '/importacoes/erp-bridge',        adminOnly: true },
+      { label: 'Logs de Importação',     path: '/importacoes/erp-bridge/logs',   adminOnly: true },
+      { label: 'Importar XMLs Entradas', path: '/importacoes/xml/entradas',      adminOnly: true },
+      { label: 'Importar XMLs Saídas',   path: '/importacoes/xml/saidas',        adminOnly: true },
+      { label: 'Importar XMLs CT-es',    path: '/importacoes/xml/ctes',          adminOnly: true },
+      { label: 'Painel XMLs',            path: '/painel/xmls' },
     ],
   },
   config: {
@@ -56,6 +60,7 @@ export function getActiveModule(pathname: string): string {
   if (pathname.startsWith('/relatorios/')) return 'simulador'
   if (pathname.startsWith('/apuracao/')) return 'notas'
   if (pathname.startsWith('/importacoes/')) return 'notas'
+  if (pathname.startsWith('/painel/xmls')) return 'notas'
   if (pathname.startsWith('/config/')) return 'config'
   return 'simulador'
 }
