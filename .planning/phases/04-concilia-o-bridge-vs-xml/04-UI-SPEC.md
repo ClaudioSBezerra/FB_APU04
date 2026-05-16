@@ -22,7 +22,7 @@ created: 2026-05-16
 | Preset | Não aplicável (instalação manual) |
 | Component library | Radix UI (via shadcn/ui: Tabs, Card, Table, Badge, Button, Input, Select, Dialog) |
 | Icon library | lucide-react 0.363.0 |
-| Font | Inter (400, 600, 700) + JetBrains Mono (400) — carregado via Google Fonts |
+| Font | Inter (400, 600) + JetBrains Mono (400) — carregado via Google Fonts |
 
 **Fonte:** tailwind.config.js + index.css (detectado no codebase)
 
@@ -72,10 +72,10 @@ Escala 8-point herdada do projeto. Exceções documentadas para tabelas densas (
 
 **Regras:**
 - Exatamente 4 tamanhos declarados: 20px, 16px, 14px, 11px.
-- Exatamente 2 pesos: regular (400) + semibold (600). Nenhum peso intermediário.
+- Exatamente 2 pesos: regular (400) + semibold (600). Nenhum peso intermediário ou bold (700).
 - Valores monetários (BRL): sempre `font-semibold text-[11px]` alinhados à direita.
 - Chave NF-e e CNPJ: sempre `font-mono text-[11px]` — distingue dado técnico de texto editorial.
-- Heading de página alinhado com `RelatorioSaneamento.tsx`: `text-xl font-semibold` (não `text-2xl font-bold` de PainelXMLs.tsx — consistência com relatórios).
+- Heading de página alinhado com `RelatorioSaneamento.tsx`: `text-xl font-semibold` (não `text-2xl font-semibold` de PainelXMLs.tsx — consistência com relatórios).
 
 **Fonte:** RelatorioSaneamento.tsx + PainelXMLs.tsx (padrão observado)
 
@@ -232,7 +232,7 @@ usar os tokens, nunca valores hardcoded.
 | 10 | ICMS XML | Direita | BRL font-semibold |
 | 11 | ICMS Bridge | Direita | BRL text-muted-foreground |
 | 12 | Delta ICMS | Direita | BRL — Badge vermelho se > 0.01 |
-| 13 | Delta Total | Direita | BRL font-bold — ordenação padrão DESC |
+| 13 | Delta Total | Direita | BRL font-semibold — ordenação padrão DESC |
 
 **Comportamento de linha:**
 - Linha com `delta_total > 0.01`: `className="bg-red-50 hover:bg-red-100"`
@@ -284,7 +284,7 @@ Botões de exportação ficam ABAIXO da tabela, alinhados à esquerda. Não dent
 
 **Footnote obrigatória abaixo da tabela de cobertura:**
 ```html
-<p className="text-xs text-muted-foreground mt-2">
+<p className="text-[11px] text-muted-foreground mt-2">
   Notas canceladas excluídas da contagem.
 </p>
 ```
@@ -295,9 +295,9 @@ Botões de exportação ficam ABAIXO da tabela, alinhados à esquerda. Não dent
 
 | Card | Título | Valor |
 |------|--------|-------|
-| 1 | "NF-es com divergência" | contagem inteira — `text-2xl font-bold` |
-| 2 | "Delta tributário total" | soma de delta_total em BRL — `text-2xl font-bold` |
-| 3 | "Cobertura XML (entradas)" | `X,X%` — `text-2xl font-bold` |
+| 1 | "NF-es com divergência" | contagem inteira — `text-xl font-semibold` |
+| 2 | "Delta tributário total" | soma de delta_total em BRL — `text-xl font-semibold` |
+| 3 | "Cobertura XML (entradas)" | `X,X%` — `text-xl font-semibold` |
 
 Todos os cards: `CardTitle className="text-sm font-semibold text-muted-foreground"` no header.
 
