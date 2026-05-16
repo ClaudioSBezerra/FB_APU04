@@ -8,11 +8,24 @@ services:
       - bridge_data:/app/data
     environment:
       - TZ=America/Recife
+    # Porta 8086 — Prometheus metrics exporter (prometheus_client)
+    # Topologia: assume bridge na mesma máquina AWS que o docker-compose principal.
+    # O Prometheus faz scrape de bridge:8086 via rede fb_net (Docker DNS interno).
+    # Para deploy on-prem com bridge em máquina separada do Prometheus:
+    #   1. Descomentar a linha abaixo para expor a porta no host:
+    #      ports:
+    #        - "8086:8086"
+    #   2. No monitoring/prometheus/prometheus.yml, substituir 'bridge:8086'
+    #      pelo IP ou hostname do servidor on-prem + abrir firewall para o IP do Prometheus.
+    expose:
+      - "8086"
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "5"
+    networks:
+      - fb_net
 
   watchtower:
     image: containrrr/watchtower
@@ -30,3 +43,11 @@ services:
 volumes:
   bridge_data:
     driver: local
+
+# Rede externa compartilhada com o compose principal (simu.fcxlabs.com).
+# Permite que o Prometheus (fb_net) acesse bridge:8086 via DNS Docker interno.
+# A rede fb_net deve estar criada pelo compose principal antes de executar este compose.
+networks:
+  fb_net:
+    external: true
+    name: fb_net

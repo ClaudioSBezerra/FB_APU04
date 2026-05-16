@@ -92,6 +92,78 @@ services:
     networks:
       - fb_net
 
+  # ── Observabilidade (OBS-01) ─────────────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: fb_apu04-prometheus
+    restart: always
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    expose:
+      - "9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./monitoring/prometheus:/etc/prometheus:ro
+    networks:
+      - fb_net
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: fb_apu04-grafana
+    restart: always
+    expose:
+      - "3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - fb_net
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: fb_apu04-alertmanager
+    restart: always
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    expose:
+      - "9093"
+    environment:
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM=${SMTP_FROM}
+    volumes:
+      - alertmanager_data:/alertmanager
+      - ./monitoring/alertmanager:/etc/alertmanager:ro
+    networks:
+      - fb_net
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: fb_apu04-postgres-exporter
+    restart: always
+    expose:
+      - "9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+    networks:
+      - fb_net
+    depends_on:
+      - db
+
 networks:
   fb_net:
     driver: bridge
@@ -102,3 +174,6 @@ volumes:
   postgres_data_apu04:
   api_uploads:
   api_backups:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:

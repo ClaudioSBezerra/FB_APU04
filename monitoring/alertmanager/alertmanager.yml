@@ -1,0 +1,14 @@
+# Alertmanager stub — Plan 01 (OBS-01)
+# Configuração real com SMTP e regras de alerta será feita no Plan 02 (OBS-02).
+# Por enquanto, este stub garante que o serviço suba sem erro.
+#
+# NOTA: O Alertmanager não expande variáveis de ambiente diretamente no YAML.
+# O Plan 02 usará envsubst no entrypoint para substituir ${SMTP_*} antes de iniciar.
+
+global: {}
+
+route:
+  receiver: noop
+
+receivers:
+  - name: noop
