@@ -565,6 +565,11 @@ func main() {
 	http.HandleFunc("/api/xml/upload-batches/", withAuth(handlers.XMLUploadBatchStatusHandler, ""))
 	http.HandleFunc("/api/xml/upload-batches", withAuth(handlers.XMLUploadBatchesHandler, ""))
 
+	// Relatórios de Saneamento CCLASSTRIB — /csv deve ser registrado ANTES de /saneamento (mais específico primeiro)
+	http.HandleFunc("/api/xml/reports/saneamento/csv", withAuth(handlers.XMLSaneamentoCSVHandler, ""))
+	http.HandleFunc("/api/xml/reports/saneamento", withAuth(handlers.XMLSaneamentoCCLASSTRIBHandler, ""))
+	http.HandleFunc("/api/xml/reports/fornecedores-cclasstrib", withAuth(handlers.XMLFornecedoresCCLASSTRIBHandler, ""))
+
 	// Notas Importadas — NF-e e CT-e (sempre disponível)
 	http.HandleFunc("/api/nfe-saidas/upload", withAuth(handlers.NfeSaidasUploadHandler, ""))
 	http.HandleFunc("/api/nfe-saidas", withAuth(handlers.NfeSaidasListHandler, ""))
