@@ -37,6 +37,12 @@ type saneamentoRow struct {
 	VCofinsTotal        float64  `json:"v_cofins_total"`
 	CstsPis             []string `json:"csts_pis"`
 	CstsCofins          []string `json:"csts_cofins"`
+	// Campos da Reforma Tributária (ncm_cclasstrib_reforma)
+	CclasstribReforma *int     `json:"cclasstrib_reforma"` // nil se NCM não consta na tabela de referência
+	DescricaoReforma  *string  `json:"descricao_reforma"`
+	IBSReducaoPct     *float64 `json:"ibs_reducao_pct"`
+	CBSReducaoPct     *float64 `json:"cbs_reducao_pct"`
+	AnexoReforma      *string  `json:"anexo_reforma"`
 }
 
 // parsePgArray converte o formato PostgreSQL array literal "{a,b,c}" em []string.
@@ -62,6 +68,8 @@ func parsePgArray(src interface{}) []string {
 }
 
 // executeSaneamentoQuery executa a query central de saneamento e retorna os dados.
+// Faz LEFT JOIN com ncm_cclasstrib_reforma para enriquecer o resultado com a
+// classificação esperada pela Reforma Tributária (IBS/CBS).
 func executeSaneamentoQuery(db *sql.DB, companyID, mesAno string) ([]saneamentoRow, error) {
 	args := []interface{}{companyID}
 	whereClause := "WHERE ei.company_id = $1"
@@ -75,25 +83,53 @@ func executeSaneamentoQuery(db *sql.DB, companyID, mesAno string) ([]saneamentoR
 		args = append(args, mesAno)
 	}
 
+	// A subquery lateral busca a entrada mais específica da tabela de referência
+	// da Reforma Tributária para cada NCM (maior prefixo que faz match).
 	query := fmt.Sprintf(`
+WITH saneamento AS (
+    SELECT
+        ei.ncm,
+        COUNT(DISTINCT ei.cst_pis)    AS variantes_cst_pis,
+        COUNT(DISTINCT ei.cst_cofins) AS variantes_cst_cofins,
+        COUNT(DISTINCT ei.cclasstrib) FILTER (WHERE ei.cclasstrib IS NOT NULL) AS variantes_cclasstrib,
+        BOOL_OR(ei.cclasstrib IS NULL) AS tem_cclasstrib_nulo,
+        COUNT(*) AS qtd_itens,
+        COALESCE(SUM(ei.v_pis),    0) AS v_pis_total,
+        COALESCE(SUM(ei.v_cofins), 0) AS v_cofins_total,
+        COALESCE(array_agg(DISTINCT ei.cst_pis)    FILTER (WHERE ei.cst_pis IS NOT NULL),    ARRAY[]::text[]) AS csts_pis,
+        COALESCE(array_agg(DISTINCT ei.cst_cofins) FILTER (WHERE ei.cst_cofins IS NOT NULL), ARRAY[]::text[]) AS csts_cofins
+    FROM nfe_entradas_itens ei
+    %s
+    GROUP BY ei.ncm
+    HAVING COUNT(DISTINCT ei.cst_pis) > 1
+        OR COUNT(DISTINCT ei.cst_cofins) > 1
+        OR BOOL_OR(ei.cclasstrib IS NULL)
+)
 SELECT
-    ei.ncm,
-    COUNT(DISTINCT ei.cst_pis)    AS variantes_cst_pis,
-    COUNT(DISTINCT ei.cst_cofins) AS variantes_cst_cofins,
-    COUNT(DISTINCT ei.cclasstrib) FILTER (WHERE ei.cclasstrib IS NOT NULL) AS variantes_cclasstrib,
-    BOOL_OR(ei.cclasstrib IS NULL) AS tem_cclasstrib_nulo,
-    COUNT(*) AS qtd_itens,
-    COALESCE(SUM(ei.v_pis),    0) AS v_pis_total,
-    COALESCE(SUM(ei.v_cofins), 0) AS v_cofins_total,
-    COALESCE(array_agg(DISTINCT ei.cst_pis)    FILTER (WHERE ei.cst_pis IS NOT NULL),    ARRAY[]::text[]) AS csts_pis,
-    COALESCE(array_agg(DISTINCT ei.cst_cofins) FILTER (WHERE ei.cst_cofins IS NOT NULL), ARRAY[]::text[]) AS csts_cofins
-FROM nfe_entradas_itens ei
-%s
-GROUP BY ei.ncm
-HAVING COUNT(DISTINCT ei.cst_pis) > 1
-    OR COUNT(DISTINCT ei.cst_cofins) > 1
-    OR BOOL_OR(ei.cclasstrib IS NULL)
-ORDER BY qtd_itens DESC
+    s.ncm,
+    s.variantes_cst_pis,
+    s.variantes_cst_cofins,
+    s.variantes_cclasstrib,
+    s.tem_cclasstrib_nulo,
+    s.qtd_itens,
+    s.v_pis_total,
+    s.v_cofins_total,
+    s.csts_pis,
+    s.csts_cofins,
+    ref.cclasstrib   AS cclasstrib_reforma,
+    ref.descricao    AS descricao_reforma,
+    ref.ibs_reducao_pct,
+    ref.cbs_reducao_pct,
+    ref.anexo        AS anexo_reforma
+FROM saneamento s
+LEFT JOIN LATERAL (
+    SELECT cclasstrib, descricao, ibs_reducao_pct, cbs_reducao_pct, anexo
+    FROM ncm_cclasstrib_reforma
+    WHERE s.ncm LIKE ncm_digits || '%%'
+    ORDER BY length(ncm_digits) DESC
+    LIMIT 1
+) ref ON true
+ORDER BY s.qtd_itens DESC
 LIMIT 500`, whereClause)
 
 	rows, err := db.Query(query, args...)
@@ -118,6 +154,11 @@ LIMIT 500`, whereClause)
 			&row.VCofinsTotal,
 			&rawCstsPis,
 			&rawCstsCofins,
+			&row.CclasstribReforma,
+			&row.DescricaoReforma,
+			&row.IBSReducaoPct,
+			&row.CBSReducaoPct,
+			&row.AnexoReforma,
 		); err != nil {
 			log.Printf("[XMLReports] scan error: %v", err)
 			continue
@@ -230,6 +271,10 @@ func XMLSaneamentoCSVHandler(db *sql.DB) http.HandlerFunc {
 			"CSTs PIS Encontrados",
 			"CSTs COFINS Encontrados",
 			"Sugestão CCLASSTRIB",
+			"Descrição Reforma",
+			"Redução IBS (%)",
+			"Redução CBS (%)",
+			"Anexo Reforma",
 		}
 		if err := cw.Write(header); err != nil {
 			log.Printf("[XMLReports/SaneamentoCSV] write header error: %v", err)
@@ -240,6 +285,26 @@ func XMLSaneamentoCSVHandler(db *sql.DB) http.HandlerFunc {
 			ausente := "Não"
 			if row.TemCclasstribNulo {
 				ausente = "Sim"
+			}
+			sugestao := ""
+			if row.CclasstribReforma != nil {
+				sugestao = fmt.Sprintf("%d", *row.CclasstribReforma)
+			}
+			descReforma := ""
+			if row.DescricaoReforma != nil {
+				descReforma = *row.DescricaoReforma
+			}
+			ibsPct := ""
+			if row.IBSReducaoPct != nil {
+				ibsPct = fmt.Sprintf("%.0f%%", *row.IBSReducaoPct)
+			}
+			cbsPct := ""
+			if row.CBSReducaoPct != nil {
+				cbsPct = fmt.Sprintf("%.0f%%", *row.CBSReducaoPct)
+			}
+			anexo := ""
+			if row.AnexoReforma != nil {
+				anexo = *row.AnexoReforma
 			}
 			record := []string{
 				row.NCM,
@@ -252,7 +317,11 @@ func XMLSaneamentoCSVHandler(db *sql.DB) http.HandlerFunc {
 				fmt.Sprintf("%.2f", row.VCofinsTotal),
 				strings.Join(row.CstsPis, "; "),
 				strings.Join(row.CstsCofins, "; "),
-				"", // Sugestão CCLASSTRIB — preenchido manualmente pelo contador
+				sugestao,
+				descReforma,
+				ibsPct,
+				cbsPct,
+				anexo,
 			}
 			if err := cw.Write(record); err != nil {
 				log.Printf("[XMLReports/SaneamentoCSV] write row error: %v", err)

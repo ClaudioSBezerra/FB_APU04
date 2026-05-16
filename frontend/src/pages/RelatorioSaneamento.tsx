@@ -29,6 +29,12 @@ interface SaneamentoRow {
   v_cofins_total: number;
   csts_pis: string[] | null;
   csts_cofins: string[] | null;
+  // Referência Reforma Tributária
+  cclasstrib_reforma: number | null;
+  descricao_reforma: string | null;
+  ibs_reducao_pct: number | null;
+  cbs_reducao_pct: number | null;
+  anexo_reforma: string | null;
 }
 
 interface FornecedorRow {
@@ -244,6 +250,9 @@ export default function RelatorioSaneamento() {
                     <TableHead className="text-right">V. PIS+COFINS</TableHead>
                     <TableHead>CSTs PIS Encontrados</TableHead>
                     <TableHead>CSTs COFINS Encontrados</TableHead>
+                    <TableHead className="text-center">CCLASSTRIB Reforma</TableHead>
+                    <TableHead>Descrição / Anexo</TableHead>
+                    <TableHead className="text-center">Redução IBS/CBS</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -279,6 +288,28 @@ export default function RelatorioSaneamento() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {(row.csts_cofins ?? []).join(', ') || '—'}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {row.cclasstrib_reforma != null ? (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-mono">
+                            {row.cclasstrib_reforma}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs max-w-[160px]">
+                        {row.descricao_reforma
+                          ? <span title={row.descricao_reforma}>{row.descricao_reforma.slice(0, 25)}{row.descricao_reforma.length > 25 ? '…' : ''}</span>
+                          : '—'}
+                        {row.anexo_reforma && (
+                          <span className="ml-1 text-muted-foreground">({row.anexo_reforma})</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center text-xs">
+                        {row.ibs_reducao_pct != null
+                          ? `${row.ibs_reducao_pct.toFixed(0)}%`
+                          : '—'}
                       </TableCell>
                     </TableRow>
                   ))}

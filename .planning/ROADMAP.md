@@ -7,7 +7,7 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 ## Phases
 
 - [x] **Phase 1: Estabilização Crítica (Reset + Cache)** - Proteger ResetDatabase e resolver bug de cache em simu.fcxlabs.com/login (completed 2026-05-08)
-- [ ] **Phase 2: Upload de XMLs (Drag-and-Drop)** - Segunda fonte de dados alimentando as mesmas tabelas do ERP Bridge, com prioridade do XML em conflitos
+- [x] **Phase 2: Upload de XMLs (Drag-and-Drop)** - Segunda fonte de dados alimentando as mesmas tabelas do ERP Bridge, com prioridade do XML em conflitos (completed 2026-05-16)
 - [ ] **Phase 3: Estabilização Adicional** - Tirar credenciais do código, bootstrap de testes Go/React, retry/reconnect no Bridge SAP S4
 - [ ] **Phase 4: Conciliação Bridge vs XML** - Relatório de divergências e dashboard de cobertura por fonte
 - [ ] **Phase 5: Observabilidade e Alertas** - Dashboards Grafana e alertas críticos via Prometheus já provisionado
@@ -48,7 +48,7 @@ Plans:
 - [x] 02-01-PLAN.md — Schema migrations (source, itens, batches, regime_tributario, views XML)
 - [x] 02-02-PLAN.md — Backend parser NFe estendido (itens, CRT), handler upload unificado, worker assíncrono, lógica de prioridade XML>Oracle
 - [x] 02-03-PLAN.md — Frontend drag-and-drop, painel XML, campo regime tributário, navegação atualizada
-- [ ] 02-04-PLAN.md — Relatórios de saneamento CCLASSTRIB + exportação CSV + fornecedores com classificação incorreta (wave 4, depende de 02-03)
+- [x] 02-04-PLAN.md — Relatórios de saneamento CCLASSTRIB + exportação CSV + fornecedores com classificação incorreta (wave 4, depende de 02-03)
 
 ### Phase 3: Estabilização Adicional
 **Goal**: Reduzir dívida técnica em segredos, testes e resilência do bridge — pré-requisitos para escalar com confiança.
@@ -105,7 +105,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Estabilização Crítica (Reset + Cache) | 3/3 | Complete   | 2026-05-08 |
-| 2. Upload de XMLs (Drag-and-Drop) | 1/4 | In Progress|  |
+| 2. Upload de XMLs (Drag-and-Drop) | 4/4 | Complete   | 2026-05-16 |
 | 3. Estabilização Adicional | 0/4 | Not started | - |
 | 4. Conciliação Bridge vs XML | 0/2 | Not started | - |
 | 5. Observabilidade e Alertas | 0/2 | Not started | - |
