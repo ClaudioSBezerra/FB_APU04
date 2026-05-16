@@ -185,8 +185,15 @@ func NfeEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 			ic := inf.Total.ICMSTot
 			ib := inf.Total.IBSCBSTot
 
+			tx, err := db.Begin()
+			if err != nil {
+				result.Erros = append(result.Erros, nfeEntradaErro{filename, "Erro ao iniciar transação: " + err.Error()})
+				continue
+			}
+
 			// IBS/CBS: usa toDecimal (não toNullDecimal) — fornecedores sem tags ficam com 0
-			_, err = db.Exec(`
+			var nfeID string
+			err = tx.QueryRow(`
 				INSERT INTO nfe_entradas (
 					company_id, chave_nfe, modelo, serie, numero_nfe,
 					data_emissao, mes_ano, nat_op,
@@ -197,7 +204,8 @@ func NfeEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					v_prod, v_frete, v_seg, v_desc,
 					v_ii, v_ipi, v_ipi_devol, v_pis, v_cofins, v_outro, v_nf,
 					v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cred_pres_ibs,
-					v_cbs, v_cred_pres_cbs
+					v_cbs, v_cred_pres_cbs,
+					source
 				) VALUES (
 					$1,$2,$3,$4,$5,
 					$6,$7,$8,
@@ -208,9 +216,46 @@ func NfeEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					$25,$26,$27,$28,
 					$29,$30,$31,$32,$33,$34,$35,
 					$36,$37,$38,$39,$40,
-					$41,$42
+					$41,$42,
+					'xml_upload'
 				)
-				ON CONFLICT ON CONSTRAINT uq_nfe_entradas_company_chave DO NOTHING`,
+				ON CONFLICT ON CONSTRAINT uq_nfe_entradas_company_chave DO UPDATE SET
+					forn_cnpj    = EXCLUDED.forn_cnpj,
+					forn_nome    = EXCLUDED.forn_nome,
+					forn_uf      = EXCLUDED.forn_uf,
+					forn_municipio = EXCLUDED.forn_municipio,
+					dest_cnpj_cpf = EXCLUDED.dest_cnpj_cpf,
+					dest_nome    = EXCLUDED.dest_nome,
+					dest_uf      = EXCLUDED.dest_uf,
+					dest_c_mun   = EXCLUDED.dest_c_mun,
+					v_bc         = EXCLUDED.v_bc,
+					v_icms       = EXCLUDED.v_icms,
+					v_icms_deson = EXCLUDED.v_icms_deson,
+					v_fcp        = EXCLUDED.v_fcp,
+					v_bc_st      = EXCLUDED.v_bc_st,
+					v_st         = EXCLUDED.v_st,
+					v_fcp_st     = EXCLUDED.v_fcp_st,
+					v_fcp_st_ret = EXCLUDED.v_fcp_st_ret,
+					v_prod       = EXCLUDED.v_prod,
+					v_frete      = EXCLUDED.v_frete,
+					v_seg        = EXCLUDED.v_seg,
+					v_desc       = EXCLUDED.v_desc,
+					v_ii         = EXCLUDED.v_ii,
+					v_ipi        = EXCLUDED.v_ipi,
+					v_ipi_devol  = EXCLUDED.v_ipi_devol,
+					v_pis        = EXCLUDED.v_pis,
+					v_cofins     = EXCLUDED.v_cofins,
+					v_outro      = EXCLUDED.v_outro,
+					v_nf         = EXCLUDED.v_nf,
+					v_bc_ibs_cbs = EXCLUDED.v_bc_ibs_cbs,
+					v_ibs_uf     = EXCLUDED.v_ibs_uf,
+					v_ibs_mun    = EXCLUDED.v_ibs_mun,
+					v_ibs        = EXCLUDED.v_ibs,
+					v_cred_pres_ibs = EXCLUDED.v_cred_pres_ibs,
+					v_cbs        = EXCLUDED.v_cbs,
+					v_cred_pres_cbs = EXCLUDED.v_cred_pres_cbs,
+					source       = 'xml_upload'
+				RETURNING id`,
 				companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
 				dataEmissao, mesAno, inf.Ide.NatOp,
 				inf.Emit.CNPJ, inf.Emit.XNome, inf.Emit.EnderEmit.UF, inf.Emit.EnderEmit.XMun,
@@ -222,10 +267,33 @@ func NfeEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 				toDecimal(ib.VBCIBSCBS), toDecimal(ib.GIBS.GIBSuf.VIBSuf), toDecimal(ib.GIBS.GIBSMun.VIBSMun),
 				toDecimal(ib.GIBS.VIBS), toDecimal(ib.GIBS.VCredPres),
 				toDecimal(ib.GCBS.VCBS), toDecimal(ib.GCBS.VCredPres),
-			)
+			).Scan(&nfeID)
 			if err != nil {
+				tx.Rollback()
 				log.Printf("NfeEntradas INSERT error [%s]: %v", chave, err)
 				result.Erros = append(result.Erros, nfeEntradaErro{filename, "Erro ao salvar no banco: " + err.Error()})
+				continue
+			}
+
+			// Inserir itens da nota
+			if len(inf.Det) > 0 {
+				if err := insertNFeItens(tx, nfeID, companyID, inf.Det, "nfe_entradas_itens"); err != nil {
+					log.Printf("NfeEntradas itens error [%s]: %v", chave, err)
+					// Não abortar: falha em itens não invalida a nota principal
+				}
+			}
+
+			// CRT=1 (Simples Nacional): registrar fornecedor em forn_simples
+			if strings.TrimSpace(inf.Emit.CRT) == "1" {
+				cnpjEmit := strings.TrimSpace(inf.Emit.CNPJ)
+				if cnpjEmit != "" {
+					tx.Exec(`INSERT INTO forn_simples (cnpj) VALUES ($1) ON CONFLICT (cnpj) DO NOTHING`, cnpjEmit)
+				}
+			}
+
+			if err := tx.Commit(); err != nil {
+				log.Printf("NfeEntradas COMMIT error [%s]: %v", chave, err)
+				result.Erros = append(result.Erros, nfeEntradaErro{filename, "Erro ao confirmar transação: " + err.Error()})
 				continue
 			}
 

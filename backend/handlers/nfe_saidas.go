@@ -19,6 +19,16 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Constantes de limite para upload de XMLs
+// ---------------------------------------------------------------------------
+
+const (
+	MaxUploadBytes      = 100 * 1024 * 1024 // 100MB
+	MaxXMLsPerBatch     = 5000
+	BatchAsyncThreshold = 50 // acima disto: background job
+)
+
+// ---------------------------------------------------------------------------
 // Structs de parsing XML — nomes dos campos refletem as tags da NF-e
 // ---------------------------------------------------------------------------
 
@@ -45,7 +55,62 @@ type infNFe struct {
 	Ide   ide    `xml:"ide"`
 	Emit  emit   `xml:"emit"`
 	Dest  dest   `xml:"dest"`
+	Det   []det  `xml:"det"` // array de itens da nota
 	Total total  `xml:"total"`
+}
+
+// ---------------------------------------------------------------------------
+// Structs para itens de nota (<det>) — compartilhados entre entradas/saidas
+// ---------------------------------------------------------------------------
+
+type det struct {
+	NItem   string     `xml:"nItem,attr"`
+	Prod    prod       `xml:"prod"`
+	Imposto detImposto `xml:"imposto"`
+}
+
+type prod struct {
+	CProd string `xml:"cProd"`
+	XProd string `xml:"xProd"`
+	NCM   string `xml:"NCM"`
+	CFOP  string `xml:"CFOP"`
+	VProd string `xml:"vProd"`
+	VDesc string `xml:"vDesc"`
+}
+
+type detImposto struct {
+	ICMS   detICMS   `xml:"ICMS"`
+	PIS    detPIS    `xml:"PIS"`
+	COFINS detCOFINS `xml:"COFINS"`
+	IPI    detIPI    `xml:"IPI"`
+}
+
+// detICMSGrupo captura qualquer sub-grupo ICMS (CST ou CSOSN) sem mapear ~30 variantes
+type detICMSGrupo struct {
+	CST   string `xml:"CST"`
+	CSOSN string `xml:"CSOSN"`
+	VBC   string `xml:"vBC"`
+	VICMS string `xml:"vICMS"`
+}
+
+type detICMS struct {
+	Grupos []detICMSGrupo `xml:",any"`
+}
+
+type detPIS struct {
+	CST    string `xml:"PISAliq>CST"`
+	VPIS   string `xml:"PISAliq>vPIS"`
+	VBCPIS string `xml:"PISAliq>vBC"`
+}
+
+type detCOFINS struct {
+	CST       string `xml:"COFINSAliq>CST"`
+	VCOFINS   string `xml:"COFINSAliq>vCOFINS"`
+	VBCCOFINS string `xml:"COFINSAliq>vBC"`
+}
+
+type detIPI struct {
+	VIPI string `xml:"IPITrib>vIPI"`
 }
 
 type ide struct {
@@ -60,6 +125,7 @@ type ide struct {
 type emit struct {
 	CNPJ      string    `xml:"CNPJ"`
 	XNome     string    `xml:"xNome"`
+	CRT       string    `xml:"CRT"`        // "1" = Simples Nacional
 	EnderEmit enderEmit `xml:"enderEmit"`
 }
 
@@ -176,6 +242,22 @@ func parseNFeXML(data []byte) (*nfeProc, error) {
 	// Namespace com aspas simples (menos comum, mas por segurança)
 	data = bytes.ReplaceAll(data,
 		[]byte(` xmlns='http://www.portalfiscal.inf.br/nfe'`), []byte(""))
+	// Remove namespace xmlns:nfe= (qualquer formato)
+	for _, ns := range [][]byte{
+		[]byte(` xmlns:nfe="http://www.portalfiscal.inf.br/nfe"`),
+		[]byte(` xmlns:nfe='http://www.portalfiscal.inf.br/nfe'`),
+	} {
+		data = bytes.ReplaceAll(data, ns, []byte(""))
+	}
+	// Substitui prefixo nfe: (ex: <nfe:NFe>) por elemento simples
+	data = bytes.ReplaceAll(data, []byte("<nfe:"), []byte("<"))
+	data = bytes.ReplaceAll(data, []byte("</nfe:"), []byte("</"))
+
+	// PITFALL: XMLs sem wrapper nfeProc — se a raiz for <NFe>, envolver
+	trimmed := bytes.TrimSpace(data)
+	if bytes.HasPrefix(trimmed, []byte("<NFe")) {
+		data = append([]byte("<nfeProc>"), append(trimmed, []byte("</nfeProc>")...)...)
+	}
 
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	dec.CharsetReader = nfeCharsetReader
@@ -224,6 +306,82 @@ func parseDhEmi(dhEmi string) (time.Time, string, error) {
 	}
 	mesAno := fmt.Sprintf("%02d/%04d", t.Month(), t.Year())
 	return t, mesAno, nil
+}
+
+// ---------------------------------------------------------------------------
+// insertNFeItens insere os itens de uma nota nas tabelas nfe_*_itens
+// ---------------------------------------------------------------------------
+
+func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tableName string) error {
+	for _, d := range dets {
+		nItem, _ := strconv.Atoi(d.NItem)
+		if nItem == 0 {
+			continue
+		}
+
+		// Extrai CST/CSOSN do primeiro grupo ICMS presente
+		cstICMS := ""
+		vBCICMS := 0.0
+		vICMS := 0.0
+		if len(d.Imposto.ICMS.Grupos) > 0 {
+			g := d.Imposto.ICMS.Grupos[0]
+			if g.CSOSN != "" {
+				cstICMS = g.CSOSN
+			} else {
+				cstICMS = g.CST
+			}
+			vBCICMS = toDecimal(g.VBC)
+			vICMS = toDecimal(g.VICMS)
+		}
+
+		_, err := tx.Exec(fmt.Sprintf(`
+			INSERT INTO %s (
+				nfe_id, company_id, n_item,
+				c_prod, x_prod, ncm, cfop,
+				cst_icms, cst_pis, cst_cofins,
+				v_prod, v_bc_icms, v_icms,
+				v_bc_pis, v_pis,
+				v_bc_cofins, v_cofins,
+				v_ipi
+			) VALUES (
+				$1, $2, $3,
+				$4, $5, $6, $7,
+				$8, $9, $10,
+				$11, $12, $13,
+				$14, $15,
+				$16, $17,
+				$18
+			)
+			ON CONFLICT (nfe_id, n_item) DO UPDATE SET
+				c_prod       = EXCLUDED.c_prod,
+				x_prod       = EXCLUDED.x_prod,
+				ncm          = EXCLUDED.ncm,
+				cfop         = EXCLUDED.cfop,
+				cst_icms     = EXCLUDED.cst_icms,
+				cst_pis      = EXCLUDED.cst_pis,
+				cst_cofins   = EXCLUDED.cst_cofins,
+				v_prod       = EXCLUDED.v_prod,
+				v_bc_icms    = EXCLUDED.v_bc_icms,
+				v_icms       = EXCLUDED.v_icms,
+				v_bc_pis     = EXCLUDED.v_bc_pis,
+				v_pis        = EXCLUDED.v_pis,
+				v_bc_cofins  = EXCLUDED.v_bc_cofins,
+				v_cofins     = EXCLUDED.v_cofins,
+				v_ipi        = EXCLUDED.v_ipi
+		`, tableName),
+			nfeID, companyID, nItem,
+			d.Prod.CProd, d.Prod.XProd, d.Prod.NCM, d.Prod.CFOP,
+			cstICMS, d.Imposto.PIS.CST, d.Imposto.COFINS.CST,
+			toDecimal(d.Prod.VProd), vBCICMS, vICMS,
+			toDecimal(d.Imposto.PIS.VBCPIS), toDecimal(d.Imposto.PIS.VPIS),
+			toDecimal(d.Imposto.COFINS.VBCCOFINS), toDecimal(d.Imposto.COFINS.VCOFINS),
+			toDecimal(d.Imposto.IPI.VIPI),
+		)
+		if err != nil {
+			return fmt.Errorf("item %d: %w", nItem, err)
+		}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -348,7 +506,14 @@ func NfeSaidasUploadHandler(db *sql.DB) http.HandlerFunc {
 			ic := inf.Total.ICMSTot
 			ib := inf.Total.IBSCBSTot
 
-			_, err = db.Exec(`
+			tx, err := db.Begin()
+			if err != nil {
+				result.Erros = append(result.Erros, nfeSaidaErro{filename, "Erro ao iniciar transação: " + err.Error()})
+				continue
+			}
+
+			var nfeID string
+			err = tx.QueryRow(`
 				INSERT INTO nfe_saidas (
 					company_id, chave_nfe, modelo, serie, numero_nfe,
 					data_emissao, mes_ano, nat_op,
@@ -359,7 +524,8 @@ func NfeSaidasUploadHandler(db *sql.DB) http.HandlerFunc {
 					v_prod, v_frete, v_seg, v_desc,
 					v_ii, v_ipi, v_ipi_devol, v_pis, v_cofins, v_outro, v_nf,
 					v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cred_pres_ibs,
-					v_cbs, v_cred_pres_cbs
+					v_cbs, v_cred_pres_cbs,
+					source
 				) VALUES (
 					$1,$2,$3,$4,$5,
 					$6,$7,$8,
@@ -370,9 +536,46 @@ func NfeSaidasUploadHandler(db *sql.DB) http.HandlerFunc {
 					$25,$26,$27,$28,
 					$29,$30,$31,$32,$33,$34,$35,
 					$36,$37,$38,$39,$40,
-					$41,$42
+					$41,$42,
+					'xml_upload'
 				)
-				ON CONFLICT ON CONSTRAINT uq_nfe_saidas_company_chave DO NOTHING`,
+				ON CONFLICT ON CONSTRAINT uq_nfe_saidas_company_chave DO UPDATE SET
+					emit_cnpj    = EXCLUDED.emit_cnpj,
+					emit_nome    = EXCLUDED.emit_nome,
+					emit_uf      = EXCLUDED.emit_uf,
+					emit_municipio = EXCLUDED.emit_municipio,
+					dest_cnpj_cpf = EXCLUDED.dest_cnpj_cpf,
+					dest_nome    = EXCLUDED.dest_nome,
+					dest_uf      = EXCLUDED.dest_uf,
+					dest_c_mun   = EXCLUDED.dest_c_mun,
+					v_bc         = EXCLUDED.v_bc,
+					v_icms       = EXCLUDED.v_icms,
+					v_icms_deson = EXCLUDED.v_icms_deson,
+					v_fcp        = EXCLUDED.v_fcp,
+					v_bc_st      = EXCLUDED.v_bc_st,
+					v_st         = EXCLUDED.v_st,
+					v_fcp_st     = EXCLUDED.v_fcp_st,
+					v_fcp_st_ret = EXCLUDED.v_fcp_st_ret,
+					v_prod       = EXCLUDED.v_prod,
+					v_frete      = EXCLUDED.v_frete,
+					v_seg        = EXCLUDED.v_seg,
+					v_desc       = EXCLUDED.v_desc,
+					v_ii         = EXCLUDED.v_ii,
+					v_ipi        = EXCLUDED.v_ipi,
+					v_ipi_devol  = EXCLUDED.v_ipi_devol,
+					v_pis        = EXCLUDED.v_pis,
+					v_cofins     = EXCLUDED.v_cofins,
+					v_outro      = EXCLUDED.v_outro,
+					v_nf         = EXCLUDED.v_nf,
+					v_bc_ibs_cbs = EXCLUDED.v_bc_ibs_cbs,
+					v_ibs_uf     = EXCLUDED.v_ibs_uf,
+					v_ibs_mun    = EXCLUDED.v_ibs_mun,
+					v_ibs        = EXCLUDED.v_ibs,
+					v_cred_pres_ibs = EXCLUDED.v_cred_pres_ibs,
+					v_cbs        = EXCLUDED.v_cbs,
+					v_cred_pres_cbs = EXCLUDED.v_cred_pres_cbs,
+					source       = 'xml_upload'
+				RETURNING id`,
 				companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
 				dataEmissao, mesAno, inf.Ide.NatOp,
 				inf.Emit.CNPJ, inf.Emit.XNome, inf.Emit.EnderEmit.UF, inf.Emit.EnderEmit.XMun,
@@ -384,10 +587,33 @@ func NfeSaidasUploadHandler(db *sql.DB) http.HandlerFunc {
 				toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.GIBSuf.VIBSuf), toNullDecimal(ib.GIBS.GIBSMun.VIBSMun),
 				toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GIBS.VCredPres),
 				toNullDecimal(ib.GCBS.VCBS), toNullDecimal(ib.GCBS.VCredPres),
-			)
+			).Scan(&nfeID)
 			if err != nil {
+				tx.Rollback()
 				log.Printf("NfeSaidas INSERT error [%s]: %v", chave, err)
 				result.Erros = append(result.Erros, nfeSaidaErro{filename, "Erro ao salvar no banco: " + err.Error()})
+				continue
+			}
+
+			// Inserir itens da nota
+			if len(inf.Det) > 0 {
+				if err := insertNFeItens(tx, nfeID, companyID, inf.Det, "nfe_saidas_itens"); err != nil {
+					log.Printf("NfeSaidas itens error [%s]: %v", chave, err)
+					// Não abortar: falha em itens não invalida a nota principal
+				}
+			}
+
+			// CRT=1 (Simples Nacional): registrar fornecedor em forn_simples
+			if strings.TrimSpace(inf.Emit.CRT) == "1" {
+				cnpjEmit := strings.TrimSpace(inf.Emit.CNPJ)
+				if cnpjEmit != "" {
+					tx.Exec(`INSERT INTO forn_simples (cnpj) VALUES ($1) ON CONFLICT (cnpj) DO NOTHING`, cnpjEmit)
+				}
+			}
+
+			if err := tx.Commit(); err != nil {
+				log.Printf("NfeSaidas COMMIT error [%s]: %v", chave, err)
+				result.Erros = append(result.Erros, nfeSaidaErro{filename, "Erro ao confirmar transação: " + err.Error()})
 				continue
 			}
 

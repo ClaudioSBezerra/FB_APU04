@@ -212,7 +212,8 @@ func batchInsertNFeSaida(db *sql.DB, companyID string, doc batchDoc, modelo stri
 			base_icms, icms, icms_st, ipi,
 			base_pis, pis, base_cofins, cofins,
 			base_partilha, icms_partilha,
-			cancelado, tipo_cfop, cfop
+			cancelado, tipo_cfop, cfop,
+			source
 		) VALUES (
 			$1,$2,$3,$4,$5,
 			$6,$7,$8,
@@ -224,21 +225,32 @@ func batchInsertNFeSaida(db *sql.DB, companyID string, doc batchDoc, modelo stri
 			$25,$26,
 			$27,
 			COALESCE(NULLIF($28,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($29,'')), 'O'),
-			NULLIF($29,'')
+			NULLIF($29,''),
+			'oracle_bridge'
 		)
 		ON CONFLICT ON CONSTRAINT uq_nfe_saidas_company_chave
 		DO UPDATE SET
 			cancelado      = EXCLUDED.cancelado,
-			base_icms      = EXCLUDED.base_icms,
-			icms           = EXCLUDED.icms,
-			icms_st        = EXCLUDED.icms_st,
-			ipi            = EXCLUDED.ipi,
-			base_pis       = EXCLUDED.base_pis,
-			pis            = EXCLUDED.pis,
-			base_cofins    = EXCLUDED.base_cofins,
-			cofins         = EXCLUDED.cofins,
-			base_partilha  = EXCLUDED.base_partilha,
-			icms_partilha  = EXCLUDED.icms_partilha,
+			base_icms      = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.base_icms ELSE EXCLUDED.base_icms END,
+			icms           = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.icms ELSE EXCLUDED.icms END,
+			icms_st        = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.icms_st ELSE EXCLUDED.icms_st END,
+			ipi            = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.ipi ELSE EXCLUDED.ipi END,
+			base_pis       = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.base_pis ELSE EXCLUDED.base_pis END,
+			pis            = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.pis ELSE EXCLUDED.pis END,
+			base_cofins    = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.base_cofins ELSE EXCLUDED.base_cofins END,
+			cofins         = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.cofins ELSE EXCLUDED.cofins END,
+			base_partilha  = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.base_partilha ELSE EXCLUDED.base_partilha END,
+			icms_partilha  = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_saidas.source = 'xml_upload'
+			                      THEN nfe_saidas.icms_partilha ELSE EXCLUDED.icms_partilha END,
 			tipo_cfop = COALESCE(
 				NULLIF($28,''),
 				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($29,'')),
@@ -280,7 +292,8 @@ func batchInsertNFeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo st
 			base_icms, icms, icms_st, ipi,
 			base_pis, pis, base_cofins, cofins,
 			base_partilha, icms_partilha,
-			cancelado, tipo_cfop, cfop
+			cancelado, tipo_cfop, cfop,
+			source
 		) VALUES (
 			$1,$2,$3,$4,$5,
 			$6,$7,$8,
@@ -292,21 +305,32 @@ func batchInsertNFeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo st
 			$25,$26,
 			$27,
 			COALESCE(NULLIF($28,''), (SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($29,'')), 'C'),
-			NULLIF($29,'')
+			NULLIF($29,''),
+			'oracle_bridge'
 		)
 		ON CONFLICT ON CONSTRAINT uq_nfe_entradas_company_chave
 		DO UPDATE SET
 			cancelado      = EXCLUDED.cancelado,
-			base_icms      = EXCLUDED.base_icms,
-			icms           = EXCLUDED.icms,
-			icms_st        = EXCLUDED.icms_st,
-			ipi            = EXCLUDED.ipi,
-			base_pis       = EXCLUDED.base_pis,
-			pis            = EXCLUDED.pis,
-			base_cofins    = EXCLUDED.base_cofins,
-			cofins         = EXCLUDED.cofins,
-			base_partilha  = EXCLUDED.base_partilha,
-			icms_partilha  = EXCLUDED.icms_partilha,
+			base_icms      = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.base_icms ELSE EXCLUDED.base_icms END,
+			icms           = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.icms ELSE EXCLUDED.icms END,
+			icms_st        = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.icms_st ELSE EXCLUDED.icms_st END,
+			ipi            = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.ipi ELSE EXCLUDED.ipi END,
+			base_pis       = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.base_pis ELSE EXCLUDED.base_pis END,
+			pis            = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.pis ELSE EXCLUDED.pis END,
+			base_cofins    = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.base_cofins ELSE EXCLUDED.base_cofins END,
+			cofins         = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.cofins ELSE EXCLUDED.cofins END,
+			base_partilha  = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.base_partilha ELSE EXCLUDED.base_partilha END,
+			icms_partilha  = CASE WHEN EXCLUDED.source = 'oracle_bridge' AND nfe_entradas.source = 'xml_upload'
+			                      THEN nfe_entradas.icms_partilha ELSE EXCLUDED.icms_partilha END,
 			tipo_cfop = COALESCE(
 				NULLIF($28,''),
 				(SELECT c.tipo FROM cfop c WHERE c.cfop = NULLIF($29,'')),
