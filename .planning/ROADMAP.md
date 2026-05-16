@@ -8,8 +8,8 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 
 - [x] **Phase 1: Estabilização Crítica (Reset + Cache)** - Proteger ResetDatabase e resolver bug de cache em simu.fcxlabs.com/login (completed 2026-05-08)
 - [x] **Phase 2: Upload de XMLs (Drag-and-Drop)** - Segunda fonte de dados alimentando as mesmas tabelas do ERP Bridge, com prioridade do XML em conflitos (completed 2026-05-16)
-- [ ] **Phase 3: Estabilização Adicional** - Tirar credenciais do código, bootstrap de testes Go/React, retry/reconnect no Bridge SAP S4
-- [ ] **Phase 4: Conciliação Bridge vs XML** - Relatório de divergências e dashboard de cobertura por fonte
+- [x] **Phase 3: Estabilização Adicional** - Tirar credenciais do código, bootstrap de testes Go/React, retry/reconnect no Bridge SAP S4 (completed 2026-05-16)
+- [x] **Phase 4: Conciliação Bridge vs XML** - Relatório de divergências e dashboard de cobertura por fonte (completed 2026-05-16)
 - [ ] **Phase 5: Observabilidade e Alertas** - Dashboards Grafana e alertas críticos via Prometheus já provisionado
 
 ## Phase Details

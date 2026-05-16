@@ -75,10 +75,10 @@ Mapeamento requisito → fase. Atualizado quando o ROADMAP.md for criado.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STAB-01 a STAB-05, STAB-10 | Phase 1 | Pending |
-| XML-01 a XML-08 | Phase 2 | Pending |
-| STAB-06 a STAB-09 | Phase 3 | Pending |
-| EXP-01 a EXP-02 | Phase 4 | Pending |
+| STAB-01 a STAB-05, STAB-10 | Phase 1 | Complete (2026-05-08) |
+| XML-01 a XML-08 | Phase 2 | Complete (2026-05-16) |
+| STAB-06 a STAB-09 | Phase 3 | Complete (2026-05-16) |
+| EXP-01 a EXP-02 | Phase 4 | Complete (2026-05-16) |
 | OBS-01 a OBS-02 | Phase 5 | Pending |
 
 **Coverage:**

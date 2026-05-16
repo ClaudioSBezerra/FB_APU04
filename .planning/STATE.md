@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
-status: ready_to_execute
-last_updated: "2026-05-16T21:20:00.826Z"
+status: ready_to_plan
+last_updated: "2026-05-16T22:15:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 13
   completed_plans: 13
-  percent: 100
+  percent: 80
 ---
 
 # State: FB_APU04
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Phase 04 — concilia-o-bridge-vs-xml
+**Current focus:** Phase 05 — Observabilidade e Alertas
 
 ## Status
 
@@ -90,7 +90,9 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Next Action
 
-Phase 04 COMPLETA (Plans 01+02). EXP-01 e EXP-02 totalmente atendidos. Próxima fase: Phase 05 (a definir no roadmap).
+Phase 04 COMPLETA e aprovada (UAT: 2026-05-16). EXP-01 e EXP-02 entregues. Próxima: `/gsd-plan-phase 5` — Observabilidade e Alertas (Prometheus + Grafana + runbooks).
+
+**Bug pendente (não bloqueante):** CR-01 em xml_conciliacao.go — delta_total omite IPI no somatório SQL; será corrigido em gap closure antes ou durante Phase 5.
 
 ---
 *Last updated: 2026-05-08*
