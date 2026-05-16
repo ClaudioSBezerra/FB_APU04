@@ -222,6 +222,9 @@ func onDBConnected() {
 	// Start Background Worker (SPED processing — always active in FB_APU04 Simulador)
 	worker.StartWorker(database)
 
+	// Start XML Worker (processamento assíncrono de batches >50 XMLs)
+	worker.StartXMLWorker(database)
+
 	// Trigger async refresh of materialized views at startup
 	go func() {
 		time.Sleep(5 * time.Second)
@@ -554,6 +557,13 @@ func main() {
 		// Painel Apuração IBS/CBS
 		http.HandleFunc("/api/apuracao/painel", withAuth(handlers.ApuracaoPainelHandler, ""))
 	}
+
+	// Upload unificado de XMLs — NF-e e CT-e drag-and-drop
+	// NOTA: /api/xml/painel/ deve ser registrado ANTES de /api/xml/upload-batches/ (prefixo mais específico)
+	http.HandleFunc("/api/xml/painel/", withAuth(handlers.XMLPainelHandler, ""))
+	http.HandleFunc("/api/xml/upload", withAuth(handlers.XMLUploadHandler, ""))
+	http.HandleFunc("/api/xml/upload-batches/", withAuth(handlers.XMLUploadBatchStatusHandler, ""))
+	http.HandleFunc("/api/xml/upload-batches", withAuth(handlers.XMLUploadBatchesHandler, ""))
 
 	// Notas Importadas — NF-e e CT-e (sempre disponível)
 	http.HandleFunc("/api/nfe-saidas/upload", withAuth(handlers.NfeSaidasUploadHandler, ""))
