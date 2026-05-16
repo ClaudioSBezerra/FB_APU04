@@ -45,7 +45,7 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Schema migrations (source, itens, batches, regime_tributario, views XML)
+- [x] 02-01-PLAN.md — Schema migrations (source, itens, batches, regime_tributario, views XML)
 - [ ] 02-02-PLAN.md — Backend parser NFe estendido (itens, CRT), handler upload unificado, worker assíncrono, lógica de prioridade XML>Oracle
 - [ ] 02-03-PLAN.md — Frontend drag-and-drop, painel XML, campo regime tributário, navegação atualizada
 - [ ] 02-04-PLAN.md — Relatórios de saneamento CCLASSTRIB + exportação CSV + fornecedores com classificação incorreta (wave 4, depende de 02-03)
@@ -105,7 +105,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Estabilização Crítica (Reset + Cache) | 3/3 | Complete   | 2026-05-08 |
-| 2. Upload de XMLs (Drag-and-Drop) | 0/4 | Planned | - |
+| 2. Upload de XMLs (Drag-and-Drop) | 1/4 | In Progress|  |
 | 3. Estabilização Adicional | 0/4 | Not started | - |
 | 4. Conciliação Bridge vs XML | 0/2 | Not started | - |
 | 5. Observabilidade e Alertas | 0/2 | Not started | - |

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
 status: ready_to_plan
-last_updated: "2026-05-08T17:51:26.979Z"
+last_updated: "2026-05-16T15:15:31.860Z"
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 40
+  completed_phases: 1
+  total_plans: 7
+  completed_plans: 4
+  percent: 57
 ---
 
 # State: FB_APU04
@@ -20,24 +20,24 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Phase 01 — estabiliza-o-cr-tica-reset-cache
+**Current focus:** Phase 02 — upload-de-xmls-drag-and-drop
 
 ## Status
 
 - **Initialized:** 2026-05-08
 - **Codebase mapped:** 2026-05-08 (7 documents, 1920 lines in `.planning/codebase/`)
 - **Roadmap:** 5 phases (Coarse granularity)
-- **Active phase:** Phase 1 — COMPLETED (all 3 plans done)
+- **Active phase:** Phase 02 — Upload de XMLs Drag-and-Drop (Plan 1 de 4 concluído)
 - **Completed phases:** 1
-- **Last session:** 2026-05-08T17:53:00.000Z
+- **Last session:** 2026-05-16T15:15:00.000Z
 
 ## Current Phase
 
-**Phase 1 — Estabilização Crítica do Reset**
+**Phase 02 — Upload de XMLs (Drag-and-Drop)**
 
-- Goal: Tornar impossível repetir o incidente de 2026-05-07
-- Requirements: STAB-01 a STAB-05
-- Status: COMPLETED — Plan 01 (commits 060992c, dff6b5e, b3f7c57), Plan 02 (commits 07622e1, 66d6372, a66d296 — checkpoint:human-verify APROVADO em modo YOLO 2026-05-08), Plan 03 (commit 9732b91)
+- Goal: Permitir upload manual de XMLs (NF-e, CT-e) como complemento ao ERP Bridge
+- Requirements: XML-01 a XML-08
+- Status: IN PROGRESS — Plan 01 concluído (commits b059ea0, bb76c6f, d5cbe4c) — 5 migrations criadas (074-078)
 
 ## Decisions Made
 
@@ -46,6 +46,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **Gate DB allowlist reseta rate limiter quando disparado:** guard estrutural não penaliza o usuário
 - **Vitest 1.6.x (não 4.x):** compatibilidade com Node 18.19 — 4.x requer styleText de node:util indisponível no Node 18
 - **Modal AlertDialog sem AlertDialogTrigger:** abertura programática via setState do componente pai (ImportarEFD.tsx)
+- **Views XML usam v_icms (não v_icms_dest/v_icms_remet):** campos inexistentes confirmados via schema migration 059 — v_icms é o campo correto do ICMSTot
 
 ## Recent History
 
@@ -53,6 +54,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - 2026-05-08: Inicialização do GSD. Codebase mapeado, PROJECT/REQUIREMENTS/ROADMAP criados.
 - 2026-05-08: Phase 01 Plan 01 executado — ResetDatabaseHandler reescrito com 5 gates (STAB-01 a STAB-05), migration 073, audit log admin_destructive_actions, volume api_backups, ALLOWED_DESTRUCTIVE_DBS.
 - 2026-05-08: Phase 01 Plan 02 executado — ResetDatabaseDialog criado com TDD RED/GREEN, integrado ao ImportarEFD.tsx. Infraestrutura vitest instalada. Task 3 (checkpoint:human-verify) aprovado em modo YOLO. Phase 01 COMPLETA.
+- 2026-05-16: Phase 02 Plan 01 executado — 5 migrations criadas (074-078): coluna source em 3 tabelas, tabelas nfe_*_itens, xml_upload_batches, regime_tributario, 4 views vw_xml_*.
 
 ## Configuration
 
@@ -66,7 +68,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Next Action
 
-Phase 01 COMPLETA. Checkpoint:human-verify do plan 01-02 foi aprovado em modo YOLO (auto-advance). Próxima fase: Phase 02 — Upload de XMLs (Drag-and-Drop).
+Phase 02 Plan 01 COMPLETO. Schema estabelecido. Próximo: Phase 02 Plan 02 — handlers Go para upload e parse de XMLs NF-e/CT-e.
 
 ---
 *Last updated: 2026-05-08*
