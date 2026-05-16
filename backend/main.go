@@ -570,6 +570,11 @@ func main() {
 	http.HandleFunc("/api/xml/reports/saneamento", withAuth(handlers.XMLSaneamentoCCLASSTRIBHandler, ""))
 	http.HandleFunc("/api/xml/reports/fornecedores-cclasstrib", withAuth(handlers.XMLFornecedoresCCLASSTRIBHandler, ""))
 
+	// Conciliação Bridge vs XML — /csv registrado ANTES de /conciliacao (mais específico primeiro)
+	http.HandleFunc("/api/xml/conciliacao/csv", withAuth(handlers.ConciliacaoCSVHandler, ""))
+	http.HandleFunc("/api/xml/conciliacao", withAuth(handlers.ConciliacaoHandler, ""))
+	http.HandleFunc("/api/xml/cobertura", withAuth(handlers.CoberturaHandler, ""))
+
 	// Notas Importadas — NF-e e CT-e (sempre disponível)
 	http.HandleFunc("/api/nfe-saidas/upload", withAuth(handlers.NfeSaidasUploadHandler, ""))
 	http.HandleFunc("/api/nfe-saidas", withAuth(handlers.NfeSaidasListHandler, ""))
