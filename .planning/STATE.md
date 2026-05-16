@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
 status: ready_to_plan
-last_updated: "2026-05-16T15:24:04.369Z"
+last_updated: "2026-05-16T18:35:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
-  percent: 71
+  completed_plans: 6
+  percent: 86
 ---
 
 # State: FB_APU04
@@ -27,17 +27,17 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **Initialized:** 2026-05-08
 - **Codebase mapped:** 2026-05-08 (7 documents, 1920 lines in `.planning/codebase/`)
 - **Roadmap:** 5 phases (Coarse granularity)
-- **Active phase:** Phase 02 — Upload de XMLs Drag-and-Drop (Plan 2 de 4 concluído)
-- **Completed phases:** 1
-- **Last session:** 2026-05-16T16:00:00.000Z
+- **Active phase:** Phase 02 — Upload de XMLs Drag-and-Drop (Plans 01+02+03 concluídos — Phase 02 COMPLETA)
+- **Completed phases:** 2
+- **Last session:** 2026-05-16T18:35:00.000Z
 
 ## Current Phase
 
-**Phase 02 — Upload de XMLs (Drag-and-Drop)**
+**Phase 02 — Upload de XMLs (Drag-and-Drop) — COMPLETA**
 
 - Goal: Permitir upload manual de XMLs (NF-e, CT-e) como complemento ao ERP Bridge
-- Requirements: XML-01 a XML-08
-- Status: IN PROGRESS — Plans 01+02 concluídos — Schema (074-078) + Handlers Go (XMLUploadHandler, XMLPainelHandler, StartXMLWorker)
+- Requirements: XML-01 a XML-08 (XML-01, XML-02, XML-05, XML-07, XML-08 marcados completos)
+- Status: COMPLETA — Plans 01+02+03 concluídos — Schema (074-078) + Handlers Go + Frontend React
 
 ## Decisions Made
 
@@ -49,6 +49,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **Views XML usam v_icms (não v_icms_dest/v_icms_remet):** campos inexistentes confirmados via schema migration 059 — v_icms é o campo correto do ICMSTot
 - **ProcessXMLBatch exportado de handlers:** uso pelo worker sem duplicação de lógica de parse
 - **NamedXML exportado como tipo público:** worker/xml_worker.go importa handlers para reutilizar o tipo sem duplicação
+- **fetch() global interceptado por AuthContext:** não exporta fetchAuth; window.fetch injeta Authorization + X-Company-ID automaticamente
+- **select callback de useQuery para side effects:** evita useEffect extra para setProgress, setUploadState, toast durante polling
 
 ## Recent History
 
@@ -58,6 +60,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - 2026-05-08: Phase 01 Plan 02 executado — ResetDatabaseDialog criado com TDD RED/GREEN, integrado ao ImportarEFD.tsx. Infraestrutura vitest instalada. Task 3 (checkpoint:human-verify) aprovado em modo YOLO. Phase 01 COMPLETA.
 - 2026-05-16: Phase 02 Plan 01 executado — 5 migrations criadas (074-078): coluna source em 3 tabelas, tabelas nfe_*_itens, xml_upload_batches, regime_tributario, 4 views vw_xml_*.
 - 2026-05-16: Phase 02 Plan 02 executado — handlers Go: XMLUploadHandler (.xml/.zip, 100MB/5000 XMLs, async >50), XMLPainelHandler (3 views), StartXMLWorker (pool 3 goroutines), lógica XML>Oracle source.
+- 2026-05-16: Phase 02 Plan 03 executado — frontend React: react-dropzone nas 3 páginas de upload XML, PainelXMLs.tsx com 3 abas, regime_tributario em GestaoAmbiente, erp_type oracle_xml em ERPBridgeConfig, 4 novas rotas + tabs. Phase 02 COMPLETA.
 
 ## Configuration
 
@@ -71,7 +74,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Next Action
 
-Phase 02 Plan 02 COMPLETO. Handlers Go implementados. Próximo: Phase 02 Plan 03 — frontend React para upload drag-and-drop e painel de XMLs importados.
+Phase 02 COMPLETA (Plans 01+02+03). Próximo: Phase 03 — apuração e relatórios fiscais baseados nos dados XML e ERP importados.
 
 ---
 *Last updated: 2026-05-08*

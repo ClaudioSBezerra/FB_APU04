@@ -46,8 +46,8 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Schema migrations (source, itens, batches, regime_tributario, views XML)
-- [ ] 02-02-PLAN.md — Backend parser NFe estendido (itens, CRT), handler upload unificado, worker assíncrono, lógica de prioridade XML>Oracle
-- [ ] 02-03-PLAN.md — Frontend drag-and-drop, painel XML, campo regime tributário, navegação atualizada
+- [x] 02-02-PLAN.md — Backend parser NFe estendido (itens, CRT), handler upload unificado, worker assíncrono, lógica de prioridade XML>Oracle
+- [x] 02-03-PLAN.md — Frontend drag-and-drop, painel XML, campo regime tributário, navegação atualizada
 - [ ] 02-04-PLAN.md — Relatórios de saneamento CCLASSTRIB + exportação CSV + fornecedores com classificação incorreta (wave 4, depende de 02-03)
 
 ### Phase 3: Estabilização Adicional

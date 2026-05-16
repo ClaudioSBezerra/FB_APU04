@@ -18,13 +18,13 @@ Requisitos do ciclo atual, organizados pelas frentes do PROJECT.md em ordem de p
 
 ### Importação XML (prioridade 2) — Nova fonte de dados
 
-- [ ] **XML-01**: Tela de upload com drag-and-drop aceita arquivos XML único ou ZIP contendo múltiplos XMLs de NF-e
-- [ ] **XML-02**: Validação de schema NF-e v4.00 (NFe + protNFe) antes da persistência; XMLs inválidos rejeitados com motivo claro
+- [x] **XML-01**: Tela de upload com drag-and-drop aceita arquivos XML único ou ZIP contendo múltiplos XMLs de NF-e
+- [x] **XML-02**: Validação de schema NF-e v4.00 (NFe + protNFe) antes da persistência; XMLs inválidos rejeitados com motivo claro
 - [x] **XML-03**: Parser extrai e popula as tabelas `nfe_entradas` / `nfe_saidas` (mesmas tabelas do ERP Bridge) com PIS, COFINS, IPI, ICMS, CFOP, valores
 - [x] **XML-04**: Resolução de conflito por chave de acesso — quando NF-e já existe via Oracle Bridge, **XML sobrescreve** os campos tributários e marca origem como `xml_upload`
 - [x] **XML-05**: Histórico de uploads visível no painel — quem subiu, quando, quantos XMLs processados/rejeitados, link para reprocessar
 - [x] **XML-06**: Coluna `source` nas tabelas (`oracle_bridge` | `xml_upload` | `manual`) para auditoria de origem
-- [ ] **XML-07**: Limite de tamanho por upload (configurável, default 100MB ou 5000 XMLs por ZIP) com mensagem clara quando excedido
+- [x] **XML-07**: Limite de tamanho por upload (configurável, default 100MB ou 5000 XMLs por ZIP) com mensagem clara quando excedido
 - [x] **XML-08**: Background job processa XMLs grandes (>50 arquivos) sem bloquear a UI; usuário recebe status via toast/notificação
 
 ### Estabilização adicional (prioridade 3)
