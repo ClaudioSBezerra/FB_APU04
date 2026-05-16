@@ -36,8 +36,8 @@ Requisitos do ciclo atual, organizados pelas frentes do PROJECT.md em ordem de p
 
 ### Expansão fiscal (prioridade 4)
 
-- [ ] **EXP-01**: Conciliação automática entre dados do ERP Bridge e XML upload — relatório de divergências de valores tributários
-- [ ] **EXP-02**: Dashboard de cobertura — % de NF-es com fonte XML (autêntica) vs apenas Oracle Bridge
+- [x] **EXP-01**: Conciliação automática entre dados do ERP Bridge e XML upload — relatório de divergências de valores tributários
+- [x] **EXP-02**: Dashboard de cobertura — % de NF-es com fonte XML (autêntica) vs apenas Oracle Bridge
 
 ### Observabilidade (prioridade 5)
 

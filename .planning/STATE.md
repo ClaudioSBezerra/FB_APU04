@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
 status: ready_to_execute
-last_updated: "2026-05-16T21:30:00.000Z"
+last_updated: "2026-05-16T21:14:07.424Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 13
   percent: 100
 ---
 
@@ -20,18 +20,24 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Phase 02 — upload-de-xmls-drag-and-drop
+**Current focus:** Phase 04 — concilia-o-bridge-vs-xml
 
 ## Status
 
 - **Initialized:** 2026-05-08
 - **Codebase mapped:** 2026-05-08 (7 documents, 1920 lines in `.planning/codebase/`)
 - **Roadmap:** 5 phases (Coarse granularity)
-- **Active phase:** Phase 04 — Conciliação Bridge vs XML (planejada — pronta para execução)
+- **Active phase:** Phase 04 — Conciliação Bridge vs XML — Plan 01 COMPLETO (backend handler + rotas)
 - **Completed phases:** 3
-- **Last session:** 2026-05-16T20:53:43.720Z
+- **Last session:** 2026-05-16T21:14:07.413Z
 
 ## Current Phase
+
+**Phase 04 — Conciliação Bridge vs XML — EM EXECUÇÃO**
+
+- Goal: Conciliar dados do ERP Bridge com XMLs SEFAZ — relatório de divergências tributárias e dashboard de cobertura
+- Requirements: EXP-01, EXP-02 — Plan 01 completo (backend); Plan 02 pendente (frontend)
+- Status: Plan 01 COMPLETO — xml_conciliacao.go (ConciliacaoHandler, CoberturaHandler, ConciliacaoCSVHandler) + rotas registradas em main.go
 
 **Phase 02 — Upload de XMLs (Drag-and-Drop) — COMPLETA**
 
@@ -51,6 +57,10 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **NamedXML exportado como tipo público:** worker/xml_worker.go importa handlers para reutilizar o tipo sem duplicação
 - **fetch() global interceptado por AuthContext:** não exporta fetchAuth; window.fetch injeta Authorization + X-Company-ID automaticamente
 - **select callback de useQuery para side effects:** evita useEffect extra para setProgress, setUploadState, toast durante polling
+- **Whitelist de tipo nfe_entradas/nfe_saidas em ConciliacaoHandler/CoberturaHandler:** nenhum outro valor aceito — protege contra SQL injection em nome de tabela
+- **mes_ano como $2 parametrizado em executeConciliacaoQuery:** nunca interpolado em SQL — proteção T-04-01-02
+- **Filtro anti-divergência-falsa (pis+cofins+icms>0):** evita exibir notas XML-only como divergência quando Bridge nunca importou (DEFAULT 0 em migration 066)
+- **Threshold ABS > 0.01 para divergência:** elimina ruído de arredondamento SEFAZ vs ERP; threshold fixo documentado na UI
 
 ## Recent History
 
@@ -62,6 +72,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - 2026-05-16: Phase 02 Plan 02 executado — handlers Go: XMLUploadHandler (.xml/.zip, 100MB/5000 XMLs, async >50), XMLPainelHandler (3 views), StartXMLWorker (pool 3 goroutines), lógica XML>Oracle source.
 - 2026-05-16: Phase 02 Plan 03 executado — frontend React: react-dropzone nas 3 páginas de upload XML, PainelXMLs.tsx com 3 abas, regime_tributario em GestaoAmbiente, erp_type oracle_xml em ERPBridgeConfig, 4 novas rotas + tabs.
 - 2026-05-16: Phase 02 Plan 04 executado — 3 endpoints relatório saneamento CCLASSTRIB + migration 079 (95 NCMs Reforma Tributária semeados em ncm_cclasstrib_reforma) + RelatorioSaneamento.tsx com coluna "Sugestão CCLASSTRIB" preenchida automaticamente via LEFT JOIN LATERAL. Phase 02 COMPLETA (Plans 01+02+03+04).
+- 2026-05-16: Phase 04 Plan 01 executado — xml_conciliacao.go criado com ConciliacaoHandler + CoberturaHandler + ConciliacaoCSVHandler + 2 query helpers; 3 rotas registradas em main.go (/csv antes de /conciliacao). EXP-01 e EXP-02 atendidos no backend.
 
 ## Configuration
 
@@ -75,7 +86,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Next Action
 
-Phase 02 COMPLETA (Plans 01+02+03+04). Próximo: Phase 03 — Estabilização Adicional (secrets, testes Go/React, retry bridge SAP).
+Phase 04 Plan 01 COMPLETO. Próximo: Phase 04 Plan 02 — Frontend ConciliacaoBridgeXML.tsx (tabela de divergências + gráfico de cobertura + exportação Excel/CSV).
 
 ---
 *Last updated: 2026-05-08*
