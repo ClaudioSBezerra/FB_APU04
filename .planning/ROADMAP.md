@@ -76,11 +76,11 @@ Plans:
   2. Dashboard de cobertura mostra % NF-es com fonte XML por filial/mês
   3. Auditor consegue exportar relatório completo em PDF/Excel
   4. Divergências mostram delta tributário detalhado (PIS, COFINS, IPI, ICMS)
-**Plans**: 2-3 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: Backend service de conciliação + endpoint de divergências
-- [ ] 04-02: Frontend dashboard de cobertura + exportação PDF/Excel
+- [ ] 04-01-PLAN.md — Backend: ConciliacaoHandler + CoberturaHandler + ConciliacaoCSVHandler em xml_conciliacao.go + 3 rotas em main.go
+- [ ] 04-02-PLAN.md — Frontend: ConciliacaoBridgeXML.tsx (tabs Divergências + Cobertura XML, exportação Excel/CSV/PDF) + navigation.ts + App.tsx
 
 ### Phase 5: Observabilidade e Alertas
 **Goal**: Aproveitar Prometheus já provisionado para ganhar visibilidade operacional — dashboards e alertas para os fluxos críticos.
@@ -114,3 +114,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 *Roadmap created: 2026-05-08*
 *Phase 2 planned: 2026-05-16*
 *Phase 3 planned: 2026-05-16*
+*Phase 4 planned: 2026-05-16*
