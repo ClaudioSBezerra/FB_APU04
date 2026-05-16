@@ -25,12 +25,12 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
   4. Apenas role admin global executa reset completo (Environment Admin restrito a ResetCompanyData)
   5. Tentativas de reset em <1h retornam erro 429
   6. Usuário acessando simu.fcxlabs.com/login pela primeira vez vê tela do FB_APU04 (não do FC Bots) sem precisar de Ctrl+Shift+R
-**Plans**: 2-3 plans
+**Plans**: 3 plans
 
 Plans:
-- [x] 01-01: Proteções backend no ResetDatabaseHandler (confirmação, backup, audit, role, rate-limit)
-- [x] 01-02: UI de confirmação destrutiva no frontend com avisos visuais explícitos
-- [x] 01-03: Diagnóstico e correção do cache stale em simu.fcxlabs.com/login
+- [x] 01-01-PLAN.md — Proteções backend no ResetDatabaseHandler (confirmação, backup, audit, role, rate-limit)
+- [x] 01-02-PLAN.md — UI de confirmação destrutiva no frontend com avisos visuais explícitos
+- [x] 01-03-PLAN.md — Diagnóstico e correção do cache stale em simu.fcxlabs.com/login
 
 ### Phase 2: Upload de XMLs (Drag-and-Drop)
 **Goal**: Adicionar segunda fonte de dados (XML SEFAZ) alimentando as mesmas tabelas do ERP Bridge, com prioridade do XML em conflitos por chave de acesso.
@@ -42,13 +42,13 @@ Plans:
   3. XMLs malformados rejeitados com motivo legível
   4. Conflito Oracle vs XML: campos tributários sobrescritos por XML, source atualizado para xml_upload
   5. Histórico de uploads consultável por filial/período
-**Plans**: 3-4 plans
+**Plans**: 4 plans
 
 Plans:
-- [ ] 02-01: Schema migrations (coluna source, tabela upload_history) + parser NFe v4.00
-- [ ] 02-02: Backend handler de upload + worker de processamento batch + endpoint de histórico
-- [ ] 02-03: Frontend tela drag-and-drop + visualização de progresso + histórico
-- [ ] 02-04: Lógica de conflito Oracle vs XML + testes de integração
+- [ ] 02-01-PLAN.md — Schema migrations (source, itens, batches, regime_tributario, views XML)
+- [ ] 02-02-PLAN.md — Backend parser NFe estendido (itens, CRT), handler upload unificado, worker assíncrono, lógica de prioridade XML>Oracle
+- [ ] 02-03-PLAN.md — Frontend drag-and-drop, painel XML, campo regime tributário, navegação atualizada
+- [ ] 02-04-PLAN.md — Relatórios de saneamento CCLASSTRIB + exportação CSV + fornecedores com classificação incorreta
 
 ### Phase 3: Estabilização Adicional
 **Goal**: Reduzir dívida técnica em segredos, testes e resilência do bridge — pré-requisitos para escalar com confiança.
@@ -105,10 +105,11 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Estabilização Crítica (Reset + Cache) | 3/3 | Complete   | 2026-05-08 |
-| 2. Upload de XMLs (Drag-and-Drop) | 0/4 | Not started | - |
+| 2. Upload de XMLs (Drag-and-Drop) | 0/4 | Planned | - |
 | 3. Estabilização Adicional | 0/4 | Not started | - |
 | 4. Conciliação Bridge vs XML | 0/2 | Not started | - |
 | 5. Observabilidade e Alertas | 0/2 | Not started | - |
 
 ---
 *Roadmap created: 2026-05-08*
+*Phase 2 planned: 2026-05-16*
