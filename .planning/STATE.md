@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
 status: ready_to_execute
-last_updated: "2026-05-16T21:14:07.424Z"
+last_updated: "2026-05-16T21:20:00.826Z"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 13
   completed_plans: 13
   percent: 100
@@ -27,17 +27,17 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **Initialized:** 2026-05-08
 - **Codebase mapped:** 2026-05-08 (7 documents, 1920 lines in `.planning/codebase/`)
 - **Roadmap:** 5 phases (Coarse granularity)
-- **Active phase:** Phase 04 — Conciliação Bridge vs XML — Plan 01 COMPLETO (backend handler + rotas)
-- **Completed phases:** 3
-- **Last session:** 2026-05-16T21:14:07.413Z
+- **Active phase:** Phase 04 — Conciliação Bridge vs XML — COMPLETA (Plans 01+02)
+- **Completed phases:** 4
+- **Last session:** 2026-05-16T22:00:00.000Z
 
 ## Current Phase
 
-**Phase 04 — Conciliação Bridge vs XML — EM EXECUÇÃO**
+**Phase 04 — Conciliação Bridge vs XML — COMPLETA**
 
 - Goal: Conciliar dados do ERP Bridge com XMLs SEFAZ — relatório de divergências tributárias e dashboard de cobertura
-- Requirements: EXP-01, EXP-02 — Plan 01 completo (backend); Plan 02 pendente (frontend)
-- Status: Plan 01 COMPLETO — xml_conciliacao.go (ConciliacaoHandler, CoberturaHandler, ConciliacaoCSVHandler) + rotas registradas em main.go
+- Requirements: EXP-01, EXP-02 — AMBOS ATENDIDOS (Plans 01+02)
+- Status: COMPLETA — Plan 01 (backend: xml_conciliacao.go 3 endpoints) + Plan 02 (frontend: ConciliacaoBridgeXML.tsx + navigation + route)
 
 **Phase 02 — Upload de XMLs (Drag-and-Drop) — COMPLETA**
 
@@ -61,6 +61,9 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **mes_ano como $2 parametrizado em executeConciliacaoQuery:** nunca interpolado em SQL — proteção T-04-01-02
 - **Filtro anti-divergência-falsa (pis+cofins+icms>0):** evita exibir notas XML-only como divergência quando Bridge nunca importou (DEFAULT 0 em migration 066)
 - **Threshold ABS > 0.01 para divergência:** elimina ruído de arredondamento SEFAZ vs ERP; threshold fixo documentado na UI
+- **buildUrl com Record<string,string> em ConciliacaoBridgeXML.tsx:** suporta filtro composto mes_ano+tipo sem adapter especial — URLSearchParams filtra strings vazias automaticamente
+- **downloadingCSV state separado de loadingDiv:** loading de exportação CSV não bloqueia re-fetch da tabela de divergências
+- **pctXml computado de cobertura[0]:** ORDER BY mes_ano DESC no backend — primeiro registro é sempre o mês mais recente
 
 ## Recent History
 
@@ -73,6 +76,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - 2026-05-16: Phase 02 Plan 03 executado — frontend React: react-dropzone nas 3 páginas de upload XML, PainelXMLs.tsx com 3 abas, regime_tributario em GestaoAmbiente, erp_type oracle_xml em ERPBridgeConfig, 4 novas rotas + tabs.
 - 2026-05-16: Phase 02 Plan 04 executado — 3 endpoints relatório saneamento CCLASSTRIB + migration 079 (95 NCMs Reforma Tributária semeados em ncm_cclasstrib_reforma) + RelatorioSaneamento.tsx com coluna "Sugestão CCLASSTRIB" preenchida automaticamente via LEFT JOIN LATERAL. Phase 02 COMPLETA (Plans 01+02+03+04).
 - 2026-05-16: Phase 04 Plan 01 executado — xml_conciliacao.go criado com ConciliacaoHandler + CoberturaHandler + ConciliacaoCSVHandler + 2 query helpers; 3 rotas registradas em main.go (/csv antes de /conciliacao). EXP-01 e EXP-02 atendidos no backend.
+- 2026-05-16: Phase 04 Plan 02 executado — ConciliacaoBridgeXML.tsx criado com tabela 13 colunas text-[11px], BarChart cobertura, exportação Excel/CSV/PDF, 3 cards resumo, states loading/error/vazio; navigation.ts + App.tsx atualizados; @media print em index.css. Phase 04 COMPLETA (Plans 01+02). EXP-01 e EXP-02 totalmente atendidos.
 
 ## Configuration
 
@@ -86,7 +90,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Next Action
 
-Phase 04 Plan 01 COMPLETO. Próximo: Phase 04 Plan 02 — Frontend ConciliacaoBridgeXML.tsx (tabela de divergências + gráfico de cobertura + exportação Excel/CSV).
+Phase 04 COMPLETA (Plans 01+02). EXP-01 e EXP-02 totalmente atendidos. Próxima fase: Phase 05 (a definir no roadmap).
 
 ---
 *Last updated: 2026-05-08*

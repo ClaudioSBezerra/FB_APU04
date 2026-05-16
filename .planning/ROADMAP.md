@@ -80,7 +80,7 @@ Plans:
 
 Plans:
 - [x] 04-01-PLAN.md — Backend: ConciliacaoHandler + CoberturaHandler + ConciliacaoCSVHandler em xml_conciliacao.go + 3 rotas em main.go (wave 1)
-- [ ] 04-02-PLAN.md — Frontend: ConciliacaoBridgeXML.tsx (tabs Divergências + Cobertura XML, exportação Excel/CSV/PDF) + navigation.ts + App.tsx (wave 2, depende de 04-01)
+- [x] 04-02-PLAN.md — Frontend: ConciliacaoBridgeXML.tsx (tabs Divergências + Cobertura XML, exportação Excel/CSV/PDF) + navigation.ts + App.tsx (wave 2, depende de 04-01)
 
 **Wave 2** *(bloqueada até Wave 1 concluída)*
 
@@ -114,7 +114,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Estabilização Crítica (Reset + Cache) | 3/3 | Complete   | 2026-05-08 |
 | 2. Upload de XMLs (Drag-and-Drop) | 4/4 | Complete   | 2026-05-16 |
 | 3. Estabilização Adicional | 4/4 | Complete   | 2026-05-16 |
-| 4. Conciliação Bridge vs XML | 1/2 | In Progress|  |
+| 4. Conciliação Bridge vs XML | 2/2 | Complete   | 2026-05-16 |
 | 5. Observabilidade e Alertas | 0/2 | Not started | - |
 
 ---
