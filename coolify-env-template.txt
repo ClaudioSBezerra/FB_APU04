@@ -60,3 +60,25 @@ METRICS_ENABLED=true
 # ========================================
 # DEBUG=false
 # VERBOSE_LOGS=false
+
+# ========================================
+# INSTRUCOES DE CONFIGURACAO NO COOLIFY
+# ========================================
+# Este arquivo e um template de referencia — NAO adicione valores reais aqui.
+# Os segredos reais devem ser configurados diretamente no Coolify dashboard.
+#
+# Passos para configurar:
+# 1. Acesse o Coolify dashboard para o servico simu.fcxlabs.com (ou simu.fbtax.cloud)
+# 2. Va em Environment Variables do servico de backend (FB_APU04)
+# 3. Confirme que SMTP_PASSWORD esta definido com a senha real do Hostinger SMTP
+#    Origem: painel Hostinger -> Email -> Gerenciar -> Senha SMTP
+# 4. Confirme que ZAI_API_KEY esta definido com a chave real do Z.AI GLM
+#    Origem: https://bigmodel.cn -> API Keys
+# 5. Apos confirmar, o servico NAO precisa ser reimplantado (vars ja estao no container ativo)
+#    O godotenv.Load() em backend/main.go nao sobrescreve vars ja injetadas pelo Coolify
+#
+# Para o bridge ERP no AWS:
+# 6. O arquivo config-apu04.yaml no servidor AWS
+#    (/opt/apps/fbtax/erp-bridge-aws/config-apu04.yaml) NAO e o arquivo do repositorio.
+#    Edite diretamente no servidor e restaure as senhas Oracle reais nos campos senha: "CHANGE_ME".
+#    O repositorio contem apenas CHANGE_ME como placeholder — os valores reais ficam so no servidor.
