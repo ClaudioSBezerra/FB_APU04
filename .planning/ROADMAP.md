@@ -57,7 +57,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Nenhum segredo real em arquivos .env* versionados
   2. Pipeline CI executa testes Go e React em cada PR
-  3. Cobertura Go >=30% nos pacotes handlers/ e services/
+  3. Cobertura Go >=30% no pacote handlers/ (conforme STAB-07)
   4. Bridge SAP sobrevive a DPY-4011 reconectando sem intervenção humana
 **Plans**: 4 plans
 
