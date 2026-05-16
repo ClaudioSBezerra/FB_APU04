@@ -21,6 +21,7 @@ import (
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Version information for backend deployment validation
@@ -281,6 +282,9 @@ func main() {
 	if port == "" {
 		port = "8081"
 	}
+
+	// OBS-01: endpoint /metrics sem JWT — acessível apenas na rede fb_net (T-05-01-01)
+	http.Handle("/metrics", promhttp.Handler())
 
 	http.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -664,7 +668,9 @@ func main() {
 	// Use custom server with timeouts (Inspired by production best practices)
 	server := &http.Server{
 		Addr:    ":" + port,
-		Handler: handlers.SecurityMiddleware(http.DefaultServeMux, handlers.GetAllowedOrigins()),
+		// OBS-01: MetricsMiddleware por FORA do SecurityMiddleware para medir
+		// inclusive requisições bloqueadas por CORS (detecção de ataques — T-05-01-01)
+		Handler: handlers.MetricsMiddleware(handlers.SecurityMiddleware(http.DefaultServeMux, handlers.GetAllowedOrigins())),
 		ReadTimeout:  300 * time.Second, // 5 minutes for Uploads
 		WriteTimeout: 300 * time.Second, // 5 minutes for Long Responses
 		IdleTimeout:  60 * time.Second,

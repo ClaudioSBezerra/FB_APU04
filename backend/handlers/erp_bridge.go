@@ -404,6 +404,10 @@ func ERPBridgeRunHandler(db *sql.DB) http.HandlerFunc {
 				http.Error(w, execErr.Error(), http.StatusInternalServerError)
 				return
 			}
+			// OBS-01: contagem de runs com erro para alertas e dashboard
+			if req.Status == "error" {
+				BridgeRunErrorsTotal.Inc()
+			}
 			w.WriteHeader(http.StatusNoContent)
 
 		// GET /api/erp-bridge/runs/{id} — detalhe completo com items

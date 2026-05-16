@@ -395,6 +395,10 @@ func ResetDatabaseHandler(db *sql.DB) http.HandlerFunc {
 		// Refresh das materialized views em goroutine não-bloqueante.
 		go refreshMVsAfterReset(db)
 
+		// OBS-01: incrementar counter de resets bem-sucedidos (apenas no caminho de sucesso)
+		// O counter é derivado do audit log — T-05-01-07: admin_destructive_actions é a fonte de verdade.
+		DatabaseResetTotal.Inc()
+
 		// Audit: sucesso.
 		InsertDestructiveAuditRow(db, DestructiveAuditRow{
 			UserID:         userID,

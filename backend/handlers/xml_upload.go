@@ -472,6 +472,11 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			db.QueryRow(`SELECT status, imported_count, rejected_count FROM xml_upload_batches WHERE id=$1`, batchID).
 				Scan(&status, &imported, &rejected)
 
+			// OBS-01: incrementar counter de erros se batch teve rejeições
+			if rejected > 0 {
+				XMLUploadErrorsTotal.Inc()
+			}
+
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"batch_id": batchID,
