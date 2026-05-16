@@ -444,7 +444,7 @@ const handleExportExcel = () => {
 
 > A1 e A2 são verificáveis inspecionando dados reais, mas a lógica das migrations e handlers confirma o comportamento esperado.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Escopo do relatório de divergências: entradas E/OU saídas?**
    - O que sabemos: `nfe_saidas` tem o mesmo dual-column pattern que `nfe_entradas`
