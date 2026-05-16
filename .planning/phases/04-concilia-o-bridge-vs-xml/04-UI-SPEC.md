@@ -22,7 +22,7 @@ created: 2026-05-16
 | Preset | Não aplicável (instalação manual) |
 | Component library | Radix UI (via shadcn/ui: Tabs, Card, Table, Badge, Button, Input, Select, Dialog) |
 | Icon library | lucide-react 0.363.0 |
-| Font | Inter (400, 500, 600, 700) + JetBrains Mono (400, 500) — carregado via Google Fonts |
+| Font | Inter (400, 600, 700) + JetBrains Mono (400) — carregado via Google Fonts |
 
 **Fonte:** tailwind.config.js + index.css (detectado no codebase)
 
@@ -66,16 +66,15 @@ Escala 8-point herdada do projeto. Exceções documentadas para tabelas densas (
 | Papel | Tamanho | Peso | Line Height | Fonte |
 |-------|---------|------|-------------|-------|
 | Heading de página | 20px (text-xl) | 600 (font-semibold) | 1.2 | Inter |
-| Subtítulo de seção / CardTitle | 16px (text-base) | 500 (font-medium) | 1.3 | Inter |
+| Subtítulo de seção / CardTitle | 16px (text-base) | 600 (font-semibold) | 1.3 | Inter |
 | Body / filtros / labels | 14px (text-sm) | 400 (font-normal) | 1.5 | Inter |
-| Células de tabela compacta | 11px (text-[11px]) | 400 / 500 para valores monetários | 1.4 | Inter |
-| Dados monetários e técnicos (chave NF-e, CNPJ) | 11-12px (font-mono text-[10px]-text-xs) | 400 | 1.4 | JetBrains Mono |
+| Células de tabela compacta e dados técnicos (chave NF-e, CNPJ) | 11px (text-[11px]) | 400 (font-normal) | 1.4 | Inter / JetBrains Mono |
 
 **Regras:**
 - Exatamente 4 tamanhos declarados: 20px, 16px, 14px, 11px.
-- Exatamente 2 pesos: regular (400) + semibold (600). Medium (500) permitido apenas em CardTitle.
+- Exatamente 2 pesos: regular (400) + semibold (600). Nenhum peso intermediário.
 - Valores monetários (BRL): sempre `font-semibold text-[11px]` alinhados à direita.
-- Chave NF-e e CNPJ: sempre `font-mono text-[10px]` — distingue dado técnico de texto editorial.
+- Chave NF-e e CNPJ: sempre `font-mono text-[11px]` — distingue dado técnico de texto editorial.
 - Heading de página alinhado com `RelatorioSaneamento.tsx`: `text-xl font-semibold` (não `text-2xl font-bold` de PainelXMLs.tsx — consistência com relatórios).
 
 **Fonte:** RelatorioSaneamento.tsx + PainelXMLs.tsx (padrão observado)
@@ -221,7 +220,7 @@ usar os tokens, nunca valores hardcoded.
 
 | # | Coluna | Alinhamento | Formato |
 |---|--------|-------------|---------|
-| 1 | Fornecedor (nome + CNPJ abaixo em mono) | Esquerda | text-[11px] + font-mono text-[10px] |
+| 1 | Fornecedor (nome + CNPJ abaixo em mono) | Esquerda | text-[11px] + font-mono text-[11px] |
 | 2 | Mês/Ano | Esquerda | text-[11px] whitespace-nowrap |
 | 3 | Data Emissão | Esquerda | text-[11px] DD/MM/YYYY |
 | 4 | PIS XML | Direita | BRL font-semibold |
@@ -300,7 +299,7 @@ Botões de exportação ficam ABAIXO da tabela, alinhados à esquerda. Não dent
 | 2 | "Delta tributário total" | soma de delta_total em BRL — `text-2xl font-bold` |
 | 3 | "Cobertura XML (entradas)" | `X,X%` — `text-2xl font-bold` |
 
-Todos os cards: `CardTitle className="text-sm font-medium text-muted-foreground"` no header.
+Todos os cards: `CardTitle className="text-sm font-semibold text-muted-foreground"` no header.
 
 ### Integração com navegação existente
 
@@ -387,7 +386,7 @@ Nenhum skeleton — padrão do projeto é text placeholder.
 
 **CNPJ:** sempre `fmtCNPJ(v)` — helper idêntico ao já existente.
 
-**Chave NF-e:** `font-mono text-[10px]` — truncada com `truncate max-w-[160px]` e `title={chave_nfe}` completo.
+**Chave NF-e:** `font-mono text-[11px]` — truncada com `truncate max-w-[160px]` e `title={chave_nfe}` completo.
 
 **Percentuais de cobertura:** `v.toFixed(1) + '%'` — sem `toLocaleString` para evitar ambiguidade de separador.
 
