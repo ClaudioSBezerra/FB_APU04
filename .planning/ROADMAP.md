@@ -57,15 +57,15 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Nenhum segredo real em arquivos .env* versionados
   2. Pipeline CI executa testes Go e React em cada PR
-  3. Cobertura Go ≥30% nos pacotes handlers/ e services/
+  3. Cobertura Go >=30% nos pacotes handlers/ e services/
   4. Bridge SAP sobrevive a DPY-4011 reconectando sem intervenção humana
-**Plans**: 3-4 plans
+**Plans**: 4 plans
 
 Plans:
-- [ ] 03-01: Migração de secrets para Coolify env vars + auditoria de exposições
-- [ ] 03-02: Bootstrap de testes Go (handlers críticos com cobertura inicial 30%)
-- [ ] 03-03: Bootstrap de testes React (Vitest + componentes-chave)
-- [ ] 03-04: Retry/reconnect no bridge.py para DPY-4011 com retomada via tracker
+- [ ] 03-01-PLAN.md — Remoção de credenciais hardcoded: backend/.env, installer/.env, erp-bridge-aws/config-apu04.yaml
+- [ ] 03-02-PLAN.md — Bootstrap de testes Go: AuthMiddleware, ERPBridgeBatchImportHandler, rateLimiter (cobertura >=30%)
+- [ ] 03-03-PLAN.md — Bootstrap de testes React: formatFilial.ts (11 funções puras) e navigation.ts (getActiveModule)
+- [ ] 03-04-PLAN.md — Retry/reconnect Oracle no bridge.py: _connect_oracle() + _is_dpy4011() + substituição nos dois sites
 
 ### Phase 4: Conciliação Bridge vs XML
 **Goal**: Aproveitar as duas fontes de dados (Bridge + XML) para gerar valor fiscal direto: conciliação, divergências, cobertura.
@@ -113,3 +113,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 ---
 *Roadmap created: 2026-05-08*
 *Phase 2 planned: 2026-05-16*
+*Phase 3 planned: 2026-05-16*
