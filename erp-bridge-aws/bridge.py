@@ -602,6 +602,50 @@ class FBTaxClient:
             log.warning("Nao foi possivel finalizar run na API: %s", exc)
 
 
+MAX_CONN_RETRIES = 3
+CONN_RETRY_DELAY = 5  # segundos — backoff linear: 5s, 10s
+
+
+def _is_dpy4011(exc: Exception) -> bool:
+    """Retorna True se exc é um erro Oracle DPY-4011 (connection lost contact)."""
+    return "DPY-4011" in str(exc)
+
+
+def _connect_oracle(usuario: str, senha: str, dsn: str, nome: str) -> "oracledb.Connection":
+    """Conecta ao Oracle com retry em falhas transitórias.
+
+    Tenta MAX_CONN_RETRIES vezes com backoff linear (CONN_RETRY_DELAY * attempt segundos).
+    Lança a última exceção se todas as tentativas falharem.
+    """
+    last_exc: Exception = RuntimeError("connect never attempted")
+    for attempt in range(1, MAX_CONN_RETRIES + 1):
+        try:
+            conn = oracledb.connect(
+                user=usuario,
+                password=senha,
+                dsn=dsn,
+                expire_time=2,
+            )
+            if attempt > 1:
+                log.info("[%s] Conectado ao Oracle na tentativa %d/%d", nome, attempt, MAX_CONN_RETRIES)
+            return conn
+        except Exception as exc:
+            last_exc = exc
+            if attempt < MAX_CONN_RETRIES:
+                delay = CONN_RETRY_DELAY * attempt
+                log.warning(
+                    "[%s] Falha ao conectar (tentativa %d/%d): %s — retentando em %ds",
+                    nome, attempt, MAX_CONN_RETRIES, exc, delay,
+                )
+                _time.sleep(delay)
+            else:
+                log.error(
+                    "[%s] Falha ao conectar após %d tentativas: %s",
+                    nome, MAX_CONN_RETRIES, exc,
+                )
+    raise last_exc
+
+
 # ─── Processamento SAP S4/HANA ────────────────────────────────────────────────
 
 def processar_sap(
@@ -625,15 +669,15 @@ def processar_sap(
     log.info("Periodo               : %s -> %s", data_ini, data_fim)
 
     try:
-        conn_ora = oracledb.connect(
-            user=oracle_cfg["usuario"],
-            password=oracle_cfg["senha"],
-            dsn=oracle_cfg["dsn"],
-            expire_time=2,  # keepalive TCP a cada 2 min — evita firewall cortar conexão longa
+        conn_ora = _connect_oracle(
+            oracle_cfg["usuario"],
+            oracle_cfg["senha"],
+            oracle_cfg["dsn"],
+            "FCCORP",
         )
         log.info("Conectado ao Oracle SAP FCCORP (thin mode)")
     except Exception as exc:
-        log.error("Falha ao conectar ao FCCORP: %s", exc)
+        log.error("Falha ao conectar ao FCCORP após %d tentativas: %s", MAX_CONN_RETRIES, exc)
         stats["sap_batch"]["erros"] = 1
         stats["sap_batch"]["erro_msg"] = str(exc)
         stats["sap_batch"]["erro_conexao"] = True
@@ -810,15 +854,15 @@ def processar_servidor(
     log.info("Tipos    : %s", ", ".join(tipos))
 
     try:
-        conn_ora = oracledb.connect(
-            user=srv["usuario"],
-            password=srv["senha"],
-            dsn=srv["dsn"],
-            expire_time=2,  # keepalive TCP a cada 2 min — evita firewall cortar conexão longa
+        conn_ora = _connect_oracle(
+            srv["usuario"],
+            srv["senha"],
+            srv["dsn"],
+            nome,
         )
         log.info("Conectado ao Oracle (thin mode)")
     except Exception as exc:
-        log.error("Falha ao conectar em %s: %s", nome, exc)
+        log.error("Falha ao conectar em %s após %d tentativas: %s", nome, MAX_CONN_RETRIES, exc)
         return stats
 
     try:
@@ -831,19 +875,39 @@ def processar_servidor(
             log.info("-" * 40)
             log.info("Consultando %s...", fonte["descricao"])
 
-            try:
-                cur = conn_ora.cursor()
-                cur.execute(fonte["sql"], data_ini=data_ini, data_fim=data_fim)
-                rows = []
-                for raw_row in cur:
-                    rows.append((
-                        str(raw_row[fonte["chave_col"]]).strip(),
-                        clob_para_str(raw_row[fonte["xml_col"]]),
-                    ))
-                cur.close()
-            except Exception as exc:
-                log.error("Erro na query %s: %s", tipo, exc)
-                continue
+            _query_retry = 0
+            while True:
+                try:
+                    cur = conn_ora.cursor()
+                    cur.execute(fonte["sql"], data_ini=data_ini, data_fim=data_fim)
+                    rows = []
+                    for raw_row in cur:
+                        rows.append((
+                            str(raw_row[fonte["chave_col"]]).strip(),
+                            clob_para_str(raw_row[fonte["xml_col"]]),
+                        ))
+                    cur.close()
+                    break  # sucesso — sair do while
+                except Exception as exc:
+                    if _is_dpy4011(exc) and _query_retry < 1:
+                        _query_retry += 1
+                        log.warning(
+                            "  [%s] DPY-4011 na query %s — reconectando (tentativa %d)...",
+                            nome, tipo, _query_retry,
+                        )
+                        try:
+                            conn_ora.close()
+                        except Exception:
+                            pass
+                        try:
+                            conn_ora = _connect_oracle(srv["usuario"], srv["senha"], srv["dsn"], nome)
+                        except Exception as reconnect_exc:
+                            log.error("  [%s] Falha ao reconectar: %s", nome, reconnect_exc)
+                            break
+                        continue  # retry the query
+                    else:
+                        log.error("Erro na query %s: %s", tipo, exc)
+                        break  # sair sem retry adicional
 
             total_rows = len(rows)
             log.info("%d registros encontrados", total_rows)
@@ -1108,11 +1172,11 @@ def run_daemon(cfg: dict, fbtax: FBTaxClient) -> int:
                     log.info("[Daemon] Run parceiros %s: %s → %s", run_id, data_ini_s, data_fim_s)
                     oracle_cfg = cfg.get("oracle", {})
                     try:
-                        conn_ora = oracledb.connect(
-                            user=oracle_cfg["usuario"],
-                            password=oracle_cfg["senha"],
-                            dsn=oracle_cfg["dsn"],
-                            expire_time=2,
+                        conn_ora = _connect_oracle(
+                            oracle_cfg["usuario"],
+                            oracle_cfg["senha"],
+                            oracle_cfg["dsn"],
+                            "oracle-daemon",
                         )
                         data_fim_inc = data_fim_run - timedelta(days=1)
                         cur_p = conn_ora.cursor()
@@ -1296,11 +1360,11 @@ def main() -> int:
         log.info("Periodo: %s -> %s", data_ini, data_fim - timedelta(days=1))
         log.info("=" * 60)
         try:
-            conn_ora = oracledb.connect(
-                user=oracle_cfg["usuario"],
-                password=oracle_cfg["senha"],
-                dsn=oracle_cfg["dsn"],
-                expire_time=2,
+            conn_ora = _connect_oracle(
+                oracle_cfg["usuario"],
+                oracle_cfg["senha"],
+                oracle_cfg["dsn"],
+                "oracle-main",
             )
             data_fim_inc = data_fim - timedelta(days=1)
             cur_p = conn_ora.cursor()
