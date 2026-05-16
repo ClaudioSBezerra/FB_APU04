@@ -31,7 +31,7 @@ Requisitos do ciclo atual, organizados pelas frentes do PROJECT.md em ordem de p
 
 - [ ] **STAB-06**: Tirar credenciais hardcoded de `backend/.env` (SMTP password, ZAI_API_KEY) e `installer/.env` — migrar para Coolify env vars ou secret manager
 - [ ] **STAB-07**: Bootstrap de testes Go — testes unitários para handlers críticos (`admin.go` reset, `auth.go`, `erp_bridge_*.go`) com cobertura mínima 30%
-- [ ] **STAB-08**: Bootstrap de testes React — testes para componentes-chave (Dashboard, Upload XML, Reset Database confirmation) com Vitest
+- [x] **STAB-08**: Bootstrap de testes React — testes para componentes-chave (Dashboard, Upload XML, Reset Database confirmation) com Vitest
 - [ ] **STAB-09**: Retry/reconnect automático no Bridge Python para erros DPY-4011 — detectar perda de conexão Oracle e reconectar transparentemente sem perder o run
 
 ### Expansão fiscal (prioridade 4)
