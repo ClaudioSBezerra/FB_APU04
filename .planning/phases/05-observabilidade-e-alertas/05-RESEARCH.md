@@ -523,27 +523,27 @@ Opções:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Topologia de rede do bridge**
    - What we know: O bridge tem seu próprio docker-compose (`installer/aws-bridge/`)
    - What's unclear: Está na mesma máquina AWS que o `docker-compose.yml` principal? Ou em outra máquina?
-   - Recommendation: Perguntar ao usuário antes de planejar o scrape config. Fallback: bridge Python expõe métricas via endpoint interno do Go API (push model).
+   - RESOLVED: Plan 01 adota estratégia de juntar o bridge à rede Docker `fb_net` (mesma máquina). O `installer/aws-bridge/docker-compose.yml` declara `networks: [fb_net]` com `external: true`. Scrape direto em `bridge:8086`. Alternativa on-prem documentada como comentário inline no `prometheus.yml`.
 
 2. **Credenciais SMTP de produção**
    - What we know: SMTP_HOST/PORT/USER/PASSWORD existem como env vars no docker-compose — mas os valores reais estão em Coolify env vars (não no repo)
    - What's unclear: TLS ou STARTTLS? Porta 587 ou 465?
-   - Recommendation: Plan 02 deve incluir task de teste de SMTP antes de confiar que alertas chegam.
+   - RESOLVED: Plan 02 usa `require_tls: false` + `starttls: true` com porta 587 (STARTTLS). Alertmanager v0.27 não expande env vars diretamente; solução: arquivo `.tpl` + `envsubst` no entrypoint do container. Task 4 inclui validação `amtool check-config`.
 
 3. **Grafana: acesso anônimo ou usuário fiscal dedicado?**
    - What we know: Requisito é "equipe fiscal vê sem SSH"
    - What's unclear: Sem senha (anônimo) ou com conta específica (viewer)?
-   - Recommendation: Criar role `viewer` no Grafana com senha compartilhada para a equipe fiscal — mais seguro que acesso anônimo dado que os dados são fiscais sensíveis.
+   - RESOLVED: Plan 01 Task 1 cria conta `viewer` dedicada via env vars `GF_AUTH_ANONYMOUS_ENABLED=false` + `GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}` + role `viewer` com senha compartilhada. Mais seguro que anônimo para dados fiscais sensíveis.
 
 4. **Bug pendente CR-01 em xml_conciliacao.go**
    - What we know: STATE.md menciona bug onde delta_total omite IPI — "será corrigido antes ou durante Phase 5"
    - What's unclear: Deve entrar no Plan 01 desta fase ou é tratado como hotfix separado?
-   - Recommendation: Incluir como Task 0 no Plan 01 (pequena correção SQL, sem impacto arquitetural).
+   - RESOLVED: CR-01 foi corrigido como hotfix em commit `9dec6a0` antes do início da Phase 5 (2026-05-16). Não entra nos planos desta fase.
 
 ---
 

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
 status: ready_to_plan
-last_updated: "2026-05-16T22:15:00.000Z"
+last_updated: "2026-05-16T23:48:49.042Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 13
+  total_plans: 15
   completed_plans: 13
-  percent: 80
+  percent: 87
 ---
 
 # State: FB_APU04
@@ -90,9 +90,11 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Next Action
 
-Phase 04 COMPLETA e aprovada (UAT: 2026-05-16). EXP-01 e EXP-02 entregues. Próxima: `/gsd-plan-phase 5` — Observabilidade e Alertas (Prometheus + Grafana + runbooks).
+Phase 05 PLANEJADA (2026-05-16) — 2 planos prontos para execução.
+- Plan 01 (Wave 1): Infraestrutura Prometheus/Grafana + instrumentação Go + instrumentação bridge.py
+- Plan 02 (Wave 2): Regras de alerta + Alertmanager SMTP + runbooks
 
-**Bug pendente (não bloqueante):** CR-01 em xml_conciliacao.go — delta_total omite IPI no somatório SQL; será corrigido em gap closure antes ou durante Phase 5.
+Executar: `/gsd-execute-phase 5`
 
 ---
 *Last updated: 2026-05-08*

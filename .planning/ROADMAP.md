@@ -10,7 +10,7 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 - [x] **Phase 2: Upload de XMLs (Drag-and-Drop)** - Segunda fonte de dados alimentando as mesmas tabelas do ERP Bridge, com prioridade do XML em conflitos (completed 2026-05-16)
 - [x] **Phase 3: Estabilização Adicional** - Tirar credenciais do código, bootstrap de testes Go/React, retry/reconnect no Bridge SAP S4 (completed 2026-05-16)
 - [x] **Phase 4: Conciliação Bridge vs XML** - Relatório de divergências e dashboard de cobertura por fonte (completed 2026-05-16)
-- [ ] **Phase 5: Observabilidade e Alertas** - Dashboards Grafana e alertas críticos via Prometheus já provisionado
+- [ ] **Phase 5: Observabilidade e Alertas** - Provisionar Prometheus + Grafana + Alertmanager, instrumentar Go/Python, dashboards e alertas críticos via SMTP
 
 ## Phase Details
 
@@ -90,7 +90,7 @@ Cross-cutting constraints:
 - Notas canceladas (`cancelado != 'S'`) excluídas de divergências e cobertura
 
 ### Phase 5: Observabilidade e Alertas
-**Goal**: Aproveitar Prometheus já provisionado para ganhar visibilidade operacional — dashboards e alertas para os fluxos críticos.
+**Goal**: Provisionar do zero a stack Prometheus + Grafana + Alertmanager (research confirmou que NÃO está provisionada apesar do que ROADMAP/PROJECT.md afirmavam), instrumentar backend Go e bridge Python, entregar dashboards visíveis para a equipe fiscal sem SSH e alertas críticos em <1min via SMTP.
 **Depends on**: Phase 3
 **Requirements**: OBS-01, OBS-02
 **Success Criteria** (what must be TRUE):
@@ -98,11 +98,14 @@ Cross-cutting constraints:
   2. Cada alerta crítico dispara em <1min após o evento
   3. Runbook escrito para cada tipo de alerta com passos de mitigação
   4. Equipe fiscal vê status do Bridge sem acesso SSH
-**Plans**: 2-3 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: Setup de Prometheus exporters + dashboards Grafana
-- [ ] 05-02: Alertas críticos + integração SMTP/Slack + runbooks
+**Wave 1**
+- [ ] 05-01-PLAN.md — Provisionar Prometheus/Grafana/Alertmanager/postgres-exporter + instrumentar Go (/metrics + counters em erp_bridge/xml_upload/admin) + instrumentar bridge.py (porta 8086) + 3 dashboards JSON (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 05-02-PLAN.md — 5 alertas críticos (DPY-4011, BridgeOffline, BridgeDaemonDown, XMLUploadFalha, ResetBancoExecutado) + Alertmanager SMTP via envsubst + 5 runbooks pt-BR + validação end-to-end (wave 2, depende de 05-01)
 
 ## Progress
 
@@ -115,10 +118,11 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Upload de XMLs (Drag-and-Drop) | 4/4 | Complete   | 2026-05-16 |
 | 3. Estabilização Adicional | 4/4 | Complete   | 2026-05-16 |
 | 4. Conciliação Bridge vs XML | 2/2 | Complete   | 2026-05-16 |
-| 5. Observabilidade e Alertas | 0/2 | Not started | - |
+| 5. Observabilidade e Alertas | 0/2 | Planned | - |
 
 ---
 *Roadmap created: 2026-05-08*
 *Phase 2 planned: 2026-05-16*
 *Phase 3 planned: 2026-05-16*
 *Phase 4 planned: 2026-05-16*
+*Phase 5 planned: 2026-05-16*
