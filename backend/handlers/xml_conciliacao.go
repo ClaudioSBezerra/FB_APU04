@@ -102,7 +102,8 @@ SELECT
     ROUND(
         ABS(COALESCE(ne.v_pis,0) - COALESCE(ne.pis,0)) +
         ABS(COALESCE(ne.v_cofins,0) - COALESCE(ne.cofins,0)) +
-        ABS(COALESCE(ne.v_icms,0) - COALESCE(ne.icms,0)),
+        ABS(COALESCE(ne.v_icms,0) - COALESCE(ne.icms,0)) +
+        ABS(COALESCE(ne.v_ipi,0) - COALESCE(ne.ipi,0)),
     2) AS delta_total
 FROM %s ne
 WHERE ne.company_id = $1
@@ -111,7 +112,8 @@ WHERE ne.company_id = $1
   AND (COALESCE(ne.pis,0) + COALESCE(ne.cofins,0) + COALESCE(ne.icms,0)) > 0
   AND (ABS(COALESCE(ne.v_pis,0)    - COALESCE(ne.pis,0))    > 0.01
     OR ABS(COALESCE(ne.v_cofins,0) - COALESCE(ne.cofins,0)) > 0.01
-    OR ABS(COALESCE(ne.v_icms,0)   - COALESCE(ne.icms,0))   > 0.01)
+    OR ABS(COALESCE(ne.v_icms,0)   - COALESCE(ne.icms,0))   > 0.01
+    OR ABS(COALESCE(ne.v_ipi,0)    - COALESCE(ne.ipi,0))    > 0.01)
   %s
 ORDER BY delta_total DESC
 LIMIT 500`, tabela, whereExtra)
