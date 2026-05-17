@@ -134,16 +134,31 @@ services:
     image: prom/alertmanager:v0.27.0
     container_name: fb_apu04-alertmanager
     restart: always
-    # Entrypoint usa sed para expandir ${SMTP_*} no template antes de iniciar.
+    # Entrypoint usa awk para expandir ${SMTP_*} no template antes de iniciar.
     # O Alertmanager v0.27 não expande env vars no YAML por padrão — arquivo .tpl
-    # é processado em runtime via sed, gerando /tmp/alertmanager.yml com valores reais.
+    # é processado em runtime via awk, gerando /tmp/alertmanager.yml com valores reais.
     # Nota: envsubst não está disponível na imagem prom/alertmanager (sem apk/apt);
-    # sed é parte do Busybox e funciona nesta imagem Alpine-based.
+    # awk é parte do Busybox e disponível nesta imagem. & e \ são escapados antes de
+    # serem usados como replacement em gsub para evitar corrupção de senhas com esses chars.
     entrypoint:
       - /bin/sh
       - -c
       - |
-        awk 'BEGIN{h=ENVIRON["SMTP_HOST"];p=ENVIRON["SMTP_PORT"];u=ENVIRON["SMTP_USER"];pw=ENVIRON["SMTP_PASSWORD"];f=ENVIRON["SMTP_FROM"]}{gsub(/\$\{SMTP_HOST\}/,h);gsub(/\$\{SMTP_PORT\}/,p);gsub(/\$\{SMTP_USER\}/,u);gsub(/\$\{SMTP_PASSWORD\}/,pw);gsub(/\$\{SMTP_FROM\}/,f);print}' /etc/alertmanager/alertmanager.yml.tpl > /tmp/alertmanager.yml && /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
+        awk 'BEGIN{
+          h=ENVIRON["SMTP_HOST"];  gsub(/\\/,"\\\\",h);  gsub(/&/,"\\&",h)
+          p=ENVIRON["SMTP_PORT"];  gsub(/\\/,"\\\\",p);  gsub(/&/,"\\&",p)
+          u=ENVIRON["SMTP_USER"];  gsub(/\\/,"\\\\",u);  gsub(/&/,"\\&",u)
+          pw=ENVIRON["SMTP_PASSWORD"]; gsub(/\\/,"\\\\",pw); gsub(/&/,"\\&",pw)
+          f=ENVIRON["SMTP_FROM"];  gsub(/\\/,"\\\\",f);  gsub(/&/,"\\&",f)
+        }{
+          gsub(/\$\{SMTP_HOST\}/,h)
+          gsub(/\$\{SMTP_PORT\}/,p)
+          gsub(/\$\{SMTP_USER\}/,u)
+          gsub(/\$\{SMTP_PASSWORD\}/,pw)
+          gsub(/\$\{SMTP_FROM\}/,f)
+          print
+        }' /etc/alertmanager/alertmanager.yml.tpl > /tmp/alertmanager.yml &&
+        /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
     expose:
       - "9093"
     environment:

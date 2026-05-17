@@ -84,8 +84,6 @@ else:
             pass
         def labels(self, **kwargs):  # noqa: ANN001
             return self
-        def inc(self, amount=1):  # noqa: ANN001, F811
-            pass
 
     class _NoOpGauge:
         def set(self, value):  # noqa: ANN001

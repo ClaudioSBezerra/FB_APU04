@@ -34,7 +34,9 @@ groups:
       # Alerta 2: Bridge offline há mais de 65 minutos
       # Bridge roda a cada 60 min; tolerância de 5 min para atraso.
       - alert: BridgeOffline
-        expr: time() - bridge_last_run_timestamp_seconds > 3900
+        expr: >
+          bridge_last_run_timestamp_seconds > 0
+          AND time() - bridge_last_run_timestamp_seconds > 3900
         for: 0s
         labels:
           severity: critical

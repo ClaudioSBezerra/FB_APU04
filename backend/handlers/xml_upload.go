@@ -139,6 +139,9 @@ func processXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, 
 		len(xmlFiles), imported, rejected, string(errJSON), batchID,
 	)
 
+	if rejected > 0 {
+		XMLUploadErrorsTotal.Inc()
+	}
 	log.Printf("[XMLUpload] batch=%s concluído: imported=%d rejected=%d", batchID, imported, rejected)
 }
 
