@@ -397,52 +397,56 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		fh, _, err := r.FormFile("file")
-		if err != nil {
+		// Coletar todos os arquivos enviados (frontend pode enviar N arquivos com o mesmo campo "file")
+		fileHeaders := r.MultipartForm.File["file"]
+		if len(fileHeaders) == 0 {
 			jsonErr(w, http.StatusBadRequest, "Campo 'file' não encontrado no formulário")
 			return
 		}
-		defer fh.Close()
 
-		rawData, err := io.ReadAll(io.LimitReader(fh, MaxUploadBytes+1))
-		if err != nil {
-			jsonErr(w, http.StatusInternalServerError, "Erro ao ler arquivo: "+err.Error())
-			return
-		}
-		if int64(len(rawData)) > MaxUploadBytes {
-			jsonErr(w, http.StatusRequestEntityTooLarge, "Arquivo excede limite de 100MB")
-			return
-		}
-
-		// Nome do arquivo original
-		_, fileHeader, _ := r.FormFile("file")
-		_ = fileHeader
-		filename := ""
-		if fhs := r.MultipartForm.File["file"]; len(fhs) > 0 {
-			filename = fhs[0].Filename
-		}
-
-		// Detectar se é ZIP ou XML
 		var xmlFiles []namedXML
-		ext := strings.ToLower(filepath.Ext(filename))
+		batchFilename := fileHeaders[0].Filename // usado apenas para registro do batch
 
-		if ext == ".zip" {
-			xmlFiles, err = extractXMLsFromZip(rawData)
+		for _, fhdr := range fileHeaders {
+			fh, err := fhdr.Open()
 			if err != nil {
-				jsonErr(w, http.StatusBadRequest, err.Error())
+				jsonErr(w, http.StatusInternalServerError, "Erro ao ler arquivo: "+err.Error())
 				return
 			}
-			if len(xmlFiles) > MaxXMLsPerBatch {
-				jsonErr(w, http.StatusBadRequest,
-					fmt.Sprintf("ZIP contém %d XMLs, máximo é %d", len(xmlFiles), MaxXMLsPerBatch))
+			rawData, err := io.ReadAll(io.LimitReader(fh, MaxUploadBytes+1))
+			fh.Close()
+			if err != nil {
+				jsonErr(w, http.StatusInternalServerError, "Erro ao ler arquivo: "+err.Error())
 				return
 			}
-		} else if ext == ".xml" {
-			xmlFiles = []namedXML{{Name: filename, Data: rawData}}
-		} else {
-			jsonErr(w, http.StatusBadRequest, "Formato não suportado: envie .xml ou .zip")
+			if int64(len(rawData)) > MaxUploadBytes {
+				jsonErr(w, http.StatusRequestEntityTooLarge, "Arquivo excede limite de 100MB")
+				return
+			}
+
+			ext := strings.ToLower(filepath.Ext(fhdr.Filename))
+			if ext == ".zip" {
+				extracted, err := extractXMLsFromZip(rawData)
+				if err != nil {
+					jsonErr(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				xmlFiles = append(xmlFiles, extracted...)
+			} else if ext == ".xml" {
+				xmlFiles = append(xmlFiles, namedXML{Name: fhdr.Filename, Data: rawData})
+			} else {
+				jsonErr(w, http.StatusBadRequest, "Formato não suportado: envie .xml ou .zip")
+				return
+			}
+		}
+
+		if len(xmlFiles) > MaxXMLsPerBatch {
+			jsonErr(w, http.StatusBadRequest,
+				fmt.Sprintf("Lote contém %d XMLs, máximo é %d", len(xmlFiles), MaxXMLsPerBatch))
 			return
 		}
+
+		filename := batchFilename
 
 		if len(xmlFiles) == 0 {
 			jsonErr(w, http.StatusBadRequest, "Nenhum arquivo XML encontrado")
