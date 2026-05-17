@@ -176,7 +176,7 @@ function TabelaPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent bg-muted/30">
-                <TableHead className="py-1.5 px-2 text-[11px]">{isCtes ? 'Transportadora' : 'Fornecedor'}</TableHead>
+                <TableHead className="py-1.5 px-2 text-[11px]">{isCtes ? 'Transportadora' : tipo === 'saidas' ? 'Filial/Emitente' : 'Fornecedor'}</TableHead>
                 <TableHead className="py-1.5 px-2 text-[11px]">Mês/Ano</TableHead>
                 <TableHead className="py-1.5 px-2 text-[11px] text-center">Qtd</TableHead>
                 <TableHead className="py-1.5 px-2 text-[11px]">Fonte</TableHead>
