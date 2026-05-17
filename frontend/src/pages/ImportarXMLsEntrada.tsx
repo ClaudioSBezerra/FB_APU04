@@ -290,7 +290,7 @@ export default function ImportarXMLsEntrada() {
           <CardTitle className="text-base">Histórico de Uploads — NF-e Entradas</CardTitle>
         </CardHeader>
         <CardContent>
-          {!historico || historico.items.length === 0 ? (
+          {!historico?.items?.length ? (
             <p className="text-sm text-muted-foreground text-center py-6">
               Nenhum upload registrado ainda.
             </p>
@@ -309,7 +309,7 @@ export default function ImportarXMLsEntrada() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {historico.items.map(row => (
+                  {(historico.items ?? []).map(row => (
                     <TableRow key={row.id} className="h-8">
                       <TableCell className="py-1 px-2 text-[11px] whitespace-nowrap">{fmtDateTime(row.created_at)}</TableCell>
                       <TableCell className="py-1 px-2 text-[11px] max-w-[200px] truncate" title={row.filename}>{row.filename}</TableCell>
