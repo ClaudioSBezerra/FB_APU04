@@ -559,7 +559,8 @@ func main() {
 	}
 
 	// Upload unificado de XMLs — NF-e e CT-e drag-and-drop
-	// NOTA: /api/xml/painel/ deve ser registrado ANTES de /api/xml/upload-batches/ (prefixo mais específico)
+	// NOTA: rotas mais específicas registradas ANTES dos prefixos mais curtos
+	http.HandleFunc("/api/xml/notas/", withAuth(handlers.XMLNotasHandler, ""))
 	http.HandleFunc("/api/xml/painel/", withAuth(handlers.XMLPainelHandler, ""))
 	http.HandleFunc("/api/xml/upload", withAuth(handlers.XMLUploadHandler, ""))
 	http.HandleFunc("/api/xml/upload-batches/", withAuth(handlers.XMLUploadBatchStatusHandler, ""))

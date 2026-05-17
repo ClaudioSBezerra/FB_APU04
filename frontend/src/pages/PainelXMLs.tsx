@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Download } from 'lucide-react';
+import { Download, LayoutList, BarChart3, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,6 +43,37 @@ interface PainelResponse {
   items: PainelRow[] | null;
 }
 
+interface NotaRow {
+  chave: string;
+  numero: string;
+  serie: string;
+  data_emissao: string;
+  mes_ano: string;
+  nat_op: string;
+  par_cnpj: string;
+  par_nome: string;
+  dest_cnpj: string;
+  dest_nome: string;
+  dest_uf: string;
+  v_total: number;
+  v_bc_icms: number;
+  v_icms: number;
+  v_pis: number;
+  v_cofins: number;
+  v_ipi: number;
+  v_ibs: number;
+  v_cbs: number;
+  source: string;
+}
+
+interface NotasResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  tipo: string;
+  items: NotaRow[] | null;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -54,6 +85,11 @@ function fmtBRL(v: number | null | undefined): string {
 function fmtCNPJ(v: string): string {
   if (!v || v.length !== 14) return v || '—';
   return `${v.slice(0,2)}.${v.slice(2,5)}.${v.slice(5,8)}/${v.slice(8,12)}-${v.slice(12)}`;
+}
+
+function shortChave(chave: string): string {
+  if (!chave || chave.length < 8) return chave || '—';
+  return `...${chave.slice(-8)}`;
 }
 
 function SourceBadge({ source }: { source: string }) {
@@ -95,8 +131,27 @@ function exportCSV(rows: PainelRow[], tipo: string) {
   URL.revokeObjectURL(url);
 }
 
+function exportNotasCSV(rows: NotaRow[], tipo: string) {
+  const headers = ['Chave', 'Número', 'Série', 'Emissão', 'Mês/Ano', 'Nat.Op', 'CNPJ Emitente', 'Emitente', 'CNPJ Dest', 'Destinatário', 'UF Dest', 'V.Total', 'BC ICMS', 'VLR ICMS', 'VLR PIS', 'VLR COFINS', 'VLR IPI', 'VLR IBS', 'VLR CBS', 'Fonte'];
+  const lines = rows.map(r => [
+    r.chave, r.numero, r.serie, r.data_emissao, r.mes_ano,
+    `"${r.nat_op}"`, r.par_cnpj, `"${r.par_nome}"`,
+    r.dest_cnpj, `"${r.dest_nome}"`, r.dest_uf,
+    r.v_total, r.v_bc_icms, r.v_icms, r.v_pis, r.v_cofins, r.v_ipi, r.v_ibs, r.v_cbs,
+    r.source,
+  ].join(';'));
+  const csv = [headers.join(';'), ...lines].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `notas_xml_${tipo}_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ---------------------------------------------------------------------------
-// Tabela genérica para entradas/saídas
+// Tabela resumida (agregada por fornecedor + mês)
 // ---------------------------------------------------------------------------
 function TabelaPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
   const [mesAno, setMesAno] = useState('');
@@ -219,6 +274,231 @@ function TabelaPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
 }
 
 // ---------------------------------------------------------------------------
+// Tabela nota a nota (linhas individuais)
+// ---------------------------------------------------------------------------
+const PAGE_SIZE = 100;
+
+function TabelaNotas({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
+  const [mesAno, setMesAno] = useState('');
+  const [mesAnoFilter, setMesAnoFilter] = useState('');
+  const [offset, setOffset] = useState(0);
+
+  const { data, isLoading, isError } = useQuery<NotasResponse>({
+    queryKey: ['xml-notas', tipo, mesAnoFilter, offset],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
+      if (mesAnoFilter) params.set('mes_ano', mesAnoFilter);
+      const res = await fetch(`/api/xml/notas/${tipo}?${params}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+      return res.json();
+    },
+    staleTime: 60_000,
+    throwOnError: false,
+  });
+
+  const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+
+  const handleSearch = () => {
+    setOffset(0);
+    setMesAnoFilter(mesAno);
+  };
+
+  if (isError) {
+    toast.error(`Erro ao carregar notas de ${tipo}`);
+  }
+
+  const isCtes = tipo === 'ctes';
+  const isSaidas = tipo === 'saidas';
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground whitespace-nowrap">Mês/Ano</label>
+          <Input
+            type="text"
+            placeholder="MM/YYYY"
+            value={mesAno}
+            onChange={e => setMesAno(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            className="h-8 w-28 text-sm"
+          />
+        </div>
+        <Button size="sm" variant="outline" onClick={handleSearch} disabled={isLoading} className="h-8">
+          {isLoading ? 'Buscando...' : 'Buscar'}
+        </Button>
+        {rows.length > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 ml-auto text-muted-foreground"
+            onClick={() => exportNotasCSV(rows, tipo)}
+          >
+            <Download className="h-3.5 w-3.5 mr-1.5" />
+            Exportar CSV
+          </Button>
+        )}
+        {data && (
+          <span className="text-xs text-muted-foreground">
+            {total} {isCtes ? 'CT-e(s)' : 'nota(s)'} encontrada(s)
+          </span>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground text-center py-8">Carregando...</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">
+          Nenhuma nota encontrada.{mesAnoFilter ? ` Período: ${mesAnoFilter}` : ' Importe XMLs para visualizar dados.'}
+        </p>
+      ) : (
+        <>
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent bg-muted/30">
+                  <TableHead className="py-1.5 px-2 text-[11px]">Nº / Chave</TableHead>
+                  <TableHead className="py-1.5 px-2 text-[11px]">Emissão</TableHead>
+                  <TableHead className="py-1.5 px-2 text-[11px]">{isCtes ? 'Transportadora' : isSaidas ? 'Filial/Emitente' : 'Fornecedor'}</TableHead>
+                  {!isCtes && (
+                    <TableHead className="py-1.5 px-2 text-[11px]">{isSaidas ? 'Cliente' : 'Destinatário'}</TableHead>
+                  )}
+                  {!isCtes && <TableHead className="py-1.5 px-2 text-[11px]">Nat. Op.</TableHead>}
+                  <TableHead className="py-1.5 px-2 text-[11px]">Fonte</TableHead>
+                  <TableHead className="py-1.5 px-2 text-[11px] text-right">V. Total</TableHead>
+                  <TableHead className="py-1.5 px-2 text-[11px] text-right">VLR ICMS</TableHead>
+                  {!isCtes && <TableHead className="py-1.5 px-2 text-[11px] text-right">VLR PIS</TableHead>}
+                  {!isCtes && <TableHead className="py-1.5 px-2 text-[11px] text-right">VLR COFINS</TableHead>}
+                  <TableHead className="py-1.5 px-2 text-[11px] text-right">VLR IBS</TableHead>
+                  <TableHead className="py-1.5 px-2 text-[11px] text-right">VLR CBS</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row, idx) => (
+                  <TableRow key={`${row.chave}-${idx}`} className="h-8">
+                    <TableCell className="py-1 px-2">
+                      <div className="text-[11px] font-mono font-medium leading-tight">
+                        {row.numero ? `${row.numero}${row.serie ? `/${row.serie}` : ''}` : '—'}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground font-mono leading-tight" title={row.chave}>
+                        {shortChave(row.chave)}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-1 px-2 text-[11px] whitespace-nowrap">{row.data_emissao}</TableCell>
+                    <TableCell className="py-1 px-2">
+                      <div className="text-[11px] font-medium leading-tight truncate max-w-[150px]">{row.par_nome || '—'}</div>
+                      <div className="text-[10px] text-muted-foreground font-mono leading-tight">{fmtCNPJ(row.par_cnpj)}</div>
+                    </TableCell>
+                    {!isCtes && (
+                      <TableCell className="py-1 px-2">
+                        {row.dest_nome ? (
+                          <>
+                            <div className="text-[11px] leading-tight truncate max-w-[150px]">{row.dest_nome}</div>
+                            <div className="text-[10px] text-muted-foreground font-mono leading-tight">
+                              {row.dest_cnpj ? fmtCNPJ(row.dest_cnpj) : '—'}{row.dest_uf ? ` · ${row.dest_uf}` : ''}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    )}
+                    {!isCtes && (
+                      <TableCell className="py-1 px-2 text-[11px] max-w-[120px] truncate" title={row.nat_op}>
+                        {row.nat_op || '—'}
+                      </TableCell>
+                    )}
+                    <TableCell className="py-1 px-2"><SourceBadge source={row.source} /></TableCell>
+                    <TableCell className="py-1 px-2 text-right text-[11px] font-semibold">{fmtBRL(row.v_total)}</TableCell>
+                    <TableCell className="py-1 px-2 text-right text-[11px]">{fmtBRL(row.v_icms)}</TableCell>
+                    {!isCtes && <TableCell className="py-1 px-2 text-right text-[11px]">{fmtBRL(row.v_pis)}</TableCell>}
+                    {!isCtes && <TableCell className="py-1 px-2 text-right text-[11px]">{fmtBRL(row.v_cofins)}</TableCell>}
+                    <TableCell className="py-1 px-2 text-right text-[11px]">{fmtBRL(row.v_ibs)}</TableCell>
+                    <TableCell className="py-1 px-2 text-right text-[11px]">{fmtBRL(row.v_cbs)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs text-muted-foreground">
+                Página {currentPage} de {totalPages}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  size="sm" variant="outline" className="h-7 px-2"
+                  disabled={offset === 0}
+                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="sm" variant="outline" className="h-7 px-2"
+                  disabled={offset + PAGE_SIZE >= total}
+                  onClick={() => setOffset(offset + PAGE_SIZE)}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tab wrapper com toggle Resumo / Nota a Nota
+// ---------------------------------------------------------------------------
+function TabPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
+  const [view, setView] = useState<'resumo' | 'notas'>('resumo');
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 border rounded-md p-0.5 w-fit bg-muted/30">
+        <button
+          onClick={() => setView('resumo')}
+          className={`flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-sm transition-colors ${
+            view === 'resumo'
+              ? 'bg-background shadow-sm font-medium'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <BarChart3 className="h-3 w-3" />
+          Resumo
+        </button>
+        <button
+          onClick={() => setView('notas')}
+          className={`flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-sm transition-colors ${
+            view === 'notas'
+              ? 'bg-background shadow-sm font-medium'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <LayoutList className="h-3 w-3" />
+          Nota a Nota
+        </button>
+      </div>
+
+      {view === 'resumo' ? (
+        <TabelaPainel tipo={tipo} />
+      ) : (
+        <TabelaNotas tipo={tipo} />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 export default function PainelXMLs() {
@@ -243,13 +523,13 @@ export default function PainelXMLs() {
               <TabsTrigger value="ctes">CT-es</TabsTrigger>
             </TabsList>
             <TabsContent value="entradas">
-              <TabelaPainel tipo="entradas" />
+              <TabPainel tipo="entradas" />
             </TabsContent>
             <TabsContent value="saidas">
-              <TabelaPainel tipo="saidas" />
+              <TabPainel tipo="saidas" />
             </TabsContent>
             <TabsContent value="ctes">
-              <TabelaPainel tipo="ctes" />
+              <TabPainel tipo="ctes" />
             </TabsContent>
           </Tabs>
         </CardContent>
