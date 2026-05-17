@@ -42,7 +42,7 @@ Requisitos do ciclo atual, organizados pelas frentes do PROJECT.md em ordem de p
 ### Observabilidade (prioridade 5)
 
 - [x] **OBS-01**: Dashboards Grafana dedicados (Prometheus já provisionado em prod) — runs do Bridge, latência API, taxa de erro, ocupação do banco
-- [ ] **OBS-02**: Alertas para falhas críticas — erros DPY-4011 consecutivos, falhas de upload XML, reset de banco executado
+- [x] **OBS-02**: Alertas para falhas críticas — erros DPY-4011 consecutivos, falhas de upload XML, reset de banco executado
 
 ## v2 Requirements
 
@@ -79,7 +79,7 @@ Mapeamento requisito → fase. Atualizado quando o ROADMAP.md for criado.
 | XML-01 a XML-08 | Phase 2 | Complete (2026-05-16) |
 | STAB-06 a STAB-09 | Phase 3 | Complete (2026-05-16) |
 | EXP-01 a EXP-02 | Phase 4 | Complete (2026-05-16) |
-| OBS-01 a OBS-02 | Phase 5 | Pending |
+| OBS-01 a OBS-02 | Phase 5 | Complete (2026-05-17) |
 
 **Coverage:**
 - v1 requirements: 25 total

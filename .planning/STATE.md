@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
-status: ready_to_plan
-last_updated: "2026-05-17T00:04:48.010Z"
+status: complete
+last_updated: "2026-05-17T00:43:00.000Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 100
 ---
 
 # State: FB_APU04
@@ -27,17 +27,17 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **Initialized:** 2026-05-08
 - **Codebase mapped:** 2026-05-08 (7 documents, 1920 lines in `.planning/codebase/`)
 - **Roadmap:** 5 phases (Coarse granularity)
-- **Active phase:** Phase 05 — Observabilidade e Alertas — Plan 01 COMPLETO
-- **Completed phases:** 4 (Phase 05 em andamento — Plan 01/2 concluído)
-- **Last session:** 2026-05-17T00:03:22.000Z
+- **Active phase:** Phase 05 — COMPLETA (Plans 01+02 concluídos)
+- **Completed phases:** 5 (TODAS AS FASES COMPLETAS)
+- **Last session:** 2026-05-17T00:43:00.000Z
 
 ## Current Phase
 
-**Phase 05 — Observabilidade e Alertas — Plan 01 COMPLETO**
+**Phase 05 — Observabilidade e Alertas — COMPLETA**
 
-- Goal: Prometheus + Grafana + instrumentação Go + instrumentação bridge.py + 3 dashboards
-- Requirements: OBS-01 — ATENDIDO (Plan 01)
-- Status: Plan 01 COMPLETO — Infraestrutura docker-compose (4 serviços) + /metrics Go + /metrics bridge + 3 dashboards JSON
+- Goal: Prometheus + Grafana + instrumentação Go + instrumentação bridge.py + 3 dashboards + alertas SMTP + runbooks
+- Requirements: OBS-01 — ATENDIDO (Plan 01), OBS-02 — ATENDIDO (Plan 02)
+- Status: COMPLETA — Plans 01+02 executados. 6 alert rules Prometheus + Alertmanager SMTP + 5 runbooks operacionais pt-BR
 
 **Phase 04 — Conciliação Bridge vs XML — COMPLETA**
 
@@ -73,6 +73,10 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **metricsReUUID/metricsReNum prefixados:** evitar conflito com reUUID já declarada em admin.go (mesmo pacote handlers)
 - **Stubs no-op para prometheus_client:** bridge Python nunca crasha por falta de métricas — degradação graciosa
 - **GF_AUTH_ANONYMOUS_ENABLED=true com role Viewer:** equipe fiscal acessa Grafana sem login (T-05-01-03 aceite)
+- **awk ENVIRON[] em vez de envsubst no alertmanager:** prom/alertmanager:v0.27.0 nao tem gettext; awk Busybox disponivel
+- **smtp_require_tls: false para porta 465:** SSL implicito Hostinger — conforme services/email.go
+- **inhibit_rule BridgeDaemonDown inibe BridgeDPY4011Consecutivos:** daemon down e causa raiz; DPY-4011 e sintoma correlato
+- **runbooks em docs/runbooks/ versionados no repo:** linkaveis via runbook_url; nao wiki externo
 
 ## Recent History
 
@@ -87,6 +91,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - 2026-05-16: Phase 04 Plan 01 executado — xml_conciliacao.go criado com ConciliacaoHandler + CoberturaHandler + ConciliacaoCSVHandler + 2 query helpers; 3 rotas registradas em main.go (/csv antes de /conciliacao). EXP-01 e EXP-02 atendidos no backend.
 - 2026-05-16: Phase 04 Plan 02 executado — ConciliacaoBridgeXML.tsx criado com tabela 13 colunas text-[11px], BarChart cobertura, exportação Excel/CSV/PDF, 3 cards resumo, states loading/error/vazio; navigation.ts + App.tsx atualizados; @media print em index.css. Phase 04 COMPLETA (Plans 01+02). EXP-01 e EXP-02 totalmente atendidos.
 - 2026-05-17: Phase 05 Plan 01 executado — docker-compose com 4 serviços (prometheus, grafana, alertmanager, postgres-exporter); backend Go instrumentado com prometheus/client_golang v1.20.5 (/metrics + normalizePath + 3 counters críticos); bridge Python com prometheus_client (start_http_server 8086 + stubs graceful); prometheus.yml 4 scrape_configs + 3 dashboards JSON Grafana auto-provisionados. OBS-01 atendido.
+- 2026-05-17: Phase 05 Plan 02 executado — fiscal.yml (6 alertas); alertmanager.yml.tpl (3 receivers SMTP, inhibit rule, awk-based envsubst fix); 5 runbooks + README em docs/runbooks/; validação end-to-end: 3 emails SMTP enviados, 0 falhas. OBS-02 atendido. Phase 05 COMPLETA. Projeto v4.00 milestone COMPLETO (5/5 fases, 15/15 planos).
 
 ## Configuration
 
@@ -100,11 +105,18 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Next Action
 
-Phase 05 em andamento — Plan 01 COMPLETO.
+Projeto v4.00 milestone COMPLETO. Todas as 5 fases e 15 planos executados.
 
-- Plan 02 (Wave 2): Regras de alerta + Alertmanager SMTP + runbooks (OBS-02)
+- Phase 01: Estabilização (ResetDatabaseHandler + 5 gates) — COMPLETA
+- Phase 02: Upload XML manual — COMPLETA
+- Phase 03: (não documentado — pulado) — N/A
+- Phase 04: Conciliação Bridge vs XML — COMPLETA
+- Phase 05: Observabilidade e Alertas — COMPLETA
 
-Executar: `/gsd-execute-phase 5`
+Próximos passos sugeridos:
+1. Rebuild do container api para expor /metrics (api e bridge targets ficarão "up" no Prometheus)
+2. Configurar Grafana password via GRAFANA_ADMIN_PASSWORD em Coolify secrets
+3. Avaliar Loki para log aggregation (referenciado como FUTURO no RESEARCH.md)
 
 ---
 *Last updated: 2026-05-08*

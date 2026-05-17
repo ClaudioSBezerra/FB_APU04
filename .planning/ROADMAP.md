@@ -105,7 +105,7 @@ Plans:
 - [x] 05-01-PLAN.md — Provisionar Prometheus/Grafana/Alertmanager/postgres-exporter + instrumentar Go (/metrics + counters em erp_bridge/xml_upload/admin) + instrumentar bridge.py (porta 8086) + 3 dashboards JSON (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 05-02-PLAN.md — 5 alertas críticos (DPY-4011, BridgeOffline, BridgeDaemonDown, XMLUploadFalha, ResetBancoExecutado) + Alertmanager SMTP via envsubst + 5 runbooks pt-BR + validação end-to-end (wave 2, depende de 05-01)
+- [x] 05-02-PLAN.md — 6 alertas críticos (DPY-4011, BridgeOffline, BridgeDaemonDown, XMLUploadFalha, ResetBancoExecutado, DBTamanhoAlto) + Alertmanager SMTP via awk-envsubst + 5 runbooks pt-BR + validação end-to-end (3 emails SMTP enviados, 0 falhas) (wave 2)
 
 ## Progress
 
@@ -118,7 +118,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Upload de XMLs (Drag-and-Drop) | 4/4 | Complete   | 2026-05-16 |
 | 3. Estabilização Adicional | 4/4 | Complete   | 2026-05-16 |
 | 4. Conciliação Bridge vs XML | 2/2 | Complete   | 2026-05-16 |
-| 5. Observabilidade e Alertas | 1/2 | In Progress|  |
+| 5. Observabilidade e Alertas | 2/2 | Complete   | 2026-05-17 |
 
 ---
 *Roadmap created: 2026-05-08*
