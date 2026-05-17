@@ -1,0 +1,50 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: "production"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "alertmanager:9093"
+
+# Regras de alerta criadas no Plan 02 (OBS-02).
+# O glob vazio é aceito pelo Prometheus sem erro — nenhum arquivo precisa existir agora.
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  # Backend Go — endpoint /metrics sem JWT (T-05-01-01: apenas na rede fb_net)
+  - job_name: fb_apu04_api
+    static_configs:
+      - targets:
+          - "api:8084"
+    metrics_path: /metrics
+
+  # Bridge Python — expõe prometheus_client em :8086 (OBS-01)
+  # Topologia: assume bridge na rede fb_net (mesma máquina AWS que este Prometheus).
+  # Para deploy on-prem com bridge em outra máquina:
+  #   - Substituir 'bridge:8086' pelo IP ou hostname do servidor on-prem (ex: 192.168.1.100:8086)
+  #   - Abrir firewall no servidor do bridge para o IP do Prometheus
+  #   - No installer/aws-bridge/docker-compose.yml, descomentar ports: - "8086:8086"
+  - job_name: fb_apu04_bridge
+    static_configs:
+      - targets:
+          - "bridge:8086"
+    metrics_path: /metrics
+
+  # PostgreSQL via postgres-exporter (pg_database_size_bytes, pg_stat_activity, etc.)
+  - job_name: fb_apu04_postgres
+    static_configs:
+      - targets:
+          - "postgres-exporter:9187"
+    metrics_path: /metrics
+
+  # Self-scrape do Prometheus (detecta se o próprio Prometheus está down)
+  - job_name: prometheus_self
+    static_configs:
+      - targets:
+          - "localhost:9090"
+    metrics_path: /metrics
