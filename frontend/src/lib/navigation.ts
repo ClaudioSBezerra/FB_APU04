@@ -32,10 +32,13 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Importar XMLs Entradas', path: '/importacoes/xml/entradas',      adminOnly: true },
       { label: 'Importar XMLs Saídas',   path: '/importacoes/xml/saidas',        adminOnly: true },
       { label: 'Importar XMLs CT-es',    path: '/importacoes/xml/ctes',          adminOnly: true },
-      { label: 'Painel XMLs',            path: '/painel/xmls' },
       { label: 'Saneamento CCLASSTRIB',  path: '/relatorios/saneamento-cclasstrib' },
       { label: 'Conciliação Bridge vs XML', path: '/conciliacao/bridge-xml' },
     ],
+  },
+  painel: {
+    label: 'Painel XMLs',
+    tabs: [],
   },
   config: {
     label: 'Configurações',
@@ -64,7 +67,7 @@ export function getActiveModule(pathname: string): string {
   if (pathname.startsWith('/relatorios/')) return 'simulador'
   if (pathname.startsWith('/apuracao/')) return 'notas'
   if (pathname.startsWith('/importacoes/')) return 'notas'
-  if (pathname.startsWith('/painel/xmls')) return 'notas'
+  if (pathname.startsWith('/painel/')) return 'painel'
   if (pathname.startsWith('/config/')) return 'config'
   return 'simulador'
 }

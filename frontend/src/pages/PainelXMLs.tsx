@@ -279,15 +279,17 @@ function TabelaPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
 const PAGE_SIZE = 100;
 
 function TabelaNotas({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
-  const [mesAno, setMesAno] = useState('');
-  const [mesAnoFilter, setMesAnoFilter] = useState('');
+  const [dataInicio, setDataInicio] = useState('');
+  const [dataFim, setDataFim] = useState('');
+  const [filtro, setFiltro] = useState({ inicio: '', fim: '' });
   const [offset, setOffset] = useState(0);
 
   const { data, isLoading, isError } = useQuery<NotasResponse>({
-    queryKey: ['xml-notas', tipo, mesAnoFilter, offset],
+    queryKey: ['xml-notas', tipo, filtro.inicio, filtro.fim, offset],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
-      if (mesAnoFilter) params.set('mes_ano', mesAnoFilter);
+      if (filtro.inicio) params.set('data_inicio', filtro.inicio);
+      if (filtro.fim) params.set('data_fim', filtro.fim);
       const res = await fetch(`/api/xml/notas/${tipo}?${params}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -306,7 +308,7 @@ function TabelaNotas({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
 
   const handleSearch = () => {
     setOffset(0);
-    setMesAnoFilter(mesAno);
+    setFiltro({ inicio: dataInicio, fim: dataFim });
   };
 
   if (isError) {
@@ -320,14 +322,22 @@ function TabelaNotas({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground whitespace-nowrap">Mês/Ano</label>
+          <label className="text-xs text-muted-foreground whitespace-nowrap">De</label>
           <Input
-            type="text"
-            placeholder="MM/YYYY"
-            value={mesAno}
-            onChange={e => setMesAno(e.target.value)}
+            type="date"
+            value={dataInicio}
+            onChange={e => setDataInicio(e.target.value)}
+            className="h-8 w-36 text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground whitespace-nowrap">Até</label>
+          <Input
+            type="date"
+            value={dataFim}
+            onChange={e => setDataFim(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            className="h-8 w-28 text-sm"
+            className="h-8 w-36 text-sm"
           />
         </div>
         <Button size="sm" variant="outline" onClick={handleSearch} disabled={isLoading} className="h-8">
@@ -355,7 +365,7 @@ function TabelaNotas({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
         <p className="text-sm text-muted-foreground text-center py-8">Carregando...</p>
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">
-          Nenhuma nota encontrada.{mesAnoFilter ? ` Período: ${mesAnoFilter}` : ' Importe XMLs para visualizar dados.'}
+          Nenhuma nota encontrada.{(filtro.inicio || filtro.fim) ? ` Período: ${filtro.inicio || '?'} → ${filtro.fim || '?'}` : ' Importe XMLs para visualizar dados.'}
         </p>
       ) : (
         <>

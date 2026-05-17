@@ -1,4 +1,4 @@
-import { TrendingUp, FolderInput, Settings, LogOut, KeyRound } from 'lucide-react'
+import { TrendingUp, FolderInput, Settings, LogOut, KeyRound, BarChart3 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import {
@@ -33,6 +33,7 @@ import { toast } from 'sonner'
 const mainItems = [
   { id: 'simulador', icon: TrendingUp,  label: 'Simulador RT',     path: '/mercadorias' },
   { id: 'notas',     icon: FolderInput, label: 'Notas Importadas', path: '/apuracao/entrada/notas' },
+  { id: 'painel',    icon: BarChart3,   label: 'Painel XMLs',      path: '/painel/xmls' },
 ]
 
 export function AppRail() {

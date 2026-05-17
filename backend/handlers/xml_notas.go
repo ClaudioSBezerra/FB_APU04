@@ -75,7 +75,8 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 		tipo := parts[0]
 
 		q := r.URL.Query()
-		mesAno := strings.TrimSpace(q.Get("mes_ano"))
+		dataInicio := strings.TrimSpace(q.Get("data_inicio"))
+		dataFim := strings.TrimSpace(q.Get("data_fim"))
 		cnpj := strings.TrimSpace(q.Get("cnpj"))
 		limit := 100
 		offset := 0
@@ -143,9 +144,14 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 		where := "WHERE company_id = $1"
 		idx := 2
 
-		if mesAno != "" {
-			where += fmt.Sprintf(" AND mes_ano = $%d", idx)
-			args = append(args, mesAno)
+		if dataInicio != "" {
+			where += fmt.Sprintf(" AND data_emissao >= $%d", idx)
+			args = append(args, dataInicio)
+			idx++
+		}
+		if dataFim != "" {
+			where += fmt.Sprintf(" AND data_emissao <= $%d", idx)
+			args = append(args, dataFim)
 			idx++
 		}
 		if cnpj != "" {
