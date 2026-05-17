@@ -5,6 +5,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     pyyaml \
     requests \
+    prometheus_client \
     oracledb \
     python-dateutil
 

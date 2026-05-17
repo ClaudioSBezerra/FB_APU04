@@ -37,6 +37,70 @@ except ImportError:
     print("Execute: pip install oracledb requests pyyaml")
     sys.exit(1)
 
+# ─── Métricas Prometheus (OBS-01) ─────────────────────────────────────────────
+# Importação opcional: se prometheus_client não estiver instalado, o bridge opera
+# normalmente sem métricas (METRICS_ENABLED=False). Nunca crasha por falta de métricas.
+try:
+    from prometheus_client import start_http_server, Counter, Gauge
+    METRICS_ENABLED = True
+except ImportError:
+    METRICS_ENABLED = False
+
+if METRICS_ENABLED:
+    # Contadores de runs por status (success / partial / error)
+    BRIDGE_RUNS_TOTAL = Counter(
+        "bridge_runs_total",
+        "Total de runs concluidos por status",
+        ["status"],
+    )
+    # Contador de erros DPY-4011 detectados (Oracle connection lost)
+    BRIDGE_DPY4011_TOTAL = Counter(
+        "bridge_dpy4011_total",
+        "Total de erros DPY-4011 detectados",
+    )
+    # Gauge de daemon online (1 = ativo, 0 = fora do ar / erro)
+    BRIDGE_DAEMON_ONLINE = Gauge(
+        "bridge_daemon_online",
+        "Daemon online (1=sim, 0=nao)",
+    )
+    # Gauge com timestamp Unix do último run concluído
+    BRIDGE_LAST_RUN_TIMESTAMP = Gauge(
+        "bridge_last_run_timestamp_seconds",
+        "Timestamp Unix do ultimo run concluido",
+    )
+    # Contador de documentos enviados ao backend por tipo
+    BRIDGE_DOCS_SENT_TOTAL = Counter(
+        "bridge_docs_sent_total",
+        "Total de documentos enviados ao backend",
+        ["tipo"],
+    )
+else:
+    # Stubs no-op: permitem que o código de incremento funcione sem guardas em cada chamada.
+    # Implementam a interface mínima: .inc(), .set(), .labels()
+    import sys as _sys
+
+    class _NoOpCounter:
+        def inc(self, amount=1):  # noqa: ANN001
+            pass
+        def labels(self, **kwargs):  # noqa: ANN001
+            return self
+        def inc(self, amount=1):  # noqa: ANN001, F811
+            pass
+
+    class _NoOpGauge:
+        def set(self, value):  # noqa: ANN001
+            pass
+
+    BRIDGE_RUNS_TOTAL = _NoOpCounter()
+    BRIDGE_DPY4011_TOTAL = _NoOpCounter()
+    BRIDGE_DAEMON_ONLINE = _NoOpGauge()
+    BRIDGE_LAST_RUN_TIMESTAMP = _NoOpGauge()
+    BRIDGE_DOCS_SENT_TOTAL = _NoOpCounter()
+    _sys.stderr.write(
+        "[metrics] AVISO: prometheus_client nao instalado — metricas desabilitadas."
+        " Instale com: pip install prometheus_client\n"
+    )
+
 # ─── Caminhos ────────────────────────────────────────────────────────────────
 # Detecta --config antes do argparse para que LOG_DIR e TRACKER_DB sejam
 # isolados por config desde o início do módulo (logging é módulo-level).
@@ -600,6 +664,14 @@ class FBTaxClient:
             )
         except Exception as exc:
             log.warning("Nao foi possivel finalizar run na API: %s", exc)
+        # OBS-01: contadores de runs por status e timestamp do último run
+        if status == "success":
+            BRIDGE_RUNS_TOTAL.labels(status="success").inc()
+        elif status == "partial":
+            BRIDGE_RUNS_TOTAL.labels(status="partial").inc()
+        else:
+            BRIDGE_RUNS_TOTAL.labels(status="error").inc()
+        BRIDGE_LAST_RUN_TIMESTAMP.set(_time.time())
 
 
 MAX_CONN_RETRIES = 3
@@ -891,6 +963,8 @@ def processar_servidor(
                 except Exception as exc:
                     if _is_dpy4011(exc) and _query_retry < 1:
                         _query_retry += 1
+                        # OBS-01: contar erros DPY-4011 para dashboard e alerta
+                        BRIDGE_DPY4011_TOTAL.inc()
                         log.warning(
                             "  [%s] DPY-4011 na query %s — reconectando (tentativa %d)...",
                             nome, tipo, _query_retry,
@@ -935,6 +1009,8 @@ def processar_servidor(
                     sc = result["status"]
                     if sc in (200, 201):
                         stats[tipo]["enviados"] += 1
+                        # OBS-01: contagem de documentos enviados por tipo
+                        BRIDGE_DOCS_SENT_TOTAL.labels(tipo=tipo).inc()
                         marcar(tracker, nome, tipo, chave, "ok")
                         log.debug("  OK  %s", chave)
                     elif sc == 409:
@@ -1115,6 +1191,12 @@ def run_daemon(cfg: dict, fbtax: FBTaxClient) -> int:
     log.info("Aguardando horario configurado na UI ou trigger manual...")
     log.info("=" * 60)
 
+    # OBS-01: iniciar servidor HTTP de métricas Prometheus antes do loop principal
+    if METRICS_ENABLED:
+        start_http_server(8086)
+        log.info("[metrics] Prometheus exporter iniciado em :8086")
+        BRIDGE_DAEMON_ONLINE.set(1)
+
     ultimo_run_data: date | None = None
 
     while True:
@@ -1125,6 +1207,8 @@ def run_daemon(cfg: dict, fbtax: FBTaxClient) -> int:
 
             # ── 0. Heartbeat — sinaliza ao backend que o daemon está ativo ────
             fbtax.heartbeat()
+            # OBS-01: daemon continua online após heartbeat bem-sucedido
+            BRIDGE_DAEMON_ONLINE.set(1)
 
             # ── 1. Reset tracker ──────────────────────────────────────────────
             bridge_cfg_check = fbtax.get_bridge_config()
@@ -1262,6 +1346,8 @@ def run_daemon(cfg: dict, fbtax: FBTaxClient) -> int:
 
         except Exception as exc:
             log.warning("[Daemon] Erro no loop: %s", exc)
+            # OBS-01: daemon em estado de erro — será resetado para 1 no próximo heartbeat
+            BRIDGE_DAEMON_ONLINE.set(0)
 
         _time.sleep(60)
 
