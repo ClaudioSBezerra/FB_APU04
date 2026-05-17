@@ -134,13 +134,16 @@ services:
     image: prom/alertmanager:v0.27.0
     container_name: fb_apu04-alertmanager
     restart: always
-    # Entrypoint usa envsubst para expandir ${SMTP_*} no template antes de iniciar.
+    # Entrypoint usa sed para expandir ${SMTP_*} no template antes de iniciar.
     # O Alertmanager v0.27 não expande env vars no YAML por padrão — arquivo .tpl
-    # é processado em runtime, gerando /tmp/alertmanager.yml com valores reais.
+    # é processado em runtime via sed, gerando /tmp/alertmanager.yml com valores reais.
+    # Nota: envsubst não está disponível na imagem prom/alertmanager (sem apk/apt);
+    # sed é parte do Busybox e funciona nesta imagem Alpine-based.
     entrypoint:
       - /bin/sh
       - -c
-      - "envsubst < /etc/alertmanager/alertmanager.yml.tpl > /tmp/alertmanager.yml && /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager"
+      - |
+        awk 'BEGIN{h=ENVIRON["SMTP_HOST"];p=ENVIRON["SMTP_PORT"];u=ENVIRON["SMTP_USER"];pw=ENVIRON["SMTP_PASSWORD"];f=ENVIRON["SMTP_FROM"]}{gsub(/\$\{SMTP_HOST\}/,h);gsub(/\$\{SMTP_PORT\}/,p);gsub(/\$\{SMTP_USER\}/,u);gsub(/\$\{SMTP_PASSWORD\}/,pw);gsub(/\$\{SMTP_FROM\}/,f);print}' /etc/alertmanager/alertmanager.yml.tpl > /tmp/alertmanager.yml && /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
     expose:
       - "9093"
     environment:

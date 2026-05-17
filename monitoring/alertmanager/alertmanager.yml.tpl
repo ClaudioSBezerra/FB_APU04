@@ -3,10 +3,12 @@
 #
 # MECANISMO DE EXPANSÃO DE VARIÁVEIS:
 # O Alertmanager v0.27 NÃO expande variáveis de ambiente diretamente no YAML.
-# Este arquivo é um TEMPLATE (.tpl) que é processado por `envsubst` no entrypoint
+# Este arquivo é um TEMPLATE (.tpl) que é processado por `awk` no entrypoint
 # do container (docker-compose.yml), gerando /tmp/alertmanager.yml antes do binário
-# iniciar. As variáveis ${SMTP_*} são substituídas pelos valores reais em runtime.
+# iniciar. As variáveis ${SMTP_*} são substituídas pelos valores reais em runtime via
+# ENVIRON["VAR"] do awk (disponível no Busybox da imagem prom/alertmanager).
 # Os valores reais ficam no Coolify secrets (nunca versionados no repo).
+# Nota: envsubst não está disponível na imagem prom/alertmanager:v0.27.0 (sem apk).
 #
 # CONFIGURAÇÃO TLS/SMTP:
 # O backend Go (services/email.go) usa porta 465 com SSL implícito (sendMailSSL).
