@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
 status: complete
-last_updated: "2026-05-17T00:43:00.000Z"
+last_updated: "2026-05-17T01:30:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 5
@@ -92,6 +92,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - 2026-05-16: Phase 04 Plan 02 executado — ConciliacaoBridgeXML.tsx criado com tabela 13 colunas text-[11px], BarChart cobertura, exportação Excel/CSV/PDF, 3 cards resumo, states loading/error/vazio; navigation.ts + App.tsx atualizados; @media print em index.css. Phase 04 COMPLETA (Plans 01+02). EXP-01 e EXP-02 totalmente atendidos.
 - 2026-05-17: Phase 05 Plan 01 executado — docker-compose com 4 serviços (prometheus, grafana, alertmanager, postgres-exporter); backend Go instrumentado com prometheus/client_golang v1.20.5 (/metrics + normalizePath + 3 counters críticos); bridge Python com prometheus_client (start_http_server 8086 + stubs graceful); prometheus.yml 4 scrape_configs + 3 dashboards JSON Grafana auto-provisionados. OBS-01 atendido.
 - 2026-05-17: Phase 05 Plan 02 executado — fiscal.yml (6 alertas); alertmanager.yml.tpl (3 receivers SMTP, inhibit rule, awk-based envsubst fix); 5 runbooks + README em docs/runbooks/; validação end-to-end: 3 emails SMTP enviados, 0 falhas. OBS-02 atendido. Phase 05 COMPLETA. Projeto v4.00 milestone COMPLETO (5/5 fases, 15/15 planos).
+- 2026-05-17: Code review Phase 5 (05-REVIEW.md) — 2 Criticals + 4 Warnings + 3 Info. Corrigidos: CR-01 (awk gsub corrompia senhas com &/\ em SMTP_PASSWORD), CR-02 (XMLUploadErrorsTotal não disparava em batches assíncronos >50 XMLs), WR-01 (BridgeOffline disparava false-positive no startup), WR-02 (postgres-exporter com sslmode=disable em prod), WR-03 (Grafana admin password com fallback inseguro :-admin), WR-04 (duplicata de método inc em _NoOpCounter). Verification: CONDITIONAL PASS (sem gaps bloqueadores; BridgeDaemonDown 90s é exceção deliberada documentada).
 
 ## Configuration
 
@@ -113,10 +114,11 @@ Projeto v4.00 milestone COMPLETO. Todas as 5 fases e 15 planos executados.
 - Phase 04: Conciliação Bridge vs XML — COMPLETA
 - Phase 05: Observabilidade e Alertas — COMPLETA
 
-Próximos passos sugeridos:
+Próximos passos sugeridos (deploy/ops):
 1. Rebuild do container api para expor /metrics (api e bridge targets ficarão "up" no Prometheus)
-2. Configurar Grafana password via GRAFANA_ADMIN_PASSWORD em Coolify secrets
-3. Avaliar Loki para log aggregation (referenciado como FUTURO no RESEARCH.md)
+2. Configurar GRAFANA_ADMIN_PASSWORD no Coolify secrets (obrigatório — fallback removido pelo CR-03 fix)
+3. Verificar acesso anônimo ao Grafana em produção após deploy
+4. Avaliar Loki para log aggregation (v2 — RESEARCH.md)
 
 ---
-*Last updated: 2026-05-08*
+*Last updated: 2026-05-17*
