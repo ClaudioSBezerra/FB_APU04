@@ -1,0 +1,111 @@
+---
+# Regras de alerta Prometheus — FB_APU04 Simulador Fiscal
+# Criado no Plan 02 (OBS-02)
+#
+# Latência total de detecção (critical):
+#   scrape_interval 15s + evaluation_interval 15s + for <= 30s = <= 60s total
+#
+# Métricas consumidas (definidas no Plan 01):
+#   Backend Go (api:8084/metrics): xml_upload_errors_total, database_reset_total
+#   Bridge Python (bridge:8086/metrics): bridge_dpy4011_total, bridge_daemon_online,
+#                                         bridge_last_run_timestamp_seconds
+#   PostgreSQL (postgres-exporter:9187/metrics): pg_database_size_bytes
+
+groups:
+  # ── Grupo 1: bridge_critico ───────────────────────────────────────────────
+  # interval 15s — detecção de falhas críticas no Bridge Oracle
+  - name: bridge_critico
+    interval: 15s
+    rules:
+
+      # Alerta 1: DPY-4011 consecutivos (>= 3 em 5 min)
+      # Repete o cenário do incidente 2026-05-07 se o Bridge perde conexão Oracle repetidamente.
+      - alert: BridgeDPY4011Consecutivos
+        expr: increase(bridge_dpy4011_total[5m]) >= 3
+        for: 30s
+        labels:
+          severity: critical
+          team: fiscal
+        annotations:
+          summary: "Bridge com 3 ou mais erros DPY-4011 em 5 minutos"
+          description: "{{ $value | printf \"%.0f\" }} erros DPY-4011 detectados em 5min. Bridge pode estar perdendo conexão Oracle repetidamente."
+          runbook_url: "/docs/runbooks/dpy4011-consecutivos.md"
+
+      # Alerta 2: Bridge offline há mais de 65 minutos
+      # Bridge roda a cada 60 min; tolerância de 5 min para atraso.
+      - alert: BridgeOffline
+        expr: time() - bridge_last_run_timestamp_seconds > 3900
+        for: 0s
+        labels:
+          severity: critical
+          team: fiscal
+        annotations:
+          summary: "Bridge não executou nenhum run há mais de 65 minutos"
+          description: "Último run detectado. Bridge daemon pode estar travado ou crashed. Verificar docker compose ps bridge."
+          runbook_url: "/docs/runbooks/bridge-offline.md"
+
+      # Alerta 3: Bridge daemon completamente offline
+      # for: 1m para evitar falso positivo em redeploy curto.
+      - alert: BridgeDaemonDown
+        expr: bridge_daemon_online == 0 OR up{job="fb_apu04_bridge"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: fiscal
+        annotations:
+          summary: "Bridge daemon offline"
+          description: "Métricas do bridge não acessíveis ou flag bridge_daemon_online == 0. Endpoint :8086/metrics não responde."
+          runbook_url: "/docs/runbooks/bridge-offline.md"
+
+  # ── Grupo 2: ops_critico ──────────────────────────────────────────────────
+  # interval 15s — eventos críticos operacionais
+  - name: ops_critico
+    interval: 15s
+    rules:
+
+      # Alerta 4: Upload XML rejeitado ou com erro de parse
+      # for: 0s — qualquer erro de upload XML é evento de interesse imediato.
+      - alert: XMLUploadFalha
+        expr: increase(xml_upload_errors_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: warning
+          team: fiscal
+        annotations:
+          summary: "Upload XML rejeitado ou com erro de parse"
+          description: "{{ $value | printf \"%.0f\" }} uploads XML falharam nos últimos 5min. Verificar xml_upload_batches."
+          runbook_url: "/docs/runbooks/xml-upload-falha.md"
+
+      # Alerta 5: Reset de banco executado
+      # for: 0s — reset é evento crítico imediato.
+      # Específico para detectar repetição do incidente de 2026-05-07 em < 1 min.
+      - alert: ResetBancoExecutado
+        expr: increase(database_reset_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          team: fiscal
+        annotations:
+          summary: "ResetDatabase executado"
+          description: "{{ $value | printf \"%.0f\" }} reset(s) de banco executado(s) nos últimos 5min. Verificar admin_destructive_actions imediatamente."
+          runbook_url: "/docs/runbooks/reset-banco-executado.md"
+
+  # ── Grupo 3: db_critico ───────────────────────────────────────────────────
+  # interval 1m — crescimento de banco (menos urgente)
+  - name: db_critico
+    interval: 1m
+    rules:
+
+      # Alerta 6: Banco fb_apu04 com mais de 50 GB
+      # for: 5m para evitar falso positivo em bulk import temporário.
+      # (warning adicional alinhado ao success criterion "tamanho DB" de OBS-01)
+      - alert: DBTamanhoAlto
+        expr: pg_database_size_bytes{datname="fb_apu04"} > 50 * 1024 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+          team: fiscal
+        annotations:
+          summary: "Banco fb_apu04 com mais de 50 GB"
+          description: "Tamanho atual: {{ $value | humanize1024 }}B. Avaliar vacuum, archive ou cleanup de dados antigos."
+          runbook_url: "/docs/runbooks/db-tamanho.md"
