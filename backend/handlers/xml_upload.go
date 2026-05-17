@@ -486,11 +486,11 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"batch_id": batchID,
-				"status":   status,
-				"imported": imported,
-				"rejected": rejected,
-				"total":    len(xmlFiles),
+				"batch_id":       batchID,
+				"status":         status,
+				"imported_count": imported,
+				"rejected_count": rejected,
+				"total_count":    len(xmlFiles),
 			})
 		} else {
 			// Processamento assíncrono: salvar XMLs comprimidos e retornar 202
@@ -649,11 +649,11 @@ func XMLUploadBatchesHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		args := []interface{}{companyID}
-		where := "WHERE company_id = $1"
+		where := "WHERE b.company_id = $1"
 		idx := 2
 
 		if tipoFiltro != "" && (tipoFiltro == "entradas" || tipoFiltro == "saidas" || tipoFiltro == "ctes") {
-			where += fmt.Sprintf(" AND tipo = $%d", idx)
+			where += fmt.Sprintf(" AND b.tipo = $%d", idx)
 			args = append(args, tipoFiltro)
 			idx++
 		}
@@ -661,12 +661,14 @@ func XMLUploadBatchesHandler(db *sql.DB) http.HandlerFunc {
 		args = append(args, limit, offset)
 
 		rows, err := db.Query(fmt.Sprintf(`
-			SELECT id, tipo, COALESCE(filename,''), status,
-			       total_count, processed_count, imported_count, rejected_count,
-			       created_at, completed_at
-			FROM xml_upload_batches
+			SELECT b.id, b.tipo, COALESCE(b.filename,''), b.status,
+			       b.total_count, b.processed_count, b.imported_count, b.rejected_count,
+			       b.created_at, b.completed_at,
+			       COALESCE(u.email, '')
+			FROM xml_upload_batches b
+			LEFT JOIN users u ON b.uploaded_by = u.id
 			%s
-			ORDER BY created_at DESC
+			ORDER BY b.created_at DESC
 			LIMIT $%d OFFSET $%d`, where, idx, idx+1),
 			args...,
 		)
@@ -688,6 +690,7 @@ func XMLUploadBatchesHandler(db *sql.DB) http.HandlerFunc {
 			RejectedCount  int     `json:"rejected_count"`
 			CreatedAt      string  `json:"created_at"`
 			CompletedAt    *string `json:"completed_at,omitempty"`
+			UserEmail      string  `json:"user_email"`
 		}
 
 		var list []batchRow
@@ -698,7 +701,7 @@ func XMLUploadBatchesHandler(db *sql.DB) http.HandlerFunc {
 			if err := rows.Scan(
 				&b.ID, &b.Tipo, &b.Filename, &b.Status,
 				&b.TotalCount, &b.ProcessedCount, &b.ImportedCount, &b.RejectedCount,
-				&createdAt, &completedAt,
+				&createdAt, &completedAt, &b.UserEmail,
 			); err != nil {
 				log.Printf("[XMLUpload] batches scan error: %v", err)
 				continue
@@ -713,7 +716,7 @@ func XMLUploadBatchesHandler(db *sql.DB) http.HandlerFunc {
 
 		// Contagem total para paginação
 		var total int
-		db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM xml_upload_batches %s`, where),
+		db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM xml_upload_batches b LEFT JOIN users u ON b.uploaded_by = u.id %s`, where),
 			args[:len(args)-2]...,
 		).Scan(&total)
 
