@@ -41,7 +41,7 @@ Requisitos do ciclo atual, organizados pelas frentes do PROJECT.md em ordem de p
 
 ### Observabilidade (prioridade 5)
 
-- [ ] **OBS-01**: Dashboards Grafana dedicados (Prometheus já provisionado em prod) — runs do Bridge, latência API, taxa de erro, ocupação do banco
+- [x] **OBS-01**: Dashboards Grafana dedicados (Prometheus já provisionado em prod) — runs do Bridge, latência API, taxa de erro, ocupação do banco
 - [ ] **OBS-02**: Alertas para falhas críticas — erros DPY-4011 consecutivos, falhas de upload XML, reset de banco executado
 
 ## v2 Requirements

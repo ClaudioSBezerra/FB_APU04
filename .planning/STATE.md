@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
 status: ready_to_plan
-last_updated: "2026-05-16T23:48:49.042Z"
+last_updated: "2026-05-17T00:04:48.010Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 15
-  completed_plans: 13
-  percent: 87
+  completed_plans: 14
+  percent: 93
 ---
 
 # State: FB_APU04
@@ -27,11 +27,17 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **Initialized:** 2026-05-08
 - **Codebase mapped:** 2026-05-08 (7 documents, 1920 lines in `.planning/codebase/`)
 - **Roadmap:** 5 phases (Coarse granularity)
-- **Active phase:** Phase 04 — Conciliação Bridge vs XML — COMPLETA (Plans 01+02)
-- **Completed phases:** 4
-- **Last session:** 2026-05-16T22:00:00.000Z
+- **Active phase:** Phase 05 — Observabilidade e Alertas — Plan 01 COMPLETO
+- **Completed phases:** 4 (Phase 05 em andamento — Plan 01/2 concluído)
+- **Last session:** 2026-05-17T00:03:22.000Z
 
 ## Current Phase
+
+**Phase 05 — Observabilidade e Alertas — Plan 01 COMPLETO**
+
+- Goal: Prometheus + Grafana + instrumentação Go + instrumentação bridge.py + 3 dashboards
+- Requirements: OBS-01 — ATENDIDO (Plan 01)
+- Status: Plan 01 COMPLETO — Infraestrutura docker-compose (4 serviços) + /metrics Go + /metrics bridge + 3 dashboards JSON
 
 **Phase 04 — Conciliação Bridge vs XML — COMPLETA**
 
@@ -64,6 +70,9 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **buildUrl com Record<string,string> em ConciliacaoBridgeXML.tsx:** suporta filtro composto mes_ano+tipo sem adapter especial — URLSearchParams filtra strings vazias automaticamente
 - **downloadingCSV state separado de loadingDiv:** loading de exportação CSV não bloqueia re-fetch da tabela de divergências
 - **pctXml computado de cobertura[0]:** ORDER BY mes_ano DESC no backend — primeiro registro é sempre o mês mais recente
+- **metricsReUUID/metricsReNum prefixados:** evitar conflito com reUUID já declarada em admin.go (mesmo pacote handlers)
+- **Stubs no-op para prometheus_client:** bridge Python nunca crasha por falta de métricas — degradação graciosa
+- **GF_AUTH_ANONYMOUS_ENABLED=true com role Viewer:** equipe fiscal acessa Grafana sem login (T-05-01-03 aceite)
 
 ## Recent History
 
@@ -77,6 +86,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - 2026-05-16: Phase 02 Plan 04 executado — 3 endpoints relatório saneamento CCLASSTRIB + migration 079 (95 NCMs Reforma Tributária semeados em ncm_cclasstrib_reforma) + RelatorioSaneamento.tsx com coluna "Sugestão CCLASSTRIB" preenchida automaticamente via LEFT JOIN LATERAL. Phase 02 COMPLETA (Plans 01+02+03+04).
 - 2026-05-16: Phase 04 Plan 01 executado — xml_conciliacao.go criado com ConciliacaoHandler + CoberturaHandler + ConciliacaoCSVHandler + 2 query helpers; 3 rotas registradas em main.go (/csv antes de /conciliacao). EXP-01 e EXP-02 atendidos no backend.
 - 2026-05-16: Phase 04 Plan 02 executado — ConciliacaoBridgeXML.tsx criado com tabela 13 colunas text-[11px], BarChart cobertura, exportação Excel/CSV/PDF, 3 cards resumo, states loading/error/vazio; navigation.ts + App.tsx atualizados; @media print em index.css. Phase 04 COMPLETA (Plans 01+02). EXP-01 e EXP-02 totalmente atendidos.
+- 2026-05-17: Phase 05 Plan 01 executado — docker-compose com 4 serviços (prometheus, grafana, alertmanager, postgres-exporter); backend Go instrumentado com prometheus/client_golang v1.20.5 (/metrics + normalizePath + 3 counters críticos); bridge Python com prometheus_client (start_http_server 8086 + stubs graceful); prometheus.yml 4 scrape_configs + 3 dashboards JSON Grafana auto-provisionados. OBS-01 atendido.
 
 ## Configuration
 
@@ -90,9 +100,9 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Next Action
 
-Phase 05 PLANEJADA (2026-05-16) — 2 planos prontos para execução.
-- Plan 01 (Wave 1): Infraestrutura Prometheus/Grafana + instrumentação Go + instrumentação bridge.py
-- Plan 02 (Wave 2): Regras de alerta + Alertmanager SMTP + runbooks
+Phase 05 em andamento — Plan 01 COMPLETO.
+
+- Plan 02 (Wave 2): Regras de alerta + Alertmanager SMTP + runbooks (OBS-02)
 
 Executar: `/gsd-execute-phase 5`
 
