@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -87,29 +87,30 @@ export default function ImportarXMLsCTe() {
     },
     enabled: !!batchId && uploadState === 'polling',
     refetchInterval: uploadState === 'polling' ? 2000 : false,
-    select: (data) => {
-      const pct = data.total_count > 0
-        ? Math.round((data.processed_count / data.total_count) * 100)
-        : 0;
-      setProgress(pct);
-      if (data.status === 'done') {
-        setUploadState('done');
-        setUploadResult({
-          imported: data.imported_count,
-          rejected: data.rejected_count,
-          total: data.total_count,
-          errorDetails: data.error_details,
-        });
-        toast.success(
-          `Upload concluído: ${data.imported_count} CT-e(s) importados, ${data.rejected_count} rejeitados.`
-        );
-      } else if (data.status === 'failed') {
-        setUploadState('error');
-        toast.error('Processamento falhou. Verifique os detalhes abaixo.');
-      }
-      return data;
-    },
   });
+
+  useEffect(() => {
+    if (!batchStatus) return;
+    const pct = batchStatus.total_count > 0
+      ? Math.round((batchStatus.processed_count / batchStatus.total_count) * 100)
+      : 0;
+    setProgress(pct);
+    if (batchStatus.status === 'done') {
+      setUploadState('done');
+      setUploadResult({
+        imported: batchStatus.imported_count,
+        rejected: batchStatus.rejected_count,
+        total: batchStatus.total_count,
+        errorDetails: batchStatus.error_details,
+      });
+      toast.success(
+        `Upload concluído: ${batchStatus.imported_count} CT-e(s) importados, ${batchStatus.rejected_count} rejeitados.`
+      );
+    } else if (batchStatus.status === 'failed') {
+      setUploadState('error');
+      toast.error('Processamento falhou. Verifique os detalhes abaixo.');
+    }
+  }, [batchStatus]);
 
   // ── Histórico de uploads ───────────────────────────────────────────────────
   const { data: historico, refetch: refetchHistorico } = useQuery<{ items: BatchHistoryRow[] }>({
