@@ -412,7 +412,7 @@ export default function ConciliacaoBridgeXML() {
           ) : (
             <>
               {/* Gráfico de barras */}
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={300} minWidth={0}>
                 <BarChart data={cobertura ?? []}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="mes_ano" tick={{ fontSize: 11 }} />

@@ -6,48 +6,43 @@
 --   xml_upload    → importado manualmente via upload de XML (Phase 02)
 --   manual        → lançamento manual (uso futuro)
 --
--- PostgreSQL 15+: ADD COLUMN com DEFAULT em tabela existente é operação virtual
--- (não reescreve linhas), portanto segura em produção sem lock prolongado.
--- Idempotente via ADD COLUMN IF NOT EXISTS e ADD CONSTRAINT IF NOT EXISTS.
+-- Idempotente: ADD COLUMN IF NOT EXISTS + DO block para constraint.
 
 -- ── nfe_entradas ──────────────────────────────────────────────────────────────
 ALTER TABLE nfe_entradas
     ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'oracle_bridge';
 
-ALTER TABLE nfe_entradas
-    ADD CONSTRAINT IF NOT EXISTS chk_nfe_entradas_source
+DO $$ BEGIN
+    ALTER TABLE nfe_entradas ADD CONSTRAINT chk_nfe_entradas_source
         CHECK (source IN ('oracle_bridge', 'xml_upload', 'manual'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_nfe_entradas_source
     ON nfe_entradas(company_id, source);
-
-COMMENT ON COLUMN nfe_entradas.source IS
-    'Origem do documento: oracle_bridge (ERP), xml_upload (Phase 02), manual';
 
 -- ── nfe_saidas ────────────────────────────────────────────────────────────────
 ALTER TABLE nfe_saidas
     ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'oracle_bridge';
 
-ALTER TABLE nfe_saidas
-    ADD CONSTRAINT IF NOT EXISTS chk_nfe_saidas_source
+DO $$ BEGIN
+    ALTER TABLE nfe_saidas ADD CONSTRAINT chk_nfe_saidas_source
         CHECK (source IN ('oracle_bridge', 'xml_upload', 'manual'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_nfe_saidas_source
     ON nfe_saidas(company_id, source);
-
-COMMENT ON COLUMN nfe_saidas.source IS
-    'Origem do documento: oracle_bridge (ERP), xml_upload (Phase 02), manual';
 
 -- ── cte_entradas ──────────────────────────────────────────────────────────────
 ALTER TABLE cte_entradas
     ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'oracle_bridge';
 
-ALTER TABLE cte_entradas
-    ADD CONSTRAINT IF NOT EXISTS chk_cte_entradas_source
+DO $$ BEGIN
+    ALTER TABLE cte_entradas ADD CONSTRAINT chk_cte_entradas_source
         CHECK (source IN ('oracle_bridge', 'xml_upload', 'manual'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_cte_entradas_source
     ON cte_entradas(company_id, source);
-
-COMMENT ON COLUMN cte_entradas.source IS
-    'Origem do documento: oracle_bridge (ERP), xml_upload (Phase 02), manual';
