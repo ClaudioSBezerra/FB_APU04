@@ -32,11 +32,13 @@ GROUP BY ne.company_id, ne.forn_cnpj, ne.forn_nome, ne.mes_ano, ne.source;
 
 -- ── vw_xml_saidas_resumo ──────────────────────────────────────────────────────
 -- Agrega nfe_saidas por empresa/emitente/mês, incluindo filtro por source.
+-- Colunas emit_cnpj/emit_nome expostas como forn_cnpj/forn_nome para que
+-- XMLPainelHandler use a mesma query para entradas, saídas e CTe.
 CREATE OR REPLACE VIEW vw_xml_saidas_resumo AS
 SELECT
     ns.company_id,
-    ns.emit_cnpj,
-    ns.emit_nome,
+    ns.emit_cnpj                                    AS forn_cnpj,
+    ns.emit_nome                                    AS forn_nome,
     ns.mes_ano,
     ns.source,
     COUNT(*)                                        AS qtd_notas,
@@ -53,11 +55,12 @@ GROUP BY ns.company_id, ns.emit_cnpj, ns.emit_nome, ns.mes_ano, ns.source;
 
 -- ── vw_xml_ctes_resumo ────────────────────────────────────────────────────────
 -- Agrega cte_entradas por empresa/transportadora/mês, incluindo filtro por source.
+-- Colunas emit_cnpj/emit_nome expostas como forn_cnpj/forn_nome (mesma convenção).
 CREATE OR REPLACE VIEW vw_xml_ctes_resumo AS
 SELECT
     ce.company_id,
-    ce.emit_cnpj,
-    ce.emit_nome,
+    ce.emit_cnpj                                    AS forn_cnpj,
+    ce.emit_nome                                    AS forn_nome,
     ce.mes_ano,
     ce.source,
     COUNT(*)                                        AS qtd_ctes,
