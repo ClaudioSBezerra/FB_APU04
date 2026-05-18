@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"fb_apu01/handlers"
-	"fb_apu01/worker"
+	"fb_apu04/handlers"
+	"fb_apu04/worker"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"

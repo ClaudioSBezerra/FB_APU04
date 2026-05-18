@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"fb_apu01/handlers"
+	"fb_apu04/handlers"
 )
 
 // StartXMLWorker inicia um pool de 3 goroutines para processar batches de XML assíncronos.
