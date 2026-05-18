@@ -934,9 +934,7 @@ func runAggregations(tx *sql.Tx, jobID string, rates TaxRates) error {
 			       SUM(c190.vl_opr)  AS vl_opr,
 			       SUM(c190.vl_icms) AS vl_icms
 			FROM reg_c190 c190
-			LEFT JOIN cfop cf ON c190.cfop = cf.cfop
 			WHERE c190.job_id = $1
-			AND COALESCE(cf.tipo, 'O') IN ('S', 'R')
 			GROUP BY c190.id_pai_c100
 		)
 		INSERT INTO operacoes_comerciais (
