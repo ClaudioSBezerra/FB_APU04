@@ -927,32 +927,37 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 }
 
 func runAggregations(tx *sql.Tx, jobID string, rates TaxRates) error {
-	// 1. Operacoes Comerciais
+	// 1. Operacoes Comerciais — base = SUM(c190.vl_opr) por grupo S/R
 	_, err := tx.Exec(`
+		WITH c190_agg AS (
+			SELECT c190.id_pai_c100,
+			       SUM(c190.vl_opr)  AS vl_opr,
+			       SUM(c190.vl_icms) AS vl_icms
+			FROM reg_c190 c190
+			LEFT JOIN cfop cf ON c190.cfop = cf.cfop
+			WHERE c190.job_id = $1
+			AND COALESCE(cf.tipo, 'O') IN ('S', 'R')
+			GROUP BY c190.id_pai_c100
+		)
 		INSERT INTO operacoes_comerciais (
-			job_id, filial_cnpj, cod_part, mes_ano, ind_oper, 
+			job_id, filial_cnpj, cod_part, mes_ano, ind_oper,
 			vl_doc, vl_icms, vl_icms_projetado, vl_piscofins, vl_ibs_projetado, vl_cbs_projetado
 		)
-		SELECT 
+		SELECT
 			c100.job_id,
 			c100.filial_cnpj,
 			c100.cod_part,
 			TO_CHAR(c100.dt_doc, 'MM/YYYY'),
 			c100.ind_oper,
-			SUM(c100.vl_doc),
-			SUM(c100.vl_icms),
-			SUM(c100.vl_icms * (1 - ($2::float8 / 100.0))),
+			SUM(ca.vl_opr),
+			SUM(ca.vl_icms),
+			SUM(ca.vl_icms * (1.0 - ($2::float8 / 100.0))),
 			SUM(c100.vl_piscofins),
-			SUM(c100.vl_doc * (($3::float8 + $4::float8) / 100.0)),
-			SUM(c100.vl_doc * ($5::float8 / 100.0))
+			SUM(ca.vl_opr * (($3::float8 + $4::float8) / 100.0)),
+			SUM(ca.vl_opr * ($5::float8 / 100.0))
 		FROM reg_c100 c100
+		JOIN c190_agg ca ON ca.id_pai_c100 = c100.id
 		WHERE c100.job_id = $1
-		AND EXISTS (
-			SELECT 1 FROM reg_c190 c190
-			LEFT JOIN cfop c ON c190.cfop = c.cfop
-			WHERE c190.id_pai_c100 = c100.id
-			AND COALESCE(c.tipo, 'O') IN ('S', 'R')
-		)
 		GROUP BY c100.job_id, c100.filial_cnpj, c100.cod_part, TO_CHAR(c100.dt_doc, 'MM/YYYY'), c100.ind_oper
 	`, jobID, rates.PercReducICMS, rates.PercIBS_UF, rates.PercIBS_Mun, rates.PercCBS)
 	if err != nil {
