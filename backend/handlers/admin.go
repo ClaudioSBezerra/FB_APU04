@@ -271,30 +271,6 @@ func RefreshViewsHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
-		// Re-aplica alíquotas atuais (tabela_aliquotas) nas tabelas de agregação.
-		// Garante que mudanças em Parâmetros > Alíquotas reflitam nos valores projetados.
-		recalcSQL := `
-WITH rates AS (
-    SELECT ano,
-           COALESCE(perc_reduc_icms, 0.0)                              AS reduc_icms,
-           COALESCE(NULLIF(perc_ibs_uf, 0), 0.05)
-               + COALESCE(NULLIF(perc_ibs_mun, 0), 0.05)              AS ibs_total,
-           COALESCE(NULLIF(perc_cbs, 0), 8.80)                        AS cbs
-    FROM tabela_aliquotas
-)
-UPDATE %s t
-SET vl_icms_projetado = t.vl_icms * (1.0 - r.reduc_icms / 100.0),
-    vl_ibs_projetado  = t.vl_doc  * r.ibs_total / 100.0,
-    vl_cbs_projetado  = t.vl_doc  * r.cbs / 100.0
-FROM rates r
-WHERE r.ano = SPLIT_PART(t.mes_ano, '/', 2)::INTEGER`
-
-		for _, tbl := range []string{"operacoes_comerciais", "energia_agregado", "frete_agregado", "comunicacoes_agregado"} {
-			if _, err = db.Exec(fmt.Sprintf(recalcSQL, tbl)); err != nil {
-				log.Printf("RefreshViews: recalc %s failed (non-fatal): %v", tbl, err)
-			}
-		}
-
 		duration := time.Since(start)
 		log.Printf("RefreshViews: Completed in %v", duration)
 
