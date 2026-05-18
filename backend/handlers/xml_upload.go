@@ -153,6 +153,16 @@ func processXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, 
 func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) error {
 	data := xf.Data
 
+	// Eventos de cancelamento (procCancNFe) não são documentos fiscais — ignorar silenciosamente.
+	trimmed := bytes.TrimSpace(data)
+	checkLen := 300
+	if len(trimmed) < checkLen {
+		checkLen = len(trimmed)
+	}
+	if bytes.Contains(trimmed[:checkLen], []byte("procCancNFe")) {
+		return nil
+	}
+
 	// Determinar tipo de documento pelo modelo no XML
 	proc, err := parseNFeXML(data)
 	if err != nil {

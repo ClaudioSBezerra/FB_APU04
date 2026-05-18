@@ -18,7 +18,7 @@ import { Upload, CloudUpload, CheckCircle, XCircle, Loader2 } from 'lucide-react
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-type UploadState = 'idle' | 'uploading' | 'polling' | 'done' | 'error';
+type UploadState = 'idle' | 'scanning' | 'uploading' | 'polling' | 'done' | 'error';
 
 interface BatchStatus {
   id: string;
@@ -128,10 +128,14 @@ export default function ImportarXMLsCTe() {
   const handleUpload = async (files: File[]) => {
     if (files.length === 0) return;
 
-    setUploadState('uploading');
+    setUploadState('scanning');
     setUploadResult(null);
     setBatchId(null);
     setProgress(0);
+
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    setUploadState('uploading');
 
     try {
       const formData = new FormData();
@@ -194,7 +198,7 @@ export default function ImportarXMLsCTe() {
     disabled: uploadState === 'uploading' || uploadState === 'polling',
   });
 
-  const isProcessing = uploadState === 'uploading' || uploadState === 'polling';
+  const isProcessing = uploadState === 'scanning' || uploadState === 'uploading' || uploadState === 'polling';
 
   return (
     <div className="space-y-6">
@@ -229,8 +233,9 @@ export default function ImportarXMLsCTe() {
               <Upload className="h-8 w-8" />
             )}
             <div className="text-center">
+              {uploadState === 'scanning'  && <p className="text-sm font-medium">Lendo arquivos...</p>}
               {uploadState === 'uploading' && <p className="text-sm font-medium">Enviando arquivos...</p>}
-              {uploadState === 'polling' && <p className="text-sm font-medium">Processando XMLs...</p>}
+              {uploadState === 'polling'   && <p className="text-sm font-medium">Processando XMLs...</p>}
               {!isProcessing && isDragActive && <p className="text-sm font-medium">Solte os arquivos aqui</p>}
               {!isProcessing && !isDragActive && (
                 <>

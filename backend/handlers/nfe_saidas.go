@@ -265,9 +265,26 @@ func parseNFeXML(data []byte) (*nfeProc, error) {
 
 	var proc nfeProc
 	if err := dec.Decode(&proc); err != nil {
-		return nil, fmt.Errorf("erro ao parsear XML: %w", err)
+		// Fallback: tenta reinterpretar como Windows-1252 (XMLs sem declaração de encoding)
+		converted, convErr := convertWindows1252(data)
+		if convErr != nil {
+			return nil, fmt.Errorf("erro ao parsear XML: %w", err)
+		}
+		dec2 := xml.NewDecoder(bytes.NewReader(converted))
+		dec2.CharsetReader = nfeCharsetReader
+		var proc2 nfeProc
+		if err2 := dec2.Decode(&proc2); err2 != nil {
+			return nil, fmt.Errorf("erro ao parsear XML: %w", err)
+		}
+		return &proc2, nil
 	}
 	return &proc, nil
+}
+
+// convertWindows1252 converte bytes Windows-1252 para UTF-8.
+func convertWindows1252(data []byte) ([]byte, error) {
+	reader := transform.NewReader(bytes.NewReader(data), charmap.Windows1252.NewDecoder())
+	return io.ReadAll(reader)
 }
 
 // extractChave retorna a chave de acesso de 44 dígitos.
