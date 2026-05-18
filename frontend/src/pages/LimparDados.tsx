@@ -48,6 +48,7 @@ export default function LimparDados() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Record<string, number> | null>(null);
   const [rowsBefore, setRowsBefore] = useState<Record<string, number> | null>(null);
+  const [rowsTotal, setRowsTotal] = useState<Record<string, number> | null>(null);
   const [usedCompanyId, setUsedCompanyId] = useState<string | null>(null);
 
   // --- global reset state ---
@@ -101,14 +102,19 @@ export default function LimparDados() {
       if (res.ok) {
         const deleted: Record<string, number> = data.rows_deleted ?? {};
         const before: Record<string, number> = data.rows_before ?? {};
-        const total = Object.values(deleted).reduce((a: number, b) => a + (b as number), 0);
-        if (total > 0) {
-          toast.success(`${total} registro(s) removido(s) com sucesso.`);
+        const totals: Record<string, number> = data.rows_total ?? {};
+        const totalDeleted = Object.values(deleted).reduce((a: number, b) => a + (b as number), 0);
+        const totalExisting = Object.values(totals).reduce((a: number, b) => a + (b as number), 0);
+        if (totalDeleted > 0) {
+          toast.success(`${totalDeleted} registro(s) removido(s) com sucesso.`);
+        } else if (totalExisting === 0) {
+          toast.warning('Esta empresa não possui registros nas tabelas selecionadas. Verifique se está na empresa correta.');
         } else {
-          toast.warning('Nenhum registro encontrado. Verifique a empresa e origem dos dados.');
+          toast.warning('Registros existem mas com source diferente. Selecione o grupo correto de origem.');
         }
         setResult(deleted);
         setRowsBefore(before);
+        setRowsTotal(totals);
         setUsedCompanyId(data.company_id ?? null);
         setToken('');
         setSelected(new Set());
@@ -274,8 +280,13 @@ export default function LimparDados() {
                     <span>{key}</span>
                     <span>
                       {rows}
-                      {rows === 0 && rowsBefore && (rowsBefore[key] ?? 0) > 0 && (
-                        <span className="ml-2 text-orange-600">(existiam {rowsBefore[key]} com outro source)</span>
+                      {rows === 0 && rowsTotal && (rowsTotal[key] ?? 0) > 0 && (
+                        <span className="ml-2 text-orange-600">
+                          ({rowsTotal[key]} total com outro source)
+                        </span>
+                      )}
+                      {rows === 0 && rowsTotal && (rowsTotal[key] ?? 0) === 0 && (
+                        <span className="ml-2 text-gray-400">(vazio nesta empresa)</span>
                       )}
                     </span>
                   </div>

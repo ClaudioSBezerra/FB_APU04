@@ -136,8 +136,9 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
-		// Snapshot antes para audit (contagem com o mesmo filtro de cada op)
+		// Snapshot antes para audit (contagem com e sem filtro de source)
 		rowsBefore := make(map[string]int64, len(ops))
+		rowsTotal := make(map[string]int64, len(ops))
 		for _, op := range ops {
 			q := "SELECT COUNT(*) FROM " + op.Table + " WHERE company_id = $1"
 			if op.WhereExtra != "" {
@@ -146,6 +147,13 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 			var n int64
 			if err := db.QueryRowContext(r.Context(), q, req.CompanyID).Scan(&n); err == nil {
 				rowsBefore[op.ResultKey] = n
+			}
+			// Contagem total (sem filtro de source) para diagnóstico
+			var total int64
+			if err := db.QueryRowContext(r.Context(),
+				"SELECT COUNT(*) FROM "+op.Table+" WHERE company_id = $1",
+				req.CompanyID).Scan(&total); err == nil {
+				rowsTotal[op.ResultKey] = total
 			}
 		}
 
@@ -201,6 +209,7 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 			"company_id":   req.CompanyID,
 			"rows_before":  rowsBefore,
 			"rows_deleted": rowsDeleted,
+			"rows_total":   rowsTotal,
 		})
 	}
 }
