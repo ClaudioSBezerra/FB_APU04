@@ -97,8 +97,14 @@ export default function LimparDados() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        toast.success(data.message ?? 'Dados da empresa limpos com sucesso.');
-        setResult(data.rows_deleted ?? {});
+        const deleted: Record<string, number> = data.rows_deleted ?? {};
+        const total = Object.values(deleted).reduce((a: number, b) => a + (b as number), 0);
+        if (total > 0) {
+          toast.success(`${total} registro(s) removido(s) com sucesso.`);
+        } else {
+          toast.warning('Nenhum registro encontrado para os grupos selecionados. Verifique se a empresa e a origem dos dados estão corretos.');
+        }
+        setResult(deleted);
         setToken('');
         setSelected(new Set());
         return;
@@ -236,17 +242,27 @@ export default function LimparDados() {
           </Button>
 
           {/* resultado */}
-          {result && (
-            <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm space-y-1">
-              <p className="font-semibold text-green-800">Linhas removidas:</p>
-              {Object.entries(result).map(([key, rows]) => (
-                <div key={key} className="flex justify-between font-mono text-xs text-green-700">
-                  <span>{key}</span>
-                  <span>{rows}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {result && (() => {
+            const total = Object.values(result).reduce((a, b) => a + b, 0);
+            const boxCls = total > 0
+              ? 'rounded-md border border-green-200 bg-green-50 p-3 text-sm space-y-1'
+              : 'rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm space-y-1';
+            const titleCls  = total > 0 ? 'font-semibold text-green-800' : 'font-semibold text-yellow-800';
+            const rowCls    = total > 0 ? 'flex justify-between font-mono text-xs text-green-700' : 'flex justify-between font-mono text-xs text-yellow-700';
+            return (
+              <div className={boxCls}>
+                <p className={titleCls}>
+                  Linhas removidas: <span className="font-bold">{total}</span>
+                </p>
+                {Object.entries(result).map(([key, rows]) => (
+                  <div key={key} className={rowCls}>
+                    <span>{key}</span>
+                    <span>{rows}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 
