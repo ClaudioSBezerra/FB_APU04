@@ -389,29 +389,16 @@ const Mercadorias = () => {
       const ibsRate = (rate.perc_ibs_uf + rate.perc_ibs_mun) / 100.0;
       const cbsRate = rate.perc_cbs / 100.0;
 
-      // Saídas
-      // ICMS Proj is calculated on TOTAL ICMS (including T/O?) 
-      // User said: "operações com TIPO "T" ... e "O" ... não terão incidência de IBS e CBS"
-      // Assuming ICMS reduction applies to ALL ICMS (or just taxable?).
-      // Usually ICMS reduction is general. But IBS/CBS only applies to taxable base.
-      // So we use totals.saidas.icms for ICMS Projection (display purpose)
+      // Saídas — base IBS/CBS = vl_opr (valor_contabil), sem deduzir ICMS
       const icmsProjSaida = totals.saidas.icms * reductionFactor;
-      
-      const icmsProjSaidaTaxable = totals.saidas.icmsTaxable * reductionFactor;
-      const baseIbsCbsSaida = totals.saidas.valorTaxable - icmsProjSaidaTaxable;
-
-      const ibsSaida = baseIbsCbsSaida * ibsRate;
-      const cbsSaida = baseIbsCbsSaida * cbsRate;
+      const ibsSaida = totals.saidas.valorTaxable * ibsRate;
+      const cbsSaida = totals.saidas.valorTaxable * cbsRate;
       const totalDebitosAno = icmsProjSaida + ibsSaida + cbsSaida;
 
-      // Entradas
+      // Entradas — base IBS/CBS = vl_opr (valor_contabil), sem deduzir ICMS
       const icmsProjEntrada = totals.entradas.icms * reductionFactor;
-
-      const icmsProjEntradaTaxable = totals.entradas.icmsTaxable * reductionFactor;
-      const baseIbsCbsEntrada = totals.entradas.valorTaxable - icmsProjEntradaTaxable;
-
-      const ibsEntrada = baseIbsCbsEntrada * ibsRate;
-      const cbsEntrada = baseIbsCbsEntrada * cbsRate;
+      const ibsEntrada = totals.entradas.valorTaxable * ibsRate;
+      const cbsEntrada = totals.entradas.valorTaxable * cbsRate;
       const totalCreditosAno = icmsProjEntrada + ibsEntrada + cbsEntrada;
 
       return {
@@ -786,7 +773,7 @@ const Mercadorias = () => {
               <TableBody>
                 {filteredData.map((row, i) => {
                   const totalAtual = row.icms || 0;
-                  const baseIbsCbs = (row.valor || 0) - (row.vl_icms_projetado || 0);
+                  const baseIbsCbs = row.valor || 0;
                   const totalReforma = (row.vl_icms_projetado || 0) + (row.vl_ibs_projetado || 0) + (row.vl_cbs_projetado || 0);
                   const diferenca = totalAtual - totalReforma;
 
