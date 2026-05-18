@@ -74,6 +74,33 @@ func TestConfirmationToken(t *testing.T) {
 	}
 }
 
+func TestIsValidCompanyGroup(t *testing.T) {
+	valid := []string{"sped", "xml", "erp_bridge", "config"}
+	for _, g := range valid {
+		if !IsValidCompanyGroup(g) {
+			t.Errorf("IsValidCompanyGroup(%q) = false, want true", g)
+		}
+	}
+	invalid := []string{"", "all", "truncate", "nfe_entradas"}
+	for _, g := range invalid {
+		if IsValidCompanyGroup(g) {
+			t.Errorf("IsValidCompanyGroup(%q) = true, want false", g)
+		}
+	}
+}
+
+func TestCompanyGroupsKeys(t *testing.T) {
+	for _, g := range ValidCompanyGroups {
+		ops, ok := CompanyGroups[g]
+		if !ok {
+			t.Errorf("CompanyGroups missing key %q", g)
+		}
+		if len(ops) == 0 {
+			t.Errorf("CompanyGroups[%q] has no ops", g)
+		}
+	}
+}
+
 func TestResetTablesNotEmpty(t *testing.T) {
 	if len(ResetTables) == 0 {
 		t.Error("ResetTables must not be empty")
