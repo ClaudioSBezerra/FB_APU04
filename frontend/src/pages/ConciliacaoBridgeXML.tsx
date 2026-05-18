@@ -25,7 +25,13 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Download, AlertTriangle, CheckCircle, FileSpreadsheet, Printer } from 'lucide-react';
+import { Download, AlertTriangle, CheckCircle, FileSpreadsheet, Printer, HelpCircle } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { exportToExcel } from '@/lib/exportToExcel';
 
 // ---------------------------------------------------------------------------
@@ -187,7 +193,36 @@ export default function ConciliacaoBridgeXML() {
     <div className="space-y-6">
       {/* Heading */}
       <div>
-        <h1 className="text-xl font-semibold">Conciliação Bridge vs XML</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Conciliação Bridge vs XML</h1>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <HelpCircle className="h-4 w-4 text-muted-foreground hover:text-foreground cursor-help shrink-0" />
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-sm text-xs space-y-2 p-3">
+                <p className="font-semibold">O que é esta tela?</p>
+                <p>
+                  Compara a <strong>mesma NF-e</strong> importada por dois caminhos diferentes:
+                </p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li><strong>ERP Bridge</strong> — dados vindos do sistema ERP (Oracle/SAP), que podem ter arredondamentos ou ajustes contábeis.</li>
+                  <li><strong>XML SEFAZ</strong> — documento fiscal original autorizado pela Receita Federal, que é a fonte oficial dos valores.</li>
+                </ul>
+                <p>
+                  Quando os valores de PIS, COFINS, ICMS, IPI ou total diferem entre as duas origens,
+                  a nota aparece como <strong>divergência</strong>.
+                </p>
+                <p className="font-semibold pt-1">Para que serve?</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Identificar notas cujo ERP não bateu com o fiscal — risco de autuação.</li>
+                  <li>Medir quantas notas do Bridge já têm XML carregado (<em>% cobertura</em>).</li>
+                  <li>Exportar para o contador revisar e corrigir o cadastro no ERP.</li>
+                </ul>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         <p className="text-sm text-muted-foreground mt-1">
           Compare os valores tributários do ERP Bridge com os documentos fiscais SEFAZ
           para identificar divergências e medir a cobertura de autenticidade.
