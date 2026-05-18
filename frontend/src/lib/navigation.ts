@@ -24,10 +24,10 @@ export const modules: Record<string, ModuleConfig> = {
     ],
   },
   notas: {
-    label: 'Notas Importadas',
+    label: 'Importação de XMLs',
     tabs: [
-      { label: 'NF-e Entradas',          path: '/apuracao/entrada/notas' },
-      { label: 'Importar via ERP',       path: '/importacoes/erp-bridge',        adminOnly: true },
+      { label: 'NF-e Entradas',          path: '/apuracao/entrada/notas',        disabled: true },
+      { label: 'Importar via ERP',       path: '/importacoes/erp-bridge',        adminOnly: true, disabled: true },
       { label: 'Logs de Importação',     path: '/importacoes/erp-bridge/logs',   adminOnly: true },
       { label: 'Importar XMLs Entradas', path: '/importacoes/xml/entradas',      adminOnly: true },
       { label: 'Importar XMLs Saídas',   path: '/importacoes/xml/saidas',        adminOnly: true },
