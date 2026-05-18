@@ -448,87 +448,100 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
-		if len(xmlFiles) > MaxXMLsPerBatch {
-			log.Printf("[XMLUpload] user=%s lote muito grande: %d XMLs (max %d)", userID, len(xmlFiles), MaxXMLsPerBatch)
-			jsonErr(w, http.StatusBadRequest,
-				fmt.Sprintf("Lote contém %d XMLs, máximo é %d", len(xmlFiles), MaxXMLsPerBatch))
-			return
-		}
-
-		filename := batchFilename
-
 		if len(xmlFiles) == 0 {
 			log.Printf("[XMLUpload] user=%s arquivo=%s ZIP não contém arquivos XML válidos", userID, batchFilename)
 			jsonErr(w, http.StatusBadRequest, "O ZIP não contém arquivos XML válidos. Verifique se os arquivos têm extensão .xml e não estão em subpastas protegidas.")
 			return
 		}
 
-		// Criar registro de batch
-		var batchID string
-		err = db.QueryRow(`
-			INSERT INTO xml_upload_batches (company_id, uploaded_by, tipo, filename, total_count, status)
-			VALUES ($1, $2, $3, $4, $5, 'pending')
-			RETURNING id`,
-			companyID, userID, tipo, filename, len(xmlFiles),
-		).Scan(&batchID)
-		if err != nil {
-			log.Printf("[XMLUpload] erro ao criar batch: %v", err)
-			jsonErr(w, http.StatusInternalServerError, "Erro ao registrar upload")
-			return
-		}
+		log.Printf("[XMLUpload] user=%s tipo=%s total=%d arquivo=%s", userID, tipo, len(xmlFiles), batchFilename)
 
-		// Processar inline (≤ 50 XMLs) ou assíncrono (> 50)
-		if len(xmlFiles) <= BatchAsyncThreshold {
-			// Processamento inline — retornar 200 com resultado
-			db.Exec(`UPDATE xml_upload_batches SET status='processing' WHERE id=$1`, batchID)
-			processXMLBatch(db, batchID, companyID, tipo, xmlFiles)
+		// Auto-split: dividir em chunks de BatchChunkSize para lotes grandes
+		chunks := chunkXMLFiles(xmlFiles, BatchChunkSize)
+		var firstBatchID string
 
-			// Buscar resultado final
-			var imported, rejected int
-			var status string
-			db.QueryRow(`SELECT status, imported_count, rejected_count FROM xml_upload_batches WHERE id=$1`, batchID).
-				Scan(&status, &imported, &rejected)
-
-			// OBS-01: incrementar counter de erros se batch teve rejeições
-			if rejected > 0 {
-				XMLUploadErrorsTotal.Inc()
+		for i, chunk := range chunks {
+			chunkFilename := batchFilename
+			if len(chunks) > 1 {
+				chunkFilename = fmt.Sprintf("%s [parte %d/%d]", batchFilename, i+1, len(chunks))
 			}
 
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"batch_id":       batchID,
-				"status":         status,
-				"imported_count": imported,
-				"rejected_count": rejected,
-				"total_count":    len(xmlFiles),
-			})
-		} else {
-			// Processamento assíncrono: salvar XMLs comprimidos e retornar 202
-			// Comprimir todos os XMLs em um único ZIP na memória para armazenar em xml_data
+			var batchID string
+			err = db.QueryRow(`
+				INSERT INTO xml_upload_batches (company_id, uploaded_by, tipo, filename, total_count, status)
+				VALUES ($1, $2, $3, $4, $5, 'pending')
+				RETURNING id`,
+				companyID, userID, tipo, chunkFilename, len(chunk),
+			).Scan(&batchID)
+			if err != nil {
+				log.Printf("[XMLUpload] erro ao criar batch chunk %d: %v", i+1, err)
+				jsonErr(w, http.StatusInternalServerError, "Erro ao registrar upload")
+				return
+			}
+			if i == 0 {
+				firstBatchID = batchID
+			}
+
+			// Inline apenas para o primeiro chunk se ≤ BatchAsyncThreshold
+			if len(chunk) <= BatchAsyncThreshold && i == 0 && len(chunks) == 1 {
+				db.Exec(`UPDATE xml_upload_batches SET status='processing' WHERE id=$1`, batchID)
+				processXMLBatch(db, batchID, companyID, tipo, chunk)
+				var imported, rejected int
+				var status string
+				db.QueryRow(`SELECT status, imported_count, rejected_count FROM xml_upload_batches WHERE id=$1`, batchID).
+					Scan(&status, &imported, &rejected)
+				if rejected > 0 {
+					XMLUploadErrorsTotal.Inc()
+				}
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"batch_id":       batchID,
+					"status":         status,
+					"imported_count": imported,
+					"rejected_count": rejected,
+					"total_count":    len(chunk),
+				})
+				return
+			}
+
+			// Assíncrono: comprimir chunk e salvar em xml_data
 			var buf bytes.Buffer
 			zw := zip.NewWriter(&buf)
-			for _, xf := range xmlFiles {
-				fw, err := zw.Create(xf.Name)
-				if err != nil {
+			for _, xf := range chunk {
+				fw, ferr := zw.Create(xf.Name)
+				if ferr != nil {
 					continue
 				}
 				fw.Write(xf.Data) //nolint:errcheck
 			}
 			zw.Close()
-
-			db.Exec(`
-				UPDATE xml_upload_batches SET status='pending', xml_data=$1 WHERE id=$2`,
-				buf.Bytes(), batchID,
-			)
-
-			w.WriteHeader(http.StatusAccepted)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"batch_id":    batchID,
-				"status":      "processing",
-				"total_count": len(xmlFiles),
-			})
+			db.Exec(`UPDATE xml_upload_batches SET status='pending', xml_data=$1 WHERE id=$2`,
+				buf.Bytes(), batchID)
 		}
+
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"batch_id":      firstBatchID,
+			"status":        "processing",
+			"total_batches": len(chunks),
+			"total_count":   len(xmlFiles),
+		})
 	}
+}
+
+func chunkXMLFiles(files []namedXML, size int) [][]namedXML {
+	if size <= 0 || len(files) <= size {
+		return [][]namedXML{files}
+	}
+	var chunks [][]namedXML
+	for i := 0; i < len(files); i += size {
+		end := i + size
+		if end > len(files) {
+			end = len(files)
+		}
+		chunks = append(chunks, files[i:end])
+	}
+	return chunks
 }
 
 // ---------------------------------------------------------------------------

@@ -23,9 +23,10 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	MaxUploadBytes      = 100 * 1024 * 1024 // 100MB
-	MaxXMLsPerBatch     = 5000
-	BatchAsyncThreshold = 50 // acima disto: background job
+	MaxUploadBytes      = 500 * 1024 * 1024 // 500MB — ZIPs com 30k XMLs podem pesar >100MB
+	MaxXMLsPerBatch     = 100_000           // sem limite prático; auto-split cuida do chunking
+	BatchChunkSize      = 2000              // XMLs por sub-lote quando auto-split é ativado
+	BatchAsyncThreshold = 50               // acima disto: background job
 )
 
 // ---------------------------------------------------------------------------

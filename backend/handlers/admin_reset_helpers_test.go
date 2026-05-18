@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"os"
 	"testing"
 )
@@ -115,5 +116,27 @@ func TestResetTablesNotEmpty(t *testing.T) {
 		if !tableSet[e] {
 			t.Errorf("ResetTables missing essential table %q", e)
 		}
+	}
+}
+
+func TestChunkXMLFiles_Split(t *testing.T) {
+	files := make([]namedXML, 5)
+	for i := range files {
+		files[i] = namedXML{Name: fmt.Sprintf("f%d.xml", i)}
+	}
+	chunks := chunkXMLFiles(files, 2)
+	if len(chunks) != 3 {
+		t.Errorf("expected 3 chunks, got %d", len(chunks))
+	}
+	if len(chunks[0]) != 2 || len(chunks[1]) != 2 || len(chunks[2]) != 1 {
+		t.Errorf("unexpected chunk sizes: %v", []int{len(chunks[0]), len(chunks[1]), len(chunks[2])})
+	}
+}
+
+func TestChunkXMLFiles_NoSplit(t *testing.T) {
+	files := []namedXML{{Name: "a.xml"}, {Name: "b.xml"}}
+	chunks := chunkXMLFiles(files, 100)
+	if len(chunks) != 1 || len(chunks[0]) != 2 {
+		t.Errorf("expected 1 chunk of 2, got %v", len(chunks))
 	}
 }
