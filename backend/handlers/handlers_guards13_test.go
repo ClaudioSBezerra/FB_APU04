@@ -8,6 +8,59 @@ import (
 	"testing"
 )
 
+// ─── Handler creation guards (outer func covers 1 stmt each, no DB touch) ───
+
+func TestListFornSimplesHandler_Creation(t *testing.T) {
+	h := ListFornSimplesHandler(nil)
+	if h == nil {
+		t.Error("expected non-nil handler")
+	}
+}
+
+func TestListCFOPsHandler_Creation(t *testing.T) {
+	h := ListCFOPsHandler(nil)
+	if h == nil {
+		t.Error("expected non-nil handler")
+	}
+}
+
+func TestGetTaxRatesHandler_Creation(t *testing.T) {
+	h := GetTaxRatesHandler(nil)
+	if h == nil {
+		t.Error("expected non-nil handler")
+	}
+}
+
+// ─── RunPgDumpBackup — early-return branches (no pg_dump needed) ─────────────
+
+func TestRunPgDumpBackup_InvalidURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://%zz@h/db")
+	_, err := RunPgDumpBackup(context.Background(), []string{"import_jobs"})
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL parse") {
+		t.Errorf("expected DATABASE_URL parse error, got %v", err)
+	}
+}
+
+func TestRunPgDumpBackup_EmptyDBName(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://u:p@h/")
+	_, err := RunPgDumpBackup(context.Background(), []string{"import_jobs"})
+	if err == nil || !strings.Contains(err.Error(), "empty dbname") {
+		t.Errorf("expected empty dbname error, got %v", err)
+	}
+}
+
+// ─── ImportCFOPsHandler — POST without file → 400, no DB touch ───────────────
+
+func TestImportCFOPsHandler_MissingFile(t *testing.T) {
+	handler := ImportCFOPsHandler(nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/cfops/import", nil)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rr.Code)
+	}
+}
+
 // ─── XMLNotasHandler ─────────────────────────────────────────────────────────
 
 // POST → 405 before any auth or DB touch.
