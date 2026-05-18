@@ -100,22 +100,14 @@ func GetMercadoriasReportHandler(db *sql.DB) http.HandlerFunc {
 				SUM(mv.vl_icms_origem * (1 - (COALESCE(ta.perc_reduc_icms, 0) / 100.0))) AS icms_projetado,
 				SUM(
 					CASE WHEN mv.tipo_cfop IN ('T', 'O') THEN 0
-					ELSE (
-						mv.valor_contabil
-						- (mv.vl_icms_origem * (1 - (COALESCE(ta.perc_reduc_icms, 0) / 100.0)))
-						- mv.vl_pis_origem
-						- mv.vl_cofins_origem
-					) * ((COALESCE(NULLIF(ta.perc_ibs_uf, 0), 9.0) + COALESCE(NULLIF(ta.perc_ibs_mun, 0), 8.7)) / 100.0)
+					ELSE mv.valor_contabil
+						* ((COALESCE(NULLIF(ta.perc_ibs_uf, 0), 9.0) + COALESCE(NULLIF(ta.perc_ibs_mun, 0), 8.7)) / 100.0)
 					END
 				) AS ibs_projetado,
 				SUM(
 					CASE WHEN mv.tipo_cfop IN ('T', 'O') THEN 0
-					ELSE (
-						mv.valor_contabil
-						- (mv.vl_icms_origem * (1 - (COALESCE(ta.perc_reduc_icms, 0) / 100.0)))
-						- mv.vl_pis_origem
-						- mv.vl_cofins_origem
-					) * (COALESCE(NULLIF(ta.perc_cbs, 0), 8.80) / 100.0)
+					ELSE mv.valor_contabil
+						* (COALESCE(NULLIF(ta.perc_cbs, 0), 8.80) / 100.0)
 					END
 				) AS cbs_projetado,
 				SUM(mv.vl_ipi_origem)    AS vl_ipi,
