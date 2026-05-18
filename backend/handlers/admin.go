@@ -39,16 +39,7 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
-		if !ok {
-			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
-			return
-		}
-		userID, _ := claims["user_id"].(string)
-		role, _ := claims["role"].(string)
-		clientIP := GetClientIP(r)
-		userEmail := ResolveUserEmail(db, userID)
-
+		// Decode e validações estruturais antes do auth (body inválido → 400 antes de 401)
 		var req ResetCompanyDataRequest
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 			jsonErr(w, http.StatusBadRequest, "Invalid request body")
@@ -59,6 +50,16 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusBadRequest, "company_id obrigatório")
 			return
 		}
+
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		role, _ := claims["role"].(string)
+		clientIP := GetClientIP(r)
+		userEmail := ResolveUserEmail(db, userID)
 
 		// Token de confirmação (mesmo token do reset global — STAB-01)
 		if req.Confirmation != ConfirmationToken {
