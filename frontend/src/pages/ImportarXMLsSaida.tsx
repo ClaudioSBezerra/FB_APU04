@@ -89,6 +89,17 @@ export default function ImportarXMLsSaida() {
     refetchInterval: uploadState === 'polling' ? 2000 : false,
   });
 
+  // ── Histórico de uploads ───────────────────────────────────────────────────
+  const { data: historico, refetch: refetchHistorico } = useQuery<{ items: BatchHistoryRow[] }>({
+    queryKey: ['xml-historico', TIPO],
+    queryFn: async () => {
+      const res = await fetch(`/api/xml/upload-batches?tipo=${TIPO}&limit=10`);
+      if (!res.ok) throw new Error(res.statusText);
+      return res.json();
+    },
+    refetchInterval: uploadState === 'polling' ? 3000 : false,
+  });
+
   useEffect(() => {
     if (!batchStatus) return;
     const pct = batchStatus.total_count > 0
@@ -106,22 +117,12 @@ export default function ImportarXMLsSaida() {
       toast.success(
         `Upload concluído: ${batchStatus.imported_count} NF-e(s) importadas, ${batchStatus.rejected_count} rejeitadas.`
       );
+      refetchHistorico();
     } else if (batchStatus.status === 'failed') {
       setUploadState('error');
       toast.error('Processamento falhou. Verifique os detalhes abaixo.');
     }
-  }, [batchStatus]);
-
-  // ── Histórico de uploads ───────────────────────────────────────────────────
-  const { data: historico, refetch: refetchHistorico } = useQuery<{ items: BatchHistoryRow[] }>({
-    queryKey: ['xml-historico', TIPO],
-    queryFn: async () => {
-      const res = await fetch(`/api/xml/upload-batches?tipo=${TIPO}&limit=10`);
-      if (!res.ok) throw new Error(res.statusText);
-      return res.json();
-    },
-    refetchInterval: uploadState === 'polling' ? 3000 : false,
-  });
+  }, [batchStatus, refetchHistorico]);
 
   // ── Upload handler ─────────────────────────────────────────────────────────
   const handleUpload = async (files: File[]) => {

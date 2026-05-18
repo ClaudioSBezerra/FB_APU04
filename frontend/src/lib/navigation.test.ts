@@ -39,8 +39,9 @@ describe('getActiveModule', () => {
     { pathname: '/importacoes/xml/ctes', expected: 'notas' },
     { pathname: '/importacoes/erp-bridge/logs', expected: 'notas' },
 
-    // Módulo notas — painel xmls
-    { pathname: '/painel/xmls', expected: 'notas' },
+    // Módulo painel — módulo próprio desde feat(nav): Painel XMLs como módulo próprio
+    { pathname: '/painel/xmls', expected: 'painel' },
+    { pathname: '/painel/nfe-entradas', expected: 'painel' },
 
     // Módulo config
     { pathname: '/config/usuarios', expected: 'config' },

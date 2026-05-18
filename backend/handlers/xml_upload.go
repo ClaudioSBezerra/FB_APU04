@@ -513,9 +513,9 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 
 			w.WriteHeader(http.StatusAccepted)
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"batch_id": batchID,
-				"status":   "processing",
-				"total":    len(xmlFiles),
+				"batch_id":    batchID,
+				"status":      "processing",
+				"total_count": len(xmlFiles),
 			})
 		}
 	}

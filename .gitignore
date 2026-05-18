@@ -51,3 +51,7 @@ erp-bridge-aws/logs*/
 
 # Temporary
 temp_lovable_analysis/
+
+# Go coverage artifacts
+backend/coverage*.out
+backend/cov_metrics.out
