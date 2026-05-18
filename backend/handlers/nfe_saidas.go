@@ -265,16 +265,22 @@ func parseNFeXML(data []byte) (*nfeProc, error) {
 
 	var proc nfeProc
 	if err := dec.Decode(&proc); err != nil {
+		if err == io.EOF {
+			return nil, fmt.Errorf("arquivo truncado ou incompleto")
+		}
 		// Fallback: tenta reinterpretar como Windows-1252 (XMLs sem declaração de encoding)
 		converted, convErr := convertWindows1252(data)
 		if convErr != nil {
-			return nil, fmt.Errorf("erro ao parsear XML: %w", err)
+			return nil, fmt.Errorf("XML inválido: %w", err)
 		}
 		dec2 := xml.NewDecoder(bytes.NewReader(converted))
 		dec2.CharsetReader = nfeCharsetReader
 		var proc2 nfeProc
 		if err2 := dec2.Decode(&proc2); err2 != nil {
-			return nil, fmt.Errorf("erro ao parsear XML: %w", err)
+			if err2 == io.EOF {
+				return nil, fmt.Errorf("arquivo truncado ou incompleto")
+			}
+			return nil, fmt.Errorf("XML inválido (encoding não reconhecido): %w", err2)
 		}
 		return &proc2, nil
 	}

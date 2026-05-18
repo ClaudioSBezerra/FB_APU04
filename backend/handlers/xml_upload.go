@@ -155,6 +155,9 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 
 	// Eventos de cancelamento (procCancNFe) não são documentos fiscais — ignorar silenciosamente.
 	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return fmt.Errorf("arquivo vazio")
+	}
 	checkLen := 300
 	if len(trimmed) < checkLen {
 		checkLen = len(trimmed)
@@ -166,7 +169,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 	// Determinar tipo de documento pelo modelo no XML
 	proc, err := parseNFeXML(data)
 	if err != nil {
-		return fmt.Errorf("parse inválido: %w", err)
+		return err
 	}
 
 	inf := proc.NFe.InfNFe
