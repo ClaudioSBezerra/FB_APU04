@@ -265,7 +265,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 				v_ibs_mun=EXCLUDED.v_ibs_mun, v_ibs=EXCLUDED.v_ibs,
 				v_cred_pres_ibs=EXCLUDED.v_cred_pres_ibs,
 				v_cbs=EXCLUDED.v_cbs, v_cred_pres_cbs=EXCLUDED.v_cred_pres_cbs,
-				source='xml_upload'
+				source = CASE WHEN nfe_entradas.source = 'oracle_bridge' THEN 'oracle_bridge' ELSE 'xml_upload' END
 			RETURNING id`,
 			companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
 			dataEmissao, mesAno, inf.Ide.NatOp,
@@ -336,7 +336,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 				v_ibs_mun=EXCLUDED.v_ibs_mun, v_ibs=EXCLUDED.v_ibs,
 				v_cred_pres_ibs=EXCLUDED.v_cred_pres_ibs,
 				v_cbs=EXCLUDED.v_cbs, v_cred_pres_cbs=EXCLUDED.v_cred_pres_cbs,
-				source='xml_upload'
+				source = CASE WHEN nfe_saidas.source = 'oracle_bridge' THEN 'oracle_bridge' ELSE 'xml_upload' END
 			RETURNING id`,
 			companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
 			dataEmissao, mesAno, inf.Ide.NatOp,
