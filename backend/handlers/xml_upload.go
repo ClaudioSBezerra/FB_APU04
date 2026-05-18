@@ -153,7 +153,7 @@ func processXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, 
 func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) error {
 	data := xf.Data
 
-	// Eventos de cancelamento (procCancNFe) não são documentos fiscais — ignorar silenciosamente.
+	// Eventos de cancelamento (procCancNFe/procCancCTe) não são documentos fiscais — ignorar silenciosamente.
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
 		return fmt.Errorf("arquivo vazio")
@@ -162,8 +162,14 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 	if len(trimmed) < checkLen {
 		checkLen = len(trimmed)
 	}
-	if bytes.Contains(trimmed[:checkLen], []byte("procCancNFe")) {
+	head := trimmed[:checkLen]
+	if bytes.Contains(head, []byte("procCancNFe")) || bytes.Contains(head, []byte("procCancCTe")) {
 		return nil
+	}
+
+	// CT-e usa parser e tabela próprios
+	if tipo == "ctes" {
+		return processSingleCTe(db, companyID, data)
 	}
 
 	// Determinar tipo de documento pelo modelo no XML
@@ -364,6 +370,91 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 	}
 
 	return tx.Commit()
+}
+
+// processSingleCTe persiste um CT-e (mod 57) na tabela cte_entradas com source='xml_upload'.
+func processSingleCTe(db *sql.DB, companyID string, data []byte) error {
+	proc, err := parseCTeXML(data)
+	if err != nil {
+		return err
+	}
+
+	inf := proc.CTe.InfCte
+	mod := strings.TrimSpace(inf.Ide.Mod)
+	if mod != "57" {
+		return fmt.Errorf("modelo %s não suportado para CT-e (aceito: 57)", mod)
+	}
+
+	chave := extractChaveCTe(proc)
+	if len(chave) != 44 {
+		return fmt.Errorf("chave CT-e inválida ou ausente")
+	}
+
+	dataEmissao, mesAno, err := parseDhEmi(inf.Ide.DhEmi)
+	if err != nil {
+		return err
+	}
+
+	remCNPJCPF := strings.TrimSpace(inf.Rem.CNPJ)
+	if remCNPJCPF == "" {
+		remCNPJCPF = strings.TrimSpace(inf.Rem.CPF)
+	}
+	destCNPJCPF := strings.TrimSpace(inf.Dest.CNPJ)
+	if destCNPJCPF == "" {
+		destCNPJCPF = strings.TrimSpace(inf.Dest.CPF)
+	}
+
+	vBC, vICMS := resolveICMSCTe(inf.Imp.ICMS)
+	ib := inf.Imp.IBSCBSTot
+	modInt, _ := strconv.Atoi(mod)
+
+	_, err = db.Exec(`
+		INSERT INTO cte_entradas (
+			company_id, chave_cte, modelo, serie, numero_cte,
+			data_emissao, mes_ano, nat_op, cfop, modal,
+			emit_cnpj, emit_nome, emit_uf,
+			rem_cnpj_cpf, rem_nome, rem_uf,
+			dest_cnpj_cpf, dest_nome, dest_uf,
+			v_prest, v_rec, v_carga,
+			v_bc_icms, v_icms,
+			v_bc_ibs_cbs, v_ibs, v_cbs,
+			source
+		) VALUES (
+			$1,$2,$3,$4,$5,
+			$6,$7,$8,$9,$10,
+			$11,$12,$13,
+			$14,$15,$16,
+			$17,$18,$19,
+			$20,$21,$22,
+			$23,$24,
+			$25,$26,$27,
+			'xml_upload'
+		)
+		ON CONFLICT ON CONSTRAINT uq_cte_entradas_company_chave DO UPDATE SET
+			emit_cnpj=EXCLUDED.emit_cnpj, emit_nome=EXCLUDED.emit_nome,
+			emit_uf=EXCLUDED.emit_uf,
+			rem_cnpj_cpf=EXCLUDED.rem_cnpj_cpf, rem_nome=EXCLUDED.rem_nome,
+			rem_uf=EXCLUDED.rem_uf,
+			dest_cnpj_cpf=EXCLUDED.dest_cnpj_cpf, dest_nome=EXCLUDED.dest_nome,
+			dest_uf=EXCLUDED.dest_uf,
+			v_prest=EXCLUDED.v_prest, v_rec=EXCLUDED.v_rec, v_carga=EXCLUDED.v_carga,
+			v_bc_icms=EXCLUDED.v_bc_icms, v_icms=EXCLUDED.v_icms,
+			v_bc_ibs_cbs=EXCLUDED.v_bc_ibs_cbs, v_ibs=EXCLUDED.v_ibs, v_cbs=EXCLUDED.v_cbs,
+			source='xml_upload'`,
+		companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NCT,
+		dataEmissao, mesAno, inf.Ide.NatOp, inf.Ide.CFOP, inf.Ide.Modal,
+		inf.Emit.CNPJ, inf.Emit.XNome, inf.Emit.EnderEmit.UF,
+		remCNPJCPF, inf.Rem.XNome, strings.TrimSpace(inf.Rem.EnderReme.UF),
+		destCNPJCPF, inf.Dest.XNome, strings.TrimSpace(inf.Dest.EnderDest.UF),
+		toDecimal(inf.VPrest.VTPrest), toDecimal(inf.VPrest.VRec),
+		toDecimal(inf.InfCTeNorm.InfCarga.VCarga),
+		vBC, vICMS,
+		toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GCBS.VCBS),
+	)
+	if err != nil {
+		return fmt.Errorf("erro ao persistir CT-e: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
