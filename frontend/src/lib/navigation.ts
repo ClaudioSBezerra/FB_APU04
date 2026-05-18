@@ -26,14 +26,14 @@ export const modules: Record<string, ModuleConfig> = {
   notas: {
     label: 'Importação de XMLs',
     tabs: [
-      { label: 'NF-e Entradas',          path: '/apuracao/entrada/notas',        disabled: true },
-      { label: 'Importar via ERP',       path: '/importacoes/erp-bridge',        adminOnly: true, disabled: true },
-      { label: 'Logs de Importação',     path: '/importacoes/erp-bridge/logs',   adminOnly: true },
       { label: 'Importar XMLs Entradas', path: '/importacoes/xml/entradas',      adminOnly: true },
       { label: 'Importar XMLs Saídas',   path: '/importacoes/xml/saidas',        adminOnly: true },
       { label: 'Importar XMLs CT-es',    path: '/importacoes/xml/ctes',          adminOnly: true },
       { label: 'Saneamento CCLASSTRIB',  path: '/relatorios/saneamento-cclasstrib' },
       { label: 'Conciliação Bridge vs XML', path: '/conciliacao/bridge-xml' },
+      { label: 'NF-e Entradas',          path: '/apuracao/entrada/notas',        disabled: true },
+      { label: 'Importar via ERP',       path: '/importacoes/erp-bridge',        adminOnly: true, disabled: true },
+      { label: 'Logs de Importação',     path: '/importacoes/erp-bridge/logs',   adminOnly: true, disabled: true },
     ],
   },
   painel: {
