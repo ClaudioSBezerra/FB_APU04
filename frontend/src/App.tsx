@@ -25,6 +25,7 @@ import ERPBridgeConfig from './pages/ERPBridgeConfig'
 import ERPBridgeLogs from './pages/ERPBridgeLogs'
 import ERPBridgeCredenciais from './pages/ERPBridgeCredenciais'
 import AdminUsers from './pages/AdminUsers'
+import LimparDados from './pages/LimparDados'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ForgotPassword from './pages/ForgotPassword'
@@ -174,7 +175,7 @@ function AppLayout() {
               <Route path="/config/ambiente"                   element={<ProtectedRoute><GestaoAmbiente /></ProtectedRoute>} />
               <Route path="/config/erp-bridge"                 element={<AdminRoute><ERPBridgeCredenciais /></AdminRoute>} />
               <Route path="/config/usuarios"                   element={<AdminRoute><AdminUsers /></AdminRoute>} />
-              <Route path="/config/limpar-dados"               element={<AdminRoute><ComingSoon title="Limpar Dados" /></AdminRoute>} />
+              <Route path="/config/limpar-dados"               element={<AdminRoute><LimparDados /></AdminRoute>} />
             </Routes>
           </div>
         </main>

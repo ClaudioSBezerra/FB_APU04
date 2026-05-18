@@ -25,9 +25,34 @@ var ResetTables = []string{
 	"nfe_entradas",
 	"nfe_saidas",
 	"cte_entradas",
+	"xml_upload_batches",
 	"parceiros",
 	"erp_bridge_run_items",
 	"erp_bridge_runs",
+}
+
+// CompanyDeletableTables é o allowlist de tabelas que suportam DELETE WHERE company_id = $1.
+// Ordem importa: tabelas filhas antes das pai (import_jobs antes de nenhuma FK, mas
+// erp_bridge_run_items é deletado via CASCADE de erp_bridge_runs).
+var CompanyDeletableTables = []string{
+	"import_jobs",
+	"nfe_entradas",
+	"nfe_saidas",
+	"cte_entradas",
+	"xml_upload_batches",
+	"filial_apelidos",
+	"parceiros",
+	"erp_bridge_runs",
+}
+
+// IsCompanyDeletableTable verifica se a tabela está no allowlist per-company.
+func IsCompanyDeletableTable(t string) bool {
+	for _, allowed := range CompanyDeletableTables {
+		if allowed == t {
+			return true
+		}
+	}
+	return false
 }
 
 // BackupDir é onde pg_dump grava /backups/reset-<TS>.sql.

@@ -20,126 +20,163 @@ func isValidUUID(s string) bool {
 	return reUUID.MatchString(s)
 }
 
-// ResetCompanyDataRequest struct
+// ResetCompanyDataRequest é o body de DELETE /api/company/reset-data.
 type ResetCompanyDataRequest struct {
-	CompanyID string `json:"company_id"`
+	CompanyID    string   `json:"company_id"`
+	Tables       []string `json:"tables"`
+	Confirmation string   `json:"confirmation"`
 }
 
-// ResetCompanyDataHandler deletes all import jobs for a specific Company ID
-// It allows users to clean their own company data, or admins to clean any company.
+// ResetCompanyDataHandler apaga dados de uma empresa nas tabelas selecionadas.
+// Usa DELETE WHERE company_id (não TRUNCATE) — tabelas são multi-tenant.
+// Requer token de confirmação e grava audit log.
 func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
 		if r.Method != http.MethodDelete {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
 
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		role, _ := claims["role"].(string)
+		clientIP := GetClientIP(r)
+		userEmail := ResolveUserEmail(db, userID)
+
 		var req ResetCompanyDataRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+			jsonErr(w, http.StatusBadRequest, "Invalid request body")
 			return
 		}
 
 		if req.CompanyID == "" {
-			http.Error(w, "Company ID is required", http.StatusBadRequest)
+			jsonErr(w, http.StatusBadRequest, "company_id obrigatório")
 			return
 		}
 
-		// Get User Context
-		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
-		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		// Token de confirmação (mesmo token do reset global — STAB-01)
+		if req.Confirmation != ConfirmationToken {
+			InsertDestructiveAuditRow(db, DestructiveAuditRow{
+				UserID: userID, UserEmail: userEmail, Action: "reset_company",
+				Scope: req.CompanyID, Status: "rejected_token", ClientIP: clientIP,
+				ErrorMessage: "token inválido",
+			})
+			jsonErr(w, http.StatusBadRequest,
+				fmt.Sprintf("Token de confirmação deve ser exatamente %q", ConfirmationToken))
 			return
 		}
-		userID := claims["user_id"].(string)
-		role := claims["role"].(string)
 
-		// Authorization Check: Must be Admin OR Environment Admin for the company
+		// Validar tabelas contra allowlist
+		if len(req.Tables) == 0 {
+			jsonErr(w, http.StatusBadRequest, "Selecione ao menos uma tabela")
+			return
+		}
+		for _, t := range req.Tables {
+			if !IsCompanyDeletableTable(t) {
+				jsonErr(w, http.StatusBadRequest, fmt.Sprintf("Tabela não permitida: %q", t))
+				return
+			}
+		}
+
+		// Autorização: admin global pode qualquer empresa; outros só a própria
 		if role != "admin" {
 			var exists bool
-			// Check if user has 'admin' role in the environment that owns the company
 			err := db.QueryRow(`
 				SELECT EXISTS(
-					SELECT 1 
-					FROM companies c
+					SELECT 1 FROM companies c
 					JOIN enterprise_groups eg ON c.group_id = eg.id
 					JOIN user_environments ue ON ue.environment_id = eg.environment_id
-					WHERE ue.user_id = $1 
-					  AND c.id = $2 
-					  AND ue.role = 'admin'
+					WHERE ue.user_id = $1 AND c.id = $2 AND ue.role = 'admin'
 				)`, userID, req.CompanyID).Scan(&exists)
-
-			if err != nil {
-				log.Printf("Error checking permission: %v", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
-			}
-
-			if !exists {
-				http.Error(w, "Forbidden: You do not have permission to reset this company's data", http.StatusForbidden)
+			if err != nil || !exists {
+				InsertDestructiveAuditRow(db, DestructiveAuditRow{
+					UserID: userID, UserEmail: userEmail, Action: "reset_company",
+					Scope: req.CompanyID, Status: "rejected_role", ClientIP: clientIP,
+					ErrorMessage: "sem permissão para esta empresa",
+				})
+				jsonErr(w, http.StatusForbidden, "Sem permissão para limpar dados desta empresa")
 				return
 			}
 		}
 
-		log.Printf("ResetCompanyData: User %s deleting data for CompanyID %s", userID, req.CompanyID)
+		// Snapshot antes para audit
+		rowsBefore, _ := RowsBefore(r.Context(), db, req.Tables)
 
-		// Segurança: deletar arquivos físicos antes de remover os registros do banco
-		fileRows, fileErr := db.Query("SELECT filename FROM import_jobs WHERE company_id = $1 AND filename != ''", req.CompanyID)
-		if fileErr == nil {
-			defer fileRows.Close()
-			for fileRows.Next() {
-				var fname string
-				if fileRows.Scan(&fname) == nil && fname != "" {
-					fpath := filepath.Join("uploads", fname)
-					if err := os.Remove(fpath); err != nil && !os.IsNotExist(err) {
-						log.Printf("ResetCompanyData: Warning: could not delete file %s: %v", fpath, err)
-					} else if err == nil {
-						log.Printf("ResetCompanyData: Deleted file %s from storage", fpath)
+		// Deletar arquivos físicos de import_jobs se a tabela foi selecionada
+		for _, t := range req.Tables {
+			if t == "import_jobs" {
+				rows, err := db.Query(
+					"SELECT filename FROM import_jobs WHERE company_id = $1 AND filename != ''",
+					req.CompanyID)
+				if err == nil {
+					for rows.Next() {
+						var fname string
+						if rows.Scan(&fname) == nil && fname != "" {
+							fpath := filepath.Join("uploads", fname)
+							if removeErr := os.Remove(fpath); removeErr != nil && !os.IsNotExist(removeErr) {
+								log.Printf("ResetCompanyData: warning ao deletar arquivo %s: %v", fpath, removeErr)
+							}
+						}
 					}
+					rows.Close()
 				}
+				break
 			}
 		}
 
-		// Execute Deletion
-		res, err := db.Exec("DELETE FROM import_jobs WHERE company_id = $1", req.CompanyID)
+		// DELETE por tabela — tudo em uma transação
+		tx, err := db.Begin()
 		if err != nil {
-			log.Printf("Error deleting jobs for CompanyID %s: %v", req.CompanyID, err)
-			http.Error(w, "Failed to delete company data", http.StatusInternalServerError)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao iniciar transação")
+			return
+		}
+		defer tx.Rollback()
+
+		rowsDeleted := make(map[string]int64, len(req.Tables))
+		for _, t := range req.Tables {
+			// table name vem de allowlist hardcoded — seguro para concat
+			res, err := tx.Exec("DELETE FROM "+t+" WHERE company_id = $1", req.CompanyID)
+			if err != nil {
+				InsertDestructiveAuditRow(db, DestructiveAuditRow{
+					UserID: userID, UserEmail: userEmail, Action: "reset_company",
+					Scope: req.CompanyID, TablesAffected: req.Tables, RowsBefore: rowsBefore,
+					Status: "failed_delete", ClientIP: clientIP,
+					ErrorMessage: t + ": " + err.Error(),
+				})
+				jsonErr(w, http.StatusInternalServerError, "Erro ao deletar "+t)
+				return
+			}
+			n, _ := res.RowsAffected()
+			rowsDeleted[t] = n
+		}
+
+		if err := tx.Commit(); err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao commitar deleção")
 			return
 		}
 
-		rowsDeleted, _ := res.RowsAffected()
-		log.Printf("ResetCompanyData: Deleted %d jobs for CompanyID %s", rowsDeleted, req.CompanyID)
+		// Audit: sucesso
+		InsertDestructiveAuditRow(db, DestructiveAuditRow{
+			UserID: userID, UserEmail: userEmail, Action: "reset_company",
+			Scope: req.CompanyID, TablesAffected: req.Tables, RowsBefore: rowsBefore,
+			Status: "success", ClientIP: clientIP,
+		})
 
-		// Trigger Refresh to clear dashboard data
-		go func() {
-			log.Printf("ResetCompanyData: Triggering view refresh for CompanyID %s...", req.CompanyID)
+		log.Printf("ResetCompanyData: user=%s company=%s tables=%v rows=%v",
+			userID, req.CompanyID, req.Tables, rowsDeleted)
 
-			// Refresh mv_mercadorias_agregada
-			if _, err := db.Exec("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_mercadorias_agregada"); err != nil {
-				log.Printf("ResetCompanyData: Concurrent refresh failed for mv_mercadorias_agregada, trying standard: %v", err)
-				db.Exec("REFRESH MATERIALIZED VIEW mv_mercadorias_agregada")
-			}
+		// Refresh das views em background
+		go refreshMVsAfterReset(db)
 
-			// Refresh mv_operacoes_simples (Simples Nacional)
-			if _, err := db.Exec("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_operacoes_simples"); err != nil {
-				log.Printf("ResetCompanyData: Concurrent refresh failed for mv_operacoes_simples, trying standard: %v", err)
-				db.Exec("REFRESH MATERIALIZED VIEW mv_operacoes_simples")
-			}
-
-			// Refresh mv_compras_fornecedores (todos os fornecedores)
-			if _, err := db.Exec("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_compras_fornecedores"); err != nil {
-				log.Printf("ResetCompanyData: Concurrent refresh failed for mv_compras_fornecedores, trying standard: %v", err)
-				db.Exec("REFRESH MATERIALIZED VIEW mv_compras_fornecedores")
-			}
-
-			log.Printf("ResetCompanyData: View refresh completed for CompanyID %s", req.CompanyID)
-		}()
-
-		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"message":      "Company data deleted successfully",
-			"jobs_deleted": rowsDeleted,
+			"message":      "Dados da empresa removidos com sucesso",
+			"rows_deleted": rowsDeleted,
 		})
 	}
 }

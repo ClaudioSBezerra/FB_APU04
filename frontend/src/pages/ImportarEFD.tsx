@@ -3,11 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, Clock, FileText, Loader2, Upload, XCircle, Trash2, FolderOpen, ShieldCheck, Info } from 'lucide-react';
+import { CheckCircle, Clock, FileText, Loader2, Upload, XCircle, FolderOpen, ShieldCheck, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { UploadProgressDisplay, UploadProgressType } from '@/components/UploadProgress';
 import { useAuth } from '@/contexts/AuthContext';
-import { ResetDatabaseDialog } from '@/components/ResetDatabaseDialog';
 
 interface ImportJob {
   id: string;
@@ -20,7 +19,7 @@ interface ImportJob {
 
 export default function ImportarEFD() {
   const navigate = useNavigate();
-  const { token, user, cnpj, company, companyId } = useAuth();
+  const { token, companyId } = useAuth();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   
@@ -40,9 +39,7 @@ export default function ImportarEFD() {
 
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [scanStats, setScanStats] = useState({ scanned: 0, relevant: 0, phase: 'idle' });
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   // Poll jobs list
@@ -475,79 +472,6 @@ export default function ImportarEFD() {
     }
   };
 
-  const handleResetDatabaseConfirm = async (body: { confirmation: string }) => {
-    setResetLoading(true);
-    try {
-      const res = await fetch('/api/admin/reset-db', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const text = await res.text();
-      if (res.ok) {
-        toast.success('Base de dados limpa com sucesso. Backup gerado em /backups/.');
-        setJobs([]);
-        setResetOpen(false);
-        return;
-      }
-      // Mensagens específicas por status
-      if (res.status === 400) {
-        toast.error('Token de confirmação rejeitado pelo servidor.');
-      } else if (res.status === 403) {
-        toast.error('Apenas administradores globais podem zerar a base.');
-      } else if (res.status === 429) {
-        toast.error('Limite de 1 reset por hora atingido. Aguarde antes de tentar novamente.');
-      } else if (res.status === 503) {
-        toast.error(`Servidor recusou: ${text || 'banco conectado fora do allowlist'}.`);
-      } else {
-        toast.error(`Erro ${res.status}: ${text || 'falha ao zerar base'}.`);
-      }
-    } catch (error) {
-      console.error('Error resetting database:', error);
-      toast.error('Erro de conexão.');
-    } finally {
-      setResetLoading(false);
-    }
-  };
-
-  const handleResetCompanyData = async () => {
-    if (!companyId) {
-        toast.error("Erro: Identificador da empresa não encontrado. Tente logar novamente.");
-        return;
-    }
-    
-    const displayInfo = cnpj ? `(CNPJ: ${cnpj})` : `(ID: ${companyId.substring(0,8)}...)`;
-
-    if (!window.confirm(`ATENÇÃO: Deseja APAGAR TODOS os dados da empresa ${company || 'selecionada'} ${displayInfo}? Essa ação não pode ser desfeita.`)) {
-        return;
-    }
-
-    try {
-        const res = await fetch('/api/company/reset-data', {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ company_id: companyId })
-        });
-
-        if (res.ok) {
-            toast.success(`Dados da empresa ${company} limpos com sucesso!`);
-            const jobsRes = await fetch('/api/jobs');
-            if (jobsRes.ok) {
-                const data = await jobsRes.json();
-                setJobs(data);
-            }
-        } else {
-            const err = await res.text();
-            toast.error(`Erro ao limpar dados: ${err}`);
-        }
-    } catch (error) {
-        console.error('Error resetting company data:', error);
-        toast.error('Erro de conexão.');
-    }
-  };
-
   return (
     <div className="container mx-auto p-6 space-y-6 animate-fade-in">
       <div className="flex justify-between items-start">
@@ -556,22 +480,6 @@ export default function ImportarEFD() {
             <p className="text-muted-foreground">
             Envie seus arquivos SPED EFD Contribuições para processamento. Selecione múltiplos arquivos de uma vez.
             </p>
-        </div>
-        
-        <div className="flex gap-2">
-            {user?.role === 'admin' && (
-                <Button variant="destructive" size="sm" onClick={() => setResetOpen(true)} className="gap-2">
-                    <Trash2 className="h-4 w-4" />
-                    Zerar Tudo (Admin)
-                </Button>
-            )}
-
-            {companyId && (
-                <Button variant="outline" size="sm" onClick={handleResetCompanyData} className="gap-2 border-red-200 hover:bg-red-50 text-red-600">
-                    <Trash2 className="h-4 w-4" />
-                    Limpar {company}
-                </Button>
-            )}
         </div>
       </div>
 
@@ -804,12 +712,6 @@ export default function ImportarEFD() {
         </Card>
       </div>
 
-      <ResetDatabaseDialog
-        open={resetOpen}
-        onOpenChange={setResetOpen}
-        onConfirm={handleResetDatabaseConfirm}
-        loading={resetLoading}
-      />
     </div>
   );
 }
