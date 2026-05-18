@@ -26,12 +26,13 @@ import (
 // ---------------------------------------------------------------------------
 
 // saneamentoRow representa um NCM com divergência de classificação tributária.
+// Somente itens cujo XML já traz cclasstrib preenchido são considerados;
+// a divergência ocorre quando o mesmo NCM aparece com valores de cclasstrib distintos.
 type saneamentoRow struct {
 	NCM                 string   `json:"ncm"`
 	VariantesCstPis     int      `json:"variantes_cst_pis"`
 	VariantesCstCofins  int      `json:"variantes_cst_cofins"`
 	VariantesCclasstrib int      `json:"variantes_cclasstrib"`
-	TemCclasstribNulo   bool     `json:"tem_cclasstrib_nulo"`
 	QtdItens            int      `json:"qtd_itens"`
 	VPisTotal           float64  `json:"v_pis_total"`
 	VCofinsTotal        float64  `json:"v_cofins_total"`
@@ -83,6 +84,8 @@ func executeSaneamentoQuery(db *sql.DB, companyID, mesAno string) ([]saneamentoR
 		args = append(args, mesAno)
 	}
 
+	// Considera apenas itens cujo XML já traz cclasstrib preenchido.
+	// Divergência = mesmo NCM com valores de cclasstrib distintos entre notas.
 	// A subquery lateral busca a entrada mais específica da tabela de referência
 	// da Reforma Tributária para cada NCM (maior prefixo que faz match).
 	query := fmt.Sprintf(`
@@ -91,8 +94,7 @@ WITH saneamento AS (
         ei.ncm,
         COUNT(DISTINCT ei.cst_pis)    AS variantes_cst_pis,
         COUNT(DISTINCT ei.cst_cofins) AS variantes_cst_cofins,
-        COUNT(DISTINCT ei.cclasstrib) FILTER (WHERE ei.cclasstrib IS NOT NULL) AS variantes_cclasstrib,
-        BOOL_OR(ei.cclasstrib IS NULL) AS tem_cclasstrib_nulo,
+        COUNT(DISTINCT ei.cclasstrib) AS variantes_cclasstrib,
         COUNT(*) AS qtd_itens,
         COALESCE(SUM(ei.v_pis),    0) AS v_pis_total,
         COALESCE(SUM(ei.v_cofins), 0) AS v_cofins_total,
@@ -100,17 +102,15 @@ WITH saneamento AS (
         COALESCE(array_agg(DISTINCT ei.cst_cofins) FILTER (WHERE ei.cst_cofins IS NOT NULL), ARRAY[]::text[]) AS csts_cofins
     FROM nfe_entradas_itens ei
     %s
+    AND ei.cclasstrib IS NOT NULL
     GROUP BY ei.ncm
-    HAVING COUNT(DISTINCT ei.cst_pis) > 1
-        OR COUNT(DISTINCT ei.cst_cofins) > 1
-        OR BOOL_OR(ei.cclasstrib IS NULL)
+    HAVING COUNT(DISTINCT ei.cclasstrib) > 1
 )
 SELECT
     s.ncm,
     s.variantes_cst_pis,
     s.variantes_cst_cofins,
     s.variantes_cclasstrib,
-    s.tem_cclasstrib_nulo,
     s.qtd_itens,
     s.v_pis_total,
     s.v_cofins_total,
@@ -148,7 +148,6 @@ LIMIT 500`, whereClause)
 			&row.VariantesCstPis,
 			&row.VariantesCstCofins,
 			&row.VariantesCclasstrib,
-			&row.TemCclasstribNulo,
 			&row.QtdItens,
 			&row.VPisTotal,
 			&row.VCofinsTotal,
@@ -258,13 +257,11 @@ func XMLSaneamentoCSVHandler(db *sql.DB) http.HandlerFunc {
 
 		cw := csv.NewWriter(w)
 
-		// Cabeçalho em PT-BR conforme D-16b
 		header := []string{
 			"NCM",
 			"Variantes CST PIS",
 			"Variantes CST COFINS",
 			"Variantes CCLASSTRIB",
-			"CCLASSTRIB Ausente",
 			"Qtd Itens",
 			"V. PIS Total",
 			"V. COFINS Total",
@@ -282,10 +279,6 @@ func XMLSaneamentoCSVHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		for _, row := range data {
-			ausente := "Não"
-			if row.TemCclasstribNulo {
-				ausente = "Sim"
-			}
 			sugestao := ""
 			if row.CclasstribReforma != nil {
 				sugestao = fmt.Sprintf("%d", *row.CclasstribReforma)
@@ -311,7 +304,6 @@ func XMLSaneamentoCSVHandler(db *sql.DB) http.HandlerFunc {
 				fmt.Sprintf("%d", row.VariantesCstPis),
 				fmt.Sprintf("%d", row.VariantesCstCofins),
 				fmt.Sprintf("%d", row.VariantesCclasstrib),
-				ausente,
 				fmt.Sprintf("%d", row.QtdItens),
 				fmt.Sprintf("%.2f", row.VPisTotal),
 				fmt.Sprintf("%.2f", row.VCofinsTotal),
@@ -378,15 +370,14 @@ SELECT
     ne.forn_cnpj,
     ne.forn_nome,
     ei.ncm,
-    COUNT(*) FILTER (WHERE ei.cclasstrib IS NULL) AS itens_sem_cclasstrib,
-    COUNT(DISTINCT ei.cclasstrib) FILTER (WHERE ei.cclasstrib IS NOT NULL) AS variantes_cclasstrib,
+    COUNT(DISTINCT ei.cclasstrib) AS variantes_cclasstrib,
     COALESCE(SUM(ei.v_pis + ei.v_cofins), 0) AS v_pis_cofins_total
 FROM nfe_entradas_itens ei
 JOIN nfe_entradas ne ON ne.id = ei.nfe_id
 %s
+AND ei.cclasstrib IS NOT NULL
 GROUP BY ne.forn_cnpj, ne.forn_nome, ei.ncm
-HAVING COUNT(*) FILTER (WHERE ei.cclasstrib IS NULL) > 0
-    OR COUNT(DISTINCT ei.cclasstrib) FILTER (WHERE ei.cclasstrib IS NOT NULL) > 1
+HAVING COUNT(DISTINCT ei.cclasstrib) > 1
 ORDER BY v_pis_cofins_total DESC
 LIMIT 200`, whereClause)
 
@@ -402,7 +393,6 @@ LIMIT 200`, whereClause)
 			FornCNPJ            string  `json:"forn_cnpj"`
 			FornNome            string  `json:"forn_nome"`
 			NCM                 string  `json:"ncm"`
-			ItensSemCclasstrib  int     `json:"itens_sem_cclasstrib"`
 			VariantesCclasstrib int     `json:"variantes_cclasstrib"`
 			VPisCofinsTotal     float64 `json:"v_pis_cofins_total"`
 		}
@@ -414,7 +404,6 @@ LIMIT 200`, whereClause)
 				&row.FornCNPJ,
 				&row.FornNome,
 				&row.NCM,
-				&row.ItensSemCclasstrib,
 				&row.VariantesCclasstrib,
 				&row.VPisCofinsTotal,
 			); err != nil {

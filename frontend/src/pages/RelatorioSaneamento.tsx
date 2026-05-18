@@ -23,7 +23,6 @@ interface SaneamentoRow {
   variantes_cst_pis: number;
   variantes_cst_cofins: number;
   variantes_cclasstrib: number;
-  tem_cclasstrib_nulo: boolean;
   qtd_itens: number;
   v_pis_total: number;
   v_cofins_total: number;
@@ -41,7 +40,6 @@ interface FornecedorRow {
   forn_cnpj: string;
   forn_nome: string;
   ncm: string;
-  itens_sem_cclasstrib: number;
   variantes_cclasstrib: number;
   v_pis_cofins_total: number;
 }
@@ -140,8 +138,8 @@ export default function RelatorioSaneamento() {
       <div>
         <h1 className="text-xl font-semibold">Saneamento CCLASSTRIB</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Identifica inconsistências de classificação tributária que podem gerar erros nos
-          créditos de PIS/COFINS. Exporte o CSV para corrigir o cadastro.
+          Identifica divergências de CCLASSTRIB entre notas que já possuem essa classificação
+          nos XMLs. Apenas notas com CCLASSTRIB preenchido são consideradas.
         </p>
       </div>
 
@@ -245,7 +243,7 @@ export default function RelatorioSaneamento() {
                     <TableHead>NCM</TableHead>
                     <TableHead className="text-center">CSTs PIS</TableHead>
                     <TableHead className="text-center">CSTs COFINS</TableHead>
-                    <TableHead className="text-center">CCLASSTRIB Ausente</TableHead>
+                    <TableHead className="text-center">Variantes CCLASSTRIB</TableHead>
                     <TableHead className="text-right">Qtd Itens</TableHead>
                     <TableHead className="text-right">V. PIS+COFINS</TableHead>
                     <TableHead>CSTs PIS Encontrados</TableHead>
@@ -270,14 +268,10 @@ export default function RelatorioSaneamento() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        {row.tem_cclasstrib_nulo ? (
-                          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                            <AlertTriangle className="w-3 h-3 mr-1 inline" />
-                            Sim
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-green-50 text-green-700">Não</Badge>
-                        )}
+                        <Badge variant="outline" className="bg-orange-50 text-orange-700">
+                          <AlertTriangle className="w-3 h-3 mr-1 inline" />
+                          {row.variantes_cclasstrib}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right text-xs">{row.qtd_itens.toLocaleString('pt-BR')}</TableCell>
                       <TableCell className="text-right text-xs">
@@ -349,7 +343,6 @@ export default function RelatorioSaneamento() {
                     <TableHead>CNPJ Fornecedor</TableHead>
                     <TableHead>Nome Fornecedor</TableHead>
                     <TableHead>NCM</TableHead>
-                    <TableHead className="text-right">Itens s/ CCLASSTRIB</TableHead>
                     <TableHead className="text-right">Variantes CCLASSTRIB</TableHead>
                     <TableHead className="text-right">V. PIS+COFINS Total</TableHead>
                   </TableRow>
@@ -363,22 +356,10 @@ export default function RelatorioSaneamento() {
                       </TableCell>
                       <TableCell className="font-mono text-xs">{row.ncm}</TableCell>
                       <TableCell className="text-right">
-                        {row.itens_sem_cclasstrib > 0 ? (
-                          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                            {row.itens_sem_cclasstrib}
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">0</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.variantes_cclasstrib > 1 ? (
-                          <Badge variant="outline" className="bg-orange-50 text-orange-700">
-                            {row.variantes_cclasstrib}
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{row.variantes_cclasstrib}</span>
-                        )}
+                        <Badge variant="outline" className="bg-orange-50 text-orange-700">
+                          <AlertTriangle className="w-3 h-3 mr-1 inline" />
+                          {row.variantes_cclasstrib}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right text-xs font-medium">
                         {fmtBRL(row.v_pis_cofins_total)}
