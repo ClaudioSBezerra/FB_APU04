@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v4.00
 milestone_name: milestone
 status: complete
-last_updated: "2026-05-17T04:00:00.000Z"
+last_updated: "2026-05-18T21:05:28.422Z"
 progress:
   total_phases: 5
-  completed_phases: 5
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # State: FB_APU04
@@ -29,7 +29,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 - **Roadmap:** 5 phases (Coarse granularity)
 - **Active phase:** Phase 05 — COMPLETA (Plans 01+02 concluídos)
 - **Completed phases:** 5 (TODAS AS FASES COMPLETAS)
-- **Last session:** 2026-05-17T00:43:00.000Z
+- **Last session:** 2026-05-18T21:05:28.415Z
 
 ## Current Phase
 
@@ -115,6 +115,7 @@ Projeto v4.00 milestone COMPLETO. Todas as 5 fases e 15 planos executados.
 - Phase 05: Observabilidade e Alertas — COMPLETA
 
 Próximos passos sugeridos (deploy/ops):
+
 1. Rebuild do container api para expor /metrics (api e bridge targets ficarão "up" no Prometheus)
 2. Configurar GRAFANA_ADMIN_PASSWORD no Coolify secrets (obrigatório — fallback removido pelo CR-03 fix)
 3. Verificar acesso anônimo ao Grafana em produção após deploy

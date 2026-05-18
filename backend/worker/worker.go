@@ -19,9 +19,7 @@ import (
 )
 
 func StartWorker(db *sql.DB) {
-	// Worker Pool Size: 3 concurrent workers
-	// I/O-bound (DB writes), safe for 2 vCPU since workers spend ~70% waiting on PostgreSQL
-	const WorkerPoolSize = 3
+	const WorkerPoolSize = 2
 
 	fmt.Printf("Starting Background Worker Pool (%d workers)...\n", WorkerPoolSize)
 
@@ -927,6 +925,10 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 }
 
 func runAggregations(tx *sql.Tx, jobID string, rates TaxRates) error {
+	if _, err := tx.Exec("SET LOCAL work_mem = '64MB'"); err != nil {
+		return fmt.Errorf("failed to set work_mem: %v", err)
+	}
+
 	// 1. Operacoes Comerciais — base = SUM(c190.vl_opr) por grupo S/R
 	_, err := tx.Exec(`
 		WITH c190_agg AS (

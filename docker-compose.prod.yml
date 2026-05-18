@@ -102,7 +102,9 @@ services:
   # ── Observabilidade (OBS-01) ─────────────────────────────────────────────────
 
   prometheus:
-    image: prom/prometheus:v2.55.1
+    build:
+      context: ./monitoring/prometheus
+      dockerfile: Dockerfile
     container_name: fb_apu04-prometheus-prod
     restart: always
     command:
@@ -114,7 +116,6 @@ services:
       - "9090"
     volumes:
       - prometheus_data:/prometheus
-      - ./monitoring/prometheus:/etc/prometheus:ro
     networks:
       - fb_net
     healthcheck:
@@ -124,7 +125,9 @@ services:
       retries: 3
 
   grafana:
-    image: grafana/grafana:11.3.0
+    build:
+      context: ./monitoring/grafana
+      dockerfile: Dockerfile
     container_name: fb_apu04-grafana-prod
     restart: always
     expose:
@@ -145,8 +148,6 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - fb_net
       - coolify
@@ -157,7 +158,9 @@ services:
       retries: 3
 
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    build:
+      context: ./monitoring/alertmanager
+      dockerfile: Dockerfile
     container_name: fb_apu04-alertmanager-prod
     restart: always
     # Entrypoint usa awk para expandir ${SMTP_*} no template antes de iniciar.
@@ -195,7 +198,6 @@ services:
       - SMTP_FROM=${SMTP_FROM}
     volumes:
       - alertmanager_data:/alertmanager
-      - ./monitoring/alertmanager:/etc/alertmanager:ro
     networks:
       - fb_net
 
