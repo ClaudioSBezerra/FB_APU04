@@ -198,6 +198,8 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"message":      "Dados da empresa removidos com sucesso",
+			"company_id":   req.CompanyID,
+			"rows_before":  rowsBefore,
 			"rows_deleted": rowsDeleted,
 		})
 	}

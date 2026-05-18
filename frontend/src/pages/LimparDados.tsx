@@ -47,6 +47,8 @@ export default function LimparDados() {
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Record<string, number> | null>(null);
+  const [rowsBefore, setRowsBefore] = useState<Record<string, number> | null>(null);
+  const [usedCompanyId, setUsedCompanyId] = useState<string | null>(null);
 
   // --- global reset state ---
   const [resetOpen, setResetOpen] = useState(false);
@@ -98,13 +100,16 @@ export default function LimparDados() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         const deleted: Record<string, number> = data.rows_deleted ?? {};
+        const before: Record<string, number> = data.rows_before ?? {};
         const total = Object.values(deleted).reduce((a: number, b) => a + (b as number), 0);
         if (total > 0) {
           toast.success(`${total} registro(s) removido(s) com sucesso.`);
         } else {
-          toast.warning('Nenhum registro encontrado para os grupos selecionados. Verifique se a empresa e a origem dos dados estão corretos.');
+          toast.warning('Nenhum registro encontrado. Verifique a empresa e origem dos dados.');
         }
         setResult(deleted);
+        setRowsBefore(before);
+        setUsedCompanyId(data.company_id ?? null);
         setToken('');
         setSelected(new Set());
         return;
@@ -241,6 +246,16 @@ export default function LimparDados() {
             {loading ? 'Executando...' : `Limpar dados de ${companyLabel}`}
           </Button>
 
+          {/* diagnóstico de company_id */}
+          {usedCompanyId && (
+            <p className="text-xs text-muted-foreground font-mono">
+              company_id usado: <span className="font-bold">{usedCompanyId}</span>
+              {companyId && usedCompanyId !== companyId && (
+                <span className="text-red-600 ml-2">⚠ diverge do contexto ({companyId})</span>
+              )}
+            </p>
+          )}
+
           {/* resultado */}
           {result && (() => {
             const total = Object.values(result).reduce((a, b) => a + b, 0);
@@ -257,7 +272,12 @@ export default function LimparDados() {
                 {Object.entries(result).map(([key, rows]) => (
                   <div key={key} className={rowCls}>
                     <span>{key}</span>
-                    <span>{rows}</span>
+                    <span>
+                      {rows}
+                      {rows === 0 && rowsBefore && (rowsBefore[key] ?? 0) > 0 && (
+                        <span className="ml-2 text-orange-600">(existiam {rowsBefore[key]} com outro source)</span>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>
