@@ -23,7 +23,8 @@ import {
   Line,
   ReferenceLine
 } from 'recharts';
-import { Download, RefreshCcw, ArrowDownCircle, ArrowUpCircle, Scale, Info } from "lucide-react";
+import { Download, RefreshCcw, ArrowDownCircle, ArrowUpCircle, Scale, Info, Construction } from "lucide-react";
+import { toast } from 'sonner';
 import { exportToExcel } from "@/lib/exportToExcel";
 import { formatCurrency } from "@/lib/utils";
 import { formatCnpjComApelido } from "@/lib/formatFilial";
@@ -176,19 +177,20 @@ const Mercadorias = () => {
 
   const handleRefreshViews = async () => {
     setIsRefreshing(true);
+    const toastId = toast.loading('Reconstruindo painel — atualizando views...');
     try {
       const response = await fetch(`/api/admin/refresh-views`, {
         method: 'POST',
       });
       if (response.ok) {
         fetchData();
-        alert('Dados atualizados com sucesso!');
+        toast.success('Painel reconstruído com sucesso!', { id: toastId });
       } else {
         const errText = await response.text();
-        alert(`Erro ao atualizar dados: ${response.status} ${response.statusText}\n${errText}`);
+        toast.error(`Erro ao reconstruir: ${response.status} ${errText}`, { id: toastId });
       }
     } catch (e: any) {
-      alert(`Erro de conexão ao atualizar dados: ${e.message}`);
+      toast.error(`Erro de conexão: ${e.message}`, { id: toastId });
     } finally {
       setIsRefreshing(false);
     }
@@ -525,16 +527,18 @@ const Mercadorias = () => {
             Exportar
           </Button>
 
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleRefreshViews} 
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleRefreshViews}
             disabled={isRefreshing}
-            title="Recalcular Dados (Atualizar Views)"
+            title="Reconstrói as views do painel — use quando os valores simulados parecerem inconsistentes"
             className={isRefreshing ? "opacity-50 cursor-not-allowed" : ""}
           >
-            <RefreshCcw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Atualizando...' : 'Atualizar'}
+            {isRefreshing
+              ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" />
+              : <Construction className="w-4 h-4 mr-2" />}
+            {isRefreshing ? 'Reconstruindo...' : 'Reconstruir Painel'}
           </Button>
         </div>
       </div>
