@@ -249,7 +249,7 @@ export default function ConsultaNFesEntradas() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/nfe-entradas', { headers: authHeaders });
+      const res = await fetch('/api/nfe-entradas?source=oracle_bridge', { headers: authHeaders });
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
       setItems(data.items || []);
