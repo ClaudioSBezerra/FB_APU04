@@ -11,15 +11,31 @@ import { ResetDatabaseDialog } from '@/components/ResetDatabaseDialog';
 
 const REQUIRED_TOKEN = 'DELETE-FB_APU04';
 
-const COMPANY_TABLES: { id: string; label: string; description: string }[] = [
-  { id: 'import_jobs',        label: 'import_jobs',        description: 'Jobs de importação SPED/EFD e arquivos físicos de upload' },
-  { id: 'nfe_entradas',       label: 'nfe_entradas',       description: 'NF-e de entradas (XML + ERP Bridge)' },
-  { id: 'nfe_saidas',         label: 'nfe_saidas',         description: 'NF-e de saídas (XML)' },
-  { id: 'cte_entradas',       label: 'cte_entradas',       description: 'CT-e de entradas (XML)' },
-  { id: 'xml_upload_batches', label: 'xml_upload_batches', description: 'Histórico de uploads de XML' },
-  { id: 'filial_apelidos',    label: 'filial_apelidos',    description: 'Apelidos de filiais' },
-  { id: 'parceiros',          label: 'parceiros',          description: 'Parceiros do ERP Bridge' },
-  { id: 'erp_bridge_runs',    label: 'erp_bridge_runs',    description: 'Runs do ERP Bridge (items deletados via CASCADE)' },
+const GROUPS: { id: string; label: string; description: string; tables: string[] }[] = [
+  {
+    id: 'sped',
+    label: 'SPED / EFD',
+    description: 'Jobs de importação SPED e dados processados (reg_c100, reg_c190… via CASCADE)',
+    tables: ['import_jobs'],
+  },
+  {
+    id: 'xml',
+    label: 'XML Upload',
+    description: 'Documentos importados via upload manual de arquivos XML',
+    tables: ['nfe_entradas[xml]', 'nfe_saidas[xml]', 'cte_entradas[xml]', 'xml_upload_batches'],
+  },
+  {
+    id: 'erp_bridge',
+    label: 'ERP Bridge',
+    description: 'Documentos e runs importados via integração ERP Bridge (oracle_bridge)',
+    tables: ['nfe_entradas[erp_bridge]', 'nfe_saidas[erp_bridge]', 'cte_entradas[erp_bridge]', 'erp_bridge_runs', 'parceiros'],
+  },
+  {
+    id: 'config',
+    label: 'Configurações',
+    description: 'Apelidos de filiais',
+    tables: ['filial_apelidos'],
+  },
 ];
 
 export default function LimparDados() {
@@ -37,14 +53,14 @@ export default function LimparDados() {
   const [resetLoading, setResetLoading] = useState(false);
 
   function toggleAll() {
-    if (selected.size === COMPANY_TABLES.length) {
+    if (selected.size === GROUPS.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(COMPANY_TABLES.map((t) => t.id)));
+      setSelected(new Set(GROUPS.map((g) => g.id)));
     }
   }
 
-  function toggleTable(id: string) {
+  function toggleGroup(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -59,7 +75,7 @@ export default function LimparDados() {
       return;
     }
     if (selected.size === 0) {
-      toast.error('Selecione ao menos uma tabela.');
+      toast.error('Selecione ao menos um grupo.');
       return;
     }
     if (token !== REQUIRED_TOKEN) {
@@ -75,7 +91,7 @@ export default function LimparDados() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           company_id: companyId,
-          tables: Array.from(selected),
+          groups: Array.from(selected),
           confirmation: token,
         }),
       });
@@ -87,7 +103,7 @@ export default function LimparDados() {
         setSelected(new Set());
         return;
       }
-      if (res.status === 400) toast.error('Token de confirmação rejeitado ou tabela inválida.');
+      if (res.status === 400) toast.error('Token de confirmação rejeitado ou grupo inválido.');
       else if (res.status === 403) toast.error('Sem permissão para limpar dados desta empresa.');
       else toast.error(`Erro ${res.status}: ${data.error ?? 'falha ao limpar dados'}.`);
     } catch {
@@ -123,7 +139,7 @@ export default function LimparDados() {
     }
   }
 
-  const allSelected = selected.size === COMPANY_TABLES.length;
+  const allSelected = selected.size === GROUPS.length;
   const tokenOk = token === REQUIRED_TOKEN;
   const canConfirm = selected.size > 0 && tokenOk && !loading;
   const companyLabel = company ?? cnpj ?? companyId?.substring(0, 8) ?? 'empresa';
@@ -145,11 +161,11 @@ export default function LimparDados() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Remove apenas os registros da empresa <strong>{companyLabel}</strong>. As demais
-            empresas não são afetadas.
+            Remove apenas os registros da empresa <strong>{companyLabel}</strong> para os grupos
+            selecionados. As demais empresas não são afetadas.
           </p>
 
-          {/* select-all + checkboxes */}
+          {/* select-all + group checkboxes */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <Checkbox
@@ -159,23 +175,32 @@ export default function LimparDados() {
                 disabled={loading}
               />
               <Label htmlFor="select-all" className="font-semibold cursor-pointer">
-                Selecionar todas
+                Selecionar todos os grupos
               </Label>
             </div>
             <div className="border rounded-md divide-y">
-              {COMPANY_TABLES.map((t) => (
-                <div key={t.id} className="flex items-start gap-3 p-3">
-                  <Checkbox
-                    id={t.id}
-                    checked={selected.has(t.id)}
-                    onCheckedChange={() => toggleTable(t.id)}
-                    disabled={loading}
-                    className="mt-0.5"
-                  />
-                  <Label htmlFor={t.id} className="cursor-pointer leading-snug">
-                    <span className="font-mono text-sm">{t.label}</span>
-                    <span className="block text-xs text-muted-foreground">{t.description}</span>
-                  </Label>
+              {GROUPS.map((g) => (
+                <div key={g.id} className="p-3 space-y-1">
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id={g.id}
+                      checked={selected.has(g.id)}
+                      onCheckedChange={() => toggleGroup(g.id)}
+                      disabled={loading}
+                      className="mt-0.5"
+                    />
+                    <Label htmlFor={g.id} className="cursor-pointer leading-snug flex-1">
+                      <span className="font-semibold">{g.label}</span>
+                      <span className="block text-xs text-muted-foreground">{g.description}</span>
+                    </Label>
+                  </div>
+                  <div className="pl-7 flex flex-wrap gap-1">
+                    {g.tables.map((t) => (
+                      <span key={t} className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -214,9 +239,9 @@ export default function LimparDados() {
           {result && (
             <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm space-y-1">
               <p className="font-semibold text-green-800">Linhas removidas:</p>
-              {Object.entries(result).map(([table, rows]) => (
-                <div key={table} className="flex justify-between font-mono text-xs text-green-700">
-                  <span>{table}</span>
+              {Object.entries(result).map(([key, rows]) => (
+                <div key={key} className="flex justify-between font-mono text-xs text-green-700">
+                  <span>{key}</span>
                   <span>{rows}</span>
                 </div>
               ))}

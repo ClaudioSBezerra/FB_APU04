@@ -31,24 +31,45 @@ var ResetTables = []string{
 	"erp_bridge_runs",
 }
 
-// CompanyDeletableTables é o allowlist de tabelas que suportam DELETE WHERE company_id = $1.
-// Ordem importa: tabelas filhas antes das pai (import_jobs antes de nenhuma FK, mas
-// erp_bridge_run_items é deletado via CASCADE de erp_bridge_runs).
-var CompanyDeletableTables = []string{
-	"import_jobs",
-	"nfe_entradas",
-	"nfe_saidas",
-	"cte_entradas",
-	"xml_upload_batches",
-	"filial_apelidos",
-	"parceiros",
-	"erp_bridge_runs",
+// CompanyDeleteOp é uma operação DELETE dentro de um grupo de limpeza per-company.
+// Table e WhereExtra são hardcoded — nunca recebem input do usuário.
+type CompanyDeleteOp struct {
+	Table      string // nome da tabela (hardcoded, seguro para concat)
+	WhereExtra string // cláusula WHERE extra hardcoded, ex: "AND source = 'xml_upload'"
+	ResultKey  string // chave no map rows_deleted da resposta
 }
 
-// IsCompanyDeletableTable verifica se a tabela está no allowlist per-company.
-func IsCompanyDeletableTable(t string) bool {
-	for _, allowed := range CompanyDeletableTables {
-		if allowed == t {
+// CompanyGroups mapeia cada grupo de limpeza para suas operações DELETE.
+// Grupos disponíveis: sped, xml, erp_bridge, config.
+var CompanyGroups = map[string][]CompanyDeleteOp{
+	"sped": {
+		{Table: "import_jobs", ResultKey: "import_jobs"},
+	},
+	"xml": {
+		{Table: "nfe_entradas",       WhereExtra: "AND source = 'xml_upload'", ResultKey: "nfe_entradas[xml]"},
+		{Table: "nfe_saidas",         WhereExtra: "AND source = 'xml_upload'", ResultKey: "nfe_saidas[xml]"},
+		{Table: "cte_entradas",       WhereExtra: "AND source = 'xml_upload'", ResultKey: "cte_entradas[xml]"},
+		{Table: "xml_upload_batches", ResultKey: "xml_upload_batches"},
+	},
+	"erp_bridge": {
+		{Table: "nfe_entradas",    WhereExtra: "AND source = 'oracle_bridge'", ResultKey: "nfe_entradas[erp_bridge]"},
+		{Table: "nfe_saidas",      WhereExtra: "AND source = 'oracle_bridge'", ResultKey: "nfe_saidas[erp_bridge]"},
+		{Table: "cte_entradas",    WhereExtra: "AND source = 'oracle_bridge'", ResultKey: "cte_entradas[erp_bridge]"},
+		{Table: "erp_bridge_runs", ResultKey: "erp_bridge_runs"},
+		{Table: "parceiros",       ResultKey: "parceiros"},
+	},
+	"config": {
+		{Table: "filial_apelidos", ResultKey: "filial_apelidos"},
+	},
+}
+
+// ValidCompanyGroups é a lista de grupos aceitos no endpoint per-company.
+var ValidCompanyGroups = []string{"sped", "xml", "erp_bridge", "config"}
+
+// IsValidCompanyGroup verifica se o grupo está no allowlist.
+func IsValidCompanyGroup(g string) bool {
+	for _, v := range ValidCompanyGroups {
+		if v == g {
 			return true
 		}
 	}

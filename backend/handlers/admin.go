@@ -23,12 +23,12 @@ func isValidUUID(s string) bool {
 // ResetCompanyDataRequest é o body de DELETE /api/company/reset-data.
 type ResetCompanyDataRequest struct {
 	CompanyID    string   `json:"company_id"`
-	Tables       []string `json:"tables"`
+	Groups       []string `json:"groups"`
 	Confirmation string   `json:"confirmation"`
 }
 
-// ResetCompanyDataHandler apaga dados de uma empresa nas tabelas selecionadas.
-// Usa DELETE WHERE company_id (não TRUNCATE) — tabelas são multi-tenant.
+// ResetCompanyDataHandler apaga dados de uma empresa pelos grupos selecionados.
+// Grupos: sped, xml, erp_bridge, config. Usa DELETE WHERE company_id (não TRUNCATE).
 // Requer token de confirmação e grava audit log.
 func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -72,16 +72,24 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Validar tabelas contra allowlist
-		if len(req.Tables) == 0 {
-			jsonErr(w, http.StatusBadRequest, "Selecione ao menos uma tabela")
+		// Validar grupos contra allowlist
+		if len(req.Groups) == 0 {
+			jsonErr(w, http.StatusBadRequest, "Selecione ao menos um grupo")
 			return
 		}
-		for _, t := range req.Tables {
-			if !IsCompanyDeletableTable(t) {
-				jsonErr(w, http.StatusBadRequest, fmt.Sprintf("Tabela não permitida: %q", t))
+		for _, g := range req.Groups {
+			if !IsValidCompanyGroup(g) {
+				jsonErr(w, http.StatusBadRequest, fmt.Sprintf("Grupo não permitido: %q", g))
 				return
 			}
+		}
+
+		// Montar lista de ops a executar
+		var ops []CompanyDeleteOp
+		groupsSelected := make([]string, 0, len(req.Groups))
+		for _, g := range req.Groups {
+			ops = append(ops, CompanyGroups[g]...)
+			groupsSelected = append(groupsSelected, g)
 		}
 
 		// Autorização: admin global pode qualquer empresa; outros só a própria
@@ -105,12 +113,9 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
-		// Snapshot antes para audit
-		rowsBefore, _ := RowsBefore(r.Context(), db, req.Tables)
-
-		// Deletar arquivos físicos de import_jobs se a tabela foi selecionada
-		for _, t := range req.Tables {
-			if t == "import_jobs" {
+		// Deletar arquivos físicos de import_jobs se grupo sped incluído
+		for _, g := range req.Groups {
+			if g == "sped" {
 				rows, err := db.Query(
 					"SELECT filename FROM import_jobs WHERE company_id = $1 AND filename != ''",
 					req.CompanyID)
@@ -130,7 +135,20 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
-		// DELETE por tabela — tudo em uma transação
+		// Snapshot antes para audit (contagem com o mesmo filtro de cada op)
+		rowsBefore := make(map[string]int64, len(ops))
+		for _, op := range ops {
+			q := "SELECT COUNT(*) FROM " + op.Table + " WHERE company_id = $1"
+			if op.WhereExtra != "" {
+				q += " " + op.WhereExtra
+			}
+			var n int64
+			if err := db.QueryRowContext(r.Context(), q, req.CompanyID).Scan(&n); err == nil {
+				rowsBefore[op.ResultKey] = n
+			}
+		}
+
+		// DELETE por op — tudo em uma transação
 		tx, err := db.Begin()
 		if err != nil {
 			jsonErr(w, http.StatusInternalServerError, "Erro ao iniciar transação")
@@ -138,22 +156,25 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		rowsDeleted := make(map[string]int64, len(req.Tables))
-		for _, t := range req.Tables {
-			// table name vem de allowlist hardcoded — seguro para concat
-			res, err := tx.Exec("DELETE FROM "+t+" WHERE company_id = $1", req.CompanyID)
+		rowsDeleted := make(map[string]int64, len(ops))
+		for _, op := range ops {
+			q := "DELETE FROM " + op.Table + " WHERE company_id = $1"
+			if op.WhereExtra != "" {
+				q += " " + op.WhereExtra
+			}
+			res, err := tx.Exec(q, req.CompanyID)
 			if err != nil {
 				InsertDestructiveAuditRow(db, DestructiveAuditRow{
 					UserID: userID, UserEmail: userEmail, Action: "reset_company",
-					Scope: req.CompanyID, TablesAffected: req.Tables, RowsBefore: rowsBefore,
+					Scope: req.CompanyID, TablesAffected: groupsSelected, RowsBefore: rowsBefore,
 					Status: "failed_delete", ClientIP: clientIP,
-					ErrorMessage: t + ": " + err.Error(),
+					ErrorMessage: op.ResultKey + ": " + err.Error(),
 				})
-				jsonErr(w, http.StatusInternalServerError, "Erro ao deletar "+t)
+				jsonErr(w, http.StatusInternalServerError, "Erro ao deletar "+op.ResultKey)
 				return
 			}
 			n, _ := res.RowsAffected()
-			rowsDeleted[t] = n
+			rowsDeleted[op.ResultKey] = n
 		}
 
 		if err := tx.Commit(); err != nil {
@@ -164,12 +185,12 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 		// Audit: sucesso
 		InsertDestructiveAuditRow(db, DestructiveAuditRow{
 			UserID: userID, UserEmail: userEmail, Action: "reset_company",
-			Scope: req.CompanyID, TablesAffected: req.Tables, RowsBefore: rowsBefore,
+			Scope: req.CompanyID, TablesAffected: groupsSelected, RowsBefore: rowsBefore,
 			Status: "success", ClientIP: clientIP,
 		})
 
-		log.Printf("ResetCompanyData: user=%s company=%s tables=%v rows=%v",
-			userID, req.CompanyID, req.Tables, rowsDeleted)
+		log.Printf("ResetCompanyData: user=%s company=%s groups=%v rows=%v",
+			userID, req.CompanyID, groupsSelected, rowsDeleted)
 
 		// Refresh das views em background
 		go refreshMVsAfterReset(db)
