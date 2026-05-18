@@ -47,6 +47,10 @@ func extractXMLsFromZip(data []byte) ([]namedXML, error) {
 	var xmlFiles []namedXML
 
 	for _, f := range r.File {
+		// Ignorar diretórios
+		if f.FileInfo().IsDir() {
+			continue
+		}
 		// T-02-02-03: ignorar entries com path traversal
 		if strings.Contains(f.Name, "..") {
 			continue
@@ -393,6 +397,7 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 		// Parâmetro tipo: obrigatório
 		tipo := strings.TrimSpace(r.FormValue("tipo"))
 		if tipo != "entradas" && tipo != "saidas" && tipo != "ctes" {
+			log.Printf("[XMLUpload] user=%s tipo inválido: %q", userID, tipo)
 			jsonErr(w, http.StatusBadRequest, "Parâmetro 'tipo' obrigatório: entradas | saidas | ctes")
 			return
 		}
@@ -428,19 +433,23 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			if ext == ".zip" {
 				extracted, err := extractXMLsFromZip(rawData)
 				if err != nil {
-					jsonErr(w, http.StatusBadRequest, err.Error())
+					log.Printf("[XMLUpload] user=%s arquivo=%s ZIP error: %v", userID, fhdr.Filename, err)
+					jsonErr(w, http.StatusBadRequest, "Erro ao processar ZIP '"+fhdr.Filename+"': "+err.Error())
 					return
 				}
+				log.Printf("[XMLUpload] user=%s arquivo=%s ZIP extraídos: %d XMLs", userID, fhdr.Filename, len(extracted))
 				xmlFiles = append(xmlFiles, extracted...)
 			} else if ext == ".xml" {
 				xmlFiles = append(xmlFiles, namedXML{Name: fhdr.Filename, Data: rawData})
 			} else {
+				log.Printf("[XMLUpload] user=%s arquivo=%s formato não suportado (ext=%s)", userID, fhdr.Filename, ext)
 				jsonErr(w, http.StatusBadRequest, "Formato não suportado: envie .xml ou .zip")
 				return
 			}
 		}
 
 		if len(xmlFiles) > MaxXMLsPerBatch {
+			log.Printf("[XMLUpload] user=%s lote muito grande: %d XMLs (max %d)", userID, len(xmlFiles), MaxXMLsPerBatch)
 			jsonErr(w, http.StatusBadRequest,
 				fmt.Sprintf("Lote contém %d XMLs, máximo é %d", len(xmlFiles), MaxXMLsPerBatch))
 			return
@@ -449,7 +458,8 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 		filename := batchFilename
 
 		if len(xmlFiles) == 0 {
-			jsonErr(w, http.StatusBadRequest, "Nenhum arquivo XML encontrado")
+			log.Printf("[XMLUpload] user=%s arquivo=%s ZIP não contém arquivos XML válidos", userID, batchFilename)
+			jsonErr(w, http.StatusBadRequest, "O ZIP não contém arquivos XML válidos. Verifique se os arquivos têm extensão .xml e não estão em subpastas protegidas.")
 			return
 		}
 
