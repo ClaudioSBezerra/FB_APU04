@@ -674,8 +674,8 @@ export default function GestaoAmbiente() {
               </div>
             ) : (
               companies.map((company) => (
+                <div key={company.id}>
                 <div
-                  key={company.id}
                   className="flex items-center justify-between p-3 rounded-md border bg-white border-gray-200 hover:border-primary/50 transition-all"
                 >
                   <div className="overflow-hidden">
@@ -745,6 +745,7 @@ export default function GestaoAmbiente() {
                     </div>
                   </div>
                 )}
+                </div>
               ))
             )}
           </div>
