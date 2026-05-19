@@ -567,6 +567,9 @@ func main() {
 	http.HandleFunc("/api/xml/upload-batches/", withAuth(handlers.XMLUploadBatchStatusHandler, ""))
 	http.HandleFunc("/api/xml/upload-batches", withAuth(handlers.XMLUploadBatchesHandler, ""))
 
+	// Relatório XML Operações Comerciais (painel /mercadorias/xml)
+	http.HandleFunc("/api/xml/reports/mercadorias", withAuth(handlers.MercadoriasXMLReportHandler, ""))
+
 	// Relatórios de Saneamento CCLASSTRIB — /csv deve ser registrado ANTES de /saneamento (mais específico primeiro)
 	http.HandleFunc("/api/xml/reports/saneamento/csv", withAuth(handlers.XMLSaneamentoCSVHandler, ""))
 	http.HandleFunc("/api/xml/reports/saneamento", withAuth(handlers.XMLSaneamentoCCLASSTRIBHandler, ""))

@@ -83,6 +83,7 @@ const sections: NavSection[] = [
     items: [
       { title: "Importar SPEDs",            url: "/importar-efd",                  icon: FileSpreadsheet },
       { title: "Operações Comerciais",      url: "/mercadorias",                   icon: ShoppingCart },
+      { title: "Operações Comerciais (XMLs)", url: "/mercadorias/xml",             icon: ShoppingCart },
       { title: "Operações Simples Nacional",url: "/operacoes/simples",             icon: Store },
       { title: "Dashboard Reforma",         url: "/dashboards",                    icon: LayoutDashboard },
       { title: "Resumo Executivo IA",       url: "/relatorios/resumo-executivo",   icon: Sparkles },
