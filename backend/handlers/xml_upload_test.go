@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"database/sql"
+	"strings"
 	"testing"
 )
 
@@ -185,5 +186,100 @@ func TestProcessXMLBatch_InvalidDate(t *testing.T) {
 	panicked := runProcessXMLBatch(items)
 	if !panicked {
 		t.Error("expected nil-DB panic in processXMLBatch cleanup")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildRegimeUpdate / updateCompanyRegimeFromCRT tests
+// ---------------------------------------------------------------------------
+
+// TestUpdateCompanyRegimeFromCRT verifica o mapeamento CRT → regime_tributario.
+// Usa a função interna buildRegimeUpdate (sem dependência de banco de dados)
+// para testar a lógica de mapeamento de forma determinística.
+func TestUpdateCompanyRegimeFromCRT(t *testing.T) {
+	const cnpjValido = "12345678000100"
+
+	tests := []struct {
+		name         string
+		emitCNPJ     string
+		crt          string
+		expectSQL    bool   // true = deve gerar SQL (operação esperada)
+		expectRegime string // regime esperado quando expectSQL=true
+	}{
+		{
+			name:         "CRT=1 → simples_nacional",
+			emitCNPJ:     cnpjValido,
+			crt:          "1",
+			expectSQL:    true,
+			expectRegime: "simples_nacional",
+		},
+		{
+			name:         "CRT=2 → simples_nacional (SN excesso sublimite)",
+			emitCNPJ:     cnpjValido,
+			crt:          "2",
+			expectSQL:    true,
+			expectRegime: "simples_nacional",
+		},
+		{
+			name:         "CRT=3 → lucro_real (Regime Normal)",
+			emitCNPJ:     cnpjValido,
+			crt:          "3",
+			expectSQL:    true,
+			expectRegime: "lucro_real",
+		},
+		{
+			name:      "CRT vazio → nenhuma operação",
+			emitCNPJ:  cnpjValido,
+			crt:       "",
+			expectSQL: false,
+		},
+		{
+			name:      "CNPJ vazio → nenhuma operação",
+			emitCNPJ:  "",
+			crt:       "1",
+			expectSQL: false,
+		},
+		{
+			name:      "CRT=9 (desconhecido) → nenhuma operação",
+			emitCNPJ:  cnpjValido,
+			crt:       "9",
+			expectSQL: false,
+		},
+		{
+			name:         "CRT com espaços → trim e mapeamento correto",
+			emitCNPJ:     "  " + cnpjValido + "  ",
+			crt:          "  1  ",
+			expectSQL:    true,
+			expectRegime: "simples_nacional",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sql, regime := buildRegimeUpdate(tt.emitCNPJ, tt.crt)
+
+			if tt.expectSQL {
+				if sql == "" {
+					t.Errorf("esperava SQL gerado mas recebeu vazio (emitCNPJ=%q crt=%q)", tt.emitCNPJ, tt.crt)
+				}
+				if regime != tt.expectRegime {
+					t.Errorf("regime incorreto: got=%q want=%q", regime, tt.expectRegime)
+				}
+				// Verificar que a SQL referencia as tabelas corretas
+				if !strings.Contains(sql, "UPDATE companies") {
+					t.Errorf("SQL não contém 'UPDATE companies': %s", sql)
+				}
+				if !strings.Contains(sql, "filial_apelidos") {
+					t.Errorf("SQL não contém 'filial_apelidos': %s", sql)
+				}
+			} else {
+				if sql != "" {
+					t.Errorf("esperava SQL vazio mas recebeu %q (emitCNPJ=%q crt=%q)", sql, tt.emitCNPJ, tt.crt)
+				}
+				if regime != "" {
+					t.Errorf("esperava regime vazio mas recebeu %q", regime)
+				}
+			}
+		})
 	}
 }

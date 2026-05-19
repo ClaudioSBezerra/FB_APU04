@@ -369,7 +369,18 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// Auto-detectar regime tributário da empresa a partir do CRT do XML de saída.
+	// Em saídas, o emitente é a própria empresa (filial cadastrada).
+	// Executado APÓS o Commit para não bloquear a nota em caso de falha.
+	if tipo == "saidas" {
+		updateCompanyRegimeFromCRT(db, companyID, inf.Emit.CNPJ, inf.Emit.CRT)
+	}
+
+	return nil
 }
 
 // processSingleCTe persiste um CT-e (mod 57) na tabela cte_entradas com source='xml_upload'.
@@ -630,6 +641,67 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			"total_batches": len(chunks),
 			"total_count":   len(xmlFiles),
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildRegimeUpdate retorna a SQL e o valor de regime_tributario mapeado a
+// partir do código CRT do XML de saída. Retorna ("", "") se o CRT não deve
+// disparar atualização (valor vazio ou código fora de {1,2,3}).
+//
+// Mapeamento:
+//   "1" → simples_nacional  (Simples Nacional)
+//   "2" → simples_nacional  (SN excesso de sublimite — ainda é SN)
+//   "3" → lucro_real        (Regime Normal — cobre LR e LP; o usuário pode
+//                             corrigir para lucro_presumido em GestaoAmbiente
+//                             se necessário)
+//
+// Nota: esta função não acessa o banco — é puramente determinística para
+// facilitar testes unitários sem dependência de banco de dados.
+func buildRegimeUpdate(emitCNPJ, crt string) (sql string, regime string) {
+	emitCNPJ = strings.TrimSpace(emitCNPJ)
+	crt = strings.TrimSpace(crt)
+	if emitCNPJ == "" || crt == "" {
+		return "", ""
+	}
+	switch crt {
+	case "1", "2":
+		regime = "simples_nacional"
+	case "3":
+		regime = "lucro_real"
+	default:
+		return "", ""
+	}
+	sql = `UPDATE companies
+SET regime_tributario = $1, updated_at = NOW()
+WHERE id IN (
+    SELECT DISTINCT company_id
+    FROM filial_apelidos
+    WHERE cnpj = $2
+)
+AND regime_tributario IS DISTINCT FROM $1`
+	return sql, regime
+}
+
+// updateCompanyRegimeFromCRT detecta o regime tributário da empresa a partir
+// do CRT do XML de saída e atualiza companies.regime_tributario via filial_apelidos.
+//
+// Deve ser chamado SOMENTE no caminho de saídas, APÓS tx.Commit(), pois falhas
+// de atualização não devem reverter a nota já persistida.
+// Se o CNPJ do emitente não constar em filial_apelidos, a UPDATE afeta 0 linhas
+// (comportamento correto — skip silencioso conforme spec).
+func updateCompanyRegimeFromCRT(db *sql.DB, companyID, emitCNPJ, crt string) {
+	query, regime := buildRegimeUpdate(emitCNPJ, crt)
+	if query == "" {
+		return
+	}
+	result, err := db.Exec(query, regime, strings.TrimSpace(emitCNPJ))
+	if err != nil {
+		log.Printf("[CRT-Detect] emit=%s crt=%s err=%v", emitCNPJ, crt, err)
+		return
+	}
+	if n, rowErr := result.RowsAffected(); rowErr == nil && n > 0 {
+		log.Printf("[CRT-Detect] emit=%s crt=%s regime=%s updated %d company(ies)", emitCNPJ, crt, regime, n)
 	}
 }
 
