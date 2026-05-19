@@ -32,7 +32,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Trash2, Building, Layers, Factory } from "lucide-react";
+import { Plus, Trash2, Building, Layers, Factory, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -94,6 +94,9 @@ export default function GestaoAmbiente() {
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyTradeName, setNewCompanyTradeName] = useState("");
   const [newCompanyRegime, setNewCompanyRegime] = useState("lucro_real");
+
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [editRegime, setEditRegime] = useState("lucro_real");
 
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
@@ -326,6 +329,23 @@ export default function GestaoAmbiente() {
       if (selectedEnv) fetchGroups(selectedEnv.id);
     } catch (error) {
       toast.error("Erro ao remover grupo");
+    }
+  };
+
+  const handleUpdateCompanyRegime = async () => {
+    if (!editingCompany) return;
+    try {
+      const res = await fetch(`/api/config/companies?id=${editingCompany.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regime_tributario: editRegime }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      toast.success("Regime atualizado");
+      setEditingCompany(null);
+      if (selectedGroup) fetchCompanies(selectedGroup.id);
+    } catch {
+      toast.error("Erro ao atualizar regime");
     }
   };
 
@@ -679,15 +699,52 @@ export default function GestaoAmbiente() {
                       </span>
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-gray-400 hover:text-red-500"
-                    onClick={() => handleDeleteCompany(company.id)}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-gray-400 hover:text-blue-500"
+                      title="Alterar regime tributário"
+                      onClick={() => { setEditingCompany(company); setEditRegime(company.regime_tributario || 'lucro_real'); }}
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-gray-400 hover:text-red-500"
+                      onClick={() => handleDeleteCompany(company.id)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
                 </div>
+
+                {/* Modal inline de edição de regime */}
+                {editingCompany?.id === company.id && (
+                  <div className="mt-2 p-3 border border-blue-200 rounded-md bg-blue-50">
+                    <p className="text-xs font-medium text-blue-800 mb-2">Alterar Regime Tributário</p>
+                    <Select value={editRegime} onValueChange={setEditRegime}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="lucro_real">Lucro Real</SelectItem>
+                        <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
+                        <SelectItem value="simples_nacional">Simples Nacional</SelectItem>
+                        <SelectItem value="nao_informado">Não informado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-2 mt-2">
+                      <Button size="sm" className="h-7 text-xs flex-1" onClick={handleUpdateCompanyRegime}>
+                        Salvar
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditingCompany(null)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
               ))
             )}
           </div>

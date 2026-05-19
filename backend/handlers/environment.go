@@ -314,6 +314,49 @@ func CreateCompanyHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut && r.Method != http.MethodPatch {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id parameter", http.StatusBadRequest)
+			return
+		}
+
+		var payload struct {
+			RegimeTributario string `json:"regime_tributario"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		allowed := map[string]bool{
+			"lucro_real": true, "lucro_presumido": true,
+			"simples_nacional": true, "nao_informado": true,
+		}
+		if !allowed[payload.RegimeTributario] {
+			http.Error(w, "regime_tributario inválido", http.StatusBadRequest)
+			return
+		}
+
+		_, err := db.Exec(
+			"UPDATE companies SET regime_tributario = $1, updated_at = NOW() WHERE id = $2",
+			payload.RegimeTributario, id,
+		)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func DeleteCompanyHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")
