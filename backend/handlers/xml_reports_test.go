@@ -62,3 +62,21 @@ func TestXMLFornecedoresCCLASSTRIBHandler_Unauthorized(t *testing.T) {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
 }
+
+func TestMercadoriasXMLReportHandler_MethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/xml/reports/mercadorias", nil)
+	rr := httptest.NewRecorder()
+	MercadoriasXMLReportHandler(nil)(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestMercadoriasXMLReportHandler_Unauthorized(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/xml/reports/mercadorias", nil)
+	rr := httptest.NewRecorder()
+	MercadoriasXMLReportHandler(nil)(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}

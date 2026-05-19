@@ -193,6 +193,28 @@ func TestProcessXMLBatch_InvalidDate(t *testing.T) {
 // buildRegimeUpdate / updateCompanyRegimeFromCRT tests
 // ---------------------------------------------------------------------------
 
+// TestUpdateCompanyRegimeFromCRT_NilDB verifica que a função retorna sem panicar
+// quando buildRegimeUpdate retorna vazio (CNPJ vazio → early return antes do db.Exec).
+func TestUpdateCompanyRegimeFromCRT_NilDB(t *testing.T) {
+	// Não deve panicar: buildRegimeUpdate("", "1") retorna query="" → early return
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("updateCompanyRegimeFromCRT panicked with nil db and empty cnpj: %v", r)
+		}
+	}()
+	updateCompanyRegimeFromCRT(nil, "company-1", "", "1")
+}
+
+// TestUpdateCompanyRegimeFromCRT_UnknownCRT verifica early return para CRT desconhecido.
+func TestUpdateCompanyRegimeFromCRT_UnknownCRT(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("updateCompanyRegimeFromCRT panicked with unknown CRT: %v", r)
+		}
+	}()
+	updateCompanyRegimeFromCRT(nil, "company-1", "12345678000195", "9")
+}
+
 // TestUpdateCompanyRegimeFromCRT verifica o mapeamento CRT → regime_tributario.
 // Usa a função interna buildRegimeUpdate (sem dependência de banco de dados)
 // para testar a lógica de mapeamento de forma determinística.
