@@ -29,16 +29,6 @@ import { exportToExcel } from "@/lib/exportToExcel";
 import { formatCurrency } from "@/lib/utils";
 import { formatCnpjComApelido } from "@/lib/formatFilial";
 
-interface NfeImpostosRow {
-  filial_cnpj: string;
-  mes_ano: string;
-  total_ipi: number;
-  total_icms_st: number;
-  total_icms_part: number;
-  total_pis: number;
-  total_cofins: number;
-  qtd_notas: number;
-}
 
 interface AggregatedData {
   filial_nome: string;
@@ -83,7 +73,6 @@ const Mercadorias = () => {
   const [selectedTipoCfop, setSelectedTipoCfop] = useState<string>("all");
   const [data, setData] = useState<AggregatedData[]>([]);
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
-  const [nfeImpostos, setNfeImpostos] = useState<NfeImpostosRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -126,17 +115,6 @@ const Mercadorias = () => {
       })
       .catch(() => {});
   }, [token, companyId]);
-
-  // Fetch NF-e impostos (fonte independente do SPED — IPI da NF-e Bridge)
-  useEffect(() => {
-    if (!token) return;
-    fetch('/api/nfe-entradas/impostos', {
-      headers: { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId || '' },
-    })
-      .then(r => r.ok ? r.json() : { items: [] })
-      .then(d => setNfeImpostos(d.items || []))
-      .catch(() => {});
-  }, [token, companyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch informativos XML (IPI e PIS/COFINS de fornecedores SN, fonte XML exclusiva)
   useEffect(() => {
@@ -396,11 +374,6 @@ const Mercadorias = () => {
     entradas: { valor: 0, icms: 0, icmsProj: 0, ibsProj: 0, cbsProj: 0, valorTaxable: 0, icmsTaxable: 0 }
   });
 
-  // IPI das NF-e de entrada (fonte independente — ERP Bridge / upload XML)
-  const ipiNFe = nfeImpostos
-    .filter(r => isFilialSelected(r.filial_cnpj) && (selectedMonth === 'all' || r.mes_ano === selectedMonth))
-    .reduce((s, r) => s + r.total_ipi, 0);
-
   // Informativos XML — IPI e PIS/COFINS de fornecedores Simples Nacional (fonte XML exclusiva)
   const ipiXML = xmlInformativos
     .filter(r => selectedMonth === 'all' || r.mes_ano === selectedMonth)
@@ -617,13 +590,6 @@ const Mercadorias = () => {
                 <span className="text-gray-500">Valor de ICMS:</span>
                 <span className="font-medium">{formatCurrency(totals.entradas.icms)}</span>
               </div>
-              {ipiNFe > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">IPI (NF-e, inf.):</span>
-                  <span className="font-medium text-gray-400">{formatCurrency(ipiNFe)}</span>
-                </div>
-              )}
-
               <div className="my-2 border-t border-dashed border-gray-200"></div>
 
               <div className="flex justify-between">
