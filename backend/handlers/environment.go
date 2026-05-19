@@ -297,7 +297,7 @@ func CreateCompanyHandler(db *sql.DB) http.HandlerFunc {
 
 		regime := c.RegimeTributario
 		if regime == "" {
-			regime = "nao_informado"
+			regime = "lucro_real"
 		}
 
 		err = db.QueryRow(

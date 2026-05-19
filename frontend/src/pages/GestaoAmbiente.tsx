@@ -93,7 +93,7 @@ export default function GestaoAmbiente() {
   const [newCompanyCNPJ, setNewCompanyCNPJ] = useState("");
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyTradeName, setNewCompanyTradeName] = useState("");
-  const [newCompanyRegime, setNewCompanyRegime] = useState("nao_informado");
+  const [newCompanyRegime, setNewCompanyRegime] = useState("lucro_real");
 
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
@@ -288,7 +288,7 @@ export default function GestaoAmbiente() {
       setNewCompanyCNPJ("");
       setNewCompanyName("");
       setNewCompanyTradeName("");
-      setNewCompanyRegime("nao_informado");
+      setNewCompanyRegime("lucro_real");
       fetchCompanies(selectedGroup.id);
     } catch (error) {
       toast.error("Erro ao criar empresa");
