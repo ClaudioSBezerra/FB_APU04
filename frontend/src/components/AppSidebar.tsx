@@ -78,11 +78,12 @@ interface NavSection {
 const sections: NavSection[] = [
   {
     id: "simulador",
-    title: "Simulador da Reforma Tributária",
+    title: "Simulador da Reforma Tributária - SPED",
     sectionIcon: TrendingUp,
     items: [
       { title: "Importar SPEDs",            url: "/importar-efd",                  icon: FileSpreadsheet },
       { title: "Operações Comerciais",      url: "/mercadorias",                   icon: ShoppingCart },
+      { title: "Operações Comerciais (XMLs)", url: "/mercadorias/xml",             icon: ShoppingCart },
       { title: "Operações Simples Nacional",url: "/operacoes/simples",             icon: Store },
       { title: "Dashboard Reforma",         url: "/dashboards",                    icon: LayoutDashboard },
       { title: "Resumo Executivo IA",       url: "/relatorios/resumo-executivo",   icon: Sparkles },
@@ -203,7 +204,7 @@ export function AppSidebar() {
           <div className="grid flex-1 text-left leading-tight">
             <span className="font-bold text-sm truncate">FBTax Cloud</span>
             <span className="text-[10px] text-muted-foreground truncate">
-              Simulador da Reforma Tributária
+              Simulador da Reforma Tributária - SPED
             </span>
           </div>
         </div>

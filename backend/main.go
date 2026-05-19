@@ -561,10 +561,14 @@ func main() {
 	// Upload unificado de XMLs — NF-e e CT-e drag-and-drop
 	// NOTA: rotas mais específicas registradas ANTES dos prefixos mais curtos
 	http.HandleFunc("/api/xml/notas/", withAuth(handlers.XMLNotasHandler, ""))
+	http.HandleFunc("/api/xml/painel/entradas-informativos", withAuth(handlers.XMLEntradasInformativosHandler, ""))
 	http.HandleFunc("/api/xml/painel/", withAuth(handlers.XMLPainelHandler, ""))
 	http.HandleFunc("/api/xml/upload", withAuth(handlers.XMLUploadHandler, ""))
 	http.HandleFunc("/api/xml/upload-batches/", withAuth(handlers.XMLUploadBatchStatusHandler, ""))
 	http.HandleFunc("/api/xml/upload-batches", withAuth(handlers.XMLUploadBatchesHandler, ""))
+
+	// Relatório XML Operações Comerciais (painel /mercadorias/xml)
+	http.HandleFunc("/api/xml/reports/mercadorias", withAuth(handlers.MercadoriasXMLReportHandler, ""))
 
 	// Relatórios de Saneamento CCLASSTRIB — /csv deve ser registrado ANTES de /saneamento (mais específico primeiro)
 	http.HandleFunc("/api/xml/reports/saneamento/csv", withAuth(handlers.XMLSaneamentoCSVHandler, ""))

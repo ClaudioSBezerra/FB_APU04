@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/sonner'
 import ImportarEFD from './pages/ImportarEFD'
 import Mercadorias from './pages/Mercadorias'
+import MercadoriasXML from './pages/MercadoriasXML'
 import OperacoesSimplesNacional from './pages/OperacoesSimplesNacional'
 import Dashboard from './pages/Dashboard'
 import ExecutiveSummary from './pages/ExecutiveSummary'
@@ -145,8 +146,9 @@ function AppLayout() {
             <Routes>
               <Route path="/" element={<Navigate to="/mercadorias" replace />} />
 
-              {/* Simulador da Reforma Tributária */}
+              {/* Simulador da Reforma Tributária - SPED */}
               <Route path="/importar-efd"                      element={<ImportarEFD />} />
+              <Route path="/mercadorias/xml"                   element={<MercadoriasXML />} />
               <Route path="/mercadorias"                       element={<Mercadorias />} />
               <Route path="/operacoes/simples"                 element={<OperacoesSimplesNacional />} />
               <Route path="/dashboards"                        element={<Dashboard />} />
@@ -187,7 +189,7 @@ function AppLayout() {
 
 // ── App root ─────────────────────────────────────────────────────────────────
 function App() {
-  console.log('App Version: 1.0.0 — FB_APU04 Simulador da Reforma Tributária')
+  console.log('App Version: 1.0.0 — FB_APU04 Simulador da Reforma Tributária - SPED')
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>

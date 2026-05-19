@@ -641,6 +641,10 @@ func NfeSaidasUploadHandler(db *sql.DB) http.HandlerFunc {
 				continue
 			}
 
+			// Auto-detectar regime tributário da empresa a partir do CRT do XML de saída.
+			// Em saídas, o emitente é a própria empresa (filial cadastrada).
+			updateCompanyRegimeFromCRT(db, companyID, inf.Emit.CNPJ, inf.Emit.CRT)
+
 			result.Importados++
 		}
 

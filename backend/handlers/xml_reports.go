@@ -13,6 +13,119 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// MercadoriasXMLReportHandler — GET /api/xml/reports/mercadorias
+// Retorna dados agregados de nfe_entradas e nfe_saidas (source='xml_upload')
+// no mesmo shape JSON que /api/reports/mercadorias, para uso em MercadoriasXML.tsx.
+// ---------------------------------------------------------------------------
+
+func MercadoriasXMLReportHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Método não permitido")
+			return
+		}
+
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Não autenticado")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa: "+err.Error())
+			return
+		}
+
+		q := r.URL.Query()
+		tipoOperacao := strings.TrimSpace(q.Get("tipo_operacao"))
+
+		args := []interface{}{companyID}
+		where := "WHERE company_id = $1"
+		idx := 2
+
+		if tipoOperacao != "" && tipoOperacao != "todos" {
+			where += fmt.Sprintf(" AND tipo_operacao = $%d", idx)
+			args = append(args, tipoOperacao)
+			idx++
+		}
+		_ = idx // suppress unused warning
+
+		rows, err := db.Query(fmt.Sprintf(`
+			SELECT
+				filial_cnpj,
+				filial_nome,
+				mes_ano,
+				valor,
+				icms,
+				vl_ipi,
+				vl_pis,
+				vl_cofins,
+				vl_icms_projetado,
+				vl_ibs_projetado,
+				vl_cbs_projetado,
+				tipo,
+				COALESCE(tipo_cfop, ''),
+				COALESCE(origem, ''),
+				tipo_operacao
+			FROM vw_xml_operacoes_resumo
+			%s
+			ORDER BY mes_ano, tipo, filial_cnpj`, where),
+			args...,
+		)
+		if err != nil {
+			log.Printf("[MercadoriasXML] query error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar banco")
+			return
+		}
+		defer rows.Close()
+
+		type xmlOpRow struct {
+			FilialCNPJ        string  `json:"filial_cnpj"`
+			FilialNome        string  `json:"filial_nome"`
+			MesAno            string  `json:"mes_ano"`
+			Valor             float64 `json:"valor"`
+			ICMS              float64 `json:"icms"`
+			VlIPI             float64 `json:"vl_ipi"`
+			VlPIS             float64 `json:"vl_pis"`
+			VlCOFINS          float64 `json:"vl_cofins"`
+			VlICMSProjetado   float64 `json:"vl_icms_projetado"`
+			VlIBSProjetado    float64 `json:"vl_ibs_projetado"`
+			VlCBSProjetado    float64 `json:"vl_cbs_projetado"`
+			Tipo              string  `json:"tipo"`
+			TipoCFOP          string  `json:"tipo_cfop"`
+			Origem            string  `json:"origem"`
+			TipoOperacao      string  `json:"tipo_operacao"`
+		}
+
+		var list []xmlOpRow
+		for rows.Next() {
+			var row xmlOpRow
+			if err := rows.Scan(
+				&row.FilialCNPJ, &row.FilialNome, &row.MesAno,
+				&row.Valor, &row.ICMS,
+				&row.VlIPI, &row.VlPIS, &row.VlCOFINS,
+				&row.VlICMSProjetado, &row.VlIBSProjetado, &row.VlCBSProjetado,
+				&row.Tipo, &row.TipoCFOP, &row.Origem, &row.TipoOperacao,
+			); err != nil {
+				log.Printf("[MercadoriasXML] scan error: %v", err)
+				continue
+			}
+			list = append(list, row)
+		}
+
+		if list == nil {
+			list = []xmlOpRow{}
+		}
+
+		json.NewEncoder(w).Encode(list)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // xml_reports.go — Relatórios de Saneamento CCLASSTRIB
 //
 // GET /api/xml/reports/saneamento/csv          → XMLSaneamentoCSVHandler
