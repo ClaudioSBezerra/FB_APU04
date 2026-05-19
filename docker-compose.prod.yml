@@ -76,21 +76,21 @@ services:
       - postgres_data_prod:/var/lib/postgresql/data
     networks:
       - fb_net
-    shm_size: 256mb
+    shm_size: 512mb
     command:
       - "postgres"
       - "-c"
-      - "shared_buffers=512MB"
+      - "shared_buffers=1GB"
       - "-c"
-      - "effective_cache_size=1536MB"
+      - "effective_cache_size=4GB"
       - "-c"
-      - "work_mem=16MB"
+      - "work_mem=32MB"
       - "-c"
-      - "maintenance_work_mem=256MB"
+      - "maintenance_work_mem=512MB"
       - "-c"
-      - "max_wal_size=2GB"
+      - "max_wal_size=4GB"
       - "-c"
-      - "min_wal_size=512MB"
+      - "min_wal_size=1GB"
       - "-c"
       - "checkpoint_completion_target=0.9"
       - "-c"
