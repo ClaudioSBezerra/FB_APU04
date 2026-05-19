@@ -78,7 +78,7 @@ interface NavSection {
 const sections: NavSection[] = [
   {
     id: "simulador",
-    title: "Simulador da Reforma Tributária",
+    title: "Simulador da Reforma Tributária - SPED",
     sectionIcon: TrendingUp,
     items: [
       { title: "Importar SPEDs",            url: "/importar-efd",                  icon: FileSpreadsheet },
@@ -203,7 +203,7 @@ export function AppSidebar() {
           <div className="grid flex-1 text-left leading-tight">
             <span className="font-bold text-sm truncate">FBTax Cloud</span>
             <span className="text-[10px] text-muted-foreground truncate">
-              Simulador da Reforma Tributária
+              Simulador da Reforma Tributária - SPED
             </span>
           </div>
         </div>

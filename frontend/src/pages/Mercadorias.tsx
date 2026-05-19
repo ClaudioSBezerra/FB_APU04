@@ -90,6 +90,16 @@ const Mercadorias = () => {
   const [error, setError] = useState<string | null>(null);
   const [apelidos, setApelidos] = useState<Record<string, string>>({});
 
+  // Estado para informativos XML (IPI e PIS/COFINS Simples Nacional, fonte XML exclusiva)
+  interface XmlInformativoRow {
+    mes_ano: string;
+    total_ipi: number;
+    total_pis_simples: number;
+    total_cofins_simples: number;
+    qtd_notas: number;
+  }
+  const [xmlInformativos, setXmlInformativos] = useState<XmlInformativoRow[]>([]);
+
   // Fetch tax rates
   useEffect(() => {
     if (!token) return;
@@ -125,6 +135,17 @@ const Mercadorias = () => {
     })
       .then(r => r.ok ? r.json() : { items: [] })
       .then(d => setNfeImpostos(d.items || []))
+      .catch(() => {});
+  }, [token, companyId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch informativos XML (IPI e PIS/COFINS de fornecedores SN, fonte XML exclusiva)
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/xml/painel/entradas-informativos', {
+      headers: { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId || '' },
+    })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setXmlInformativos(d.items || []))
       .catch(() => {});
   }, [token, companyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -380,6 +401,14 @@ const Mercadorias = () => {
     .filter(r => isFilialSelected(r.filial_cnpj) && (selectedMonth === 'all' || r.mes_ano === selectedMonth))
     .reduce((s, r) => s + r.total_ipi, 0);
 
+  // Informativos XML — IPI e PIS/COFINS de fornecedores Simples Nacional (fonte XML exclusiva)
+  const ipiXML = xmlInformativos
+    .filter(r => selectedMonth === 'all' || r.mes_ano === selectedMonth)
+    .reduce((s, r) => s + r.total_ipi, 0);
+  const pisCofinsSimplesXML = xmlInformativos
+    .filter(r => selectedMonth === 'all' || r.mes_ano === selectedMonth)
+    .reduce((s, r) => s + r.total_pis_simples + r.total_cofins_simples, 0);
+
   // Projection Logic for 2027-2033 (based on currently filtered totals)
   const projectionData = taxRates
     .filter(r => r.ano >= 2027 && r.ano <= 2033)
@@ -613,6 +642,14 @@ const Mercadorias = () => {
               <div className="flex justify-between pt-2 border-t mt-2">
                 <span className="text-green-700 font-bold">Total Créditos:</span>
                 <span className="font-bold text-green-600 text-base">{formatCurrency(totalCreditos)}</span>
+              </div>
+              <div className="flex justify-between pt-2">
+                <span className="text-gray-500">IPI (Informativo):</span>
+                <span className="font-medium text-gray-400">{formatCurrency(ipiXML)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">PIS/COFINS Fornecedores Simples Nacional (Informativo):</span>
+                <span className="font-medium text-gray-400">{formatCurrency(pisCofinsSimplesXML)}</span>
               </div>
             </div>
           </CardContent>

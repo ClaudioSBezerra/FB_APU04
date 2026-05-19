@@ -31,7 +31,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 
 const mainItems = [
-  { id: 'simulador', icon: TrendingUp,  label: 'Simulador RT',     path: '/mercadorias' },
+  { id: 'simulador', icon: TrendingUp,  label: 'Simulador RT - SPED', path: '/mercadorias' },
   { id: 'notas',     icon: FolderInput, label: 'Notas Importadas', path: '/apuracao/entrada/notas' },
   { id: 'painel',    icon: BarChart3,   label: 'Painel XMLs',      path: '/painel/xmls' },
 ]

@@ -13,6 +13,79 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// XMLEntradasInformativosHandler — GET /api/xml/painel/entradas-informativos
+// Retorna agregados de IPI e PIS/COFINS de fornecedores Simples Nacional a
+// partir de XMLs de entrada (source='xml_upload' apenas).
+// ---------------------------------------------------------------------------
+
+func XMLEntradasInformativosHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Método não permitido")
+			return
+		}
+
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Não autenticado")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa: "+err.Error())
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT mes_ano, total_ipi, total_pis_simples, total_cofins_simples, qtd_notas
+			FROM vw_xml_entradas_informativos
+			WHERE company_id = $1
+			ORDER BY mes_ano`,
+			companyID,
+		)
+		if err != nil {
+			log.Printf("[XMLEntradasInformativos] query error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar banco")
+			return
+		}
+		defer rows.Close()
+
+		type informativoRow struct {
+			MesAno          string  `json:"mes_ano"`
+			TotalIPI        float64 `json:"total_ipi"`
+			TotalPisSimples  float64 `json:"total_pis_simples"`
+			TotalCofinsSimples float64 `json:"total_cofins_simples"`
+			QtdNotas        int     `json:"qtd_notas"`
+		}
+
+		var list []informativoRow
+		for rows.Next() {
+			var row informativoRow
+			if err := rows.Scan(
+				&row.MesAno, &row.TotalIPI, &row.TotalPisSimples, &row.TotalCofinsSimples, &row.QtdNotas,
+			); err != nil {
+				log.Printf("[XMLEntradasInformativos] scan error: %v", err)
+				continue
+			}
+			list = append(list, row)
+		}
+
+		if list == nil {
+			list = []informativoRow{}
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"total": len(list),
+			"items": list,
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // XMLPainelHandler — GET /api/xml/painel/{tipo}
 // Serve 3 rotas do painel de XMLs importados:
 //   - GET /api/xml/painel/entradas → vw_xml_entradas_resumo

@@ -13,7 +13,7 @@ export interface ModuleConfig {
 
 export const modules: Record<string, ModuleConfig> = {
   simulador: {
-    label: 'Simulador da Reforma Tributária',
+    label: 'Simulador da Reforma Tributária - SPED',
     tabs: [
       { label: 'Importar SPEDs',             path: '/importar-efd' },
       { label: 'Operações Comerciais',        path: '/mercadorias' },

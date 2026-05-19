@@ -145,7 +145,7 @@ function AppLayout() {
             <Routes>
               <Route path="/" element={<Navigate to="/mercadorias" replace />} />
 
-              {/* Simulador da Reforma Tributária */}
+              {/* Simulador da Reforma Tributária - SPED */}
               <Route path="/importar-efd"                      element={<ImportarEFD />} />
               <Route path="/mercadorias"                       element={<Mercadorias />} />
               <Route path="/operacoes/simples"                 element={<OperacoesSimplesNacional />} />
@@ -187,7 +187,7 @@ function AppLayout() {
 
 // ── App root ─────────────────────────────────────────────────────────────────
 function App() {
-  console.log('App Version: 1.0.0 — FB_APU04 Simulador da Reforma Tributária')
+  console.log('App Version: 1.0.0 — FB_APU04 Simulador da Reforma Tributária - SPED')
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
