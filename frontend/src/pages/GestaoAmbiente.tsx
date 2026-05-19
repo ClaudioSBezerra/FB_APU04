@@ -57,6 +57,7 @@ interface Company {
   cnpj: string;
   name: string;
   trade_name: string;
+  regime_tributario: string;
   created_at: string;
 }
 
@@ -662,6 +663,21 @@ export default function GestaoAmbiente() {
                     <p className="text-[10px] text-gray-400 font-mono truncate" title={company.id}>ID: {company.id}</p>
                     {company.cnpj && <p className="text-xs text-gray-500 font-mono">{company.cnpj}</p>}
                     {company.trade_name && <p className="text-xs text-gray-400 truncate">{company.trade_name}</p>}
+                    <p className="text-[10px] mt-0.5">
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-white font-medium ${
+                        company.regime_tributario === 'simples_nacional' ? 'bg-green-500' :
+                        company.regime_tributario === 'lucro_real' ? 'bg-blue-500' :
+                        company.regime_tributario === 'lucro_presumido' ? 'bg-purple-500' :
+                        'bg-gray-400'
+                      }`}>
+                        {{
+                          simples_nacional: 'Simples Nacional',
+                          lucro_real: 'Lucro Real',
+                          lucro_presumido: 'Lucro Presumido',
+                          nao_informado: 'Regime não informado',
+                        }[company.regime_tributario] ?? 'Regime não informado'}
+                      </span>
+                    </p>
                   </div>
                   <Button
                     variant="ghost"

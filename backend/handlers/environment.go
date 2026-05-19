@@ -29,9 +29,10 @@ type Company struct {
 	ID      string `json:"id"`
 	GroupID string `json:"group_id"`
 	// CNPJ      string `json:"cnpj"` // Deprecated
-	Name      string `json:"name"`
-	TradeName string `json:"trade_name"` // Fantasia
-	CreatedAt string `json:"created_at"`
+	Name              string `json:"name"`
+	TradeName         string `json:"trade_name"` // Fantasia
+	RegimeTributario  string `json:"regime_tributario"`
+	CreatedAt         string `json:"created_at"`
 }
 
 // --- Environment Handlers ---
@@ -233,7 +234,7 @@ func DeleteGroupHandler(db *sql.DB) http.HandlerFunc {
 func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := r.URL.Query().Get("group_id")
-		query := "SELECT id, group_id, name, COALESCE(trade_name, ''), created_at FROM companies"
+		query := "SELECT id, group_id, name, COALESCE(trade_name, ''), COALESCE(regime_tributario, 'nao_informado'), created_at FROM companies"
 		args := []interface{}{}
 
 		if groupID != "" {
@@ -252,7 +253,7 @@ func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 		var companies []Company
 		for rows.Next() {
 			var c Company
-			if err := rows.Scan(&c.ID, &c.GroupID, &c.Name, &c.TradeName, &c.CreatedAt); err != nil {
+			if err := rows.Scan(&c.ID, &c.GroupID, &c.Name, &c.TradeName, &c.RegimeTributario, &c.CreatedAt); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -294,9 +295,14 @@ func CreateCompanyHandler(db *sql.DB) http.HandlerFunc {
 			ownerID = nil // no owner found, leave NULL (still visible via group query)
 		}
 
+		regime := c.RegimeTributario
+		if regime == "" {
+			regime = "nao_informado"
+		}
+
 		err = db.QueryRow(
-			"INSERT INTO companies (group_id, name, trade_name, owner_id) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
-			c.GroupID, c.Name, c.TradeName, ownerID,
+			"INSERT INTO companies (group_id, name, trade_name, owner_id, regime_tributario) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at",
+			c.GroupID, c.Name, c.TradeName, ownerID, regime,
 		).Scan(&c.ID, &c.CreatedAt)
 
 		if err != nil {
