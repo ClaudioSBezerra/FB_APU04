@@ -19,7 +19,7 @@ import (
 )
 
 func StartWorker(db *sql.DB) {
-	const WorkerPoolSize = 2
+	const WorkerPoolSize = 3
 
 	fmt.Printf("Starting Background Worker Pool (%d workers)...\n", WorkerPoolSize)
 

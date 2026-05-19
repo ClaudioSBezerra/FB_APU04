@@ -102,7 +102,7 @@ services:
       - "-c"
       - "max_parallel_workers_per_gather=2"
       - "-c"
-      - "max_parallel_workers=4"
+      - "max_parallel_workers=6"
       - "-c"
       - "max_worker_processes=8"
       - "-c"
