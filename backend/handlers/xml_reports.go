@@ -42,38 +42,45 @@ func MercadoriasXMLReportHandler(db *sql.DB) http.HandlerFunc {
 
 		q := r.URL.Query()
 		tipoOperacao := strings.TrimSpace(q.Get("tipo_operacao"))
+		targetYear := strings.TrimSpace(q.Get("target_year"))
 
-		args := []interface{}{companyID}
-		where := "WHERE company_id = $1"
-		idx := 2
+		// $1 = targetYear (ano de simulação), $2 = companyID
+		args := []interface{}{targetYear, companyID}
+		where := "WHERE x.company_id = $2"
+		idx := 3
 
 		if tipoOperacao != "" && tipoOperacao != "todos" {
-			where += fmt.Sprintf(" AND tipo_operacao = $%d", idx)
+			where += fmt.Sprintf(" AND x.tipo_operacao = $%d", idx)
 			args = append(args, tipoOperacao)
 			idx++
 		}
 		_ = idx // suppress unused warning
 
+		// Aplica as mesmas fórmulas de projeção do painel SPED:
+		//   icms_proj = icms * (1 - perc_reduc_icms/100)
+		//   ibs_proj  = valor * (perc_ibs_uf + perc_ibs_mun) / 100
+		//   cbs_proj  = valor * perc_cbs / 100
 		rows, err := db.Query(fmt.Sprintf(`
 			SELECT
-				filial_cnpj,
-				filial_nome,
-				mes_ano,
-				valor,
-				icms,
-				vl_ipi,
-				vl_pis,
-				vl_cofins,
-				vl_icms_projetado,
-				vl_ibs_projetado,
-				vl_cbs_projetado,
-				tipo,
-				COALESCE(tipo_cfop, ''),
-				COALESCE(origem, ''),
-				tipo_operacao
-			FROM vw_xml_operacoes_resumo
+				x.filial_cnpj,
+				x.filial_nome,
+				x.mes_ano,
+				x.valor,
+				x.icms,
+				x.vl_ipi,
+				x.vl_pis,
+				x.vl_cofins,
+				x.icms * (1 - COALESCE(ta.perc_reduc_icms, 0) / 100.0)                                   AS vl_icms_projetado,
+				x.valor * (COALESCE(NULLIF(ta.perc_ibs_uf, 0), 9.0) + COALESCE(NULLIF(ta.perc_ibs_mun, 0), 8.7)) / 100.0 AS vl_ibs_projetado,
+				x.valor * COALESCE(NULLIF(ta.perc_cbs, 0), 8.80) / 100.0                                  AS vl_cbs_projetado,
+				x.tipo,
+				COALESCE(x.tipo_cfop, ''),
+				COALESCE(x.origem, ''),
+				x.tipo_operacao
+			FROM vw_xml_operacoes_resumo x
+			LEFT JOIN tabela_aliquotas ta ON ta.ano = COALESCE(NULLIF($1, '')::int, EXTRACT(YEAR FROM NOW())::int)
 			%s
-			ORDER BY mes_ano, tipo, filial_cnpj`, where),
+			ORDER BY x.mes_ano, x.tipo, x.filial_cnpj`, where),
 			args...,
 		)
 		if err != nil {
