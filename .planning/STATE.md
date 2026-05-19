@@ -121,5 +121,11 @@ Próximos passos sugeridos (deploy/ops):
 3. Verificar acesso anônimo ao Grafana em produção após deploy
 4. Avaliar Loki para log aggregation (v2 — RESEARCH.md)
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260519-ixg | Painel SPED/XML, IPI/PIS-COFINS SN informativos, Simulador RT-XMLs, auto-CRT | 2026-05-19 | d7800d2 | [260519-ixg-painel-sped-xml-crt-sn](./quick/260519-ixg-painel-sped-xml-crt-sn/) |
+
 ---
-*Last updated: 2026-05-17*
+*Last updated: 2026-05-19 — Completed quick task 260519-ixg: Painel SPED/XML, IPI/PIS-COFINS SN informativos, Simulador RT-XMLs, auto-CRT*
