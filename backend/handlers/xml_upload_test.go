@@ -158,6 +158,26 @@ func TestExtractXMLsFromZipFile_ValidXML(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// extractXMLsFromRarFile tests
+// ---------------------------------------------------------------------------
+
+func TestExtractXMLsFromRarFile_InvalidRAR(t *testing.T) {
+	f, err := os.CreateTemp("", "test-*.rar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := f.Name()
+	f.WriteString("not a rar archive")
+	f.Close()
+	t.Cleanup(func() { os.Remove(path) })
+
+	_, err = extractXMLsFromRarFile(path)
+	if err == nil {
+		t.Error("expected error for invalid RAR file")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // ProcessXMLBatch / processSingleXML tests (nil-DB panic recovery)
 // ---------------------------------------------------------------------------
 
@@ -349,5 +369,16 @@ func TestUpdateCompanyRegimeFromCRT(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestExtractXMLsFromRarFile_EmptyRAR(t *testing.T) {
+	// testdata/sample.rar é um RAR válido sem XMLs internos
+	result, err := extractXMLsFromRarFile("testdata/sample.rar")
+	if err != nil {
+		t.Fatalf("unexpected error for valid RAR: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected 0 XMLs, got %d", len(result))
 	}
 }

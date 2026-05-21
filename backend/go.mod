@@ -11,7 +11,10 @@ require (
 
 require github.com/joho/godotenv v1.5.1
 
-require github.com/klauspost/compress v1.17.9 // indirect
+require (
+	github.com/klauspost/compress v1.17.9 // indirect
+	github.com/nwaples/rardecode/v2 v2.2.2 // indirect
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

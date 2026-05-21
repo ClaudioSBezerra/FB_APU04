@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/nwaples/rardecode/v2"
 )
 
 // ---------------------------------------------------------------------------
@@ -104,6 +105,58 @@ func extractXMLsFromZipFiles(files []*zip.File) ([]namedXML, error) {
 // ---------------------------------------------------------------------------
 // xmlUploadError representa um erro de processamento de XML individual
 // ---------------------------------------------------------------------------
+
+// extractXMLsFromRarFile extrai XMLs de um arquivo .rar usando rardecode (Go puro).
+// Aplica os mesmos limites anti-bomb e path traversal do extractXMLsFromZipFile.
+func extractXMLsFromRarFile(path string) ([]namedXML, error) {
+	r, err := rardecode.OpenReader(path)
+	if err != nil {
+		return nil, fmt.Errorf("RAR inválido: %w", err)
+	}
+	defer r.Close()
+
+	var totalUncompressed uint64
+	var xmlFiles []namedXML
+
+	for {
+		hdr, err := r.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("erro ao ler RAR: %w", err)
+		}
+		if hdr.IsDir {
+			continue
+		}
+		// T-02-02-03: path traversal
+		if strings.Contains(hdr.Name, "..") {
+			continue
+		}
+		baseName := filepath.Base(hdr.Name)
+		if !strings.EqualFold(filepath.Ext(baseName), ".xml") {
+			continue
+		}
+
+		// T-02-02-01: anti-bomb (UnPackedSize pode ser 0 para RAR5 — verificamos após leitura)
+		totalUncompressed += uint64(hdr.UnPackedSize)
+		if totalUncompressed > MaxUncompressedBytes {
+			return nil, fmt.Errorf("conteúdo do RAR excede limite de 8GB após descompressão")
+		}
+
+		data, err := io.ReadAll(io.LimitReader(r, MaxSingleXMLBytes+1))
+		if err != nil {
+			return nil, fmt.Errorf("erro ao ler %s no RAR: %w", baseName, err)
+		}
+		if int64(len(data)) > MaxSingleXMLBytes {
+			return nil, fmt.Errorf("arquivo %s excede limite de 10MB por XML", baseName)
+		}
+
+		xmlFiles = append(xmlFiles, namedXML{Name: baseName, Data: data})
+	}
+
+	return xmlFiles, nil
+}
 
 type xmlUploadError struct {
 	Filename string `json:"filename"`
@@ -553,9 +606,9 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			}
 
 			ext := strings.ToLower(filepath.Ext(fhdr.Filename))
-			if ext == ".zip" {
-				// Gravar ZIP em arquivo temporário para não carregar 600 MB+ na RAM
-				tmpFile, tmpErr := os.CreateTemp("", "xmlupload-*.zip")
+			if ext == ".zip" || ext == ".rar" {
+				// Gravar arquivo em disco temporário para não carregar 600 MB+ na RAM
+				tmpFile, tmpErr := os.CreateTemp("", "xmlupload-*"+ext)
 				if tmpErr != nil {
 					fh.Close()
 					jsonErr(w, http.StatusInternalServerError, "Erro ao criar arquivo temporário")
@@ -575,14 +628,20 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 					jsonErr(w, http.StatusRequestEntityTooLarge, "Arquivo excede limite de 2GB")
 					return
 				}
-				extracted, zipErr := extractXMLsFromZipFile(tmpPath)
+				var extracted []namedXML
+				var archErr error
+				if ext == ".rar" {
+					extracted, archErr = extractXMLsFromRarFile(tmpPath)
+				} else {
+					extracted, archErr = extractXMLsFromZipFile(tmpPath)
+				}
 				os.Remove(tmpPath)
-				if zipErr != nil {
-					log.Printf("[XMLUpload] user=%s arquivo=%s ZIP error: %v", userID, fhdr.Filename, zipErr)
-					jsonErr(w, http.StatusBadRequest, "Erro ao processar ZIP '"+fhdr.Filename+"': "+zipErr.Error())
+				if archErr != nil {
+					log.Printf("[XMLUpload] user=%s arquivo=%s erro: %v", userID, fhdr.Filename, archErr)
+					jsonErr(w, http.StatusBadRequest, "Erro ao processar '"+fhdr.Filename+"': "+archErr.Error())
 					return
 				}
-				log.Printf("[XMLUpload] user=%s arquivo=%s ZIP extraídos: %d XMLs", userID, fhdr.Filename, len(extracted))
+				log.Printf("[XMLUpload] user=%s arquivo=%s extraídos: %d XMLs", userID, fhdr.Filename, len(extracted))
 				xmlFiles = append(xmlFiles, extracted...)
 			} else if ext == ".xml" {
 				rawData, readErr := io.ReadAll(io.LimitReader(fh, MaxSingleXMLBytes+1))
@@ -599,7 +658,7 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			} else {
 				fh.Close()
 				log.Printf("[XMLUpload] user=%s arquivo=%s formato não suportado (ext=%s)", userID, fhdr.Filename, ext)
-				jsonErr(w, http.StatusBadRequest, "Formato não suportado: envie .xml ou .zip")
+				jsonErr(w, http.StatusBadRequest, "Formato não suportado: envie .xml, .zip ou .rar")
 				return
 			}
 		}

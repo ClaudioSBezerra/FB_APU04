@@ -395,3 +395,15 @@ func TestUploadHandler_OPTIONS(t *testing.T) {
 		t.Errorf("UploadHandler OPTIONS: got %d, want %d", rr.Code, http.StatusOK)
 	}
 }
+
+// ─── Environment/Group/Company handlers (Unauthorized guard) ──────────────────
+
+func TestUpdateCompanyHandler_MethodNotAllowed(t *testing.T) {
+	handler := UpdateCompanyHandler(nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/config/companies?id=1", nil)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("UpdateCompanyHandler GET: got %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+}

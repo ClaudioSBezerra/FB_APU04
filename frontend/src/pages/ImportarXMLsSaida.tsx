@@ -189,11 +189,14 @@ export default function ImportarXMLsSaida() {
       'text/xml': ['.xml'],
       'application/zip': ['.zip'],
       'application/x-zip-compressed': ['.zip'],
+      'application/x-rar-compressed': ['.rar'],
+      'application/x-rar-compressed': ['.rar'],
+      'application/x-7z-compressed': ['.7z'],
     },
     maxSize: 2 * 1024 * 1024 * 1024,
     multiple: true,
     onDropRejected: (rejected) => {
-      toast.error(`${rejected.length} arquivo(s) rejeitado(s). Apenas XML e ZIP até 2GB.`);
+      toast.error(`${rejected.length} arquivo(s) rejeitado(s). Apenas XML, ZIP, RAR e 7z até 2GB.`);
     },
     onDrop: handleUpload,
     disabled: uploadState === 'uploading' || uploadState === 'polling',
@@ -240,8 +243,8 @@ export default function ImportarXMLsSaida() {
               {!isProcessing && isDragActive && <p className="text-sm font-medium">Solte os arquivos aqui</p>}
               {!isProcessing && !isDragActive && (
                 <>
-                  <p className="text-sm font-medium">Arraste XMLs ou ZIP aqui, ou clique para selecionar</p>
-                  <p className="text-xs text-muted-foreground mt-1">Aceita .xml e .zip — máximo 2GB</p>
+                  <p className="text-sm font-medium">Arraste XMLs ou compactados (.zip/.rar/.7z) aqui, ou clique</p>
+                  <p className="text-xs text-muted-foreground mt-1">Aceita .xml, .zip, .rar, .7z — máximo 2GB</p>
                 </>
               )}
             </div>
