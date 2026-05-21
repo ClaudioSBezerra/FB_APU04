@@ -135,6 +135,7 @@ WITH efd AS (
   JOIN import_jobs j ON j.id = c.job_id
   WHERE j.company_id = $1
     AND c.ind_oper = $2
+    AND (c.dt_e_s IS NOT NULL OR c.dt_doc IS NOT NULL)
   GROUP BY 1
 ),
 xml AS (
@@ -144,6 +145,7 @@ xml AS (
     SUM(v_nf) AS total_xml
   FROM %s
   WHERE company_id = $1
+    AND mes_ano IS NOT NULL
   GROUP BY 1
 )
 SELECT
@@ -218,21 +220,26 @@ func LacunasMensalHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Anti-join com LEFT JOIN — mais eficiente que NOT EXISTS para agregação
+		// CTE isola o alias mes_ano para evitar ambiguidade com coluna homônima do JOIN
 		query := fmt.Sprintf(`
-SELECT
-  TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') AS mes_ano,
-  COUNT(*)       AS qtd_falta,
-  SUM(c.vl_doc)  AS valor_falta
-FROM reg_c100 c
-JOIN import_jobs j ON j.id = c.job_id
-LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = c.chv_nfe
-WHERE j.company_id = $1
-  AND c.ind_oper = $2
-  AND c.cod_mod IN ('55', '65')
-  AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
-  AND x.chave_nfe IS NULL
-GROUP BY 1
+WITH lacunas AS (
+  SELECT
+    TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') AS mes_ano,
+    COUNT(*)       AS qtd_falta,
+    SUM(c.vl_doc)  AS valor_falta
+  FROM reg_c100 c
+  JOIN import_jobs j ON j.id = c.job_id
+  LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = c.chv_nfe
+  WHERE j.company_id = $1
+    AND c.ind_oper = $2
+    AND c.cod_mod IN ('55', '65')
+    AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
+    AND x.chave_nfe IS NULL
+  GROUP BY 1
+)
+SELECT mes_ano, qtd_falta, valor_falta
+FROM lacunas
+WHERE mes_ano IS NOT NULL
 ORDER BY SUBSTRING(mes_ano,4,4), SUBSTRING(mes_ano,1,2)
 `, tabelaXML)
 
