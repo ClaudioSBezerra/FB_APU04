@@ -176,6 +176,7 @@ export default function ImportarXMLsEntrada() {
       }
       files.forEach(f => formData.append('file', f));
 
+      const uploadStart = new Date(); // capturado antes do fetch — batches são criados durante o request
       const res = await fetch('/api/xml/upload', {
         method: 'POST',
         body: formData,
@@ -200,7 +201,7 @@ export default function ImportarXMLsEntrada() {
         setBatchId(data.batch_id);
         setTotalBatches(tb);
         setTotalXMLs(data.total_count ?? 0);
-        setUploadStartTime(new Date());
+        setUploadStartTime(uploadStart);
         setUploadState('polling');
         toast.success(tb > 1
           ? `Upload recebido. Processando ${tb} lotes em background...`
