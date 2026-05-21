@@ -32,6 +32,7 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Importar XMLs CT-es',    path: '/importacoes/xml/ctes',          adminOnly: true },
       { label: 'Saneamento CCLASSTRIB',  path: '/relatorios/saneamento-cclasstrib' },
       { label: 'Conciliação Bridge vs XML', path: '/conciliacao/bridge-xml' },
+      { label: 'Comparativo EFD vs XMLs',  path: '/comparativo/efd-xml' },
       { label: 'NF-e Entradas',          path: '/apuracao/entrada/notas',        disabled: true },
       { label: 'Importar via ERP',       path: '/importacoes/erp-bridge',        adminOnly: true, disabled: true },
       { label: 'Logs de Importação',     path: '/importacoes/erp-bridge/logs',   adminOnly: true, disabled: true },
@@ -65,6 +66,7 @@ export function getActiveModule(pathname: string): string {
   if (pathname.startsWith('/dashboards')) return 'simulador'
   if (pathname.startsWith('/relatorios/saneamento')) return 'notas'
   if (pathname.startsWith('/conciliacao/')) return 'notas'
+  if (pathname.startsWith('/comparativo/')) return 'notas'
   if (pathname.startsWith('/relatorios/')) return 'simulador'
   if (pathname.startsWith('/apuracao/')) return 'notas'
   if (pathname.startsWith('/importacoes/')) return 'notas'

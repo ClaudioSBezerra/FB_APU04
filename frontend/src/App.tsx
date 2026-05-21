@@ -21,6 +21,7 @@ import ImportarXMLsSaida from './pages/ImportarXMLsSaida'
 import ImportarXMLsCTe from './pages/ImportarXMLsCTe'
 import PainelXMLs from './pages/PainelXMLs'
 import ConciliacaoBridgeXML from './pages/ConciliacaoBridgeXML'
+import ComparativoEFDvsXML from './pages/ComparativoEFDvsXML'
 import RelatorioSaneamento from './pages/RelatorioSaneamento'
 import ERPBridgeConfig from './pages/ERPBridgeConfig'
 import ERPBridgeLogs from './pages/ERPBridgeLogs'
@@ -167,6 +168,7 @@ function AppLayout() {
               <Route path="/painel/xmls"                       element={<PainelXMLs />} />
               <Route path="/relatorios/saneamento-cclasstrib"  element={<RelatorioSaneamento />} />
               <Route path="/conciliacao/bridge-xml"            element={<ConciliacaoBridgeXML />} />
+              <Route path="/comparativo/efd-xml"               element={<ComparativoEFDvsXML />} />
 
               {/* Configurações */}
               <Route path="/config/aliquotas"                  element={<TabelaAliquotas />} />
