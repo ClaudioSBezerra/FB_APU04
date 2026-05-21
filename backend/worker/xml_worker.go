@@ -125,7 +125,10 @@ func extractXMLsFromZip(data []byte) ([]handlers.NamedXML, error) {
 		return nil, fmt.Errorf("ZIP inválido: %w", err)
 	}
 
-	const maxBytes = 100 * 1024 * 1024 // 100MB
+	// Chunk stored in DB = BatchChunkSize (2000) XMLs × MaxSingleXMLBytes (10 MB) worst-case.
+	// Typical NFe XMLs are 2–20 KB, so real usage is well under 500 MB.
+	const maxUncompressed uint64 = 500 * 1024 * 1024  // 500 MB anti-bomb limit for worker chunks
+	const maxSingleXML    int64  = 10 * 1024 * 1024   // 10 MB per XML
 	var totalUncompressed uint64
 	var xmlFiles []handlers.NamedXML
 
@@ -139,18 +142,21 @@ func extractXMLsFromZip(data []byte) ([]handlers.NamedXML, error) {
 		}
 
 		totalUncompressed += f.UncompressedSize64
-		if totalUncompressed > maxBytes {
-			return nil, fmt.Errorf("conteúdo do ZIP excede limite de 100MB após descompressão")
+		if totalUncompressed > maxUncompressed {
+			return nil, fmt.Errorf("conteúdo do chunk excede limite de 500MB após descompressão")
 		}
 
 		rc, err := f.Open()
 		if err != nil {
 			return nil, fmt.Errorf("erro ao abrir %s no ZIP: %w", baseName, err)
 		}
-		xmlData, err := io.ReadAll(io.LimitReader(rc, maxBytes))
+		xmlData, err := io.ReadAll(io.LimitReader(rc, maxSingleXML+1))
 		rc.Close()
 		if err != nil {
 			return nil, fmt.Errorf("erro ao ler %s no ZIP: %w", baseName, err)
+		}
+		if int64(len(xmlData)) > maxSingleXML {
+			return nil, fmt.Errorf("arquivo %s excede limite de 10MB por XML", baseName)
 		}
 
 		xmlFiles = append(xmlFiles, handlers.NamedXML{Name: baseName, Data: xmlData})

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -42,12 +43,27 @@ func extractXMLsFromZip(data []byte) ([]namedXML, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ZIP inválido: %w", err)
 	}
+	return extractXMLsFromZipFiles(r.File)
+}
 
+// extractXMLsFromZipFile abre um ZIP do disco e extrai os XMLs sem carregar o
+// arquivo inteiro na RAM — usado pelo handler de upload para ZIPs grandes.
+func extractXMLsFromZipFile(path string) ([]namedXML, error) {
+	r, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, fmt.Errorf("ZIP inválido: %w", err)
+	}
+	defer r.Close()
+	return extractXMLsFromZipFiles(r.File)
+}
+
+// extractXMLsFromZipFiles itera uma lista de entradas ZIP.
+// Mitigações: T-02-02-01 (anti-ZIP bomb), T-02-02-03 (path traversal).
+func extractXMLsFromZipFiles(files []*zip.File) ([]namedXML, error) {
 	var totalUncompressed uint64
 	var xmlFiles []namedXML
 
-	for _, f := range r.File {
-		// Ignorar diretórios
+	for _, f := range files {
 		if f.FileInfo().IsDir() {
 			continue
 		}
@@ -55,26 +71,28 @@ func extractXMLsFromZip(data []byte) ([]namedXML, error) {
 		if strings.Contains(f.Name, "..") {
 			continue
 		}
-		// Usar apenas o nome base do arquivo (ignora subpastas)
 		baseName := filepath.Base(f.Name)
 		if !strings.EqualFold(filepath.Ext(baseName), ".xml") {
 			continue
 		}
 
-		// T-02-02-01: verificar tamanho antes de abrir (anti-ZIP bomb)
+		// T-02-02-01: verificar tamanho acumulado antes de abrir (anti-ZIP bomb)
 		totalUncompressed += f.UncompressedSize64
-		if totalUncompressed > MaxUploadBytes {
-			return nil, fmt.Errorf("conteúdo do ZIP excede limite de 100MB após descompressão")
+		if totalUncompressed > MaxUncompressedBytes {
+			return nil, fmt.Errorf("conteúdo do ZIP excede limite de 8GB após descompressão")
 		}
 
 		rc, err := f.Open()
 		if err != nil {
 			return nil, fmt.Errorf("erro ao abrir %s no ZIP: %w", baseName, err)
 		}
-		xmlData, err := io.ReadAll(io.LimitReader(rc, MaxUploadBytes))
+		xmlData, err := io.ReadAll(io.LimitReader(rc, MaxSingleXMLBytes+1))
 		rc.Close()
 		if err != nil {
 			return nil, fmt.Errorf("erro ao ler %s no ZIP: %w", baseName, err)
+		}
+		if int64(len(xmlData)) > MaxSingleXMLBytes {
+			return nil, fmt.Errorf("arquivo %s excede limite de 10MB por XML", baseName)
 		}
 
 		xmlFiles = append(xmlFiles, namedXML{Name: baseName, Data: xmlData})
@@ -498,14 +516,14 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		// T-02-02-07: validar Content-Length ANTES de ler o body
-		if r.ContentLength > MaxUploadBytes {
-			jsonErr(w, http.StatusRequestEntityTooLarge, "Arquivo excede limite de 100MB")
+		if r.ContentLength > MaxUploadFileBytes {
+			jsonErr(w, http.StatusRequestEntityTooLarge, "Arquivo excede limite de 2GB")
 			return
 		}
 
-		// Parsear multipart com limite de 100MB
-		if err := r.ParseMultipartForm(MaxUploadBytes); err != nil {
-			jsonErr(w, http.StatusRequestEntityTooLarge, "Arquivo excede limite de 100MB")
+		// Parsear multipart mantendo ≤64MB em RAM; arquivos maiores vão para disco
+		if err := r.ParseMultipartForm(64 << 20); err != nil {
+			jsonErr(w, http.StatusRequestEntityTooLarge, "Arquivo excede limite de 2GB")
 			return
 		}
 
@@ -533,30 +551,53 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 				jsonErr(w, http.StatusInternalServerError, "Erro ao ler arquivo: "+err.Error())
 				return
 			}
-			rawData, err := io.ReadAll(io.LimitReader(fh, MaxUploadBytes+1))
-			fh.Close()
-			if err != nil {
-				jsonErr(w, http.StatusInternalServerError, "Erro ao ler arquivo: "+err.Error())
-				return
-			}
-			if int64(len(rawData)) > MaxUploadBytes {
-				jsonErr(w, http.StatusRequestEntityTooLarge, "Arquivo excede limite de 100MB")
-				return
-			}
 
 			ext := strings.ToLower(filepath.Ext(fhdr.Filename))
 			if ext == ".zip" {
-				extracted, err := extractXMLsFromZip(rawData)
-				if err != nil {
-					log.Printf("[XMLUpload] user=%s arquivo=%s ZIP error: %v", userID, fhdr.Filename, err)
-					jsonErr(w, http.StatusBadRequest, "Erro ao processar ZIP '"+fhdr.Filename+"': "+err.Error())
+				// Gravar ZIP em arquivo temporário para não carregar 600 MB+ na RAM
+				tmpFile, tmpErr := os.CreateTemp("", "xmlupload-*.zip")
+				if tmpErr != nil {
+					fh.Close()
+					jsonErr(w, http.StatusInternalServerError, "Erro ao criar arquivo temporário")
+					return
+				}
+				tmpPath := tmpFile.Name()
+				written, copyErr := io.Copy(tmpFile, io.LimitReader(fh, MaxUploadFileBytes+1))
+				tmpFile.Close()
+				fh.Close()
+				if copyErr != nil {
+					os.Remove(tmpPath)
+					jsonErr(w, http.StatusInternalServerError, "Erro ao ler arquivo: "+copyErr.Error())
+					return
+				}
+				if written > MaxUploadFileBytes {
+					os.Remove(tmpPath)
+					jsonErr(w, http.StatusRequestEntityTooLarge, "Arquivo excede limite de 2GB")
+					return
+				}
+				extracted, zipErr := extractXMLsFromZipFile(tmpPath)
+				os.Remove(tmpPath)
+				if zipErr != nil {
+					log.Printf("[XMLUpload] user=%s arquivo=%s ZIP error: %v", userID, fhdr.Filename, zipErr)
+					jsonErr(w, http.StatusBadRequest, "Erro ao processar ZIP '"+fhdr.Filename+"': "+zipErr.Error())
 					return
 				}
 				log.Printf("[XMLUpload] user=%s arquivo=%s ZIP extraídos: %d XMLs", userID, fhdr.Filename, len(extracted))
 				xmlFiles = append(xmlFiles, extracted...)
 			} else if ext == ".xml" {
+				rawData, readErr := io.ReadAll(io.LimitReader(fh, MaxSingleXMLBytes+1))
+				fh.Close()
+				if readErr != nil {
+					jsonErr(w, http.StatusInternalServerError, "Erro ao ler arquivo: "+readErr.Error())
+					return
+				}
+				if int64(len(rawData)) > MaxSingleXMLBytes {
+					jsonErr(w, http.StatusRequestEntityTooLarge, "XML excede limite de 10MB por arquivo")
+					return
+				}
 				xmlFiles = append(xmlFiles, namedXML{Name: fhdr.Filename, Data: rawData})
 			} else {
+				fh.Close()
 				log.Printf("[XMLUpload] user=%s arquivo=%s formato não suportado (ext=%s)", userID, fhdr.Filename, ext)
 				jsonErr(w, http.StatusBadRequest, "Formato não suportado: envie .xml ou .zip")
 				return

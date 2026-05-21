@@ -23,10 +23,12 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	MaxUploadBytes      = 500 * 1024 * 1024 // 500MB — ZIPs com 30k XMLs podem pesar >100MB
-	MaxXMLsPerBatch     = 100_000           // sem limite prático; auto-split cuida do chunking
-	BatchChunkSize      = 2000              // XMLs por sub-lote quando auto-split é ativado
-	BatchAsyncThreshold = 50               // acima disto: background job
+	MaxUploadFileBytes   = 2 * 1024 * 1024 * 1024  // 2 GB — tamanho máximo do .zip/.xml enviado
+	MaxUncompressedBytes = 8 * 1024 * 1024 * 1024  // 8 GB — proteção anti-ZIP bomb (total descomprimido)
+	MaxSingleXMLBytes    = 10 * 1024 * 1024         // 10 MB — limite por XML individual
+	MaxXMLsPerBatch      = 100_000                  // sem limite prático; auto-split cuida do chunking
+	BatchChunkSize       = 2000                     // XMLs por sub-lote quando auto-split é ativado
+	BatchAsyncThreshold  = 50                       // acima disto: background job
 )
 
 // ---------------------------------------------------------------------------
