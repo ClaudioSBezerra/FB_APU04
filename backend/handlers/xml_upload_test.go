@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"database/sql"
+	"os"
 	"strings"
 	"testing"
 )
@@ -108,6 +109,51 @@ func TestExtractXMLsFromZip_NonXMLFile(t *testing.T) {
 	}
 	if len(result) != 0 {
 		t.Errorf("expected non-XML file to be skipped, got %d results", len(result))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// extractXMLsFromZipFile tests (disk-based path)
+// ---------------------------------------------------------------------------
+
+func writeTempZIP(t *testing.T, data []byte) (path string) {
+	t.Helper()
+	f, err := os.CreateTemp("", "test-*.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write(data)
+	f.Close()
+	t.Cleanup(func() { os.Remove(f.Name()) })
+	return f.Name()
+}
+
+func TestExtractXMLsFromZipFile_InvalidZIP(t *testing.T) {
+	f, err := os.CreateTemp("", "test-*.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := f.Name()
+	f.WriteString("not a zip")
+	f.Close()
+	t.Cleanup(func() { os.Remove(path) })
+
+	_, err = extractXMLsFromZipFile(path)
+	if err == nil {
+		t.Error("expected error for invalid ZIP file")
+	}
+}
+
+func TestExtractXMLsFromZipFile_ValidXML(t *testing.T) {
+	data := makeTestZIP(t, map[string][]byte{"nota.xml": []byte("<nfeProc/>")})
+	path := writeTempZIP(t, data)
+
+	result, err := extractXMLsFromZipFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Errorf("expected 1 file, got %d", len(result))
 	}
 }
 

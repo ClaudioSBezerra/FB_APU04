@@ -149,7 +149,7 @@ export default function ImportarXMLsSaida() {
       });
 
       if (res.status === 413) {
-        toast.error('Arquivo excede o limite de 100MB.');
+        toast.error('Arquivo excede o limite de 2GB.');
         setUploadState('error');
         return;
       }
@@ -190,10 +190,10 @@ export default function ImportarXMLsSaida() {
       'application/zip': ['.zip'],
       'application/x-zip-compressed': ['.zip'],
     },
-    maxSize: 100 * 1024 * 1024,
+    maxSize: 2 * 1024 * 1024 * 1024,
     multiple: true,
     onDropRejected: (rejected) => {
-      toast.error(`${rejected.length} arquivo(s) rejeitado(s). Apenas XML e ZIP até 100MB.`);
+      toast.error(`${rejected.length} arquivo(s) rejeitado(s). Apenas XML e ZIP até 2GB.`);
     },
     onDrop: handleUpload,
     disabled: uploadState === 'uploading' || uploadState === 'polling',
@@ -207,7 +207,7 @@ export default function ImportarXMLsSaida() {
         <h1 className="text-2xl font-bold tracking-tight">Importar XMLs de Saída</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Importe NF-e (mod. 55) e NFC-e (mod. 65) de saída. Arraste arquivos XML ou ZIP,
-          ou clique para selecionar. Limite: 100MB por envio.
+          ou clique para selecionar. Limite: 2GB por envio.
         </p>
       </div>
 
@@ -241,7 +241,7 @@ export default function ImportarXMLsSaida() {
               {!isProcessing && !isDragActive && (
                 <>
                   <p className="text-sm font-medium">Arraste XMLs ou ZIP aqui, ou clique para selecionar</p>
-                  <p className="text-xs text-muted-foreground mt-1">Aceita .xml e .zip — máximo 100MB</p>
+                  <p className="text-xs text-muted-foreground mt-1">Aceita .xml e .zip — máximo 2GB</p>
                 </>
               )}
             </div>
