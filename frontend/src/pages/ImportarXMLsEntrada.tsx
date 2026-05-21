@@ -40,6 +40,7 @@ interface BatchHistoryRow {
   rejected_count: number;
   status: string;
   user_email: string;
+  competencia?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,7 @@ export default function ImportarXMLsEntrada() {
   const [totalBatches, setTotalBatches] = useState(1);
   const [totalXMLs, setTotalXMLs] = useState(0);
   const [uploadStartTime, setUploadStartTime] = useState<Date | null>(null);
+  const [competencia, setCompetencia] = useState('');
 
   // ── Polling do status do batch (lote único ou primeiro lote) ──────────────
   const { data: batchStatus } = useQuery<BatchStatus>({
@@ -169,6 +171,11 @@ export default function ImportarXMLsEntrada() {
     try {
       const formData = new FormData();
       formData.append('tipo', TIPO);
+      if (competencia) {
+        // input type="month" retorna YYYY-MM; converter para MM/YYYY
+        const [y, m] = competencia.split('-');
+        formData.append('competencia', `${m}/${y}`);
+      }
       files.forEach(f => formData.append('file', f));
 
       const res = await fetch('/api/xml/upload', {
@@ -250,6 +257,44 @@ export default function ImportarXMLsEntrada() {
       {/* ── Zona de drag-and-drop ── */}
       <Card>
         <CardContent className="pt-6">
+
+          {/* ── Competência ── */}
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <div>
+              <label className="text-sm font-medium block mb-1">
+                Mês de competência
+                <span className="text-muted-foreground text-xs ml-1">(opcional)</span>
+              </label>
+              <input
+                type="month"
+                value={competencia}
+                onChange={e => setCompetencia(e.target.value)}
+                disabled={isProcessing}
+                className="border rounded-md px-2 py-1.5 text-sm bg-background disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            </div>
+            {competencia && (
+              <div className="flex flex-col justify-end pb-0.5">
+                <p className="text-xs text-muted-foreground mb-1">
+                  Substitui a data de emissão do XML como referência do período.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCompetencia('')}
+                  disabled={isProcessing}
+                  className="text-xs text-muted-foreground hover:text-foreground underline text-left"
+                >
+                  Usar data de emissão
+                </button>
+              </div>
+            )}
+            {!competencia && (
+              <p className="text-xs text-muted-foreground self-end pb-0.5">
+                Informe se as notas são de competência diferente da emissão (ex: notas de dez/2025 recebidas em mar/2026).
+              </p>
+            )}
+          </div>
+
           <div
             {...getRootProps()}
             className={[
@@ -353,6 +398,7 @@ export default function ImportarXMLsEntrada() {
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="py-1.5 px-2 text-[11px]">Data</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px]">Arquivo</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px]">Competência</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px]">Total</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-green-700">Importados</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px] text-red-600">Rejeitados</TableHead>
@@ -365,6 +411,11 @@ export default function ImportarXMLsEntrada() {
                     <TableRow key={row.id} className="h-8">
                       <TableCell className="py-1 px-2 text-[11px] whitespace-nowrap">{fmtDateTime(row.created_at)}</TableCell>
                       <TableCell className="py-1 px-2 text-[11px] max-w-[200px] truncate" title={row.filename}>{row.filename}</TableCell>
+                      <TableCell className="py-1 px-2 text-[11px] text-center">
+                        {row.competencia
+                          ? <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200">{row.competencia}</Badge>
+                          : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
                       <TableCell className="py-1 px-2 text-[11px] text-center">{row.total_count}</TableCell>
                       <TableCell className="py-1 px-2 text-[11px] text-center text-green-700 font-medium">{row.imported_count}</TableCell>
                       <TableCell className="py-1 px-2 text-[11px] text-center text-red-600">{row.rejected_count || '—'}</TableCell>

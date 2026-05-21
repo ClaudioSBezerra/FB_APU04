@@ -169,11 +169,11 @@ type xmlUploadError struct {
 // Reutiliza a lógica de parse já existente em nfe_saidas.go/nfe_entradas.go.
 // ---------------------------------------------------------------------------
 
-func ProcessXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, xmlFiles []NamedXML) {
-	processXMLBatch(db, batchID, companyID, tipo, xmlFiles)
+func ProcessXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, competencia string, xmlFiles []NamedXML) {
+	processXMLBatch(db, batchID, companyID, tipo, competencia, xmlFiles)
 }
 
-func processXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, xmlFiles []namedXML) {
+func processXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, competencia string, xmlFiles []namedXML) {
 	imported := 0
 	rejected := 0
 	var errorDetails []xmlUploadError
@@ -187,7 +187,7 @@ func processXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, 
 			)
 		}
 
-		if err := processSingleXML(db, companyID, tipo, xf); err != nil {
+		if err := processSingleXML(db, companyID, tipo, competencia, xf); err != nil {
 			log.Printf("[XMLUpload] batch=%s file=%s err=%v", batchID, xf.Name, err)
 			rejected++
 			errorDetails = append(errorDetails, xmlUploadError{
@@ -221,7 +221,7 @@ func processXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, 
 }
 
 // processSingleXML processa um único XML (NFe entrada, saída ou CTe) e persiste no banco.
-func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) error {
+func processSingleXML(db *sql.DB, companyID string, tipo string, competencia string, xf namedXML) error {
 	data := xf.Data
 
 	// Eventos de cancelamento (procCancNFe/procCancCTe) não são documentos fiscais — ignorar silenciosamente.
@@ -240,7 +240,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 
 	// CT-e usa parser e tabela próprios
 	if tipo == "ctes" {
-		return processSingleCTe(db, companyID, data)
+		return processSingleCTe(db, companyID, competencia, data)
 	}
 
 	// Determinar tipo de documento pelo modelo no XML
@@ -265,6 +265,9 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 	dataEmissao, mesAno, err := parseDhEmi(inf.Ide.DhEmi)
 	if err != nil {
 		return err
+	}
+	if competencia != "" {
+		mesAno = competencia
 	}
 
 	destCNPJCPF := strings.TrimSpace(inf.Dest.CNPJ)
@@ -314,6 +317,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 				'xml_upload'
 			)
 			ON CONFLICT ON CONSTRAINT uq_nfe_entradas_company_chave DO UPDATE SET
+				mes_ano      = EXCLUDED.mes_ano,
 				forn_cnpj    = EXCLUDED.forn_cnpj,
 				forn_nome    = EXCLUDED.forn_nome,
 				forn_uf      = EXCLUDED.forn_uf,
@@ -389,6 +393,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 				'xml_upload'
 			)
 			ON CONFLICT ON CONSTRAINT uq_nfe_saidas_company_chave DO UPDATE SET
+				mes_ano=EXCLUDED.mes_ano,
 				emit_cnpj=EXCLUDED.emit_cnpj, emit_nome=EXCLUDED.emit_nome,
 				emit_uf=EXCLUDED.emit_uf, emit_municipio=EXCLUDED.emit_municipio,
 				dest_cnpj_cpf=EXCLUDED.dest_cnpj_cpf, dest_nome=EXCLUDED.dest_nome,
@@ -455,7 +460,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, xf namedXML) er
 }
 
 // processSingleCTe persiste um CT-e (mod 57) na tabela cte_entradas com source='xml_upload'.
-func processSingleCTe(db *sql.DB, companyID string, data []byte) error {
+func processSingleCTe(db *sql.DB, companyID string, competencia string, data []byte) error {
 	proc, err := parseCTeXML(data)
 	if err != nil {
 		return err
@@ -475,6 +480,9 @@ func processSingleCTe(db *sql.DB, companyID string, data []byte) error {
 	dataEmissao, mesAno, err := parseDhEmi(inf.Ide.DhEmi)
 	if err != nil {
 		return err
+	}
+	if competencia != "" {
+		mesAno = competencia
 	}
 
 	remCNPJCPF := strings.TrimSpace(inf.Rem.CNPJ)
@@ -588,6 +596,22 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Parâmetro competencia: opcional, formato MM/YYYY
+		competencia := strings.TrimSpace(r.FormValue("competencia"))
+		if competencia != "" {
+			parts := strings.Split(competencia, "/")
+			m, e1 := strconv.Atoi(parts[0])
+			var y int
+			var e2 error
+			if len(parts) == 2 {
+				y, e2 = strconv.Atoi(parts[1])
+			}
+			if len(parts) != 2 || len(parts[0]) != 2 || len(parts[1]) != 4 || e1 != nil || e2 != nil || m < 1 || m > 12 || y < 2000 {
+				jsonErr(w, http.StatusBadRequest, "Parâmetro 'competencia' inválido — use MM/YYYY (ex: 03/2026)")
+				return
+			}
+		}
+
 		// Coletar todos os arquivos enviados (frontend pode enviar N arquivos com o mesmo campo "file")
 		fileHeaders := r.MultipartForm.File["file"]
 		if len(fileHeaders) == 0 {
@@ -683,10 +707,10 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 
 			var batchID string
 			err = db.QueryRow(`
-				INSERT INTO xml_upload_batches (company_id, uploaded_by, tipo, filename, total_count, status)
-				VALUES ($1, $2, $3, $4, $5, 'pending')
+				INSERT INTO xml_upload_batches (company_id, uploaded_by, tipo, filename, total_count, status, competencia)
+				VALUES ($1, $2, $3, $4, $5, 'pending', NULLIF($6, ''))
 				RETURNING id`,
-				companyID, userID, tipo, chunkFilename, len(chunk),
+				companyID, userID, tipo, chunkFilename, len(chunk), competencia,
 			).Scan(&batchID)
 			if err != nil {
 				log.Printf("[XMLUpload] erro ao criar batch chunk %d: %v", i+1, err)
@@ -700,7 +724,7 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			// Inline apenas para o primeiro chunk se ≤ BatchAsyncThreshold
 			if len(chunk) <= BatchAsyncThreshold && i == 0 && len(chunks) == 1 {
 				db.Exec(`UPDATE xml_upload_batches SET status='processing' WHERE id=$1`, batchID)
-				processXMLBatch(db, batchID, companyID, tipo, chunk)
+				processXMLBatch(db, batchID, companyID, tipo, competencia, chunk)
 				var imported, rejected int
 				var status string
 				db.QueryRow(`SELECT status, imported_count, rejected_count FROM xml_upload_batches WHERE id=$1`, batchID).
@@ -963,7 +987,8 @@ func XMLUploadBatchesHandler(db *sql.DB) http.HandlerFunc {
 			SELECT b.id, b.tipo, COALESCE(b.filename,''), b.status,
 			       b.total_count, b.processed_count, b.imported_count, b.rejected_count,
 			       b.created_at, b.completed_at,
-			       COALESCE(u.email, '')
+			       COALESCE(u.email, ''),
+			       COALESCE(b.competencia, '')
 			FROM xml_upload_batches b
 			LEFT JOIN users u ON b.uploaded_by = u.id
 			%s
@@ -990,6 +1015,7 @@ func XMLUploadBatchesHandler(db *sql.DB) http.HandlerFunc {
 			CreatedAt      string  `json:"created_at"`
 			CompletedAt    *string `json:"completed_at,omitempty"`
 			UserEmail      string  `json:"user_email"`
+			Competencia    string  `json:"competencia,omitempty"`
 		}
 
 		var list []batchRow
@@ -1000,7 +1026,7 @@ func XMLUploadBatchesHandler(db *sql.DB) http.HandlerFunc {
 			if err := rows.Scan(
 				&b.ID, &b.Tipo, &b.Filename, &b.Status,
 				&b.TotalCount, &b.ProcessedCount, &b.ImportedCount, &b.RejectedCount,
-				&createdAt, &completedAt, &b.UserEmail,
+				&createdAt, &completedAt, &b.UserEmail, &b.Competencia,
 			); err != nil {
 				log.Printf("[XMLUpload] batches scan error: %v", err)
 				continue

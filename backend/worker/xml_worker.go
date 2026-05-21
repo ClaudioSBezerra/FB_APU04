@@ -71,16 +71,17 @@ func processNextXMLBatch(db *sql.DB, workerID int) {
 
 	var batchID, companyID, tipo string
 	var xmlData []byte
+	var competenciaNullable sql.NullString
 
 	err = tx.QueryRow(`
-		SELECT id, company_id, tipo, xml_data
+		SELECT id, company_id, tipo, xml_data, competencia
 		FROM xml_upload_batches
 		WHERE status = 'pending'
 		  AND xml_data IS NOT NULL
 		ORDER BY created_at ASC
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED
-	`).Scan(&batchID, &companyID, &tipo, &xmlData)
+	`).Scan(&batchID, &companyID, &tipo, &xmlData, &competenciaNullable)
 
 	if err == sql.ErrNoRows {
 		return // nenhum job pendente
@@ -102,7 +103,8 @@ func processNextXMLBatch(db *sql.DB, workerID int) {
 		return
 	}
 
-	log.Printf("XMLWorker #%d: processando batch %s (tipo=%s)", workerID, batchID, tipo)
+	competencia := competenciaNullable.String
+	log.Printf("XMLWorker #%d: processando batch %s (tipo=%s competencia=%q)", workerID, batchID, tipo, competencia)
 
 	// Descompactar os XMLs do campo xml_data (ZIP em memória)
 	xmlFiles, err := extractXMLsFromZip(xmlData)
@@ -113,7 +115,7 @@ func processNextXMLBatch(db *sql.DB, workerID int) {
 	}
 
 	// Processar
-	handlers.ProcessXMLBatch(db, batchID, companyID, tipo, xmlFiles)
+	handlers.ProcessXMLBatch(db, batchID, companyID, tipo, competencia, xmlFiles)
 }
 
 // extractXMLsFromZip é a versão local usada pelo worker (duplica a do handlers para evitar
