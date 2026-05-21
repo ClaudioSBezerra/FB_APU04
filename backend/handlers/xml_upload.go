@@ -218,6 +218,18 @@ func processXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, 
 		XMLUploadErrorsTotal.Inc()
 	}
 	log.Printf("[XMLUpload] batch=%s concluído: imported=%d rejected=%d", batchID, imported, rejected)
+
+	// Após importar entradas, atualizar mv_operacoes_simples em background
+	// para que o painel Simples Nacional reflita os novos fornecedores registrados.
+	if tipo == "entradas" && imported > 0 {
+		go func() {
+			if _, err := db.Exec("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_operacoes_simples"); err != nil {
+				if _, err = db.Exec("REFRESH MATERIALIZED VIEW mv_operacoes_simples"); err != nil {
+					log.Printf("[XMLUpload] mv_operacoes_simples refresh falhou: %v", err)
+				}
+			}
+		}()
+	}
 }
 
 // processSingleXML processa um único XML (NFe entrada, saída ou CTe) e persiste no banco.
