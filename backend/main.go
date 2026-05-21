@@ -582,10 +582,11 @@ func main() {
 	http.HandleFunc("/api/xml/conciliacao", withAuth(handlers.ConciliacaoHandler, ""))
 	http.HandleFunc("/api/xml/cobertura", withAuth(handlers.CoberturaHandler, ""))
 
-	// Comparativo EFD ICMS vs XMLs Importados
-	http.HandleFunc("/api/xml/comparativo/resumo",  withAuth(handlers.ResumoComparativoHandler, ""))
-	http.HandleFunc("/api/xml/comparativo/lacunas", withAuth(handlers.LacunasHandler, ""))
-	http.HandleFunc("/api/xml/comparativo/modelos", withAuth(handlers.ModelosEFDHandler, ""))
+	// Comparativo EFD ICMS vs XMLs Importados — mais específico primeiro
+	http.HandleFunc("/api/xml/comparativo/lacunas/mensal", withAuth(handlers.LacunasMensalHandler, ""))
+	http.HandleFunc("/api/xml/comparativo/lacunas",        withAuth(handlers.LacunasHandler, ""))
+	http.HandleFunc("/api/xml/comparativo/resumo",         withAuth(handlers.ResumoComparativoHandler, ""))
+	http.HandleFunc("/api/xml/comparativo/modelos",        withAuth(handlers.ModelosEFDHandler, ""))
 
 	// Notas Importadas — NF-e e CT-e (sempre disponível)
 	http.HandleFunc("/api/nfe-saidas/upload", withAuth(handlers.NfeSaidasUploadHandler, ""))

@@ -42,6 +42,12 @@ interface LacunaRow {
   vl_doc: number;
 }
 
+interface LacunaMensalRow {
+  mes_ano: string;
+  qtd_falta: number;
+  valor_falta: number;
+}
+
 interface ModeloRow {
   cod_mod: string;
   descricao: string;
@@ -83,8 +89,7 @@ function SitChip({ sit }: { sit: string }) {
 // ---------------------------------------------------------------------------
 export default function ComparativoEFDvsXML() {
   const [tipo, setTipo] = useState<'saidas' | 'entradas'>('saidas');
-  const [mesAnoFiltro, setMesAnoFiltro] = useState('');
-  const [mesAnoAtivo, setMesAnoAtivo] = useState('');
+  const [mesSelecionado, setMesSelecionado] = useState<string | null>(null);
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: resumoData, isLoading: loadingResumo, refetch: refetchResumo } = useQuery<{ items: ResumoRow[] }>({
@@ -96,13 +101,25 @@ export default function ComparativoEFDvsXML() {
     },
   });
 
-  const { data: lacunasData, isLoading: loadingLacunas, refetch: refetchLacunas } = useQuery<{ items: LacunaRow[]; total: number }>({
-    queryKey: ['comparativo-lacunas', tipo, mesAnoAtivo],
+  // Resumo mensal de lacunas — query leve, roda automaticamente
+  const { data: lacunasMensalData, isLoading: loadingLacunaMensal } = useQuery<{ items: LacunaMensalRow[] }>({
+    queryKey: ['comparativo-lacunas-mensal', tipo],
     queryFn: async () => {
-      const res = await fetch(buildUrl('/api/xml/comparativo/lacunas', { tipo, mes_ano: mesAnoAtivo }));
+      const res = await fetch(buildUrl('/api/xml/comparativo/lacunas/mensal', { tipo }));
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
+  });
+
+  // Detalhe de lacunas — só carrega quando usuário clica em um mês
+  const { data: lacunasData, isLoading: loadingLacunas } = useQuery<{ items: LacunaRow[]; total: number }>({
+    queryKey: ['comparativo-lacunas-detalhe', tipo, mesSelecionado],
+    queryFn: async () => {
+      const res = await fetch(buildUrl('/api/xml/comparativo/lacunas', { tipo, mes_ano: mesSelecionado! }));
+      if (!res.ok) throw new Error(res.statusText);
+      return res.json();
+    },
+    enabled: !!mesSelecionado,
   });
 
   const { data: modelosData, isLoading: loadingModelos } = useQuery<{ items: ModeloRow[] }>({
@@ -116,6 +133,7 @@ export default function ComparativoEFDvsXML() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const resumo = resumoData?.items ?? [];
+  const lacunasMensal = lacunasMensalData?.items ?? [];
   const lacunas = lacunasData?.items ?? [];
   const modelos = modelosData?.items ?? [];
 
@@ -123,6 +141,7 @@ export default function ComparativoEFDvsXML() {
   const totalXML  = resumo.reduce((s, r) => s + r.total_xml, 0);
   const totalDiff = totalEFD - totalXML;
   const pctGeral  = totalEFD > 0 ? (totalXML / totalEFD) * 100 : 0;
+  const totalFalta = lacunasMensal.reduce((s, r) => s + r.valor_falta, 0);
 
   const chartData = resumo.map(r => ({
     mes: r.mes_ano,
@@ -132,11 +151,6 @@ export default function ComparativoEFDvsXML() {
 
   const modelosSaida   = modelos.filter(m => m.ind_oper === '1');
   const modelosEntrada = modelos.filter(m => m.ind_oper === '0');
-
-  const handleBuscarLacunas = () => {
-    setMesAnoAtivo(mesAnoFiltro);
-    refetchLacunas();
-  };
 
   return (
     <div className="space-y-6">
@@ -218,7 +232,7 @@ export default function ComparativoEFDvsXML() {
                     <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `R$${v}M`} />
                     <RechartsTooltip
-                      formatter={(v: number) => `R$ ${v.toLocaleString('pt-BR')}M`}
+                      formatter={(v: number | undefined) => v != null ? `R$ ${v.toLocaleString('pt-BR')}M` : '—'}
                       contentStyle={{ fontSize: 12 }}
                     />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -289,72 +303,112 @@ export default function ComparativoEFDvsXML() {
 
         {/* ── Tab: Lacunas ── */}
         <TabsContent value="lacunas" className="space-y-4 mt-4">
+          {/* Resumo mensal — carrega automaticamente (query leve) */}
           <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2 mb-4 flex-wrap">
-                <p className="text-sm text-muted-foreground flex items-center gap-1">
-                  <Info className="h-3.5 w-3.5" />
-                  NF-e (mod 55/65) no EFD mas ausentes nos XMLs importados.
-                  {lacunasData?.total !== undefined && lacunasData.total > 0 && (
-                    <span className="ml-1 text-red-600 font-medium">{lacunasData.total} {lacunasData.total === 500 ? '(limite)' : ''} lacunas encontradas</span>
-                  )}
-                </p>
-                <div className="flex gap-2 ml-auto">
-                  <input
-                    type="text"
-                    placeholder="MM/YYYY (opcional)"
-                    value={mesAnoFiltro}
-                    onChange={e => setMesAnoFiltro(e.target.value)}
-                    className="h-8 text-sm border rounded px-2 w-36"
-                  />
-                  <Button size="sm" className="h-8" onClick={handleBuscarLacunas}>Filtrar</Button>
-                  {mesAnoAtivo && (
-                    <Button size="sm" variant="ghost" className="h-8" onClick={() => { setMesAnoFiltro(''); setMesAnoAtivo(''); }}>
-                      Limpar
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {loadingLacunas ? (
-                <p className="text-sm text-center py-8 text-muted-foreground">Buscando lacunas...</p>
-              ) : lacunas.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-                  <CheckCircle className="h-8 w-8 text-green-500" />
-                  <p className="text-sm">Nenhuma lacuna encontrada{mesAnoAtivo ? ` em ${mesAnoAtivo}` : ''}.</p>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center justify-between">
+                <span>NF-e no EFD sem XML importado — por mês</span>
+                {totalFalta > 0 && (
+                  <span className="text-red-600 text-xs font-normal">
+                    Total em falta: {fmtBRL(totalFalta)}
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loadingLacunaMensal ? (
+                <p className="text-sm text-center py-6 text-muted-foreground">Carregando resumo...</p>
+              ) : lacunasMensal.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-6 text-muted-foreground">
+                  <CheckCircle className="h-7 w-7 text-green-500" />
+                  <p className="text-sm">Nenhuma lacuna encontrada — todos os XMLs foram importados.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead className="py-1.5 px-2 text-[11px]">Mês</TableHead>
-                        <TableHead className="py-1.5 px-2 text-[11px]">Nº NF</TableHead>
-                        <TableHead className="py-1.5 px-2 text-[11px]">Data</TableHead>
-                        <TableHead className="py-1.5 px-2 text-[11px]">Mod</TableHead>
-                        <TableHead className="py-1.5 px-2 text-[11px]">Situação</TableHead>
-                        <TableHead className="py-1.5 px-2 text-[11px] text-right">Valor</TableHead>
-                        <TableHead className="py-1.5 px-2 text-[11px]">Chave</TableHead>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="py-1.5 px-3 text-[11px]">Mês</TableHead>
+                      <TableHead className="py-1.5 px-3 text-[11px] text-right">NF-e faltando</TableHead>
+                      <TableHead className="py-1.5 px-3 text-[11px] text-right">Valor em falta</TableHead>
+                      <TableHead className="py-1.5 px-3 text-[11px] text-center">Detalhe</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lacunasMensal.map(row => (
+                      <TableRow key={row.mes_ano} className="h-9">
+                        <TableCell className="py-1 px-3 text-[12px] font-medium">{row.mes_ano}</TableCell>
+                        <TableCell className="py-1 px-3 text-[11px] text-right tabular-nums text-red-600 font-medium">
+                          {row.qtd_falta.toLocaleString('pt-BR')}
+                        </TableCell>
+                        <TableCell className="py-1 px-3 text-[11px] text-right tabular-nums text-red-600 font-medium">
+                          {fmtBRL(row.valor_falta)}
+                        </TableCell>
+                        <TableCell className="py-1 px-3 text-center">
+                          <Button
+                            size="sm"
+                            variant={mesSelecionado === row.mes_ano ? 'default' : 'outline'}
+                            className="h-6 px-2 text-[10px]"
+                            onClick={() => setMesSelecionado(mesSelecionado === row.mes_ano ? null : row.mes_ano)}
+                          >
+                            {mesSelecionado === row.mes_ano ? 'Fechar' : 'Ver notas'}
+                          </Button>
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {lacunas.map((row, i) => (
-                        <TableRow key={i} className="h-8">
-                          <TableCell className="py-1 px-2 text-[11px]">{row.mes_ano}</TableCell>
-                          <TableCell className="py-1 px-2 text-[11px] font-medium">{row.num_doc || '—'}</TableCell>
-                          <TableCell className="py-1 px-2 text-[11px] whitespace-nowrap">{row.dt_doc}</TableCell>
-                          <TableCell className="py-1 px-2 text-[11px]">{row.cod_mod}</TableCell>
-                          <TableCell className="py-1 px-2"><SitChip sit={row.cod_sit} /></TableCell>
-                          <TableCell className="py-1 px-2 text-[11px] text-right tabular-nums font-medium">{fmtBRL(row.vl_doc)}</TableCell>
-                          <TableCell className="py-1 px-2 text-[10px] font-mono text-muted-foreground max-w-[160px] truncate" title={row.chv_nfe}>{row.chv_nfe || '—'}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
+
+          {/* Detalhe do mês selecionado — lazy */}
+          {mesSelecionado && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                  NF-e sem XML — {mesSelecionado}
+                  {lacunasData?.total === 500 && (
+                    <Badge variant="outline" className="text-[10px] ml-auto">limite 500 notas</Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {loadingLacunas ? (
+                  <p className="text-sm text-center py-6 text-muted-foreground">Buscando notas...</p>
+                ) : lacunas.length === 0 ? (
+                  <p className="text-sm text-center py-6 text-muted-foreground">Nenhuma lacuna neste mês.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="py-1.5 px-2 text-[11px]">Nº NF</TableHead>
+                          <TableHead className="py-1.5 px-2 text-[11px]">Data</TableHead>
+                          <TableHead className="py-1.5 px-2 text-[11px]">Mod</TableHead>
+                          <TableHead className="py-1.5 px-2 text-[11px]">Situação</TableHead>
+                          <TableHead className="py-1.5 px-2 text-[11px] text-right">Valor</TableHead>
+                          <TableHead className="py-1.5 px-2 text-[11px]">Chave</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lacunas.map((row, i) => (
+                          <TableRow key={i} className="h-8">
+                            <TableCell className="py-1 px-2 text-[11px] font-medium">{row.num_doc || '—'}</TableCell>
+                            <TableCell className="py-1 px-2 text-[11px] whitespace-nowrap">{row.dt_doc}</TableCell>
+                            <TableCell className="py-1 px-2 text-[11px]">{row.cod_mod}</TableCell>
+                            <TableCell className="py-1 px-2"><SitChip sit={row.cod_sit} /></TableCell>
+                            <TableCell className="py-1 px-2 text-[11px] text-right tabular-nums font-medium">{fmtBRL(row.vl_doc)}</TableCell>
+                            <TableCell className="py-1 px-2 text-[10px] font-mono text-muted-foreground max-w-[160px] truncate" title={row.chv_nfe}>{row.chv_nfe || '—'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* ── Tab: Modelos EFD ── */}

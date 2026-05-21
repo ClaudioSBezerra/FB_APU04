@@ -34,13 +34,19 @@ type comparativoResumoRow struct {
 }
 
 type lacunaRow struct {
-	MesAno  string  `json:"mes_ano"`
-	ChvNfe  string  `json:"chv_nfe"`
-	NumDoc  string  `json:"num_doc"`
-	DtDoc   string  `json:"dt_doc"`
-	CodMod  string  `json:"cod_mod"`
-	CodSit  string  `json:"cod_sit"`
-	VlDoc   float64 `json:"vl_doc"`
+	MesAno string  `json:"mes_ano"`
+	ChvNfe string  `json:"chv_nfe"`
+	NumDoc string  `json:"num_doc"`
+	DtDoc  string  `json:"dt_doc"`
+	CodMod string  `json:"cod_mod"`
+	CodSit string  `json:"cod_sit"`
+	VlDoc  float64 `json:"vl_doc"`
+}
+
+type lacunaMensalRow struct {
+	MesAno    string  `json:"mes_ano"`
+	QtdFalta  int     `json:"qtd_falta"`
+	ValorFalta float64 `json:"valor_falta"`
 }
 
 type modeloEFDRow struct {
@@ -185,16 +191,15 @@ ORDER BY
 	}
 }
 
-// ── LacunasHandler ─────────────────────────────────────────────────────────
-// Retorna NF-e/NFC-e presentes no EFD mas ausentes nos XMLs importados.
+// ── LacunasMensalHandler ──────────────────────────────────────────────────────
+// Retorna resumo agregado por mês das lacunas (qtd e valor). Query leve, sem paginação.
 
-func LacunasHandler(db *sql.DB) http.HandlerFunc {
+func LacunasMensalHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "método não permitido", http.StatusMethodNotAllowed)
 			return
 		}
-
 		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
 		if !ok {
 			http.Error(w, "não autorizado", http.StatusUnauthorized)
@@ -206,7 +211,6 @@ func LacunasHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "empresa não encontrada", http.StatusBadRequest)
 			return
 		}
-
 		tipo := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tipo")))
 		indOper, tabelaXML, valid := validaTipoComparativo(tipo)
 		if !valid {
@@ -214,16 +218,80 @@ func LacunasHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		mesAno := strings.TrimSpace(r.URL.Query().Get("mes_ano"))
+		// Anti-join com LEFT JOIN — mais eficiente que NOT EXISTS para agregação
+		query := fmt.Sprintf(`
+SELECT
+  TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') AS mes_ano,
+  COUNT(*)       AS qtd_falta,
+  SUM(c.vl_doc)  AS valor_falta
+FROM reg_c100 c
+JOIN import_jobs j ON j.id = c.job_id
+LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = c.chv_nfe
+WHERE j.company_id = $1
+  AND c.ind_oper = $2
+  AND c.cod_mod IN ('55', '65')
+  AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
+  AND x.chave_nfe IS NULL
+GROUP BY 1
+ORDER BY SUBSTRING(mes_ano,4,4), SUBSTRING(mes_ano,1,2)
+`, tabelaXML)
 
-		args := []interface{}{companyID, indOper}
-		whereExtra := ""
-		if mesAno != "" {
-			args = append(args, mesAno)
-			whereExtra = fmt.Sprintf(" AND TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') = $%d", len(args))
+		rows, err := db.Query(query, companyID, indOper)
+		if err != nil {
+			log.Printf("LacunasMensalHandler: %v", err)
+			http.Error(w, "erro ao consultar dados", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		result := []lacunaMensalRow{}
+		for rows.Next() {
+			var row lacunaMensalRow
+			if err := rows.Scan(&row.MesAno, &row.QtdFalta, &row.ValorFalta); err != nil {
+				log.Printf("LacunasMensalHandler scan: %v", err)
+				continue
+			}
+			result = append(result, row)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"items": result, "total": len(result)})
+	}
+}
+
+// ── LacunasHandler ─────────────────────────────────────────────────────────
+// Retorna NF-e/NFC-e de um mês específico presentes no EFD mas ausentes nos XMLs.
+// Requer mes_ano para evitar consulta pesada sem filtro.
+
+func LacunasHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "não autorizado", http.StatusUnauthorized)
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "empresa não encontrada", http.StatusBadRequest)
+			return
+		}
+		tipo := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tipo")))
+		indOper, tabelaXML, valid := validaTipoComparativo(tipo)
+		if !valid {
+			http.Error(w, "tipo inválido: use saidas ou entradas", http.StatusBadRequest)
+			return
+		}
+		mesAno := strings.TrimSpace(r.URL.Query().Get("mes_ano"))
+		if mesAno == "" {
+			http.Error(w, "mes_ano obrigatório para detalhe de lacunas", http.StatusBadRequest)
+			return
 		}
 
-		// tabelaXML é validada pela whitelist — seguro usar em fmt.Sprintf
+		// LEFT JOIN anti-join (mais eficiente que NOT EXISTS)
 		query := fmt.Sprintf(`
 SELECT
   TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') AS mes_ano,
@@ -235,21 +303,18 @@ SELECT
   COALESCE(c.vl_doc,  0)                            AS vl_doc
 FROM reg_c100 c
 JOIN import_jobs j ON j.id = c.job_id
+LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = c.chv_nfe
 WHERE j.company_id = $1
-  AND c.ind_oper   = $2
+  AND c.ind_oper = $2
   AND c.cod_mod IN ('55', '65')
   AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
-  AND NOT EXISTS (
-    SELECT 1 FROM %s x
-    WHERE x.company_id = $1
-      AND x.chave_nfe  = c.chv_nfe
-  )
-%s
-ORDER BY c.dt_doc, c.vl_doc DESC
+  AND TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') = $3
+  AND x.chave_nfe IS NULL
+ORDER BY c.vl_doc DESC
 LIMIT 500
-`, tabelaXML, whereExtra)
+`, tabelaXML)
 
-		rows, err := db.Query(query, args...)
+		rows, err := db.Query(query, companyID, indOper, mesAno)
 		if err != nil {
 			log.Printf("LacunasHandler: %v", err)
 			http.Error(w, "erro ao consultar dados", http.StatusInternalServerError)
@@ -267,12 +332,8 @@ LIMIT 500
 			}
 			result = append(result, row)
 		}
-
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"items": result,
-			"total": len(result),
-		})
+		json.NewEncoder(w).Encode(map[string]interface{}{"items": result, "total": len(result)})
 	}
 }
 
