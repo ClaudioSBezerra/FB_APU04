@@ -49,7 +49,7 @@ SELECT
     0::numeric                              AS vl_ibs_projetado,
     0::numeric                              AS vl_cbs_projetado,
     'ENTRADA'                               AS tipo,
-    cf.tipo                                 AS tipo_cfop,
+    cf.tipo::text                           AS tipo_cfop,
     NULL::text                              AS origem,
     CASE cf.tipo
         WHEN 'R' THEN 'Entrada_Revenda'
@@ -111,7 +111,7 @@ SELECT
     0::numeric                              AS vl_ibs_projetado,
     0::numeric                              AS vl_cbs_projetado,
     'SAIDA'                                 AS tipo,
-    cf.tipo                                 AS tipo_cfop,
+    cf.tipo::text                           AS tipo_cfop,
     NULL::text                              AS origem,
     CASE cf.tipo
         WHEN 'R' THEN 'Saida_Revenda'
