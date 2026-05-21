@@ -128,14 +128,15 @@ func ResumoComparativoHandler(db *sql.DB) http.HandlerFunc {
 		query := fmt.Sprintf(`
 WITH efd AS (
   SELECT
-    TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') AS mes_ano,
+    TO_CHAR(c.dt_doc, 'MM/YYYY') AS mes_ano,
     COUNT(*) FILTER (WHERE c.cod_mod IN ('55','65'))  AS qtd_efd,
     SUM(c.vl_doc) FILTER (WHERE c.cod_mod IN ('55','65')) AS total_efd
   FROM reg_c100 c
   JOIN import_jobs j ON j.id = c.job_id
   WHERE j.company_id = $1
     AND c.ind_oper = $2
-    AND (c.dt_e_s IS NOT NULL OR c.dt_doc IS NOT NULL)
+    AND c.dt_doc IS NOT NULL
+    AND c.cod_sit NOT IN ('02','03','04','05')
   GROUP BY 1
 ),
 xml AS (
@@ -224,7 +225,7 @@ func LacunasMensalHandler(db *sql.DB) http.HandlerFunc {
 		query := fmt.Sprintf(`
 WITH lacunas AS (
   SELECT
-    TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') AS mes_ano,
+    TO_CHAR(c.dt_doc, 'MM/YYYY') AS mes_ano,
     COUNT(*)       AS qtd_falta,
     SUM(c.vl_doc)  AS valor_falta
   FROM reg_c100 c
@@ -234,6 +235,8 @@ WITH lacunas AS (
     AND c.ind_oper = $2
     AND c.cod_mod IN ('55', '65')
     AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
+    AND c.dt_doc IS NOT NULL
+    AND c.cod_sit NOT IN ('02','03','04','05')
     AND x.chave_nfe IS NULL
   GROUP BY 1
 )
@@ -301,13 +304,13 @@ func LacunasHandler(db *sql.DB) http.HandlerFunc {
 		// LEFT JOIN anti-join (mais eficiente que NOT EXISTS)
 		query := fmt.Sprintf(`
 SELECT
-  TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') AS mes_ano,
-  COALESCE(c.chv_nfe, '')                           AS chv_nfe,
-  COALESCE(c.num_doc, '')                           AS num_doc,
-  TO_CHAR(c.dt_doc, 'DD/MM/YYYY')                   AS dt_doc,
-  COALESCE(c.cod_mod, '')                           AS cod_mod,
-  COALESCE(c.cod_sit, '')                           AS cod_sit,
-  COALESCE(c.vl_doc,  0)                            AS vl_doc
+  TO_CHAR(c.dt_doc, 'MM/YYYY')    AS mes_ano,
+  COALESCE(c.chv_nfe, '')         AS chv_nfe,
+  COALESCE(c.num_doc, '')         AS num_doc,
+  TO_CHAR(c.dt_doc, 'DD/MM/YYYY') AS dt_doc,
+  COALESCE(c.cod_mod, '')         AS cod_mod,
+  COALESCE(c.cod_sit, '')         AS cod_sit,
+  COALESCE(c.vl_doc,  0)          AS vl_doc
 FROM reg_c100 c
 JOIN import_jobs j ON j.id = c.job_id
 LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = c.chv_nfe
@@ -315,7 +318,9 @@ WHERE j.company_id = $1
   AND c.ind_oper = $2
   AND c.cod_mod IN ('55', '65')
   AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
-  AND TO_CHAR(COALESCE(c.dt_e_s, c.dt_doc), 'MM/YYYY') = $3
+  AND c.dt_doc IS NOT NULL
+  AND c.cod_sit NOT IN ('02','03','04','05')
+  AND TO_CHAR(c.dt_doc, 'MM/YYYY') = $3
   AND x.chave_nfe IS NULL
 ORDER BY c.vl_doc DESC
 LIMIT 500
