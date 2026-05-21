@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Upload, CloudUpload, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Upload, CloudUpload, CheckCircle, XCircle, Loader2, FolderOpen } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -253,6 +253,14 @@ export default function ImportarXMLsSaida() {
 
   const isProcessing = uploadState === 'scanning' || uploadState === 'uploading' || uploadState === 'polling';
 
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).filter(f => f.name.toLowerCase().endsWith('.xml'));
+    e.target.value = '';
+    if (files.length === 0) { toast.error('Nenhum arquivo .xml encontrado na pasta.'); return; }
+    handleUpload(files);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -334,6 +342,17 @@ export default function ImportarXMLsSaida() {
                 <>
                   <p className="text-sm font-medium">Arraste XMLs ou compactados (.zip/.rar/.7z) aqui, ou clique</p>
                   <p className="text-xs text-muted-foreground mt-1">Aceita .xml, .zip, .rar, .7z — máximo 2GB</p>
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); folderInputRef.current?.click(); }}
+                    disabled={isProcessing}
+                    className="mt-2 inline-flex items-center gap-1.5 text-xs text-primary hover:underline disabled:opacity-50"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    Selecionar Pasta
+                  </button>
+                  <input ref={folderInputRef} type="file" className="hidden" onChange={handleFolderSelect}
+                    {...({ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>)} />
                 </>
               )}
             </div>
