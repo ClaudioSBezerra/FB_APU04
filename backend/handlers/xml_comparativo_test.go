@@ -135,3 +135,27 @@ func TestModelosEFDHandler_Unauthorized(t *testing.T) {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// LacunasMensalHandler guards (method + auth — both return before DB access)
+// ---------------------------------------------------------------------------
+
+func TestLacunasMensalHandler_MethodNotAllowed(t *testing.T) {
+	handler := LacunasMensalHandler(nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/xml/comparativo/lacunas-mensal", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestLacunasMensalHandler_Unauthorized(t *testing.T) {
+	handler := LacunasMensalHandler(nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/xml/comparativo/lacunas-mensal?tipo=saidas", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}
