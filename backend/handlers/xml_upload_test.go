@@ -45,7 +45,7 @@ func runProcessXMLBatch(xmlFiles []NamedXML) (panicked bool) {
 				panicked = true
 			}
 		}()
-		ProcessXMLBatch((*sql.DB)(nil), "batch-1", "company-1", "entradas", xmlFiles)
+		ProcessXMLBatch((*sql.DB)(nil), "batch-1", "company-1", "entradas", "", xmlFiles)
 	}()
 	return
 }
