@@ -76,8 +76,12 @@ export default function ImportarXMLsSaida() {
     errorDetails: { filename: string; motivo: string }[] | null;
   } | null>(null);
   const [progress, setProgress] = useState(0);
+  // Rastreia uploads multi-lote (total_batches > 1)
+  const [totalBatches, setTotalBatches] = useState(1);
+  const [totalXMLs, setTotalXMLs] = useState(0);
+  const [uploadStartTime, setUploadStartTime] = useState<Date | null>(null);
 
-  // ── Polling do status do batch ─────────────────────────────────────────────
+  // ── Polling do status do batch (lote único ou primeiro lote) ──────────────
   const { data: batchStatus } = useQuery<BatchStatus>({
     queryKey: ['xml-batch', batchId],
     queryFn: async () => {
@@ -85,23 +89,25 @@ export default function ImportarXMLsSaida() {
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
-    enabled: !!batchId && uploadState === 'polling',
-    refetchInterval: uploadState === 'polling' ? 2000 : false,
+    enabled: !!batchId && uploadState === 'polling' && totalBatches <= 1,
+    refetchInterval: uploadState === 'polling' && totalBatches <= 1 ? 2000 : false,
   });
 
   // ── Histórico de uploads ───────────────────────────────────────────────────
+  const histLimit = Math.max(10, totalBatches + 5);
   const { data: historico, refetch: refetchHistorico } = useQuery<{ items: BatchHistoryRow[] }>({
-    queryKey: ['xml-historico', TIPO],
+    queryKey: ['xml-historico', TIPO, histLimit],
     queryFn: async () => {
-      const res = await fetch(`/api/xml/upload-batches?tipo=${TIPO}&limit=10`);
+      const res = await fetch(`/api/xml/upload-batches?tipo=${TIPO}&limit=${histLimit}`);
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
     refetchInterval: uploadState === 'polling' ? 3000 : false,
   });
 
+  // Efeito: lote único — conclui quando o primeiro (e único) batch termina
   useEffect(() => {
-    if (!batchStatus) return;
+    if (!batchStatus || totalBatches > 1) return;
     const pct = batchStatus.total_count > 0
       ? Math.round((batchStatus.processed_count / batchStatus.total_count) * 100)
       : 0;
@@ -122,7 +128,37 @@ export default function ImportarXMLsSaida() {
       setUploadState('error');
       toast.error('Processamento falhou. Verifique os detalhes abaixo.');
     }
-  }, [batchStatus, refetchHistorico]);
+  }, [batchStatus, totalBatches, refetchHistorico]);
+
+  // Efeito: multi-lote — acompanha progresso pelo histórico agregado
+  useEffect(() => {
+    if (totalBatches <= 1 || uploadState !== 'polling') return;
+    if (!historico?.items || !uploadStartTime) return;
+
+    const startMs = uploadStartTime.getTime() - 5000; // tolerância de 5s
+    const ourBatches = historico.items.filter(
+      item => new Date(item.created_at).getTime() >= startMs
+    );
+    if (ourBatches.length === 0) return;
+
+    const doneBatches = ourBatches.filter(b => b.status === 'done' || b.status === 'failed').length;
+    const totalImported = ourBatches.reduce((sum, b) => sum + (b.imported_count ?? 0), 0);
+    const totalRejected = ourBatches.reduce((sum, b) => sum + (b.rejected_count ?? 0), 0);
+
+    setProgress(Math.min(Math.round((doneBatches / totalBatches) * 100), doneBatches >= totalBatches ? 100 : 99));
+
+    if (doneBatches >= totalBatches) {
+      setUploadState('done');
+      setUploadResult({
+        imported: totalImported,
+        rejected: totalRejected,
+        total: totalXMLs,
+        errorDetails: null,
+      });
+      toast.success(`Upload concluído: ${totalImported} NF-e(s) importadas, ${totalRejected} rejeitadas.`);
+      refetchHistorico();
+    }
+  }, [historico, totalBatches, uploadState, uploadStartTime, totalXMLs, refetchHistorico]);
 
   // ── Upload handler ─────────────────────────────────────────────────────────
   const handleUpload = async (files: File[]) => {
@@ -132,6 +168,9 @@ export default function ImportarXMLsSaida() {
     setUploadResult(null);
     setBatchId(null);
     setProgress(0);
+    setTotalBatches(1);
+    setTotalXMLs(0);
+    setUploadStartTime(null);
 
     // Yield to React so the 'scanning' state renders before FormData assembly
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -163,9 +202,15 @@ export default function ImportarXMLsSaida() {
       }
 
       if (res.status === 202 && data.batch_id) {
+        const tb = data.total_batches ?? 1;
         setBatchId(data.batch_id);
+        setTotalBatches(tb);
+        setTotalXMLs(data.total_count ?? 0);
+        setUploadStartTime(new Date());
         setUploadState('polling');
-        toast.success('Upload recebido. Processando em background...');
+        toast.success(tb > 1
+          ? `Upload recebido. Processando ${tb} lotes em background...`
+          : 'Upload recebido. Processando em background...');
       } else {
         setUploadState('done');
         setUploadResult({
@@ -190,8 +235,6 @@ export default function ImportarXMLsSaida() {
       'application/zip': ['.zip'],
       'application/x-zip-compressed': ['.zip'],
       'application/x-rar-compressed': ['.rar'],
-      'application/x-rar-compressed': ['.rar'],
-      'application/x-7z-compressed': ['.7z'],
     },
     maxSize: 2 * 1024 * 1024 * 1024,
     multiple: true,
@@ -254,7 +297,17 @@ export default function ImportarXMLsSaida() {
           {uploadState === 'polling' && (
             <div className="mt-4 space-y-1.5">
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Processando... {batchStatus?.processed_count ?? 0} / {batchStatus?.total_count ?? '?'} XMLs</span>
+                {totalBatches > 1 ? (
+                  <span>
+                    {(() => {
+                      const startMs = (uploadStartTime?.getTime() ?? 0) - 5000;
+                      const done = historico?.items?.filter(b => new Date(b.created_at).getTime() >= startMs && (b.status === 'done' || b.status === 'failed')).length ?? 0;
+                      return `Lotes concluídos: ${done} / ${totalBatches} (${totalXMLs.toLocaleString('pt-BR')} XMLs no total)`;
+                    })()}
+                  </span>
+                ) : (
+                  <span>Processando... {batchStatus?.processed_count ?? 0} / {batchStatus?.total_count ?? '?'} XMLs</span>
+                )}
                 <span>{progress}%</span>
               </div>
               <Progress value={progress} className="h-2" />
