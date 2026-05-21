@@ -183,8 +183,7 @@ export default function ImportarXMLsSaida() {
       const formData = new FormData();
       formData.append('tipo', TIPO);
       if (competencia) {
-        const [y, m] = competencia.split('-');
-        formData.append('competencia', `${m}/${y}`);
+        formData.append('competencia', competencia);
       }
       files.forEach(f => formData.append('file', f));
 
@@ -275,11 +274,13 @@ export default function ImportarXMLsSaida() {
                 <span className="text-muted-foreground text-xs ml-1">(opcional)</span>
               </label>
               <input
-                type="month"
+                type="text"
+                placeholder="MM/YYYY"
+                maxLength={7}
                 value={competencia}
                 onChange={e => setCompetencia(e.target.value)}
                 disabled={isProcessing}
-                className="border rounded-md px-2 py-1.5 text-sm bg-background disabled:opacity-50 disabled:cursor-not-allowed"
+                className="border rounded-md px-2 py-1.5 text-sm bg-background disabled:opacity-50 disabled:cursor-not-allowed w-28"
               />
             </div>
             {competencia && (
