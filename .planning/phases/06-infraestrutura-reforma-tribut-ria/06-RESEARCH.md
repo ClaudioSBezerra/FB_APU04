@@ -458,7 +458,7 @@ ON CONFLICT (cfop) DO UPDATE SET tipo = 'T', descricao_cfop = EXCLUDED.descricao
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Localização exata do `IndFinal` no XML NF-e v4.00**
    - O que sabemos: o campo existe na NF-e v4.00 como `indFinal` no grupo `ide`

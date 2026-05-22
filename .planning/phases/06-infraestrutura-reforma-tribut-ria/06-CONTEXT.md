@@ -17,7 +17,7 @@ Nenhum módulo analítico (créditos, reprecificação, ranking, split payment, 
 
 ### Navegação
 
-- **D-01:** Criar novo módulo `reforma` no `navigation.ts` com label **"Reforma Tributária"** e path base `/reforma`.
+- **D-01:** Criar novo módulo `reforma` no `navigation.ts` com label **"Análise Reforma Tributária"** e path base `/reforma`.
 - **D-02:** Na Phase 6, o módulo tem apenas uma tab ativa: **"Parâmetros"** em `/reforma/parametros`. As tabs dos módulos 1.x e 2.x serão adicionadas nas Phases 7 e 8 com `disabled: true` como placeholder já visível na sidebar.
 - **D-03:** A função `getActiveModule` em `navigation.ts` deve retornar `'reforma'` para rotas que começam com `/reforma`.
 
