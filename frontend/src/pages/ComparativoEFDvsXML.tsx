@@ -224,6 +224,7 @@ export default function ComparativoEFDvsXML() {
   const [mesSelecionado, setMesSelecionado] = useState<string | null>(null);
   const [exportingAll, setExportingAll] = useState(false);
   const [exportingMonth, setExportingMonth] = useState<string | null>(null);
+  const [anoFiltro, setAnoFiltro] = useState<string>('todos');
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: resumoData, isLoading: loadingResumo, refetch: refetchResumo } = useQuery<{ items: ResumoRow[] }>({
@@ -274,6 +275,15 @@ export default function ComparativoEFDvsXML() {
   const totalDiff = totalEFD - totalXML;
   const pctGeral  = totalEFD > 0 ? (totalXML / totalEFD) * 100 : 0;
   const totalFalta = lacunasMensal.reduce((s, r) => s + r.valor_falta, 0);
+
+  // Anos disponíveis na lista de lacunas, em ordem decrescente
+  const anosDisponiveis = Array.from(
+    new Set(lacunasMensal.map(r => r.mes_ano.slice(3, 7)))
+  ).sort((a, b) => b.localeCompare(a));
+
+  const lacunasMensalFiltradas = anoFiltro === 'todos'
+    ? lacunasMensal
+    : lacunasMensal.filter(r => r.mes_ano.slice(3, 7) === anoFiltro);
 
   const chartData = resumo.map(r => ({
     mes: r.mes_ano,
@@ -444,10 +454,25 @@ export default function ComparativoEFDvsXML() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center justify-between flex-wrap gap-2">
                 <span>NF-e no EFD sem XML importado — por mês</span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Filtro de ano */}
+                  {anosDisponiveis.length > 1 && (
+                    <select
+                      value={anoFiltro}
+                      onChange={e => { setAnoFiltro(e.target.value); setMesSelecionado(null); }}
+                      className="h-7 rounded-md border border-input bg-background px-2 text-[11px] focus:outline-none"
+                    >
+                      <option value="todos">Todos os anos</option>
+                      {anosDisponiveis.map(ano => (
+                        <option key={ano} value={ano}>{ano}</option>
+                      ))}
+                    </select>
+                  )}
                   {totalFalta > 0 && (
                     <span className="text-red-600 text-xs font-normal">
-                      Total em falta: {fmtBRL(totalFalta)}
+                      Total em falta: {fmtBRL(
+                        lacunasMensalFiltradas.reduce((s, r) => s + r.valor_falta, 0)
+                      )}
                     </span>
                   )}
                   {lacunasMensal.length > 0 && (
@@ -486,7 +511,7 @@ export default function ComparativoEFDvsXML() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {lacunasMensal.map(row => (
+                    {lacunasMensalFiltradas.map(row => (
                       <TableRow key={row.mes_ano} className="h-9">
                         <TableCell className="py-1 px-3 text-[12px] font-medium">{row.mes_ano}</TableCell>
                         <TableCell className="py-1 px-3 text-[11px] text-right tabular-nums text-red-600 font-medium">

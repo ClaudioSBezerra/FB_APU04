@@ -230,7 +230,7 @@ WITH lacunas AS (
     SUM(c.vl_doc)  AS valor_falta
   FROM reg_c100 c
   JOIN import_jobs j ON j.id = c.job_id
-  LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = c.chv_nfe
+  LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = TRIM(c.chv_nfe)
   WHERE j.company_id = $1
     AND c.ind_oper = $2
     AND c.cod_mod IN ('55', '65')
@@ -313,7 +313,7 @@ SELECT
   COALESCE(c.vl_doc,  0)          AS vl_doc
 FROM reg_c100 c
 JOIN import_jobs j ON j.id = c.job_id
-LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = c.chv_nfe
+LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = TRIM(c.chv_nfe)
 WHERE j.company_id = $1
   AND c.ind_oper = $2
   AND c.cod_mod IN ('55', '65')
@@ -426,7 +426,7 @@ SELECT
   COALESCE(c.vl_cofins, 0)                                         AS vl_cofins
 FROM reg_c100 c
 JOIN import_jobs j ON j.id = c.job_id
-LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = c.chv_nfe
+LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = TRIM(c.chv_nfe)
 LEFT JOIN reg_c190 ci ON ci.id_pai_c100 = c.id
 WHERE j.company_id = $1
   AND c.ind_oper = $2
