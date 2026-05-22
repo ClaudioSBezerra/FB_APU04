@@ -533,6 +533,7 @@ func processSingleCTe(db *sql.DB, companyID string, competencia string, data []b
 			'xml_upload'
 		)
 		ON CONFLICT ON CONSTRAINT uq_cte_entradas_company_chave DO UPDATE SET
+			mes_ano=EXCLUDED.mes_ano,
 			emit_cnpj=EXCLUDED.emit_cnpj, emit_nome=EXCLUDED.emit_nome,
 			emit_uf=EXCLUDED.emit_uf,
 			rem_cnpj_cpf=EXCLUDED.rem_cnpj_cpf, rem_nome=EXCLUDED.rem_nome,
