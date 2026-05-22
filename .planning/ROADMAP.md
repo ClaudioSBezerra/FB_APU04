@@ -150,7 +150,7 @@ Plans:
   5. `GET /api/reforma/parametros` e `PUT /api/reforma/parametros` respondem corretamente
   6. Frontend exibe aba "Análise Reforma" na navegação com página de configuração editável
 
-**Plans:** 1/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 **Wave 1**
@@ -159,8 +159,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06-02-PLAN.md — Parsers: worker.go grava cst_icms/aliq_icms do C190 + nfe_saidas.go grava ind_final do XML (wave 2)
-- [ ] 06-03-PLAN.md — Backend: reforma_config.go (GET/PUT /api/reforma/parametros) + rota em main.go (wave 2)
+- [x] 06-02-PLAN.md — Parsers: worker.go grava cst_icms/aliq_icms do C190 + nfe_saidas.go grava ind_final do XML (wave 2)
+- [x] 06-03-PLAN.md — Backend: reforma_config.go (GET/PUT /api/reforma/parametros) + rota em main.go (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -213,7 +213,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 3. Estabilização Adicional | 4/4 | Complete | 2026-05-16 |
 | 4. Conciliação Bridge vs XML | 2/2 | Complete | 2026-05-16 |
 | 5. Observabilidade e Alertas | 2/2 | Complete | 2026-05-17 |
-| 6. Infraestrutura Reforma Tributária | 1/4 | In Progress|  |
+| 6. Infraestrutura Reforma Tributária | 3/4 | In Progress|  |
 | 7. Módulos 1.x — Exposição Tributária Direta | 0/2 | Planned | — |
 | 8. Módulos 2.x — Analytics Dimensional | 0/2 | Planned | — |
 
