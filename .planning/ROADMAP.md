@@ -126,10 +126,13 @@ Plans:
   5. `GET /api/reforma/parametros` e `PUT /api/reforma/parametros` respondem corretamente
   6. Frontend exibe aba "Análise Reforma" na navegação com página de configuração editável
 
+**Plans:** 4 plans
+
 Plans:
-- [ ] 06-01-PLAN.md — Migrations: cst_icms/aliq_icms em reg_c190 + worker update; ind_final em nfe_saidas + xml_upload update; reforma_parametros table; seed CFOPs transferência
-- [ ] 06-02-PLAN.md — Backend: reforma_config.go (GET/PUT /api/reforma/parametros) + rotas em main.go
-- [ ] 06-03-PLAN.md — Frontend: navigation.ts + App.tsx + ReformaConfig.tsx + useReformaParametros.ts + install react-simple-maps + commit brazil-states.json
+- [ ] 06-01-PLAN.md — Migrations 086–089 (DDL): cst_icms/aliq_icms em reg_c190, reforma_parametros, ind_final em nfe_saidas, seed CFOPs transferência (wave 1)
+- [ ] 06-02-PLAN.md — Parsers: worker.go grava cst_icms/aliq_icms do C190 + nfe_saidas.go grava ind_final do XML (wave 2)
+- [ ] 06-03-PLAN.md — Backend: reforma_config.go (GET/PUT /api/reforma/parametros) + rota em main.go (wave 2)
+- [ ] 06-04-PLAN.md — Frontend: useReformaParametros.ts + ReformaParametros.tsx + navigation.ts + App.tsx + react-simple-maps + brazil-states.json (wave 3)
 
 ### Phase 7: Módulos 1.x — Exposição Tributária Direta
 **Goal**: Entregar os 4 módulos que respondem "qual é a nossa exposição tributária direta na reforma?" — créditos bloqueados, ranking de fornecedores, reprecificação e impacto de capital de giro do split payment.
@@ -172,7 +175,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 3. Estabilização Adicional | 4/4 | Complete | 2026-05-16 |
 | 4. Conciliação Bridge vs XML | 2/2 | Complete | 2026-05-16 |
 | 5. Observabilidade e Alertas | 2/2 | Complete | 2026-05-17 |
-| 6. Infraestrutura Reforma Tributária | 0/3 | Planned | — |
+| 6. Infraestrutura Reforma Tributária | 0/4 | Planned | — |
 | 7. Módulos 1.x — Exposição Tributária Direta | 0/2 | Planned | — |
 | 8. Módulos 2.x — Analytics Dimensional | 0/2 | Planned | — |
 
@@ -183,3 +186,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 *Phase 4 planned: 2026-05-16*
 *Phase 5 planned: 2026-05-16*
 *Phases 6–8 planned: 2026-05-22 (milestone v5.00)*
+*Phase 6 plans finalized: 2026-05-22 (4 plans, 3 waves)*

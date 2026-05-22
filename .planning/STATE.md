@@ -8,7 +8,7 @@ last_activity: 2026-05-22 — Milestone v5.00 roadmap created (Phases 6–8)
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 7
+  total_plans: 8
   completed_plans: 0
   percent: 0
 ---
@@ -27,7 +27,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-22)
 
 Phase: Phase 6 — Infraestrutura Reforma Tributária (not started)
 Plan: —
-Status: Ready to execute — roadmap approved
+Status: Phase 6 planned — 4 plans in 3 waves, ready to execute
 Last activity: 2026-05-22 — Milestone v5.00 roadmap created (Phases 6–8)
 
 ## Decisions Made
