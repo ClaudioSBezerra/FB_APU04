@@ -42,10 +42,25 @@ export const modules: Record<string, ModuleConfig> = {
     label: 'Painel XMLs',
     tabs: [],
   },
+  reforma: {
+    label: 'Análise Reforma Tributária',
+    tabs: [
+      { label: 'Parâmetros',             path: '/reforma/parametros' },
+      { label: 'Créditos IBS/CBS',       path: '/reforma/creditos',         disabled: true },
+      { label: 'Reprecificação',         path: '/reforma/reprecificacao',   disabled: true },
+      { label: 'Ranking Fornecedores',   path: '/reforma/ranking',          disabled: true },
+      { label: 'Split Payment',          path: '/reforma/split-payment',    disabled: true },
+      { label: 'Análise CFOP',           path: '/reforma/cfop',             disabled: true },
+      { label: 'Análise NCM',            path: '/reforma/ncm',              disabled: true },
+      { label: 'UF Destino',             path: '/reforma/uf-destino',       disabled: true },
+      { label: 'B2B vs B2C',            path: '/reforma/b2b-b2c',          disabled: true },
+    ],
+  },
   config: {
     label: 'Configurações',
     tabs: [
       { label: 'Alíquotas',          path: '/config/aliquotas' },
+      { label: 'Parâmetros Reforma', path: '/config/reforma-parametros' },
       { label: 'CFOP',               path: '/config/cfop' },
       { label: 'Simples Nacional',   path: '/config/forn-simples' },
       { label: 'Apelidos Filiais',   path: '/config/apelidos-filiais' },
@@ -71,6 +86,7 @@ export function getActiveModule(pathname: string): string {
   if (pathname.startsWith('/apuracao/')) return 'notas'
   if (pathname.startsWith('/importacoes/')) return 'notas'
   if (pathname.startsWith('/painel/')) return 'painel'
+  if (pathname.startsWith('/reforma')) return 'reforma'
   if (pathname.startsWith('/config/')) return 'config'
   return 'simulador'
 }
