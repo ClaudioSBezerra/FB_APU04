@@ -128,14 +128,14 @@ func ResumoComparativoHandler(db *sql.DB) http.HandlerFunc {
 		query := fmt.Sprintf(`
 WITH efd AS (
   SELECT
-    TO_CHAR(c.dt_doc, 'MM/YYYY') AS mes_ano,
+    j.mes_ano,
     COUNT(*) FILTER (WHERE c.cod_mod IN ('55','65'))  AS qtd_efd,
     SUM(c.vl_doc) FILTER (WHERE c.cod_mod IN ('55','65')) AS total_efd
   FROM reg_c100 c
   JOIN import_jobs j ON j.id = c.job_id
   WHERE j.company_id = $1
     AND c.ind_oper = $2
-    AND c.dt_doc IS NOT NULL
+    AND j.mes_ano IS NOT NULL
     AND c.cod_sit NOT IN ('02','03','04','05')
   GROUP BY 1
 ),
@@ -225,7 +225,7 @@ func LacunasMensalHandler(db *sql.DB) http.HandlerFunc {
 		query := fmt.Sprintf(`
 WITH lacunas AS (
   SELECT
-    TO_CHAR(c.dt_doc, 'MM/YYYY') AS mes_ano,
+    j.mes_ano,
     COUNT(*)       AS qtd_falta,
     SUM(c.vl_doc)  AS valor_falta
   FROM reg_c100 c
@@ -235,7 +235,7 @@ WITH lacunas AS (
     AND c.ind_oper = $2
     AND c.cod_mod IN ('55', '65')
     AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
-    AND c.dt_doc IS NOT NULL
+    AND j.mes_ano IS NOT NULL
     AND c.cod_sit NOT IN ('02','03','04','05')
     AND x.chave_nfe IS NULL
   GROUP BY 1
@@ -304,7 +304,7 @@ func LacunasHandler(db *sql.DB) http.HandlerFunc {
 		// LEFT JOIN anti-join (mais eficiente que NOT EXISTS)
 		query := fmt.Sprintf(`
 SELECT
-  TO_CHAR(c.dt_doc, 'MM/YYYY')    AS mes_ano,
+  j.mes_ano                        AS mes_ano,
   COALESCE(c.chv_nfe, '')         AS chv_nfe,
   COALESCE(c.num_doc, '')         AS num_doc,
   TO_CHAR(c.dt_doc, 'DD/MM/YYYY') AS dt_doc,
@@ -318,9 +318,9 @@ WHERE j.company_id = $1
   AND c.ind_oper = $2
   AND c.cod_mod IN ('55', '65')
   AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
-  AND c.dt_doc IS NOT NULL
+  AND j.mes_ano IS NOT NULL
   AND c.cod_sit NOT IN ('02','03','04','05')
-  AND TO_CHAR(c.dt_doc, 'MM/YYYY') = $3
+  AND j.mes_ano = $3
   AND x.chave_nfe IS NULL
 ORDER BY c.vl_doc DESC
 LIMIT 500
@@ -403,12 +403,12 @@ func LacunasExportHandler(db *sql.DB) http.HandlerFunc {
 		mesAnoFilter := ""
 		if mesAno != "" {
 			args = append(args, mesAno)
-			mesAnoFilter = fmt.Sprintf("AND TO_CHAR(c.dt_doc, 'MM/YYYY') = $%d", len(args))
+			mesAnoFilter = fmt.Sprintf("AND j.mes_ano = $%d", len(args))
 		}
 
 		query := fmt.Sprintf(`
 SELECT
-  TO_CHAR(c.dt_doc, 'MM/YYYY')                                   AS mes_ano,
+  j.mes_ano                                                        AS mes_ano,
   COALESCE(c.filial_cnpj, '')                                     AS filial_cnpj,
   COALESCE(c.cod_part, '')                                         AS cod_part,
   COALESCE(c.ser, '')                                              AS ser,
@@ -432,15 +432,15 @@ WHERE j.company_id = $1
   AND c.ind_oper = $2
   AND c.cod_mod IN ('55','65')
   AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
-  AND c.dt_doc IS NOT NULL
+  AND j.mes_ano IS NOT NULL
   AND c.cod_sit NOT IN ('02','03','04','05')
   AND x.chave_nfe IS NULL
   %s
 GROUP BY
-  c.id, c.filial_cnpj, c.cod_part, c.ser, c.num_doc, c.chv_nfe,
+  j.mes_ano, c.id, c.filial_cnpj, c.cod_part, c.ser, c.num_doc, c.chv_nfe,
   c.dt_doc, c.dt_e_s, c.cod_mod, c.cod_sit, c.vl_doc, c.vl_icms,
   c.vl_pis, c.vl_cofins
-ORDER BY TO_CHAR(c.dt_doc, 'MM/YYYY'), c.dt_doc, c.vl_doc DESC
+ORDER BY j.mes_ano, c.dt_doc, c.vl_doc DESC
 `, tabelaXML, mesAnoFilter)
 
 		rows, err := db.Query(query, args...)
