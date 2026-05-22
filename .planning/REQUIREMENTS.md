@@ -44,6 +44,42 @@ Requisitos do ciclo atual, organizados pelas frentes do PROJECT.md em ordem de p
 - [x] **OBS-01**: Dashboards Grafana dedicados (Prometheus já provisionado em prod) — runs do Bridge, latência API, taxa de erro, ocupação do banco
 - [x] **OBS-02**: Alertas para falhas críticas — erros DPY-4011 consecutivos, falhas de upload XML, reset de banco executado
 
+## v5.00 Requirements — Análise da Reforma Tributária
+
+Requisitos do milestone v5.00, organizados pelas fases A/B/C definidas na pesquisa.
+
+### Fase A — Infraestrutura e Bloqueadores (prioridade 1 — pré-requisito de tudo)
+
+- [ ] **RFMA-01**: Adicionar colunas `cst_icms VARCHAR(3)` e `aliq_icms NUMERIC(6,2)` em `reg_c190`; atualizar `worker.go` para popular a partir das posições `parts[2]` e `parts[4]` do registro EFD C190
+- [ ] **RFMA-02**: Criar tabela `reforma_parametros` com `company_id` PK, `target_ano INT`, `aliq_ibs_pct NUMERIC(5,2)`, `aliq_cbs_pct NUMERIC(5,2)`, `fator_simples_pct NUMERIC(5,2)` (padrão estimado 20% — pendente publicação CG-IBS), `taxa_cdi_anual_pct NUMERIC(5,2)`, `prazo_medio_dias INT`
+- [ ] **RFMA-03**: Adicionar coluna `ind_final SMALLINT` em `nfe_saidas`; estender struct de parse em `xml_upload.go` para ler `ide/indFinal` do XML; persistir nas novas importações. Notas históricas ficam com NULL — coberto pelo fallback CPF/CNPJ
+- [ ] **RFMA-04**: Seed de CFOPs de transferência na tabela `cfop` com `tipo='T'`: 1151, 1152, 2151, 2152, 5151, 5152, 6151, 6152
+- [ ] **RFMA-05**: Endpoints `GET /api/reforma/parametros` e `PUT /api/reforma/parametros` no backend (`reforma_config.go`); validação de company_id e role admin
+- [ ] **RFMA-06**: Hook `useReformaParametros.ts` no frontend para compartilhar parâmetros entre todos os módulos via react-query
+- [ ] **RFMA-07**: Entrada "Análise Reforma Tributária" no `navigation.ts` e rota em `App.tsx`; página de configuração com edição de aliq_ibs, aliq_cbs, fator_simples, taxa_cdi, prazo_medio — editável somente por admins. Exibir disclaimer obrigatório sobre fator Simples Nacional não publicado pelo CG-IBS
+- [ ] **RFMA-08**: Instalar `react-simple-maps` v3.0.0 e commitar TopoJSON simplificado dos estados brasileiros em `frontend/public/brazil-states.json`
+
+### Fase B — Módulos 1.x: Exposição Tributária Direta (prioridade 2)
+
+- [ ] **RFMB-01**: Módulo 1.1 — Dashboard de créditos ICMS bloqueados: `reg_c190` filtrado por `cod_sit NOT IN ('02','03','04','05')`, agrupado por tipo CFOP (uso/consumo vs. ativo permanente), com projeção de equivalente IBS/CBS recuperável; exportação CSV
+- [ ] **RFMB-02**: Módulo 1.3 — Ranking de fornecedores por crédito IBS/CBS gerado: join com `forn_simples` para alerta Simples Nacional; `fator_simples_pct` lido de `reforma_parametros`; disclaimer regulatório visível; exportação CSV
+- [ ] **RFMB-03**: Módulo 1.2 — Tabela de reprecificação de produtos: ICMS por dentro → IBS/CBS por fora; join LATERAL NCM em `ncm_cclasstrib_reforma` (longest-prefix-wins); três caminhos de CST (normal/ST/base-redução); alíquotas lidas de `reforma_parametros`; exportação CSV
+- [ ] **RFMB-04**: Módulo 1.4 — Impacto de capital de giro do split payment: float tributário perdido (IBS+CBS sobre saídas × prazo médio em dias); custo financeiro CDI de reposição; `taxa_cdi_anual_pct` e `prazo_medio_dias` configuráveis via `reforma_parametros`; tabela de sensibilidade DSO × CDI
+
+**Regras transversais para todos os handlers da Fase B:**
+- EFD: `AND c100.cod_sit NOT IN ('02','03','04','05')`
+- XML: `AND cancelado = 'N'`
+- Transferências: `JOIN cfop cf ON cfop = cf.cfop WHERE cf.tipo != 'T'`
+- NCM: LATERAL com `ORDER BY length(ncm_digits) DESC LIMIT 1`
+- Fator Simples: sempre de `reforma_parametros.fator_simples_pct`, nunca hardcoded
+
+### Fase C — Módulos 2.x: Análise Dimensional (prioridade 3)
+
+- [ ] **RFMC-01**: Módulo 2.2 — Análise por CFOP: agrupamento por natureza de operação (uso/consumo, ativo permanente, transferências, exportação, revenda); impacto IBS/CBS por grupo; CFOPs de transferência excluídos
+- [ ] **RFMC-02**: Módulo 2.1 — Análise por NCM: receita e volume de compras agrupados por NCM; alíquota ICMS efetiva atual vs. IBS+CBS projetada; flag de Imposto Seletivo (IS) por NCM; join LATERAL em `ncm_cclasstrib_reforma`
+- [ ] **RFMC-03**: Módulo 2.3 — Análise por UF/destino: volume de vendas por UF de destino; ICMS origem vs. IBS destino; tabela de resumo + mapa coroplético com `react-simple-maps` e `brazil-states.json`
+- [ ] **RFMC-04**: Módulo 2.4 — Segmentação B2B vs. B2C: três vias (b2b_credit / b2b_nocredit / b2c) usando `ind_final` (Phase A migration) + fallback CPF/CNPJ (`LENGTH(dest_cnpj_cpf) = 11` → B2C); nota de UI sobre notas históricas sem `ind_final`
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -80,10 +116,14 @@ Mapeamento requisito → fase. Atualizado quando o ROADMAP.md for criado.
 | STAB-06 a STAB-09 | Phase 3 | Complete (2026-05-16) |
 | EXP-01 a EXP-02 | Phase 4 | Complete (2026-05-16) |
 | OBS-01 a OBS-02 | Phase 5 | Complete (2026-05-17) |
+| RFMA-01 a RFMA-08 | Phase 6 | Planned |
+| RFMB-01 a RFMB-04 | Phase 7 | Planned |
+| RFMC-01 a RFMC-04 | Phase 8 | Planned |
 
 **Coverage:**
-- v1 requirements: 25 total
-- Mapped to phases: 25
+- v1 requirements: 25 total (all complete)
+- v5.00 requirements: 16 total
+- Mapped to phases: 16
 - Unmapped: 0 ✓
 
 ---

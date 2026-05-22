@@ -5,9 +5,9 @@ milestone_name: Análise da Reforma Tributária
 status: planning
 last_updated: "2026-05-22T00:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
-  total_plans: 0
+  total_plans: 7
   completed_plans: 0
   percent: 0
 ---
@@ -24,10 +24,10 @@ See: `.planning/PROJECT.md` (updated 2026-05-22)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 6 — Infraestrutura Reforma Tributária (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-22 — Milestone v5.00 started
+Status: Ready to execute — roadmap approved
+Last activity: 2026-05-22 — Milestone v5.00 roadmap created (Phases 6–8)
 
 ## Decisions Made
 
@@ -58,6 +58,7 @@ Last activity: 2026-05-22 — Milestone v5.00 started
 
 ## Recent History
 
+- 2026-05-22: Milestone v5.00 roadmap criado — Phases 6 (infra), 7 (Módulos 1.x), 8 (Módulos 2.x); REQUIREMENTS.md atualizado com RFMA/RFMB/RFMC
 - 2026-05-22: Milestone v5.00 iniciado — Análise da Reforma Tributária (Módulos 1 e 2)
 - 2026-05-17: Phase 05 Plan 02 executado — fiscal.yml (6 alertas); alertmanager.yml.tpl; 5 runbooks; OBS-02 atendido. Phase 05 COMPLETA. Projeto v4.00 milestone COMPLETO (5/5 fases).
 - 2026-05-17: Phase 05 Plan 01 executado — docker-compose com 4 serviços; backend Go instrumentado; bridge Python instrumentado; 3 dashboards Grafana. OBS-01 atendido.
@@ -76,4 +77,4 @@ Last activity: 2026-05-22 — Milestone v5.00 started
 - **Commit docs:** Yes
 
 ---
-*Last updated: 2026-05-22 — Milestone v5.00 started*
+*Last updated: 2026-05-22 — Milestone v5.00 roadmap approved*
