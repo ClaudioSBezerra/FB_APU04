@@ -262,9 +262,8 @@ func main() {
 	}
 
 	// APP_MODULE controls which route groups are registered:
-	//   "simulador" — SPED upload/jobs/reports/AI; no NF-e/CT-e/RFB routes
-	//   "apuracao"  — NF-e/CT-e/RFB/apuração; no upload/jobs/reports/AI routes
-	//   ""  / "all" — all routes (local dev)
+	//   ""  / "all" — all routes (produção FB_APU04)
+	//   "simulador" — legado: desativa rotas RFB/Apuração (não usar em produção)
 	appModule := os.Getenv("APP_MODULE")
 	log.Printf("APP_MODULE=%q", appModule)
 

@@ -15,7 +15,6 @@ services:
       - REDIS_ADDR=redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - COOKIE_SECURE=true
-      - APP_MODULE=simulador
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
@@ -44,8 +43,6 @@ services:
   web:
     build:
       context: ./frontend
-      args:
-        - VITE_APP_MODULE=simu
     container_name: fb_apu04-web-prod
     restart: always
     expose:
@@ -53,7 +50,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=coolify"
-      - "traefik.http.routers.simu.rule=Host(`simu.fbtax.cloud`) || Host(`simu.fcxlabs.com`)"
+      - "traefik.http.routers.simu.rule=Host(`simu.fbtax.cloud`) || Host(`simulador.fbtax.cloud`) || Host(`simu.fcxlabs.com`)"
       - "traefik.http.routers.simu.entrypoints=https"
       - "traefik.http.routers.simu.tls=true"
       - "traefik.http.routers.simu.tls.certresolver=letsencrypt"
