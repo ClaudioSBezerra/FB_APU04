@@ -47,14 +47,6 @@ services:
     restart: always
     expose:
       - "80"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=coolify"
-      - "traefik.http.routers.simu.rule=Host(`simu.fbtax.cloud`) || Host(`simulador.fbtax.cloud`) || Host(`simu.fcxlabs.com`)"
-      - "traefik.http.routers.simu.entrypoints=https"
-      - "traefik.http.routers.simu.tls=true"
-      - "traefik.http.routers.simu.tls.certresolver=letsencrypt"
-      - "traefik.http.services.simu.loadbalancer.server.port=80"
     depends_on:
       - api
     networks:
