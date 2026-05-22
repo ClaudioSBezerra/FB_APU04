@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +18,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   Legend, ResponsiveContainer, Cell,
 } from 'recharts';
-import { AlertTriangle, CheckCircle, FileBarChart, RefreshCw, Info } from 'lucide-react';
+import { AlertTriangle, CheckCircle, FileBarChart, RefreshCw, Info, Download, Loader2 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,6 +57,25 @@ interface ModeloRow {
   total: number;
 }
 
+interface LacunaExportRow {
+  mes_ano: string;
+  filial_cnpj: string;
+  cod_part: string;
+  ser: string;
+  num_doc: string;
+  chv_nfe: string;
+  dt_doc: string;
+  dt_e_s: string;
+  cod_mod: string;
+  cod_sit: string;
+  cfops: string;
+  vl_doc: number;
+  vl_icms: number;
+  vl_bc_icms: number;
+  vl_pis: number;
+  vl_cofins: number;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -79,9 +99,121 @@ function CoberturaChip({ pct }: { pct: number }) {
   return <Badge variant="destructive" className="text-[10px]">{fmtPct(pct)}</Badge>;
 }
 
+const SIT_LABELS: Record<string, string> = {
+  '00': 'Regular',
+  '01': 'Regular Extemporânea',
+  '06': 'Complementar',
+  '07': 'Complementar Extemporânea',
+  '08': 'Regime Especial',
+};
+
 function SitChip({ sit }: { sit: string }) {
-  const labels: Record<string, string> = { '00': 'Regular', '01': 'Extemporânea', '02': 'Cancelada', '07': 'Complementar', '08': 'Regime Especial' };
-  return <span className="text-muted-foreground text-[10px]">{labels[sit] ?? sit}</span>;
+  return <span className="text-muted-foreground text-[10px]">{SIT_LABELS[sit] ?? sit}</span>;
+}
+
+// ---------------------------------------------------------------------------
+// Excel export helper
+// ---------------------------------------------------------------------------
+async function downloadLacunasExcel(
+  tipo: 'saidas' | 'entradas',
+  mesAno?: string,
+  onStart?: () => void,
+  onEnd?: () => void,
+) {
+  onStart?.();
+  try {
+    const url = buildUrl('/api/xml/comparativo/lacunas/export', {
+      tipo,
+      ...(mesAno ? { mes_ano: mesAno } : {}),
+    });
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    const rows: LacunaExportRow[] = data.items ?? [];
+
+    const headers = [
+      'Período',
+      'Filial CNPJ',
+      'Cód. Parceiro',
+      'Série',
+      'Nº NF',
+      'Data Emissão',
+      'Data Entrada/Saída',
+      'Modelo',
+      'Situação',
+      'CFOPs',
+      'Valor Total (R$)',
+      'Base ICMS (R$)',
+      'Valor ICMS (R$)',
+      'Valor PIS (R$)',
+      'Valor COFINS (R$)',
+      'Chave NF-e',
+    ];
+
+    const wsData = [
+      headers,
+      ...rows.map(r => [
+        r.mes_ano,
+        r.filial_cnpj,
+        r.cod_part,
+        r.ser,
+        r.num_doc,
+        r.dt_doc,
+        r.dt_e_s,
+        r.cod_mod,
+        r.cod_sit ? `${r.cod_sit} – ${SIT_LABELS[r.cod_sit] ?? r.cod_sit}` : '',
+        r.cfops,
+        r.vl_doc,
+        r.vl_bc_icms,
+        r.vl_icms,
+        r.vl_pis,
+        r.vl_cofins,
+        r.chv_nfe,
+      ]),
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    ws['!cols'] = [
+      { wch: 10 }, // Período
+      { wch: 16 }, // Filial CNPJ
+      { wch: 22 }, // Cód. Parceiro
+      { wch: 7 },  // Série
+      { wch: 12 }, // Nº NF
+      { wch: 14 }, // Data Emissão
+      { wch: 18 }, // Data Entrada/Saída
+      { wch: 8 },  // Modelo
+      { wch: 28 }, // Situação
+      { wch: 16 }, // CFOPs
+      { wch: 18 }, // Valor Total
+      { wch: 16 }, // Base ICMS
+      { wch: 16 }, // Valor ICMS
+      { wch: 14 }, // Valor PIS
+      { wch: 16 }, // Valor COFINS
+      { wch: 48 }, // Chave NF-e
+    ];
+
+    // Format currency columns (J:O → indices 10-14) as numbers
+    for (let row = 1; row < wsData.length; row++) {
+      const cols = [10, 11, 12, 13, 14];
+      for (const col of cols) {
+        const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+        if (ws[cellRef]) ws[cellRef].t = 'n';
+      }
+    }
+
+    const label = tipo === 'saidas' ? 'Saidas' : 'Entradas';
+    XLSX.utils.book_append_sheet(wb, ws, `Lacunas ${label}`);
+
+    const filename = mesAno
+      ? `lacunas_${tipo}_${mesAno.replace('/', '-')}.xlsx`
+      : `lacunas_${tipo}_todos_periodos.xlsx`;
+
+    XLSX.writeFile(wb, filename);
+  } finally {
+    onEnd?.();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +222,8 @@ function SitChip({ sit }: { sit: string }) {
 export default function ComparativoEFDvsXML() {
   const [tipo, setTipo] = useState<'saidas' | 'entradas'>('saidas');
   const [mesSelecionado, setMesSelecionado] = useState<string | null>(null);
+  const [exportingAll, setExportingAll] = useState(false);
+  const [exportingMonth, setExportingMonth] = useState<string | null>(null);
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: resumoData, isLoading: loadingResumo, refetch: refetchResumo } = useQuery<{ items: ResumoRow[] }>({
@@ -101,7 +235,6 @@ export default function ComparativoEFDvsXML() {
     },
   });
 
-  // Resumo mensal de lacunas — query leve, roda automaticamente
   const { data: lacunasMensalData, isLoading: loadingLacunaMensal } = useQuery<{ items: LacunaMensalRow[] }>({
     queryKey: ['comparativo-lacunas-mensal', tipo],
     queryFn: async () => {
@@ -111,7 +244,6 @@ export default function ComparativoEFDvsXML() {
     },
   });
 
-  // Detalhe de lacunas — só carrega quando usuário clica em um mês
   const { data: lacunasData, isLoading: loadingLacunas } = useQuery<{ items: LacunaRow[]; total: number }>({
     queryKey: ['comparativo-lacunas-detalhe', tipo, mesSelecionado],
     queryFn: async () => {
@@ -151,6 +283,12 @@ export default function ComparativoEFDvsXML() {
 
   const modelosSaida   = modelos.filter(m => m.ind_oper === '1');
   const modelosEntrada = modelos.filter(m => m.ind_oper === '0');
+
+  const handleExportAll = () =>
+    downloadLacunasExcel(tipo, undefined, () => setExportingAll(true), () => setExportingAll(false));
+
+  const handleExportMonth = (mes: string) =>
+    downloadLacunasExcel(tipo, mes, () => setExportingMonth(mes), () => setExportingMonth(null));
 
   return (
     <div className="space-y-6">
@@ -219,7 +357,6 @@ export default function ComparativoEFDvsXML() {
 
         {/* ── Tab: Resumo por Mês ── */}
         <TabsContent value="resumo" className="space-y-4 mt-4">
-          {/* Gráfico */}
           {chartData.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
@@ -248,7 +385,6 @@ export default function ComparativoEFDvsXML() {
             </Card>
           )}
 
-          {/* Tabela */}
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between">
               <CardTitle className="text-sm">Detalhe Mensal</CardTitle>
@@ -303,16 +439,32 @@ export default function ComparativoEFDvsXML() {
 
         {/* ── Tab: Lacunas ── */}
         <TabsContent value="lacunas" className="space-y-4 mt-4">
-          {/* Resumo mensal — carrega automaticamente (query leve) */}
+          {/* Resumo mensal */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center justify-between flex-wrap gap-2">
                 <span>NF-e no EFD sem XML importado — por mês</span>
-                {totalFalta > 0 && (
-                  <span className="text-red-600 text-xs font-normal">
-                    Total em falta: {fmtBRL(totalFalta)}
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {totalFalta > 0 && (
+                    <span className="text-red-600 text-xs font-normal">
+                      Total em falta: {fmtBRL(totalFalta)}
+                    </span>
+                  )}
+                  {lacunasMensal.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[11px] gap-1.5"
+                      onClick={handleExportAll}
+                      disabled={exportingAll}
+                    >
+                      {exportingAll
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Download className="h-3.5 w-3.5" />}
+                      Exportar todos os períodos
+                    </Button>
+                  )}
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -330,7 +482,7 @@ export default function ComparativoEFDvsXML() {
                       <TableHead className="py-1.5 px-3 text-[11px]">Mês</TableHead>
                       <TableHead className="py-1.5 px-3 text-[11px] text-right">NF-e faltando</TableHead>
                       <TableHead className="py-1.5 px-3 text-[11px] text-right">Valor em falta</TableHead>
-                      <TableHead className="py-1.5 px-3 text-[11px] text-center">Detalhe</TableHead>
+                      <TableHead className="py-1.5 px-3 text-[11px] text-center" colSpan={2}>Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -353,6 +505,20 @@ export default function ComparativoEFDvsXML() {
                             {mesSelecionado === row.mes_ano ? 'Fechar' : 'Ver notas'}
                           </Button>
                         </TableCell>
+                        <TableCell className="py-1 px-2 text-center">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0"
+                            title={`Exportar Excel — ${row.mes_ano}`}
+                            onClick={() => handleExportMonth(row.mes_ano)}
+                            disabled={exportingMonth === row.mes_ano}
+                          >
+                            {exportingMonth === row.mes_ano
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Download className="h-3.5 w-3.5" />}
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -361,16 +527,30 @@ export default function ComparativoEFDvsXML() {
             </CardContent>
           </Card>
 
-          {/* Detalhe do mês selecionado — lazy */}
+          {/* Detalhe do mês selecionado */}
           {mesSelecionado && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
+                <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
                   <AlertTriangle className="h-4 w-4 text-red-500" />
-                  NF-e sem XML — {mesSelecionado}
+                  <span>NF-e sem XML — {mesSelecionado}</span>
                   {lacunasData?.total === 500 && (
-                    <Badge variant="outline" className="text-[10px] ml-auto">limite 500 notas</Badge>
+                    <Badge variant="outline" className="text-[10px]">limite 500 notas</Badge>
                   )}
+                  <div className="ml-auto">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[11px] gap-1.5"
+                      onClick={() => handleExportMonth(mesSelecionado)}
+                      disabled={exportingMonth === mesSelecionado}
+                    >
+                      {exportingMonth === mesSelecionado
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Download className="h-3.5 w-3.5" />}
+                      Exportar Excel
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -414,7 +594,6 @@ export default function ComparativoEFDvsXML() {
         {/* ── Tab: Modelos EFD ── */}
         <TabsContent value="modelos" className="space-y-4 mt-4">
           <div className="grid md:grid-cols-2 gap-4">
-            {/* Saídas */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Modelos de Documento — Saídas (EFD)</CardTitle>
@@ -454,7 +633,6 @@ export default function ComparativoEFDvsXML() {
               </CardContent>
             </Card>
 
-            {/* Entradas */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Modelos de Documento — Entradas (EFD)</CardTitle>

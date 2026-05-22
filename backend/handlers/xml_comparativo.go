@@ -349,6 +349,130 @@ LIMIT 500
 	}
 }
 
+// ── LacunasExportHandler ──────────────────────────────────────────────────────
+// GET /api/xml/comparativo/lacunas/export?tipo=saidas|entradas[&mes_ano=MM/YYYY]
+// Retorna TODAS as lacunas (sem limite de 500) com campos extras para planilha Excel.
+// O frontend converte o JSON para XLSX usando a lib xlsx.
+
+type lacunaExportRow struct {
+	MesAno     string  `json:"mes_ano"`
+	FilialCNPJ string  `json:"filial_cnpj"`
+	CodPart    string  `json:"cod_part"`
+	Ser        string  `json:"ser"`
+	NumDoc     string  `json:"num_doc"`
+	ChvNfe     string  `json:"chv_nfe"`
+	DtDoc      string  `json:"dt_doc"`
+	DtES       string  `json:"dt_e_s"`
+	CodMod     string  `json:"cod_mod"`
+	CodSit     string  `json:"cod_sit"`
+	CFOPs      string  `json:"cfops"`
+	VlDoc      float64 `json:"vl_doc"`
+	VlICMS     float64 `json:"vl_icms"`
+	VlBCICMS   float64 `json:"vl_bc_icms"`
+	VlPIS      float64 `json:"vl_pis"`
+	VlCOFINS   float64 `json:"vl_cofins"`
+}
+
+func LacunasExportHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "não autorizado", http.StatusUnauthorized)
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "empresa não encontrada", http.StatusBadRequest)
+			return
+		}
+
+		tipo := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tipo")))
+		indOper, tabelaXML, valid := validaTipoComparativo(tipo)
+		if !valid {
+			http.Error(w, "tipo inválido: use saidas ou entradas", http.StatusBadRequest)
+			return
+		}
+
+		mesAno := strings.TrimSpace(r.URL.Query().Get("mes_ano"))
+		args := []interface{}{companyID, indOper}
+		mesAnoFilter := ""
+		if mesAno != "" {
+			args = append(args, mesAno)
+			mesAnoFilter = fmt.Sprintf("AND TO_CHAR(c.dt_doc, 'MM/YYYY') = $%d", len(args))
+		}
+
+		query := fmt.Sprintf(`
+SELECT
+  TO_CHAR(c.dt_doc, 'MM/YYYY')                                   AS mes_ano,
+  COALESCE(c.filial_cnpj, '')                                     AS filial_cnpj,
+  COALESCE(c.cod_part, '')                                         AS cod_part,
+  COALESCE(c.ser, '')                                              AS ser,
+  COALESCE(c.num_doc, '')                                          AS num_doc,
+  COALESCE(c.chv_nfe, '')                                          AS chv_nfe,
+  TO_CHAR(c.dt_doc, 'DD/MM/YYYY')                                  AS dt_doc,
+  COALESCE(TO_CHAR(c.dt_e_s, 'DD/MM/YYYY'), '')                   AS dt_e_s,
+  COALESCE(c.cod_mod, '')                                           AS cod_mod,
+  COALESCE(c.cod_sit, '')                                           AS cod_sit,
+  COALESCE(STRING_AGG(DISTINCT ci.cfop, '/'), '')                  AS cfops,
+  COALESCE(c.vl_doc,    0)                                         AS vl_doc,
+  COALESCE(c.vl_icms,   0)                                         AS vl_icms,
+  COALESCE(SUM(ci.vl_bc_icms), 0)                                  AS vl_bc_icms,
+  COALESCE(c.vl_pis,    0)                                         AS vl_pis,
+  COALESCE(c.vl_cofins, 0)                                         AS vl_cofins
+FROM reg_c100 c
+JOIN import_jobs j ON j.id = c.job_id
+LEFT JOIN %s x ON x.company_id = $1 AND x.chave_nfe = c.chv_nfe
+LEFT JOIN reg_c190 ci ON ci.id_pai_c100 = c.id
+WHERE j.company_id = $1
+  AND c.ind_oper = $2
+  AND c.cod_mod IN ('55','65')
+  AND c.chv_nfe IS NOT NULL AND c.chv_nfe <> ''
+  AND c.dt_doc IS NOT NULL
+  AND c.cod_sit NOT IN ('02','03','04','05')
+  AND x.chave_nfe IS NULL
+  %s
+GROUP BY
+  c.id, c.filial_cnpj, c.cod_part, c.ser, c.num_doc, c.chv_nfe,
+  c.dt_doc, c.dt_e_s, c.cod_mod, c.cod_sit, c.vl_doc, c.vl_icms,
+  c.vl_pis, c.vl_cofins
+ORDER BY TO_CHAR(c.dt_doc, 'MM/YYYY'), c.dt_doc, c.vl_doc DESC
+`, tabelaXML, mesAnoFilter)
+
+		rows, err := db.Query(query, args...)
+		if err != nil {
+			log.Printf("LacunasExportHandler: %v", err)
+			http.Error(w, "erro ao consultar dados", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		result := []lacunaExportRow{}
+		for rows.Next() {
+			var row lacunaExportRow
+			if err := rows.Scan(
+				&row.MesAno, &row.FilialCNPJ, &row.CodPart, &row.Ser, &row.NumDoc,
+				&row.ChvNfe, &row.DtDoc, &row.DtES, &row.CodMod, &row.CodSit,
+				&row.CFOPs, &row.VlDoc, &row.VlICMS, &row.VlBCICMS, &row.VlPIS, &row.VlCOFINS,
+			); err != nil {
+				log.Printf("LacunasExportHandler scan: %v", err)
+				continue
+			}
+			result = append(result, row)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"items": result,
+			"total": len(result),
+		})
+	}
+}
+
 // ── ModelosEFDHandler ─────────────────────────────────────────────────────────
 // Retorna breakdown dos modelos de documento no EFD (para ambas direções).
 
