@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
-milestone: v4.00
-milestone_name: milestone
-status: complete
-last_updated: "2026-05-21T13:19:43.004Z"
+milestone: v5.00
+milestone_name: Análise da Reforma Tributária
+status: planning
+last_updated: "2026-05-22T00:00:00.000Z"
 progress:
-  total_phases: 5
+  total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -16,40 +16,18 @@ progress:
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-05-08)
+See: `.planning/PROJECT.md` (updated 2026-05-22)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Phase 05 — Observabilidade e Alertas
+**Current focus:** Milestone v5.00 — Análise da Reforma Tributária (definindo requisitos)
 
-## Status
+## Current Position
 
-- **Initialized:** 2026-05-08
-- **Codebase mapped:** 2026-05-08 (7 documents, 1920 lines in `.planning/codebase/`)
-- **Roadmap:** 5 phases (Coarse granularity)
-- **Active phase:** Phase 05 — COMPLETA (Plans 01+02 concluídos)
-- **Completed phases:** 5 (TODAS AS FASES COMPLETAS)
-- **Last session:** 2026-05-21T13:19:42.997Z
-
-## Current Phase
-
-**Phase 05 — Observabilidade e Alertas — COMPLETA**
-
-- Goal: Prometheus + Grafana + instrumentação Go + instrumentação bridge.py + 3 dashboards + alertas SMTP + runbooks
-- Requirements: OBS-01 — ATENDIDO (Plan 01), OBS-02 — ATENDIDO (Plan 02)
-- Status: COMPLETA — Plans 01+02 executados. 6 alert rules Prometheus + Alertmanager SMTP + 5 runbooks operacionais pt-BR
-
-**Phase 04 — Conciliação Bridge vs XML — COMPLETA**
-
-- Goal: Conciliar dados do ERP Bridge com XMLs SEFAZ — relatório de divergências tributárias e dashboard de cobertura
-- Requirements: EXP-01, EXP-02 — AMBOS ATENDIDOS (Plans 01+02)
-- Status: COMPLETA — Plan 01 (backend: xml_conciliacao.go 3 endpoints) + Plan 02 (frontend: ConciliacaoBridgeXML.tsx + navigation + route)
-
-**Phase 02 — Upload de XMLs (Drag-and-Drop) — COMPLETA**
-
-- Goal: Permitir upload manual de XMLs (NF-e, CT-e) como complemento ao ERP Bridge
-- Requirements: XML-01 a XML-08 — todos atendidos
-- Status: COMPLETA — Plans 01+02+03+04 concluídos — Schema (074-079) + Handlers Go + Frontend React + Relatórios Saneamento CCLASSTRIB com referência Reforma Tributária
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-22 — Milestone v5.00 started
 
 ## Decisions Made
 
@@ -80,52 +58,22 @@ See: `.planning/PROJECT.md` (updated 2026-05-08)
 
 ## Recent History
 
-- 2026-05-07: Incidente — APU04 apontava para banco do APU02 via `APU02_DB_HOST`. Reset apagou 4 meses de produção do APU02. Toda infraestrutura separada nos commits `90d1b93`, `947de42`, `14b455b`. ResetDatabase ainda sem proteção.
-- 2026-05-08: Inicialização do GSD. Codebase mapeado, PROJECT/REQUIREMENTS/ROADMAP criados.
-- 2026-05-08: Phase 01 Plan 01 executado — ResetDatabaseHandler reescrito com 5 gates (STAB-01 a STAB-05), migration 073, audit log admin_destructive_actions, volume api_backups, ALLOWED_DESTRUCTIVE_DBS.
-- 2026-05-08: Phase 01 Plan 02 executado — ResetDatabaseDialog criado com TDD RED/GREEN, integrado ao ImportarEFD.tsx. Infraestrutura vitest instalada. Task 3 (checkpoint:human-verify) aprovado em modo YOLO. Phase 01 COMPLETA.
-- 2026-05-16: Phase 02 Plan 01 executado — 5 migrations criadas (074-078): coluna source em 3 tabelas, tabelas nfe_*_itens, xml_upload_batches, regime_tributario, 4 views vw_xml_*.
-- 2026-05-16: Phase 02 Plan 02 executado — handlers Go: XMLUploadHandler (.xml/.zip, 100MB/5000 XMLs, async >50), XMLPainelHandler (3 views), StartXMLWorker (pool 3 goroutines), lógica XML>Oracle source.
-- 2026-05-16: Phase 02 Plan 03 executado — frontend React: react-dropzone nas 3 páginas de upload XML, PainelXMLs.tsx com 3 abas, regime_tributario em GestaoAmbiente, erp_type oracle_xml em ERPBridgeConfig, 4 novas rotas + tabs.
-- 2026-05-16: Phase 02 Plan 04 executado — 3 endpoints relatório saneamento CCLASSTRIB + migration 079 (95 NCMs Reforma Tributária semeados em ncm_cclasstrib_reforma) + RelatorioSaneamento.tsx com coluna "Sugestão CCLASSTRIB" preenchida automaticamente via LEFT JOIN LATERAL. Phase 02 COMPLETA (Plans 01+02+03+04).
-- 2026-05-16: Phase 04 Plan 01 executado — xml_conciliacao.go criado com ConciliacaoHandler + CoberturaHandler + ConciliacaoCSVHandler + 2 query helpers; 3 rotas registradas em main.go (/csv antes de /conciliacao). EXP-01 e EXP-02 atendidos no backend.
-- 2026-05-16: Phase 04 Plan 02 executado — ConciliacaoBridgeXML.tsx criado com tabela 13 colunas text-[11px], BarChart cobertura, exportação Excel/CSV/PDF, 3 cards resumo, states loading/error/vazio; navigation.ts + App.tsx atualizados; @media print em index.css. Phase 04 COMPLETA (Plans 01+02). EXP-01 e EXP-02 totalmente atendidos.
-- 2026-05-17: Phase 05 Plan 01 executado — docker-compose com 4 serviços (prometheus, grafana, alertmanager, postgres-exporter); backend Go instrumentado com prometheus/client_golang v1.20.5 (/metrics + normalizePath + 3 counters críticos); bridge Python com prometheus_client (start_http_server 8086 + stubs graceful); prometheus.yml 4 scrape_configs + 3 dashboards JSON Grafana auto-provisionados. OBS-01 atendido.
-- 2026-05-17: Phase 05 Plan 02 executado — fiscal.yml (6 alertas); alertmanager.yml.tpl (3 receivers SMTP, inhibit rule, awk-based envsubst fix); 5 runbooks + README em docs/runbooks/; validação end-to-end: 3 emails SMTP enviados, 0 falhas. OBS-02 atendido. Phase 05 COMPLETA. Projeto v4.00 milestone COMPLETO (5/5 fases, 15/15 planos).
-- 2026-05-17: Code review Phase 5 (05-REVIEW.md) — 2 Criticals + 4 Warnings + 3 Info. Corrigidos: CR-01 (awk gsub corrompia senhas com &/\ em SMTP_PASSWORD), CR-02 (XMLUploadErrorsTotal não disparava em batches assíncronos >50 XMLs), WR-01 (BridgeOffline disparava false-positive no startup), WR-02 (postgres-exporter com sslmode=disable em prod), WR-03 (Grafana admin password com fallback inseguro :-admin), WR-04 (duplicata de método inc em _NoOpCounter). Verification: CONDITIONAL PASS (sem gaps bloqueadores; BridgeDaemonDown 90s é exceção deliberada documentada).
+- 2026-05-22: Milestone v5.00 iniciado — Análise da Reforma Tributária (Módulos 1 e 2)
+- 2026-05-17: Phase 05 Plan 02 executado — fiscal.yml (6 alertas); alertmanager.yml.tpl; 5 runbooks; OBS-02 atendido. Phase 05 COMPLETA. Projeto v4.00 milestone COMPLETO (5/5 fases).
+- 2026-05-17: Phase 05 Plan 01 executado — docker-compose com 4 serviços; backend Go instrumentado; bridge Python instrumentado; 3 dashboards Grafana. OBS-01 atendido.
+- 2026-05-16: Phase 04 completa — Conciliação Bridge vs XML (Plans 01+02).
+- 2026-05-16: Phase 02 completa — Upload XML manual (Plans 01+02+03+04).
+- 2026-05-08: Inicialização GSD. Codebase mapeado, PROJECT/REQUIREMENTS/ROADMAP criados.
 
 ## Configuration
 
 - **Mode:** YOLO (autonomous)
-- **Granularity:** Coarse (5 phases, 1-3 plans each)
+- **Granularity:** Coarse
 - **Parallelization:** Sequential
 - **Models:** Balanced (Sonnet)
 - **Workflow agents:** Research + Plan Check + Verifier (all enabled)
 - **Auto-advance:** Enabled
-- **Commit docs:** Yes (planning tracked in git)
-
-## Next Action
-
-Projeto v4.00 milestone COMPLETO. Todas as 5 fases e 15 planos executados.
-
-- Phase 01: Estabilização (ResetDatabaseHandler + 5 gates) — COMPLETA
-- Phase 02: Upload XML manual — COMPLETA
-- Phase 03: (não documentado — pulado) — N/A
-- Phase 04: Conciliação Bridge vs XML — COMPLETA
-- Phase 05: Observabilidade e Alertas — COMPLETA
-
-Próximos passos sugeridos (deploy/ops):
-
-1. Rebuild do container api para expor /metrics (api e bridge targets ficarão "up" no Prometheus)
-2. Configurar GRAFANA_ADMIN_PASSWORD no Coolify secrets (obrigatório — fallback removido pelo CR-03 fix)
-3. Verificar acesso anônimo ao Grafana em produção após deploy
-4. Avaliar Loki para log aggregation (v2 — RESEARCH.md)
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260519-ixg | Painel SPED/XML, IPI/PIS-COFINS SN informativos, Simulador RT-XMLs, auto-CRT | 2026-05-19 | d7800d2 | [260519-ixg-painel-sped-xml-crt-sn](./quick/260519-ixg-painel-sped-xml-crt-sn/) |
+- **Commit docs:** Yes
 
 ---
-*Last updated: 2026-05-19 — Completed quick task 260519-ixg: Painel SPED/XML, IPI/PIS-COFINS SN informativos, Simulador RT-XMLs, auto-CRT*
+*Last updated: 2026-05-22 — Milestone v5.00 started*

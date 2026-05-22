@@ -1,5 +1,19 @@
 # FB_APU04 — Simulador Fiscal
 
+## Current Milestone: v5.00 — Análise da Reforma Tributária
+
+**Goal:** Entregar dois módulos analíticos sobre dados já importados (EFD ICMS/IPI + XMLs NF-e), identificando oportunidades de crédito IBS/CBS e impactos por produto, CFOP, UF e segmento de cliente.
+
+**Target features:**
+- Módulo 1.1: Créditos ICMS bloqueados — CST/CFOP de uso/consumo e ativo permanente (EFD C170/C190)
+- Módulo 1.2: Reprecificação de produtos — ICMS por dentro → IBS/CBS por fora (XMLs NF-e venda)
+- Módulo 1.3: Ranking de fornecedores por crédito IBS/CBS gerado, alerta Simples Nacional
+- Módulo 1.4: Split payment — float tributário perdido e custo financeiro de reposição de capital
+- Módulo 2.1: Análise por NCM — alíquota efetiva atual vs. IBS+CBS projetada
+- Módulo 2.2: Análise por CFOP — impacto por natureza da operação (grupos: uso/consumo, ativo, transferências, exportação)
+- Módulo 2.3: Análise por UF/destino — tributação na origem (ICMS) → destino (IBS)
+- Módulo 2.4: Segmentação B2B vs. B2C automática por indFinal/CPF/CNPJ
+
 ## What This Is
 
 Plataforma de escrituração e simulação fiscal de entradas/saídas com apuração de impostos (PIS, COFINS, IPI, ICMS) e geração de SPED. Atende a equipe fiscal da Ferreira Costa (e futuros clientes via tenancy lógico Ambiente → Grupo → Empresa) através do domínio público `simu.fbtax.cloud` / `simu.fcxlabs.com`. Hoje em produção com importação de notas via ERP Bridge (Oracle ERP), e evoluindo para suportar também upload manual de XMLs.
@@ -110,4 +124,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-08 after initialization*
+*Last updated: 2026-05-22 — Milestone v5.00 iniciado*
