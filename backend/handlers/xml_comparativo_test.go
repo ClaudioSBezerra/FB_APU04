@@ -159,3 +159,27 @@ func TestLacunasMensalHandler_Unauthorized(t *testing.T) {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// LacunasExportHandler guards
+// ---------------------------------------------------------------------------
+
+func TestLacunasExportHandler_MethodNotAllowed(t *testing.T) {
+	handler := LacunasExportHandler(nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/xml/comparativo/lacunas/export", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestLacunasExportHandler_Unauthorized(t *testing.T) {
+	handler := LacunasExportHandler(nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/xml/comparativo/lacunas/export?tipo=saidas", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}
