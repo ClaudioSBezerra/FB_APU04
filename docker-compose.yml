@@ -19,11 +19,11 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM=${SMTP_FROM}
-      - APP_URL=${APP_URL:-https://simu.fbtax.cloud}
+      - APP_URL=${APP_URL:-https://simulador.fbtax.cloud}
       - ZAI_API_KEY=${ZAI_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
-      - APP_MODULE=${APP_MODULE:-simulador}
+      - APP_MODULE=${APP_MODULE:-}
       - ALLOWED_DESTRUCTIVE_DBS=${ALLOWED_DESTRUCTIVE_DBS:-fiscal_apu04_db}
     depends_on:
       db:
@@ -43,7 +43,7 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_APP_MODULE=${VITE_APP_MODULE:-simu}
+        - VITE_APP_MODULE=${VITE_APP_MODULE:-}
     container_name: fb_apu04-web
     restart: always
     expose:
@@ -51,7 +51,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=coolify"
-      - "traefik.http.routers.simu.rule=Host(`simu.fcxlabs.com`) || Host(`simu.fbtax.cloud`)"
+      - "traefik.http.routers.simu.rule=Host(`simu.fcxlabs.com`) || Host(`simulador.fbtax.cloud`)"
       - "traefik.http.routers.simu.entrypoints=https"
       - "traefik.http.routers.simu.tls=true"
       - "traefik.http.routers.simu.tls.certresolver=letsencrypt"

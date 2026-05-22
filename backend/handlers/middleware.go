@@ -18,7 +18,7 @@ func GetAllowedOrigins() map[string]bool {
 	} else {
 		list = []string{
 			"https://fbtax.cloud",
-			"https://simu.fbtax.cloud",
+			"https://simulador.fbtax.cloud",
 			"https://simulador.fbtax.cloud",
 			"https://apuracao.fbtax.cloud",
 			"https://simu.fcxlabs.com",

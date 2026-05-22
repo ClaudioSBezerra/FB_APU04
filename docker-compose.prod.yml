@@ -20,7 +20,7 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM=${SMTP_FROM}
-      - APP_URL=${APP_URL:-https://simu.fbtax.cloud}
+      - APP_URL=${APP_URL:-https://simulador.fbtax.cloud}
       - ZAI_API_KEY=${ZAI_API_KEY:-}
       - ALLOWED_DESTRUCTIVE_DBS=${ALLOWED_DESTRUCTIVE_DBS:-fiscal_apu04_db}
     depends_on:
