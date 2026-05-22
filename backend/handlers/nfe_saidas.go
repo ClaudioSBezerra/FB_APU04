@@ -117,12 +117,13 @@ type detIPI struct {
 }
 
 type ide struct {
-	Mod   string `xml:"mod"`    // 55 ou 65
-	Serie string `xml:"serie"`
-	NNF   string `xml:"nNF"`
-	DhEmi string `xml:"dhEmi"` // ISO8601 → data_emissao + mes_ano
-	TpNF  string `xml:"tpNF"` // 1 = saída (rejeitar se ≠ 1)
-	NatOp string `xml:"natOp"`
+	Mod      string `xml:"mod"`      // 55 ou 65
+	Serie    string `xml:"serie"`
+	NNF      string `xml:"nNF"`
+	DhEmi    string `xml:"dhEmi"`    // ISO8601 → data_emissao + mes_ano
+	TpNF     string `xml:"tpNF"`    // 1 = saída (rejeitar se ≠ 1)
+	NatOp    string `xml:"natOp"`
+	IndFinal string `xml:"indFinal"` // "0"=B2B/normal, "1"=consumidor final; "" para NF-e antigas
 }
 
 type emit struct {
@@ -223,6 +224,21 @@ func toNullDecimal(s string) *float64 {
 		return nil
 	}
 	return &v
+}
+
+// toNullSmallInt converte string "0"/"1"/"" para interface{} compatível com SMALLINT nullable.
+// "" → nil (NULL — D-09: ausência de dado para NF-e históricas)
+// "1" → 1 (consumidor final)
+// qualquer outro valor → 0 (B2B/normal — fallback seguro, T-06-07)
+func toNullSmallInt(s string) interface{} {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	if s == "1" {
+		return 1
+	}
+	return 0
 }
 
 // nfeCharsetReader converte encodings declarados no XML (ex: windows-1252) para UTF-8.
@@ -551,7 +567,7 @@ func NfeSaidasUploadHandler(db *sql.DB) http.HandlerFunc {
 					v_ii, v_ipi, v_ipi_devol, v_pis, v_cofins, v_outro, v_nf,
 					v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cred_pres_ibs,
 					v_cbs, v_cred_pres_cbs,
-					source
+					source, ind_final
 				) VALUES (
 					$1,$2,$3,$4,$5,
 					$6,$7,$8,
@@ -563,7 +579,7 @@ func NfeSaidasUploadHandler(db *sql.DB) http.HandlerFunc {
 					$29,$30,$31,$32,$33,$34,$35,
 					$36,$37,$38,$39,$40,
 					$41,$42,
-					'xml_upload'
+					'xml_upload', $43
 				)
 				ON CONFLICT ON CONSTRAINT uq_nfe_saidas_company_chave DO UPDATE SET
 					emit_cnpj    = EXCLUDED.emit_cnpj,
@@ -600,7 +616,8 @@ func NfeSaidasUploadHandler(db *sql.DB) http.HandlerFunc {
 					v_cred_pres_ibs = EXCLUDED.v_cred_pres_ibs,
 					v_cbs        = EXCLUDED.v_cbs,
 					v_cred_pres_cbs = EXCLUDED.v_cred_pres_cbs,
-					source       = 'xml_upload'
+					source       = 'xml_upload',
+					ind_final    = EXCLUDED.ind_final
 				RETURNING id`,
 				companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
 				dataEmissao, mesAno, inf.Ide.NatOp,
@@ -613,6 +630,7 @@ func NfeSaidasUploadHandler(db *sql.DB) http.HandlerFunc {
 				toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.GIBSuf.VIBSuf), toNullDecimal(ib.GIBS.GIBSMun.VIBSMun),
 				toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GIBS.VCredPres),
 				toNullDecimal(ib.GCBS.VCBS), toNullDecimal(ib.GCBS.VCredPres),
+				toNullSmallInt(inf.Ide.IndFinal),
 			).Scan(&nfeID)
 			if err != nil {
 				tx.Rollback()
