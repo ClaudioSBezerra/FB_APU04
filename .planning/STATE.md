@@ -2,8 +2,9 @@
 gsd_state_version: 1.0
 milestone: v5.00
 milestone_name: Análise da Reforma Tributária
-status: planning
-last_updated: "2026-05-22T00:00:00.000Z"
+status: executing
+last_updated: "2026-05-22T21:16:40.725Z"
+last_activity: 2026-05-22 — Milestone v5.00 roadmap created (Phases 6–8)
 progress:
   total_phases: 3
   completed_phases: 0
