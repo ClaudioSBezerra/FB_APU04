@@ -28,6 +28,7 @@ import ERPBridgeLogs from './pages/ERPBridgeLogs'
 import ERPBridgeCredenciais from './pages/ERPBridgeCredenciais'
 import AdminUsers from './pages/AdminUsers'
 import LimparDados from './pages/LimparDados'
+import ReformaParametros from './pages/ReformaParametros'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ForgotPassword from './pages/ForgotPassword'
@@ -169,6 +170,10 @@ function AppLayout() {
               <Route path="/relatorios/saneamento-cclasstrib"  element={<RelatorioSaneamento />} />
               <Route path="/conciliacao/bridge-xml"            element={<ConciliacaoBridgeXML />} />
               <Route path="/comparativo/efd-xml"               element={<ComparativoEFDvsXML />} />
+
+              {/* Análise Reforma Tributária */}
+              <Route path="/reforma/parametros"         element={<ReformaParametros />} />
+              <Route path="/config/reforma-parametros"  element={<ReformaParametros />} />
 
               {/* Configurações */}
               <Route path="/config/aliquotas"                  element={<TabelaAliquotas />} />
