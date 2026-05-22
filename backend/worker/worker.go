@@ -491,7 +491,7 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 					return fmt.Errorf("prepare stmtC100: %w", err)
 				}
 
-				stmtC190, err = tx.Prepare(`INSERT INTO reg_c190 (job_id, id_pai_c100, cfop, vl_opr, vl_bc_icms, vl_icms, vl_bc_icms_st, vl_icms_st, vl_red_bc, vl_ipi, cod_obs) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`)
+				stmtC190, err = tx.Prepare(`INSERT INTO reg_c190 (job_id, id_pai_c100, cfop, vl_opr, vl_bc_icms, vl_icms, vl_bc_icms_st, vl_icms_st, vl_red_bc, vl_ipi, cod_obs, cst_icms, aliq_icms) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`)
 				if err != nil {
 					return fmt.Errorf("prepare stmtC190: %w", err)
 				}
@@ -737,7 +737,7 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 			}
 		case "C190":
 			parts := strings.Split(line, "|")
-			if len(parts) >= 12 && currentC100ID != "" {
+			if len(parts) >= 13 && currentC100ID != "" {
 				countC190++
 				vlIpi := parseDecimal(parts[11])
 				if vlIpi > 0 {
@@ -749,7 +749,7 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 						debugLog.WriteString(msg)
 					}
 				}
-				stmtC190.Exec(jobID, currentC100ID, parts[3], parseDecimal(parts[5]), parseDecimal(parts[6]), parseDecimal(parts[7]), parseDecimal(parts[8]), parseDecimal(parts[9]), parseDecimal(parts[10]), vlIpi, parts[12])
+				stmtC190.Exec(jobID, currentC100ID, parts[3], parseDecimal(parts[5]), parseDecimal(parts[6]), parseDecimal(parts[7]), parseDecimal(parts[8]), parseDecimal(parts[9]), parseDecimal(parts[10]), vlIpi, parts[12], parts[2], parseDecimal(parts[4]))
 			}
 		case "C500":
 			parts := strings.Split(line, "|")
