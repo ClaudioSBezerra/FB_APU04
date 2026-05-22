@@ -521,6 +521,23 @@ func main() {
 		}
 	}, ""))
 
+	// ── Reforma Tributária — Parâmetros (RFMA-05) ──
+	http.HandleFunc("/api/reforma/parametros", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			handlers.AuthMiddleware(handlers.GetReformaParametrosHandler(database), "")(w, r)
+		case http.MethodPut:
+			handlers.AuthMiddleware(handlers.PutReformaParametrosHandler(database), "admin")(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
 	// ── Apuração Assistida + Receita Federal — routes skipped in APP_MODULE=simulador ──
 	if appModule != "simulador" {
 		// RFB Credentials Endpoints (Conectar Receita Federal)
