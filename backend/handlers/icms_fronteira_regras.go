@@ -371,7 +371,7 @@ func IcmsFronteiraRegraUpdateHandler(db *sql.DB) http.HandlerFunc {
 				mva_ajustado_7pct  = $6,
 				mva_ajustado_12pct = $7,
 				reducao_bc_pct   = $8
-			WHERE id = $9::uuid AND (company_id = $10::uuid OR company_id IS NULL)
+			WHERE id = $9::uuid AND company_id = $10::uuid
 		`, body.Descricao, body.Regime, body.AliquotaInterna,
 			body.MVAOriginal, body.MVAAjustado4pct, body.MVAAjustado7pct, body.MVAAjustado12pct,
 			body.ReducaoBCPct, id, companyID)
