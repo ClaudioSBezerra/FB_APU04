@@ -600,6 +600,40 @@ func main() {
 		handlers.AuthMiddleware(handlers.SplitPaymentHandler(database), "")(w, r)
 	})
 
+	// ── ICMS Fronteira ────────────────────────────────────────────────────────
+	http.HandleFunc("/api/icms-fronteira/resumo", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraResumoHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/antecipacao", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraAntecipacaoHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/st", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraSTHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/difal", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraDIFALHandler(database), "")(w, r)
+	})
+
 	// ── Apuração Assistida + Receita Federal — routes skipped in APP_MODULE=simulador ──
 	if appModule != "simulador" {
 		// RFB Credentials Endpoints (Conectar Receita Federal)

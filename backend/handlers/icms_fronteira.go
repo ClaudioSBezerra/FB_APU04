@@ -1,0 +1,327 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"log"
+	"net/http"
+	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+// CFOPs that characterise DIFAL (interstate purchase for use/consumption or fixed assets).
+var difalCFOPs = map[string]bool{
+	"1551": true, "1556": true,
+	"2551": true, "2556": true,
+	"6551": true, "6556": true,
+	"5551": true, "5556": true,
+	"2151": true,
+}
+
+// Sul/Sudeste states subject to 7 % interestadual rate (all others → 12 %).
+var sulSudesteUF = map[string]bool{
+	"PR": true, "RS": true, "SC": true,
+	"MG": true, "RJ": true, "SP": true,
+}
+
+func aliqInterestadual(uf string) float64 {
+	if sulSudesteUF[strings.ToUpper(strings.TrimSpace(uf))] {
+		return 7.0
+	}
+	return 12.0
+}
+
+// ---------------------------------------------------------------------------
+// Structs — Resumo
+// ---------------------------------------------------------------------------
+
+type FronteiraResumoRow struct {
+	Regime         string  `json:"regime"`
+	QtdNotas       int     `json:"qtd_notas"`
+	VProdTotal     float64 `json:"v_prod_total"`
+	VStRetido      float64 `json:"v_st_retido"`
+	IcmsDevidoEst  float64 `json:"icms_devido_est"`
+}
+
+type FronteiraResumoResponse struct {
+	Rows         []FronteiraResumoRow `json:"rows"`
+	TotalDevido  float64              `json:"total_devido"`
+	TotalProd    float64              `json:"total_prod"`
+}
+
+// ---------------------------------------------------------------------------
+// Structs — Notas (shared across Antecipação / ST / DIFAL tabs)
+// ---------------------------------------------------------------------------
+
+type FronteiraNotaRow struct {
+	ChaveNFe      string  `json:"chave_nfe"`
+	DataEmissao   string  `json:"data_emissao"`
+	NumeroNFe     string  `json:"numero_nfe"`
+	FornCNPJ      string  `json:"forn_cnpj"`
+	FornNome      string  `json:"forn_nome"`
+	FornUF        string  `json:"forn_uf"`
+	CFOP          string  `json:"cfop"`
+	VProd         float64 `json:"v_prod"`
+	VIcms         float64 `json:"v_icms"`
+	VBcST         float64 `json:"v_bc_st"`
+	VST           float64 `json:"v_st"`
+	AliqInter     float64 `json:"aliq_inter"`
+	AliqInterna   float64 `json:"aliq_interna"`
+	IcmsDevidoEst float64 `json:"icms_devido_est"`
+	Regime        string  `json:"regime"`
+}
+
+type FronteiraNotasResponse struct {
+	Rows  []FronteiraNotaRow `json:"rows"`
+	Total float64            `json:"total"`
+	Count int                `json:"count"`
+}
+
+// ---------------------------------------------------------------------------
+// SQL helpers
+// ---------------------------------------------------------------------------
+
+// baseQuery returns the common SELECT that classifies each nota and computes
+// the estimated ICMS due. Caller appends a WHERE clause for the regime filter
+// and the $1 company_id placeholder.
+const fronteiraBaseQuery = `
+WITH classified AS (
+    SELECT
+        ne.chave_nfe,
+        ne.data_emissao::text                               AS data_emissao,
+        COALESCE(ne.numero_nfe, '')                         AS numero_nfe,
+        COALESCE(ne.forn_cnpj, '')                          AS forn_cnpj,
+        COALESCE(ne.forn_nome, '')                          AS forn_nome,
+        COALESCE(ne.forn_uf, '')                            AS forn_uf,
+        COALESCE(ne.cfop, '')                               AS cfop,
+        COALESCE(ne.v_prod, 0)                              AS v_prod,
+        COALESCE(ne.v_icms, 0)                              AS v_icms,
+        COALESCE(ne.v_bc_st, 0)                             AS v_bc_st,
+        COALESCE(ne.v_st, 0)                                AS v_st,
+        CASE
+            WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
+            ELSE 12.0
+        END                                                 AS aliq_inter,
+        COALESCE(regra.aliquota_interna, 20.5)              AS aliq_interna,
+        CASE
+            WHEN ne.cfop IN ('2551','2556','1551','1556','6551','6556','5551','5556','2151')
+                THEN 'DIFAL'
+            WHEN COALESCE(ne.v_st, 0) > 0
+                THEN 'ST'
+            ELSE 'ANTECIPACAO'
+        END                                                 AS regime,
+        -- Estimated ICMS due by regime
+        CASE
+            WHEN ne.cfop IN ('2551','2556','1551','1556','6551','6556','5551','5556','2151')
+                THEN COALESCE(ne.v_prod, 0) *
+                     (COALESCE(regra.aliquota_interna, 20.5) -
+                      CASE WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP'])
+                           THEN 7.0 ELSE 12.0 END) / 100.0
+            WHEN COALESCE(ne.v_st, 0) > 0
+                THEN COALESCE(ne.v_st, 0)
+            ELSE
+                GREATEST(0,
+                    COALESCE(ne.v_prod, 0) *
+                    (COALESCE(regra.aliquota_interna, 20.5) -
+                     CASE WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP'])
+                          THEN 7.0 ELSE 12.0 END) / 100.0
+                )
+        END                                                 AS icms_devido_est
+    FROM nfe_entradas ne
+    LEFT JOIN LATERAL (
+        SELECT r.aliquota_interna
+        FROM icms_fronteira_regras_ncm r
+        WHERE (r.company_id = $1 OR r.company_id IS NULL)
+          AND ne.forn_uf IS NOT NULL
+          AND ne.forn_uf != ''
+        ORDER BY r.company_id NULLS LAST
+        LIMIT 1
+    ) regra ON true
+    WHERE ne.company_id = $1
+      AND ne.forn_uf IS NOT NULL
+      AND ne.forn_uf != ''
+      AND ne.forn_uf != 'PE'
+      AND ne.forn_uf != COALESCE(ne.dest_uf, 'PE')
+)
+`
+
+// ---------------------------------------------------------------------------
+// IcmsFronteiraResumoHandler — GET /api/icms-fronteira/resumo
+// ---------------------------------------------------------------------------
+
+func IcmsFronteiraResumoHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa: "+err.Error())
+			return
+		}
+
+		query := fronteiraBaseQuery + `
+SELECT
+    regime,
+    COUNT(*)            AS qtd_notas,
+    SUM(v_prod)         AS v_prod_total,
+    SUM(v_st)           AS v_st_retido,
+    SUM(icms_devido_est) AS icms_devido_est
+FROM classified
+GROUP BY regime
+ORDER BY regime
+`
+		rows, err := db.Query(query, companyID)
+		if err != nil {
+			log.Printf("IcmsFronteiraResumo error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar resumo ICMS Fronteira")
+			return
+		}
+		defer rows.Close()
+
+		result := []FronteiraResumoRow{}
+		var totalDevido, totalProd float64
+
+		for rows.Next() {
+			var row FronteiraResumoRow
+			if err := rows.Scan(
+				&row.Regime, &row.QtdNotas, &row.VProdTotal, &row.VStRetido, &row.IcmsDevidoEst,
+			); err != nil {
+				log.Printf("IcmsFronteiraResumo scan error: %v", err)
+				continue
+			}
+			totalDevido += row.IcmsDevidoEst
+			totalProd += row.VProdTotal
+			result = append(result, row)
+		}
+
+		json.NewEncoder(w).Encode(FronteiraResumoResponse{
+			Rows:        result,
+			TotalDevido: totalDevido,
+			TotalProd:   totalProd,
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// notasHandler is the shared implementation for the three detail tabs.
+// regime: "ANTECIPACAO" | "ST" | "DIFAL"
+// ---------------------------------------------------------------------------
+
+func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, regime string) {
+	claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+	if !ok {
+		jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	userID, _ := claims["user_id"].(string)
+
+	companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa: "+err.Error())
+		return
+	}
+
+	query := fronteiraBaseQuery + `
+SELECT
+    chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
+    cfop, v_prod, v_icms, v_bc_st, v_st,
+    aliq_inter, aliq_interna, icms_devido_est, regime
+FROM classified
+WHERE regime = $2
+ORDER BY data_emissao DESC, chave_nfe
+LIMIT 500
+`
+	rows, err := db.Query(query, companyID, regime)
+	if err != nil {
+		log.Printf("IcmsFronteiraNotas[%s] error: %v", regime, err)
+		jsonErr(w, http.StatusInternalServerError, "Erro ao consultar notas ICMS Fronteira")
+		return
+	}
+	defer rows.Close()
+
+	result := []FronteiraNotaRow{}
+	var total float64
+
+	for rows.Next() {
+		var row FronteiraNotaRow
+		if err := rows.Scan(
+			&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
+			&row.FornCNPJ, &row.FornNome, &row.FornUF,
+			&row.CFOP, &row.VProd, &row.VIcms, &row.VBcST, &row.VST,
+			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.Regime,
+		); err != nil {
+			log.Printf("IcmsFronteiraNotas[%s] scan error: %v", regime, err)
+			continue
+		}
+		total += row.IcmsDevidoEst
+		result = append(result, row)
+	}
+
+	json.NewEncoder(w).Encode(FronteiraNotasResponse{
+		Rows:  result,
+		Total: total,
+		Count: len(result),
+	})
+}
+
+// ---------------------------------------------------------------------------
+// IcmsFronteiraAntecipacaoHandler — GET /api/icms-fronteira/antecipacao
+// ---------------------------------------------------------------------------
+
+func IcmsFronteiraAntecipacaoHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		fronteiraNotasHandler(db, w, r, "ANTECIPACAO")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IcmsFronteiraSTHandler — GET /api/icms-fronteira/st
+// ---------------------------------------------------------------------------
+
+func IcmsFronteiraSTHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		fronteiraNotasHandler(db, w, r, "ST")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IcmsFronteiraDIFALHandler — GET /api/icms-fronteira/difal
+// ---------------------------------------------------------------------------
+
+func IcmsFronteiraDIFALHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		fronteiraNotasHandler(db, w, r, "DIFAL")
+	}
+}

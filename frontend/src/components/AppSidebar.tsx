@@ -25,6 +25,8 @@ import {
   BarChart2,
   Users2,
   CreditCard,
+  MapPin,
+  AlertTriangle,
 } from "lucide-react"
 import {
   Sidebar,
@@ -128,6 +130,17 @@ const sections: NavSection[] = [
       { title: "Reprecificação",       url: "/reforma/reprecificacao", icon: BarChart2 },
       { title: "Ranking Fornecedores", url: "/reforma/ranking",        icon: Users2 },
       { title: "Split Payment",        url: "/reforma/split-payment",  icon: Scale },
+    ],
+  },
+  {
+    id: "fronteira",
+    title: "ICMS Fronteira — PE",
+    sectionIcon: MapPin,
+    items: [
+      { title: "Resumo",             url: "/icms-fronteira",             icon: MapPin },
+      { title: "Antecipação",        url: "/icms-fronteira/antecipacao", icon: TrendingUp },
+      { title: "Subst. Tributária",  url: "/icms-fronteira/st",          icon: AlertTriangle },
+      { title: "DIFAL",              url: "/icms-fronteira/difal",       icon: BarChart2 },
     ],
   },
   {

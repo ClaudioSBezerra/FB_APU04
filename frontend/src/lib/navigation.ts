@@ -56,6 +56,15 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'B2B vs B2C',            path: '/reforma/b2b-b2c',          disabled: true },
     ],
   },
+  fronteira: {
+    label: 'ICMS Fronteira — PE',
+    tabs: [
+      { label: 'Resumo',               path: '/icms-fronteira' },
+      { label: 'Antecipação',          path: '/icms-fronteira/antecipacao' },
+      { label: 'Substituição Trib.',   path: '/icms-fronteira/st' },
+      { label: 'DIFAL',                path: '/icms-fronteira/difal' },
+    ],
+  },
   config: {
     label: 'Configurações',
     tabs: [
@@ -87,6 +96,7 @@ export function getActiveModule(pathname: string): string {
   if (pathname.startsWith('/importacoes/')) return 'notas'
   if (pathname.startsWith('/painel/')) return 'painel'
   if (pathname.startsWith('/reforma')) return 'reforma'
+  if (pathname.startsWith('/icms-fronteira')) return 'fronteira'
   if (pathname.startsWith('/config/')) return 'config'
   return 'simulador'
 }

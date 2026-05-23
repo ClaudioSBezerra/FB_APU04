@@ -33,6 +33,7 @@ import Reforma11CreditosBloqueados from './pages/Reforma11CreditosBloqueados'
 import Reforma12Reprecificacao from './pages/Reforma12Reprecificacao'
 import Reforma13RankingFornecedores from './pages/Reforma13RankingFornecedores'
 import Reforma14SplitPayment from './pages/Reforma14SplitPayment'
+import IcmsFronteira from './pages/IcmsFronteira'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ForgotPassword from './pages/ForgotPassword'
@@ -182,6 +183,12 @@ function AppLayout() {
               <Route path="/reforma/reprecificacao"     element={<Reforma12Reprecificacao />} />
               <Route path="/reforma/ranking"            element={<Reforma13RankingFornecedores />} />
               <Route path="/reforma/split-payment"      element={<Reforma14SplitPayment />} />
+
+              {/* ICMS Fronteira */}
+              <Route path="/icms-fronteira"             element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/antecipacao" element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/st"          element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/difal"       element={<IcmsFronteira />} />
 
               {/* Configurações */}
               <Route path="/config/aliquotas"                  element={<TabelaAliquotas />} />
