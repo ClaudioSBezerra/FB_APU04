@@ -15,10 +15,13 @@ import (
 // Structs — Módulo 1.1: Créditos ICMS Bloqueados
 // ---------------------------------------------------------------------------
 
+// TipoBloqueio classifica o crédito pelo mecanismo que o bloqueia na transição.
+// Valores: "ICMS-ST" (substituição tributária) | "Diferido" (CST 51)
 type Modulo11Row struct {
+	TipoBloqueio string  `json:"tipo_bloqueio"`
 	TipoCFOP     string  `json:"tipo_cfop"`
 	CFOP         string  `json:"cfop"`
-	VlIcmsTotal  float64 `json:"vl_icms_total"`
+	VlBloqueado  float64 `json:"vl_bloqueado"`
 	VlOprTotal   float64 `json:"vl_opr_total"`
 	IBSEquiv     float64 `json:"ibs_equiv"`
 	CBSEquiv     float64 `json:"cbs_equiv"`
@@ -26,10 +29,10 @@ type Modulo11Row struct {
 }
 
 type Modulo11Response struct {
-	Rows      []Modulo11Row `json:"rows"`
-	TotalIcms float64       `json:"total_icms"`
-	TotalIBS  float64       `json:"total_ibs"`
-	TotalCBS  float64       `json:"total_cbs"`
+	Rows           []Modulo11Row `json:"rows"`
+	TotalBloqueado float64       `json:"total_bloqueado"`
+	TotalIBS       float64       `json:"total_ibs"`
+	TotalCBS       float64       `json:"total_cbs"`
 }
 
 // ---------------------------------------------------------------------------
@@ -139,24 +142,52 @@ func CreditosBloqueadosHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Query principal: reg_c190 → reg_c100 → import_jobs para company_id
-		// cod_sit em reg_c100 (não em reg_c190)
+		// Critérios de bloqueio na transição (EC 132/2023):
+		//   ICMS-ST: pago antecipadamente nas entradas, sem mecanismo de devolução no IBS/CBS
+		//   Diferido: CST 51 — créditos escriturais suspensos/diferidos que não serão compensados
+		//   CIAP: não implementado (requer importação do Bloco G — futuro)
 		rows, err := db.Query(`
-			SELECT
-				COALESCE(cf.tipo, 'O')          AS tipo_cfop,
-				c190.cfop,
-				SUM(c190.vl_icms)               AS vl_icms_total,
-				SUM(c190.vl_opr)                AS vl_opr_total,
-				COUNT(DISTINCT c100.id)         AS qtd_registros
-			FROM reg_c190 c190
-			JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
-			JOIN import_jobs j ON j.id = c100.job_id
-			LEFT JOIN cfop cf ON cf.cfop = c190.cfop
-			WHERE j.company_id = $1
-			  AND c100.cod_sit NOT IN ('02','03','04','05')
-			  AND COALESCE(cf.tipo, 'O') != 'T'
-			GROUP BY cf.tipo, c190.cfop
-			ORDER BY vl_icms_total DESC
+			SELECT tipo_bloqueio, tipo_cfop, cfop, vl_bloqueado, vl_opr_total, qtd_registros
+			FROM (
+				SELECT
+					'ICMS-ST'                       AS tipo_bloqueio,
+					COALESCE(cf.tipo, 'O')          AS tipo_cfop,
+					c190.cfop,
+					SUM(c190.vl_icms_st)            AS vl_bloqueado,
+					SUM(c190.vl_opr)                AS vl_opr_total,
+					COUNT(DISTINCT c100.id)         AS qtd_registros
+				FROM reg_c190 c190
+				JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
+				JOIN import_jobs j ON j.id = c100.job_id
+				LEFT JOIN cfop cf ON cf.cfop = c190.cfop
+				WHERE j.company_id = $1
+				  AND c100.ind_oper = '0'
+				  AND c100.cod_sit NOT IN ('02','03','04','05')
+				  AND COALESCE(cf.tipo, 'O') != 'T'
+				  AND c190.vl_icms_st > 0
+				GROUP BY cf.tipo, c190.cfop
+
+				UNION ALL
+
+				SELECT
+					'Diferido'                      AS tipo_bloqueio,
+					COALESCE(cf.tipo, 'O')          AS tipo_cfop,
+					c190.cfop,
+					SUM(c190.vl_icms)               AS vl_bloqueado,
+					SUM(c190.vl_opr)                AS vl_opr_total,
+					COUNT(DISTINCT c100.id)         AS qtd_registros
+				FROM reg_c190 c190
+				JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
+				JOIN import_jobs j ON j.id = c100.job_id
+				LEFT JOIN cfop cf ON cf.cfop = c190.cfop
+				WHERE j.company_id = $1
+				  AND c100.ind_oper = '0'
+				  AND c100.cod_sit NOT IN ('02','03','04','05')
+				  AND COALESCE(cf.tipo, 'O') != 'T'
+				  AND c190.cst_icms = '51'
+				GROUP BY cf.tipo, c190.cfop
+			) t
+			ORDER BY tipo_bloqueio, vl_bloqueado DESC
 		`, companyID)
 		if err != nil {
 			log.Printf("CreditosBloqueados query error: %v", err)
@@ -166,18 +197,17 @@ func CreditosBloqueadosHandler(db *sql.DB) http.HandlerFunc {
 		defer rows.Close()
 
 		var list []Modulo11Row
-		var totalIcms, totalIBS, totalCBS float64
+		var totalBloqueado, totalIBS, totalCBS float64
 
 		for rows.Next() {
 			var row Modulo11Row
-			if err := rows.Scan(&row.TipoCFOP, &row.CFOP, &row.VlIcmsTotal, &row.VlOprTotal, &row.QtdRegistros); err != nil {
+			if err := rows.Scan(&row.TipoBloqueio, &row.TipoCFOP, &row.CFOP, &row.VlBloqueado, &row.VlOprTotal, &row.QtdRegistros); err != nil {
 				log.Printf("[CreditosBloqueados] scan error: %v", err)
 				continue
 			}
-			// Projeção IBS/CBS usando vl_opr_total como base (decisão A1: substituição ICMS por IBS/CBS)
 			row.IBSEquiv = row.VlOprTotal * aliqIBS / 100.0
 			row.CBSEquiv = row.VlOprTotal * aliqCBS / 100.0
-			totalIcms += row.VlIcmsTotal
+			totalBloqueado += row.VlBloqueado
 			totalIBS += row.IBSEquiv
 			totalCBS += row.CBSEquiv
 			list = append(list, row)
@@ -193,10 +223,10 @@ func CreditosBloqueadosHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		json.NewEncoder(w).Encode(Modulo11Response{
-			Rows:      list,
-			TotalIcms: totalIcms,
-			TotalIBS:  totalIBS,
-			TotalCBS:  totalCBS,
+			Rows:           list,
+			TotalBloqueado: totalBloqueado,
+			TotalIBS:       totalIBS,
+			TotalCBS:       totalCBS,
 		})
 	}
 }
@@ -244,21 +274,47 @@ func CreditosBloqueadosCSVHandler(db *sql.DB) http.HandlerFunc {
 		w.Header().Set("Content-Disposition", `attachment; filename="creditos-icms-bloqueados.csv"`)
 
 		rows, err := db.Query(`
-			SELECT
-				COALESCE(cf.tipo, 'O')          AS tipo_cfop,
-				c190.cfop,
-				SUM(c190.vl_icms)               AS vl_icms_total,
-				SUM(c190.vl_opr)                AS vl_opr_total,
-				COUNT(DISTINCT c100.id)         AS qtd_registros
-			FROM reg_c190 c190
-			JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
-			JOIN import_jobs j ON j.id = c100.job_id
-			LEFT JOIN cfop cf ON cf.cfop = c190.cfop
-			WHERE j.company_id = $1
-			  AND c100.cod_sit NOT IN ('02','03','04','05')
-			  AND COALESCE(cf.tipo, 'O') != 'T'
-			GROUP BY cf.tipo, c190.cfop
-			ORDER BY vl_icms_total DESC
+			SELECT tipo_bloqueio, tipo_cfop, cfop, vl_bloqueado, vl_opr_total, qtd_registros
+			FROM (
+				SELECT
+					'ICMS-ST'                       AS tipo_bloqueio,
+					COALESCE(cf.tipo, 'O')          AS tipo_cfop,
+					c190.cfop,
+					SUM(c190.vl_icms_st)            AS vl_bloqueado,
+					SUM(c190.vl_opr)                AS vl_opr_total,
+					COUNT(DISTINCT c100.id)         AS qtd_registros
+				FROM reg_c190 c190
+				JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
+				JOIN import_jobs j ON j.id = c100.job_id
+				LEFT JOIN cfop cf ON cf.cfop = c190.cfop
+				WHERE j.company_id = $1
+				  AND c100.ind_oper = '0'
+				  AND c100.cod_sit NOT IN ('02','03','04','05')
+				  AND COALESCE(cf.tipo, 'O') != 'T'
+				  AND c190.vl_icms_st > 0
+				GROUP BY cf.tipo, c190.cfop
+
+				UNION ALL
+
+				SELECT
+					'Diferido'                      AS tipo_bloqueio,
+					COALESCE(cf.tipo, 'O')          AS tipo_cfop,
+					c190.cfop,
+					SUM(c190.vl_icms)               AS vl_bloqueado,
+					SUM(c190.vl_opr)                AS vl_opr_total,
+					COUNT(DISTINCT c100.id)         AS qtd_registros
+				FROM reg_c190 c190
+				JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
+				JOIN import_jobs j ON j.id = c100.job_id
+				LEFT JOIN cfop cf ON cf.cfop = c190.cfop
+				WHERE j.company_id = $1
+				  AND c100.ind_oper = '0'
+				  AND c100.cod_sit NOT IN ('02','03','04','05')
+				  AND COALESCE(cf.tipo, 'O') != 'T'
+				  AND c190.cst_icms = '51'
+				GROUP BY cf.tipo, c190.cfop
+			) t
+			ORDER BY tipo_bloqueio, vl_bloqueado DESC
 		`, companyID)
 		if err != nil {
 			log.Printf("CreditosBloqueadosCSV query error: %v", err)
@@ -270,7 +326,7 @@ func CreditosBloqueadosCSVHandler(db *sql.DB) http.HandlerFunc {
 		var list []Modulo11Row
 		for rows.Next() {
 			var row Modulo11Row
-			if err := rows.Scan(&row.TipoCFOP, &row.CFOP, &row.VlIcmsTotal, &row.VlOprTotal, &row.QtdRegistros); err != nil {
+			if err := rows.Scan(&row.TipoBloqueio, &row.TipoCFOP, &row.CFOP, &row.VlBloqueado, &row.VlOprTotal, &row.QtdRegistros); err != nil {
 				continue
 			}
 			row.IBSEquiv = row.VlOprTotal * aliqIBS / 100.0
@@ -284,7 +340,7 @@ func CreditosBloqueadosCSVHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		cw := csv.NewWriter(w)
-		header := []string{"Tipo CFOP", "CFOP", "ICMS Bloqueado (R$)", "VL Operações (R$)", "IBS Equiv. (R$)", "CBS Equiv. (R$)", "Qtd Registros"}
+		header := []string{"Tipo de Crédito", "Tipo CFOP", "CFOP", "Valor Bloqueado (R$)", "VL Operações (R$)", "IBS Equiv. (R$)", "CBS Equiv. (R$)", "Qtd Registros"}
 		if err := cw.Write(header); err != nil {
 			log.Printf("[CreditosCSV] write header error: %v", err)
 			return
@@ -292,9 +348,10 @@ func CreditosBloqueadosCSVHandler(db *sql.DB) http.HandlerFunc {
 
 		for _, row := range list {
 			record := []string{
+				row.TipoBloqueio,
 				row.TipoCFOP,
 				row.CFOP,
-				fmt.Sprintf("%.2f", row.VlIcmsTotal),
+				fmt.Sprintf("%.2f", row.VlBloqueado),
 				fmt.Sprintf("%.2f", row.VlOprTotal),
 				fmt.Sprintf("%.2f", row.IBSEquiv),
 				fmt.Sprintf("%.2f", row.CBSEquiv),
