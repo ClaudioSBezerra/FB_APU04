@@ -149,10 +149,15 @@ func onDBConnected() {
 				var oldCol string
 				_ = database.QueryRow(`SELECT column_name FROM information_schema.columns WHERE table_name='schema_migrations' ORDER BY ordinal_position LIMIT 1`).Scan(&oldCol)
 				if oldCol != "" {
-					log.Printf("Renaming schema_migrations column '%s' → 'filename'", oldCol)
-					_, renameErr := database.Exec(fmt.Sprintf(`ALTER TABLE schema_migrations RENAME COLUMN %s TO filename`, oldCol))
-					if renameErr != nil {
-						log.Printf("ERROR: Failed to rename column: %v. Recreating table.", renameErr)
+					allowed := map[string]bool{"id": true, "migration": true, "name": true, "version": true}
+					if !allowed[oldCol] {
+						log.Printf("Unexpected column name %q in schema_migrations, skipping rename", oldCol)
+					} else {
+						log.Printf("Renaming schema_migrations column '%s' → 'filename'", oldCol)
+						_, renameErr := database.Exec(fmt.Sprintf(`ALTER TABLE schema_migrations RENAME COLUMN %s TO filename`, oldCol))
+						if renameErr != nil {
+							log.Printf("ERROR: Failed to rename column: %v. Recreating table.", renameErr)
+						}
 					}
 				}
 			}

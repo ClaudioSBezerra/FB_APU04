@@ -53,11 +53,6 @@ function fmtBRL(v: number | null | undefined): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-function fmtCNPJ(v: string): string {
-  if (!v || v.length !== 14) return v || '—'
-  return `${v.slice(0, 2)}.${v.slice(2, 5)}.${v.slice(5, 8)}/${v.slice(8, 12)}-${v.slice(12)}`
-}
-
 // ---------------------------------------------------------------------------
 // Reforma11CreditosBloqueados
 // ---------------------------------------------------------------------------

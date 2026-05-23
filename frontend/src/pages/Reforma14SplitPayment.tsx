@@ -164,7 +164,7 @@ export default function Reforma14SplitPayment() {
                         const cdi = data?.cdi_colunas[i]
                         const isCurrentCell =
                           senRow.dso === data?.prazo_medio_dias &&
-                          cdi === data?.taxa_cdi_anual_pct
+                          Math.abs((cdi ?? 0) - (data?.taxa_cdi_anual_pct ?? 0)) < 0.001
                         return (
                           <TableCell
                             key={i}

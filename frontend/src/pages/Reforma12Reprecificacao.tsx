@@ -169,7 +169,7 @@ export default function Reforma12Reprecificacao() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos</SelectItem>
-                <SelectItem value="00">Normal (00)</SelectItem>
+                <SelectItem value="normal">Normal (00)</SelectItem>
                 <SelectItem value="st">Substituição Tributária</SelectItem>
                 <SelectItem value="base_reduzida">Base Reduzida</SelectItem>
               </SelectContent>

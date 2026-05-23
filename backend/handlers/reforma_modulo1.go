@@ -239,6 +239,9 @@ func CreditosBloqueadosCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="creditos-icms-bloqueados.csv"`)
+
 		rows, err := db.Query(`
 			SELECT
 				COALESCE(cf.tipo, 'O')          AS tipo_cfop,
@@ -278,9 +281,6 @@ func CreditosBloqueadosCSVHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "Erro ao ler dados", http.StatusInternalServerError)
 			return
 		}
-
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="creditos-icms-bloqueados.csv"`)
 
 		cw := csv.NewWriter(w)
 		header := []string{"Tipo CFOP", "CFOP", "ICMS Bloqueado (R$)", "VL Operações (R$)", "IBS Equiv. (R$)", "CBS Equiv. (R$)", "Qtd Registros"}
@@ -450,6 +450,9 @@ func RankingFornecedoresCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="ranking-fornecedores-simples.csv"`)
+
 		rows, err := db.Query(`
 			SELECT
 				ne.forn_cnpj,
@@ -489,9 +492,6 @@ func RankingFornecedoresCSVHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "Erro ao ler dados", http.StatusInternalServerError)
 			return
 		}
-
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="ranking-fornecedores-simples.csv"`)
 
 		cw := csv.NewWriter(w)
 		header := []string{"CNPJ", "Fornecedor", "Qtd Notas", "Valor Total (R$)", "IBS Estimado (R$)", "CBS Estimado (R$)", "Simples Nacional"}
@@ -698,6 +698,9 @@ func ReprecificacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="reprecificacao-produtos.csv"`)
+
 		rows, err := db.Query(`
 			SELECT
 				COALESCE(nit.ncm, '')                        AS ncm,
@@ -769,9 +772,6 @@ func ReprecificacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "Erro ao ler dados", http.StatusInternalServerError)
 			return
 		}
-
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="reprecificacao-produtos.csv"`)
 
 		cw := csv.NewWriter(w)
 		header := []string{"NCM", "Descrição Produto", "CST ICMS", "Preço Atual (R$)", "ICMS Atual (R$)", "IBS Projetado (R$)", "CBS Projetado (R$)", "Variação (%)"}
