@@ -52,8 +52,12 @@ func GetEnvironmentsHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		userID := claims["user_id"].(string)
-		role := claims["role"].(string)
+		userID, _ := claims["user_id"].(string)
+		role, _ := claims["role"].(string)
+		if userID == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 
 		log.Printf("[GetEnvironments] User: %s, Role: %s", userID, role)
 
