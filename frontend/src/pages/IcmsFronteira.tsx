@@ -1657,19 +1657,35 @@ function DivergenciasTab({ token }: { token: string | null }) {
           </SelectContent>
         </Select>
         <div className="flex items-center gap-2 ml-auto">
-          <Button size="sm" variant="outline" onClick={() => {
-            const a = document.createElement('a')
-            a.href = `/api/icms-fronteira/divergencias/exportar/csv${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ''}`
-            a.download = `divergencias${periodo ? '-' + periodo.replace('/','-') : ''}.csv`
-            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+          <Button size="sm" variant="outline" onClick={async () => {
+            try {
+              const url = `/api/icms-fronteira/divergencias/exportar/csv${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ''}`
+              const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+              if (!res.ok) throw new Error(`Erro ${res.status}`)
+              const blob = await res.blob()
+              const blobUrl = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = blobUrl
+              a.download = `divergencias${periodo ? '-' + periodo.replace('/','-') : ''}.csv`
+              a.click()
+              URL.revokeObjectURL(blobUrl)
+            } catch { toast.error('Erro ao exportar CSV') }
           }}>
             <FileDown className="h-3.5 w-3.5 mr-1" />CSV
           </Button>
-          <Button size="sm" variant="outline" onClick={() => {
-            const a = document.createElement('a')
-            a.href = `/api/icms-fronteira/divergencias/exportar/xlsx${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ''}`
-            a.download = `divergencias${periodo ? '-' + periodo.replace('/','-') : ''}.xlsx`
-            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+          <Button size="sm" variant="outline" onClick={async () => {
+            try {
+              const url = `/api/icms-fronteira/divergencias/exportar/xlsx${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ''}`
+              const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+              if (!res.ok) throw new Error(`Erro ${res.status}`)
+              const blob = await res.blob()
+              const blobUrl = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = blobUrl
+              a.download = `divergencias${periodo ? '-' + periodo.replace('/','-') : ''}.xlsx`
+              a.click()
+              URL.revokeObjectURL(blobUrl)
+            } catch { toast.error('Erro ao exportar Excel') }
           }}>
             <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Excel
           </Button>
@@ -1893,23 +1909,41 @@ function PlanilhaTab({ token }: { token: string | null }) {
               <SelectItem value="DIFAL">DIFAL</SelectItem>
             </SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={() => {
-            const params = new URLSearchParams({ regime: regimeFilter })
-            if (periodo) params.set('periodo', periodo)
-            const a = document.createElement('a')
-            a.href = `/api/icms-fronteira/itens/exportar/csv?${params}`
-            a.download = `icms-fronteira-itens-${regimeFilter}.csv`
-            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+          <Button size="sm" variant="outline" onClick={async () => {
+            try {
+              const params = new URLSearchParams({ regime: regimeFilter })
+              if (periodo) params.set('periodo', periodo)
+              const res = await fetch(`/api/icms-fronteira/itens/exportar/csv?${params}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+              if (!res.ok) throw new Error(`Erro ${res.status}`)
+              const blob = await res.blob()
+              const blobUrl = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = blobUrl
+              a.download = `icms-fronteira-itens-${regimeFilter}.csv`
+              a.click()
+              URL.revokeObjectURL(blobUrl)
+            } catch { toast.error('Erro ao exportar CSV') }
           }}>
             <FileDown className="h-3.5 w-3.5 mr-1" />CSV
           </Button>
-          <Button size="sm" variant="outline" onClick={() => {
-            const params = new URLSearchParams({ regime: regimeFilter })
-            if (periodo) params.set('periodo', periodo)
-            const a = document.createElement('a')
-            a.href = `/api/icms-fronteira/itens/exportar/xlsx?${params}`
-            a.download = `icms-fronteira-itens-${regimeFilter}.xlsx`
-            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+          <Button size="sm" variant="outline" onClick={async () => {
+            try {
+              const params = new URLSearchParams({ regime: regimeFilter })
+              if (periodo) params.set('periodo', periodo)
+              const res = await fetch(`/api/icms-fronteira/itens/exportar/xlsx?${params}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+              if (!res.ok) throw new Error(`Erro ${res.status}`)
+              const blob = await res.blob()
+              const blobUrl = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = blobUrl
+              a.download = `icms-fronteira-itens-${regimeFilter}.xlsx`
+              a.click()
+              URL.revokeObjectURL(blobUrl)
+            } catch { toast.error('Erro ao exportar Excel') }
           }}>
             <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Excel
           </Button>
