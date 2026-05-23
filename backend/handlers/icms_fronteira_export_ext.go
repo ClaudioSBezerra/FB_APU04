@@ -69,7 +69,7 @@ var itensCSVHeaders = []string{
 	"Data Emissão", "NF-e", "CNPJ Forn.", "Fornecedor", "UF", "CFOP", "Regime",
 	"N.Item", "Cód.Prod", "Descrição", "NCM", "CEST",
 	"V.Prod", "V.IPI", "V.Outro", "V.Operação", "V.ICMS",
-	"Alíq.Inter%", "Alíq.Int%", "BC", "ICMS Calc.", "ICMS Ret.",
+	"Alíq.Inter%", "Alíq.Int%", "BC", "MVA%", "BC-ST", "ICMS Calc.", "ICMS Ret.",
 }
 
 func fetchItensExport(db *sql.DB, companyID, regime, periodo string) ([]FronteiraItemRow, error) {
@@ -81,6 +81,7 @@ func fetchItensExport(db *sql.DB, companyID, regime, periodo string) ([]Fronteir
 	var result []FronteiraItemRow
 	for rows.Next() {
 		var row FronteiraItemRow
+		var mvaOrig sql.NullFloat64
 		if err := rows.Scan(
 			&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
@@ -89,9 +90,13 @@ func fetchItensExport(db *sql.DB, companyID, regime, periodo string) ([]Fronteir
 			&row.VProdItem, &row.VIpiItem, &row.VOutroRateado, &row.VOperacao, &row.VIcmsItem,
 			&row.AliqInter, &row.AliqInterna, &row.BC,
 			&row.IcmsCalculado, &row.IcmsRetido,
+			&mvaOrig, &row.BcSt,
 		); err != nil {
 			log.Printf("fetchItensExport scan: %v", err)
 			continue
+		}
+		if mvaOrig.Valid {
+			row.MvaOriginal = &mvaOrig.Float64
 		}
 		result = append(result, row)
 	}
@@ -102,6 +107,14 @@ func itenRowToCSV(row FronteiraItemRow) []string {
 	d := row.DataEmissao
 	if len(d) > 10 {
 		d = d[:10]
+	}
+	mvaStr := ""
+	if row.MvaOriginal != nil {
+		mvaStr = fmt.Sprintf("%.2f", *row.MvaOriginal)
+	}
+	bcStStr := ""
+	if row.BcSt > 0 {
+		bcStStr = fmt.Sprintf("%.2f", row.BcSt)
 	}
 	return []string{
 		d, row.NumeroNFe, row.FornCNPJ, row.FornNome, row.FornUF,
@@ -115,6 +128,8 @@ func itenRowToCSV(row FronteiraItemRow) []string {
 		fmt.Sprintf("%.2f", row.AliqInter),
 		fmt.Sprintf("%.2f", row.AliqInterna),
 		fmt.Sprintf("%.2f", row.BC),
+		mvaStr,
+		bcStStr,
 		fmt.Sprintf("%.2f", row.IcmsCalculado),
 		fmt.Sprintf("%.2f", row.IcmsRetido),
 	}
@@ -189,15 +204,27 @@ func IcmsFronteiraExportItensXLSXHandler(db *sql.DB) http.HandlerFunc {
 			if len(d) > 10 {
 				d = d[:10]
 			}
+			mvaVal := interface{}(nil)
+			if row.MvaOriginal != nil {
+				mvaVal = *row.MvaOriginal
+			}
+			bcStVal := interface{}(nil)
+			if row.BcSt > 0 {
+				bcStVal = row.BcSt
+			}
 			vals := []interface{}{
 				d, row.NumeroNFe, row.FornCNPJ, row.FornNome, row.FornUF,
 				row.CFOP, row.Regime, row.NItem,
 				row.CProd, row.XProd, row.NCM, row.CEST,
 				row.VProdItem, row.VIpiItem, row.VOutroRateado, row.VOperacao, row.VIcmsItem,
-				row.AliqInter, row.AliqInterna, row.BC, row.IcmsCalculado, row.IcmsRetido,
+				row.AliqInter, row.AliqInterna, row.BC,
+				mvaVal, bcStVal,
+				row.IcmsCalculado, row.IcmsRetido,
 			}
 			for ci, v := range vals {
-				f.SetCellValue(sheet, fmt.Sprintf("%s%d", colLetter(ci), exRow), v)
+				if v != nil {
+					f.SetCellValue(sheet, fmt.Sprintf("%s%d", colLetter(ci), exRow), v)
+				}
 			}
 			totalCalc += row.IcmsCalculado
 			totalRet += row.IcmsRetido
@@ -206,10 +233,10 @@ func IcmsFronteiraExportItensXLSXHandler(db *sql.DB) http.HandlerFunc {
 		tr := len(dataRows) + 2
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", tr), "TOTAL")
 		f.SetCellStyle(sheet, fmt.Sprintf("A%d", tr), fmt.Sprintf("A%d", tr), bs)
-		f.SetCellValue(sheet, fmt.Sprintf("%s%d", colLetter(20), tr), totalCalc)
-		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", colLetter(20), tr), fmt.Sprintf("%s%d", colLetter(20), tr), bs)
-		f.SetCellValue(sheet, fmt.Sprintf("%s%d", colLetter(21), tr), totalRet)
-		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", colLetter(21), tr), fmt.Sprintf("%s%d", colLetter(21), tr), bs)
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", colLetter(22), tr), totalCalc)
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", colLetter(22), tr), fmt.Sprintf("%s%d", colLetter(22), tr), bs)
+		f.SetCellValue(sheet, fmt.Sprintf("%s%d", colLetter(23), tr), totalRet)
+		f.SetCellStyle(sheet, fmt.Sprintf("%s%d", colLetter(23), tr), fmt.Sprintf("%s%d", colLetter(23), tr), bs)
 
 		var buf bytes.Buffer
 		if err := f.Write(&buf); err != nil {

@@ -14,30 +14,32 @@ import (
 // ---------------------------------------------------------------------------
 
 type FronteiraItemRow struct {
-	ChaveNFe      string  `json:"chave_nfe"`
-	DataEmissao   string  `json:"data_emissao"`
-	NumeroNFe     string  `json:"numero_nfe"`
-	FornCNPJ      string  `json:"forn_cnpj"`
-	FornNome      string  `json:"forn_nome"`
-	FornUF        string  `json:"forn_uf"`
-	FornSimples   bool    `json:"forn_simples"`
-	CFOP          string  `json:"cfop"`
-	Regime        string  `json:"regime"`
-	NItem         int     `json:"n_item"`
-	CProd         string  `json:"c_prod"`
-	XProd         string  `json:"x_prod"`
-	NCM           string  `json:"ncm"`
-	CEST          string  `json:"cest"`
-	VProdItem     float64 `json:"v_prod_item"`
-	VIpiItem      float64 `json:"v_ipi_item"`
-	VOutroRateado float64 `json:"v_outro_rateado"`
-	VOperacao     float64 `json:"v_operacao"`
-	VIcmsItem     float64 `json:"v_icms_item"`
-	AliqInter     float64 `json:"aliq_inter"`
-	AliqInterna   float64 `json:"aliq_interna"`
-	BC            float64 `json:"bc"`
-	IcmsCalculado float64 `json:"icms_calculado"`
-	IcmsRetido    float64 `json:"icms_retido"`
+	ChaveNFe      string   `json:"chave_nfe"`
+	DataEmissao   string   `json:"data_emissao"`
+	NumeroNFe     string   `json:"numero_nfe"`
+	FornCNPJ      string   `json:"forn_cnpj"`
+	FornNome      string   `json:"forn_nome"`
+	FornUF        string   `json:"forn_uf"`
+	FornSimples   bool     `json:"forn_simples"`
+	CFOP          string   `json:"cfop"`
+	Regime        string   `json:"regime"`
+	NItem         int      `json:"n_item"`
+	CProd         string   `json:"c_prod"`
+	XProd         string   `json:"x_prod"`
+	NCM           string   `json:"ncm"`
+	CEST          string   `json:"cest"`
+	VProdItem     float64  `json:"v_prod_item"`
+	VIpiItem      float64  `json:"v_ipi_item"`
+	VOutroRateado float64  `json:"v_outro_rateado"`
+	VOperacao     float64  `json:"v_operacao"`
+	VIcmsItem     float64  `json:"v_icms_item"`
+	AliqInter     float64  `json:"aliq_inter"`
+	AliqInterna   float64  `json:"aliq_interna"`
+	BC            float64  `json:"bc"`
+	IcmsCalculado float64  `json:"icms_calculado"`
+	IcmsRetido    float64  `json:"icms_retido"`
+	MvaOriginal   *float64 `json:"mva_original"`
+	BcSt          float64  `json:"bc_st"`
 }
 
 type FronteiraItensResponse struct {
@@ -87,6 +89,7 @@ WITH base AS (
             ELSE 12.0
         END                                                             AS aliq_inter,
         COALESCE(regra.aliquota_interna, 20.5)                          AS aliq_interna,
+        regra.mva_original                                               AS mva_original,
         COALESCE(ne.v_prod, 0)                                          AS v_prod_nf_total,
         COALESCE(ne.v_st, 0)                                            AS v_st_nf_total,
         COALESCE(ne.forn_uf, '')                                        AS forn_uf_raw
@@ -94,7 +97,7 @@ WITH base AS (
     INNER JOIN nfe_entradas_itens nii ON nii.nfe_id = ne.id
     LEFT JOIN forn_simples fs ON fs.cnpj = ne.forn_cnpj
     LEFT JOIN LATERAL (
-        SELECT r.aliquota_interna
+        SELECT r.aliquota_interna, r.mva_original
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
           AND nii.ncm IS NOT NULL
@@ -118,7 +121,7 @@ WITH base AS (
         n_item, c_prod, x_prod, ncm, cest,
         v_prod_item, v_ipi_item, v_outro_rateado,
         (v_prod_item + v_ipi_item + v_outro_rateado)                    AS v_operacao,
-        v_icms_item, aliq_inter, aliq_interna,
+        v_icms_item, aliq_inter, aliq_interna, mva_original,
         -- BC: PE antecipação usa preço presumido; BA/CE e DIFAL usam v_operacao direta
         CASE
             WHEN regime = 'ANTECIPACAO' AND forn_uf_raw NOT IN ('BA','CE')
@@ -127,6 +130,12 @@ WITH base AS (
                     / NULLIF(1.0 - aliq_interna / 100.0, 0))
             ELSE (v_prod_item + v_ipi_item + v_outro_rateado)
         END                                                             AS bc,
+        -- BC-ST via MVA: base presumida de varejo para substituição tributária
+        CASE
+            WHEN regime = 'ST' AND mva_original IS NOT NULL
+                THEN ROUND((v_prod_item + v_ipi_item + v_outro_rateado) * (1.0 + mva_original/100.0), 2)
+            ELSE 0
+        END                                                             AS bc_st,
         CASE
             WHEN regime = 'ST' AND v_prod_nf_total > 0
                 THEN ROUND(v_st_nf_total * v_prod_item / v_prod_nf_total, 2)
@@ -141,10 +150,14 @@ SELECT
     v_prod_item, v_ipi_item, v_outro_rateado, v_operacao, v_icms_item,
     aliq_inter, aliq_interna, bc,
     CASE
+        WHEN regime = 'ST' AND mva_original IS NOT NULL
+            THEN GREATEST(0, ROUND(bc_st * aliq_interna/100.0 - v_operacao * aliq_inter/100.0, 2))
         WHEN regime = 'ST' THEN icms_retido
         ELSE GREATEST(0, bc * (aliq_interna - aliq_inter) / 100.0)
     END                                                                 AS icms_calculado,
-    icms_retido
+    icms_retido,
+    mva_original,
+    bc_st
 FROM computed
 WHERE ($2::text = 'todos' OR regime = $2::text)
 ORDER BY data_emissao DESC, chave_nfe, n_item
@@ -193,6 +206,7 @@ func IcmsFronteiraItensHandler(db *sql.DB) http.HandlerFunc {
 
 		for rows.Next() {
 			var row FronteiraItemRow
+			var mvaOrig sql.NullFloat64
 			if err := rows.Scan(
 				&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 				&row.FornCNPJ, &row.FornNome, &row.FornUF,
@@ -201,9 +215,13 @@ func IcmsFronteiraItensHandler(db *sql.DB) http.HandlerFunc {
 				&row.VProdItem, &row.VIpiItem, &row.VOutroRateado, &row.VOperacao, &row.VIcmsItem,
 				&row.AliqInter, &row.AliqInterna, &row.BC,
 				&row.IcmsCalculado, &row.IcmsRetido,
+				&mvaOrig, &row.BcSt,
 			); err != nil {
 				log.Printf("IcmsFronteiraItens scan error: %v", err)
 				continue
+			}
+			if mvaOrig.Valid {
+				row.MvaOriginal = &mvaOrig.Float64
 			}
 			total += row.IcmsCalculado
 			result = append(result, row)

@@ -70,9 +70,26 @@ WITH item_icms AS (
         -- icms_calculado por item
         CASE
             WHEN ne.cfop IN ('2403','2409','2651','2652') THEN
-                CASE WHEN COALESCE(ne.v_prod, 0) > 0
+                CASE WHEN regra.mva_original IS NOT NULL THEN
+                    -- GAP 4: BC-ST = v_operacao * (1 + MVA/100); ICMS-ST = BC-ST * aliq_int - ICMS próprio
+                    GREATEST(0, ROUND(
+                        ( COALESCE(nii.v_prod,0) + COALESCE(nii.v_ipi,0)
+                          + CASE WHEN COALESCE(ne.v_prod,0) > 0
+                                 THEN COALESCE(ne.v_outro,0) * COALESCE(nii.v_prod,0) / ne.v_prod
+                                 ELSE 0 END )
+                        * (1.0 + regra.mva_original/100.0)
+                        * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                        - ( COALESCE(nii.v_prod,0) + COALESCE(nii.v_ipi,0)
+                            + CASE WHEN COALESCE(ne.v_prod,0) > 0
+                                   THEN COALESCE(ne.v_outro,0) * COALESCE(nii.v_prod,0) / ne.v_prod
+                                   ELSE 0 END )
+                        * CASE WHEN COALESCE(nii.cst_orig, ne.cst_orig_pred) IN ('1','2','3','6','7','8') THEN 4.0
+                               WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
+                               ELSE 12.0 END
+                        / 100.0, 2))
+                WHEN COALESCE(ne.v_prod, 0) > 0
                     THEN ne.v_st * COALESCE(nii.v_prod, 0) / ne.v_prod
-                    ELSE 0 END
+                ELSE 0 END
             WHEN ne.cfop IN ('2101','2102','2152') AND COALESCE(ne.forn_uf,'') NOT IN ('BA','CE') THEN
                 GREATEST(0,
                     GREATEST(0,
@@ -102,7 +119,7 @@ WITH item_icms AS (
     FROM nfe_entradas ne
     INNER JOIN nfe_entradas_itens nii ON nii.nfe_id = ne.id
     LEFT JOIN LATERAL (
-        SELECT r.aliquota_interna
+        SELECT r.aliquota_interna, r.mva_original
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
           AND nii.ncm IS NOT NULL

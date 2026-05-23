@@ -166,6 +166,8 @@ interface FronteiraItemRow {
   bc: number
   icms_calculado: number
   icms_retido: number
+  mva_original: number | null
+  bc_st: number
 }
 
 interface FronteiraItensResponse {
@@ -1943,6 +1945,8 @@ function PlanilhaTab({ token }: { token: string | null }) {
                 <TableHead className="font-semibold uppercase tracking-wide text-right">A.Inter%</TableHead>
                 <TableHead className="font-semibold uppercase tracking-wide text-right">A.Int%</TableHead>
                 <TableHead className="font-semibold uppercase tracking-wide text-right">BC</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">MVA%</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">BC-ST</TableHead>
                 <TableHead className="font-semibold uppercase tracking-wide text-right">ICMS Calc.</TableHead>
                 <TableHead className="font-semibold uppercase tracking-wide text-right">ICMS Ret.</TableHead>
               </TableRow>
@@ -1997,6 +2001,8 @@ function PlanilhaTab({ token }: { token: string | null }) {
                       <TableCell className="text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtBRL(row.bc)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">{row.mva_original != null ? fmtPct(row.mva_original) : '—'}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">{row.bc_st > 0 ? fmtBRL(row.bc_st) : '—'}</TableCell>
                       <TableCell className="text-right tabular-nums font-semibold">{fmtBRL(row.icms_calculado)}</TableCell>
                       <TableCell className="text-right tabular-nums">{row.icms_retido > 0 ? fmtBRL(row.icms_retido) : '—'}</TableCell>
                     </TableRow>
@@ -2006,7 +2012,7 @@ function PlanilhaTab({ token }: { token: string | null }) {
                     <TableCell colSpan={3} className="text-[10px] font-mono text-muted-foreground truncate max-w-[120px]">
                       NF: {group.key.slice(0, 20)}…
                     </TableCell>
-                    <TableCell colSpan={17} className="text-right text-xs font-semibold tabular-nums">
+                    <TableCell colSpan={19} className="text-right text-xs font-semibold tabular-nums">
                       Subtotal NF: {fmtBRL(group.subtotal)}
                     </TableCell>
                   </TableRow>
@@ -2014,7 +2020,7 @@ function PlanilhaTab({ token }: { token: string | null }) {
               ))}
               {/* Grand total */}
               <TableRow className="bg-muted/60 border-t-2 border-border">
-                <TableCell colSpan={19} className="text-right text-xs font-bold">
+                <TableCell colSpan={21} className="text-right text-xs font-bold">
                   Total ICMS Calculado
                 </TableCell>
                 <TableCell className="text-right text-xs font-bold tabular-nums">
