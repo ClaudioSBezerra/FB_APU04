@@ -460,7 +460,7 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
-		_, err := db.Exec(`
+		res, err := db.Exec(`
 			UPDATE companies SET
 				regime_tributario  = $1,
 				cnpj               = NULLIF($2, ''),
@@ -485,6 +485,11 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			log.Printf("UpdateCompany error: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		n, err := res.RowsAffected()
+		if err == nil && n == 0 {
+			http.Error(w, "Company not found", http.StatusNotFound)
 			return
 		}
 
