@@ -17,7 +17,8 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 
 - [x] **Phase 6: Infraestrutura Reforma Tributária** - Schema blockers (reg_c190 + cst_icms/aliq_icms, ind_final em nfe_saidas), tabela reforma_parametros, seed CFOPs transferência, endpoints config, hook frontend, navegação e página de configuração de parâmetros (completed 2026-05-22)
 - [x] **Phase 7: Módulos 1.x — Exposição Tributária Direta** - Créditos ICMS bloqueados (1.1), ranking fornecedores IBS/CBS (1.3), reprecificação de produtos (1.2), split payment capital de giro (1.4) (completed 2026-05-23)
-- [ ] **Phase 8: Módulos 2.x — Analytics Dimensional** - Por CFOP (2.2), por NCM (2.1), por UF/destino com mapa coroplético (2.3), segmentação B2B vs. B2C (2.4)
+- [x] **Phase 8: Cadastro de Empresas + Ambiente Administrativo por UF** - Cadastro completo de empresa (CNPJ/IE/CNAE), gestão multi-empresa na UI, ambiente administrativo por UF com regras ICMS-Fronteira (PE/BA/CE) (completed 2026-05-23)
+- [ ] **Phase 9: Módulos 2.x — Analytics Dimensional** - Por CFOP (2.2), por NCM (2.1), por UF/destino com mapa coroplético (2.3), segmentação B2B vs. B2C (2.4)
 
 ## Phase Details
 
@@ -190,10 +191,28 @@ Plans:
 
 - [x] 07-02-PLAN.md — Frontend: 4 páginas (Reforma11/12/13/14) + ativação de tabs em navigation.ts + 4 rotas em App.tsx + checkpoint de verificação visual
 
-### Phase 8: Módulos 2.x — Analytics Dimensional
+### Phase 8: Cadastro de Empresas + Ambiente Administrativo por UF
+
+**Goal**: Completar o cadastro de empresas (CNPJ/IE/CNAE/município/segmento), criar tela de gestão multi-empresa, e expandir o ambiente administrativo de ICMS-Fronteira para suportar múltiplos estados (BA, CE além do PE já existente) com regras por UF, MVA ajustado e inaplicabilidades.
+**Depends on**: Phase 7
+**Requirements**: CADU-01, CADU-02, CADU-03, CADU-04, CADU-05, CADU-06, CADU-07
+
+**Success Criteria** (what must be TRUE):
+
+  1. Tabela `companies` possui cnpj, inscricao_estadual, cnae_principal, municipio, segmento_economico, incentivos_fiscais
+  2. `CreateCompanyHandler` e `UpdateCompanyHandler` aceitam e persitem os novos campos
+  3. Frontend exibe tela de cadastro/edição de empresa com todos os novos campos
+  4. `icms_fronteira_regras_ncm` possui coluna `uf_estado` e colunas MVA ajustado (4/7/12%)
+  5. Tabela `icms_fronteira_inaplicabilidades` criada com seed para inaplicabilidades conhecidas
+  6. Seed inicial de regras para BA e CE (além do PE já existente)
+  7. Frontend de configuração ICMS-Fronteira exibe abas por UF (PE / BA / CE) com edição inline
+
+Plans:
+
+### Phase 9: Módulos 2.x — Analytics Dimensional
 
 **Goal**: Entregar os 4 módulos de análise dimensional cruzada — por CFOP, NCM, UF/destino com mapa coroplético, e segmentação B2B vs. B2C.
-**Depends on**: Phase 7
+**Depends on**: Phase 8
 **Requirements**: RFMC-01, RFMC-02, RFMC-03, RFMC-04
 **Success Criteria** (what must be TRUE):
 
@@ -204,13 +223,10 @@ Plans:
 
 Plans:
 
-- [ ] 08-01-PLAN.md — Backend: reforma_modulo2.go (4 handlers: analiseCfop, analiseNcm, analiseUf, segmentacaoBb2Bc)
-- [ ] 08-02-PLAN.md — Frontend: Reforma22Cfop.tsx + Reforma21Ncm.tsx + Reforma23Uf.tsx (tabela + mapa) + Reforma24B2bB2c.tsx
-
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -221,7 +237,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Observabilidade e Alertas | 2/2 | Complete | 2026-05-17 |
 | 6. Infraestrutura Reforma Tributária | 4/4 | Complete   | 2026-05-22 |
 | 7. Módulos 1.x — Exposição Tributária Direta | 2/2 | Complete   | 2026-05-23 |
-| 8. Módulos 2.x — Analytics Dimensional | 0/2 | Planned | — |
+| 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Complete   | 2026-05-23 |
+| 9. Módulos 2.x — Analytics Dimensional | 0/2 | Pending | — |
 
 ---
 *Roadmap created: 2026-05-08*

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v5.00
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-23T17:57:55.626Z"
-last_activity: 2026-05-23 -- Phase 07 planning complete
+last_updated: "2026-05-23T18:34:05.325Z"
+last_activity: 2026-05-23 -- Phase 08 execution started
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 2
-  total_plans: 6
+  total_plans: 9
   completed_plans: 6
-  percent: 25
+  percent: 22
 ---
 
 # State: FB_APU04
@@ -21,14 +21,14 @@ See: `.planning/PROJECT.md` (updated 2026-05-22)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Phase 7 — módulos 1.x — exposição tributária direta
+**Current focus:** Phase 08 — cadastro-empresas-ambiente-uf
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-23 -- Phase 07 planning complete
+Phase: 08 (cadastro-empresas-ambiente-uf) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 08
+Last activity: 2026-05-23 -- Phase 08 execution started
 
 ## Decisions Made
 
