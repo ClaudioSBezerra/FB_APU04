@@ -33,6 +33,10 @@ import Reforma11CreditosBloqueados from './pages/Reforma11CreditosBloqueados'
 import Reforma12Reprecificacao from './pages/Reforma12Reprecificacao'
 import Reforma13RankingFornecedores from './pages/Reforma13RankingFornecedores'
 import Reforma14SplitPayment from './pages/Reforma14SplitPayment'
+import Reforma22CfopAnalysis from './pages/Reforma22CfopAnalysis'
+import Reforma21NcmAnalysis  from './pages/Reforma21NcmAnalysis'
+import Reforma23UfDestino    from './pages/Reforma23UfDestino'
+import Reforma24B2bB2c       from './pages/Reforma24B2bB2c'
 import IcmsFronteira from './pages/IcmsFronteira'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -183,6 +187,10 @@ function AppLayout() {
               <Route path="/reforma/reprecificacao"     element={<Reforma12Reprecificacao />} />
               <Route path="/reforma/ranking"            element={<Reforma13RankingFornecedores />} />
               <Route path="/reforma/split-payment"      element={<Reforma14SplitPayment />} />
+              <Route path="/reforma/cfop"               element={<Reforma22CfopAnalysis />} />
+              <Route path="/reforma/ncm"                element={<Reforma21NcmAnalysis />} />
+              <Route path="/reforma/uf-destino"         element={<Reforma23UfDestino />} />
+              <Route path="/reforma/b2b-b2c"            element={<Reforma24B2bB2c />} />
 
               {/* ICMS Fronteira */}
               <Route path="/icms-fronteira"                    element={<IcmsFronteira />} />
