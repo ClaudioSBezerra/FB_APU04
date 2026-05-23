@@ -76,6 +76,7 @@ type prod struct {
 	CProd string `xml:"cProd"`
 	XProd string `xml:"xProd"`
 	NCM   string `xml:"NCM"`
+	CEST  string `xml:"CEST"`
 	CFOP  string `xml:"CFOP"`
 	VProd string `xml:"vProd"`
 	VDesc string `xml:"vDesc"`
@@ -385,7 +386,7 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 				nfe_id, company_id, n_item,
 				c_prod, x_prod, ncm, cfop,
 				cst_icms, cst_pis, cst_cofins,
-				cst_orig,
+				cst_orig, cest,
 				v_prod, v_bc_icms, v_icms,
 				v_bc_pis, v_pis,
 				v_bc_cofins, v_cofins,
@@ -394,11 +395,11 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 				$1, $2, $3,
 				$4, $5, $6, $7,
 				$8, $9, $10,
-				$11,
-				$12, $13, $14,
-				$15, $16,
-				$17, $18,
-				$19
+				$11, $12,
+				$13, $14, $15,
+				$16, $17,
+				$18, $19,
+				$20
 			)
 			ON CONFLICT (nfe_id, n_item) DO UPDATE SET
 				c_prod       = EXCLUDED.c_prod,
@@ -409,6 +410,7 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 				cst_pis      = EXCLUDED.cst_pis,
 				cst_cofins   = EXCLUDED.cst_cofins,
 				cst_orig     = EXCLUDED.cst_orig,
+				cest         = EXCLUDED.cest,
 				v_prod       = EXCLUDED.v_prod,
 				v_bc_icms    = EXCLUDED.v_bc_icms,
 				v_icms       = EXCLUDED.v_icms,
@@ -421,7 +423,7 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 			nfeID, companyID, nItem,
 			d.Prod.CProd, d.Prod.XProd, d.Prod.NCM, d.Prod.CFOP,
 			cstICMS, d.Imposto.PIS.CST, d.Imposto.COFINS.CST,
-			cstOrig,
+			cstOrig, d.Prod.CEST,
 			toDecimal(d.Prod.VProd), vBCICMS, vICMS,
 			toDecimal(d.Imposto.PIS.VBCPIS), toDecimal(d.Imposto.PIS.VPIS),
 			toDecimal(d.Imposto.COFINS.VBCCOFINS), toDecimal(d.Imposto.COFINS.VCOFINS),

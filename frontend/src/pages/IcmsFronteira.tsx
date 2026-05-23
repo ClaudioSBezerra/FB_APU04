@@ -130,6 +130,39 @@ interface ExtratoResponse {
   count: number
 }
 
+interface FronteiraItemRow {
+  chave_nfe: string
+  data_emissao: string
+  numero_nfe: string
+  forn_cnpj: string
+  forn_nome: string
+  forn_uf: string
+  forn_simples: boolean
+  cfop: string
+  regime: string
+  n_item: number
+  c_prod: string
+  x_prod: string
+  ncm: string
+  cest: string
+  v_prod_item: number
+  v_ipi_item: number
+  v_outro_rateado: number
+  v_operacao: number
+  v_icms_item: number
+  aliq_inter: number
+  aliq_interna: number
+  bc: number
+  icms_calculado: number
+  icms_retido: number
+}
+
+interface FronteiraItensResponse {
+  rows: FronteiraItemRow[]
+  total: number
+  count: number
+}
+
 interface ContestacaoRow {
   id: number
   chave_nfe: string
@@ -1406,6 +1439,190 @@ function ContestacoesTab({ token }: { token: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
+// Planilha tab — item-level view
+// ---------------------------------------------------------------------------
+function PlanilhaTab({ token }: { token: string | null }) {
+  const [regimeFilter, setRegimeFilter] = useState('todos')
+
+  const { data, isLoading, isError } = useQuery<FronteiraItensResponse>({
+    queryKey: ['icms-fronteira/itens', regimeFilter],
+    queryFn: async () => {
+      const res = await fetch(`/api/icms-fronteira/itens?regime=${regimeFilter}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+  })
+
+  // Group rows by chave_nfe for subtotal display
+  type NfGroup = { key: string; rows: FronteiraItemRow[]; subtotal: number }
+  const groups: NfGroup[] = []
+  if (data?.rows) {
+    const map = new Map<string, NfGroup>()
+    for (const row of data.rows) {
+      if (!map.has(row.chave_nfe)) {
+        map.set(row.chave_nfe, { key: row.chave_nfe, rows: [], subtotal: 0 })
+      }
+      const g = map.get(row.chave_nfe)!
+      g.rows.push(row)
+      g.subtotal += row.icms_calculado
+    }
+    groups.push(...map.values())
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="flex items-center gap-3 flex-wrap justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Regime:</span>
+          <Select value={regimeFilter} onValueChange={setRegimeFilter}>
+            <SelectTrigger className="w-44 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="ANTECIPACAO">Antecipação</SelectItem>
+              <SelectItem value="ST">Subst. Tributária</SelectItem>
+              <SelectItem value="DIFAL">DIFAL</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {data && (
+          <span className="text-xs text-muted-foreground">
+            {data.count} item{data.count !== 1 ? 's' : ''} (máx. 2000) —{' '}
+            <span className="font-semibold text-foreground">ICMS total: {fmtBRL(data.total)}</span>
+          </span>
+        )}
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}
+        </div>
+      )}
+
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar planilha de itens. Verifique sua conexão.</AlertDescription>
+        </Alert>
+      )}
+
+      {data && data.rows.length === 0 && <EmptyState />}
+
+      {data && data.rows.length > 0 && (
+        <div className="rounded-md border overflow-x-auto text-xs">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-transparent">
+                <TableHead className="font-semibold uppercase tracking-wide whitespace-nowrap">Data</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide whitespace-nowrap">NF-e</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide">Fornecedor</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide">UF</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide">CFOP</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide">Regime</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">#</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide">Cód.</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide">Descrição</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide">NCM</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide">CEST</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">V.Prod</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">V.IPI</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">V.Outro</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">V.Operação</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">V.ICMS</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">A.Inter%</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">A.Int%</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">BC</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">ICMS Calc.</TableHead>
+                <TableHead className="font-semibold uppercase tracking-wide text-right">ICMS Ret.</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groups.map((group) => (
+                <>
+                  {group.rows.map((row, idx) => (
+                    <TableRow key={`${row.chave_nfe}-${row.n_item}`} className={idx % 2 === 0 ? '' : 'bg-muted/10'}>
+                      <TableCell className="font-mono whitespace-nowrap">
+                        {idx === 0 ? (row.data_emissao ? row.data_emissao.slice(0, 10) : '—') : ''}
+                      </TableCell>
+                      <TableCell className="font-mono whitespace-nowrap">
+                        {idx === 0 ? (row.numero_nfe || '—') : ''}
+                      </TableCell>
+                      <TableCell className="max-w-[140px]">
+                        {idx === 0 ? (
+                          <div>
+                            <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
+                            <div className="text-[10px] text-muted-foreground font-mono">{formatCNPJ(row.forn_cnpj)}</div>
+                          </div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="font-mono font-semibold">
+                        {idx === 0 ? row.forn_uf : ''}
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        {idx === 0 ? row.cfop : ''}
+                      </TableCell>
+                      <TableCell>
+                        {idx === 0 ? (
+                          <div className="flex items-center gap-1">
+                            <RegimeBadge regime={row.regime} />
+                            {row.forn_simples && (
+                              <span className="inline-flex items-center px-1 py-0.5 rounded text-[9px] font-medium bg-green-100 text-green-700 border border-green-200">SN</span>
+                            )}
+                          </div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{row.n_item}</TableCell>
+                      <TableCell className="font-mono">{row.c_prod || '—'}</TableCell>
+                      <TableCell className="max-w-[160px]">
+                        <div className="truncate" title={row.x_prod}>{row.x_prod || '—'}</div>
+                      </TableCell>
+                      <TableCell className="font-mono">{row.ncm || '—'}</TableCell>
+                      <TableCell className="font-mono">{row.cest || '—'}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtBRL(row.v_prod_item)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.v_ipi_item > 0 ? fmtBRL(row.v_ipi_item) : '—'}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.v_outro_rateado > 0 ? fmtBRL(row.v_outro_rateado) : '—'}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtBRL(row.v_operacao)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.v_icms_item > 0 ? fmtBRL(row.v_icms_item) : '—'}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtBRL(row.bc)}</TableCell>
+                      <TableCell className="text-right tabular-nums font-semibold">{fmtBRL(row.icms_calculado)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.icms_retido > 0 ? fmtBRL(row.icms_retido) : '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                  {/* Subtotal per NF */}
+                  <TableRow className="bg-muted/40 border-t border-border">
+                    <TableCell colSpan={3} className="text-[10px] font-mono text-muted-foreground truncate max-w-[120px]">
+                      NF: {group.key.slice(0, 20)}…
+                    </TableCell>
+                    <TableCell colSpan={17} className="text-right text-xs font-semibold tabular-nums">
+                      Subtotal NF: {fmtBRL(group.subtotal)}
+                    </TableCell>
+                  </TableRow>
+                </>
+              ))}
+              {/* Grand total */}
+              <TableRow className="bg-muted/60 border-t-2 border-border">
+                <TableCell colSpan={19} className="text-right text-xs font-bold">
+                  Total ICMS Calculado
+                </TableCell>
+                <TableCell className="text-right text-xs font-bold tabular-nums">
+                  {fmtBRL(data.total)}
+                </TableCell>
+                <TableCell />
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // IcmsFronteira — main page
 // ---------------------------------------------------------------------------
 export default function IcmsFronteira() {
@@ -1418,6 +1635,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/antecipacao':  'antecipacao',
     '/icms-fronteira/st':           'st',
     '/icms-fronteira/difal':        'difal',
+    '/icms-fronteira/planilha':     'planilha',
     '/icms-fronteira/regras':       'regras',
     '/icms-fronteira/extrato':      'extrato',
     '/icms-fronteira/contestacoes': 'contestacoes',
@@ -1427,6 +1645,7 @@ export default function IcmsFronteira() {
     antecipacao:   '/icms-fronteira/antecipacao',
     st:            '/icms-fronteira/st',
     difal:         '/icms-fronteira/difal',
+    planilha:      '/icms-fronteira/planilha',
     regras:        '/icms-fronteira/regras',
     extrato:       '/icms-fronteira/extrato',
     contestacoes:  '/icms-fronteira/contestacoes',
@@ -1482,6 +1701,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="antecipacao">Antecipação</TabsTrigger>
           <TabsTrigger value="st">Subst. Tributária</TabsTrigger>
           <TabsTrigger value="difal">DIFAL</TabsTrigger>
+          <TabsTrigger value="planilha">Planilha</TabsTrigger>
           <TabsTrigger value="regras">Regras NCM</TabsTrigger>
           <TabsTrigger value="extrato">Extrato SEFAZ</TabsTrigger>
           <TabsTrigger value="contestacoes">Contestações</TabsTrigger>
@@ -1553,6 +1773,24 @@ export default function IcmsFronteira() {
                 <RecalcularButton />
               </div>
               <NotasTab endpoint="/api/icms-fronteira/difal" regime="difal" token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="planilha" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4 text-slate-500" />
+                Planilha de Itens
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                Detalhamento por item com BC correta, ICMS calculado e ICMS retido.
+                Um item por linha, com subtotal por NF e total geral.
+              </p>
+              <PlanilhaTab token={token} />
             </CardContent>
           </Card>
         </TabsContent>

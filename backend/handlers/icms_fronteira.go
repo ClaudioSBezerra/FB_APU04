@@ -161,12 +161,19 @@ WITH classified AS (
         END                                                 AS icms_devido_est
     FROM nfe_entradas ne
     LEFT JOIN LATERAL (
+        SELECT nii.ncm AS ncm
+        FROM nfe_entradas_itens nii
+        WHERE nii.nfe_id = ne.id
+        ORDER BY nii.v_prod DESC NULLS LAST
+        LIMIT 1
+    ) top_item ON true
+    LEFT JOIN LATERAL (
         SELECT r.aliquota_interna
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
-          AND ne.forn_uf IS NOT NULL
-          AND ne.forn_uf != ''
-        ORDER BY r.company_id NULLS LAST
+          AND top_item.ncm IS NOT NULL
+          AND LEFT(top_item.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
+        ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
         LIMIT 1
     ) regra ON true
     WHERE ne.company_id = $1
