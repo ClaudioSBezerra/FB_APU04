@@ -187,6 +187,22 @@ func NfeEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 			ic := inf.Total.ICMSTot
 			ib := inf.Total.IBSCBSTot
 
+			// Determina origem predominante dos itens (CST Tabela A) para alíquota 4%.
+			// Códigos 1,2,3,6,7,8 indicam mercadoria estrangeira ou com alto conteúdo importado.
+			origPred := ""
+			for _, d := range inf.Det {
+				if len(d.Imposto.ICMS.Grupos) > 0 {
+					o := strings.TrimSpace(d.Imposto.ICMS.Grupos[0].Orig)
+					switch o {
+					case "1", "2", "3", "6", "7", "8":
+						origPred = o
+					}
+				}
+				if origPred != "" {
+					break
+				}
+			}
+
 			tx, err := db.Begin()
 			if err != nil {
 				result.Erros = append(result.Erros, nfeEntradaErro{filename, "Erro ao iniciar transação: " + err.Error()})
@@ -207,6 +223,7 @@ func NfeEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					v_ii, v_ipi, v_ipi_devol, v_pis, v_cofins, v_outro, v_nf,
 					v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cred_pres_ibs,
 					v_cbs, v_cred_pres_cbs,
+					cst_orig_pred,
 					source
 				) VALUES (
 					$1,$2,$3,$4,$5,
@@ -219,6 +236,7 @@ func NfeEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					$29,$30,$31,$32,$33,$34,$35,
 					$36,$37,$38,$39,$40,
 					$41,$42,
+					NULLIF($43,''),
 					'xml_upload'
 				)
 				ON CONFLICT ON CONSTRAINT uq_nfe_entradas_company_chave DO UPDATE SET
@@ -256,6 +274,7 @@ func NfeEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					v_cred_pres_ibs = EXCLUDED.v_cred_pres_ibs,
 					v_cbs        = EXCLUDED.v_cbs,
 					v_cred_pres_cbs = EXCLUDED.v_cred_pres_cbs,
+					cst_orig_pred   = EXCLUDED.cst_orig_pred,
 					source       = 'xml_upload'
 				RETURNING id`,
 				companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
@@ -269,6 +288,7 @@ func NfeEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 				toDecimal(ib.VBCIBSCBS), toDecimal(ib.GIBS.GIBSuf.VIBSuf), toDecimal(ib.GIBS.GIBSMun.VIBSMun),
 				toDecimal(ib.GIBS.VIBS), toDecimal(ib.GIBS.VCredPres),
 				toDecimal(ib.GCBS.VCBS), toDecimal(ib.GCBS.VCredPres),
+				origPred,
 			).Scan(&nfeID)
 			if err != nil {
 				tx.Rollback()

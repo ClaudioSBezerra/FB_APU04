@@ -14,22 +14,35 @@ import (
 // Constants
 // ---------------------------------------------------------------------------
 
-// CFOPs that characterise DIFAL (interstate purchase for use/consumption or fixed assets).
-var difalCFOPs = map[string]bool{
-	"1551": true, "1556": true,
-	"2551": true, "2556": true,
-	"6551": true, "6556": true,
-	"5551": true, "5556": true,
-	"2151": true,
+// CFOPs conforme especificação do contador (Bloco 1):
+//
+//   Antecipação sem liberação : 2101, 2102, 2152
+//   Antecipação com liberação (ST): 2403, 2409, 2651, 2652
+//   Uso/consumo/ativo imobilizado (DIFAL): 2551, 2556
+//
+// Outros CFOPs são excluídos do cálculo de fronteira.
+
+// fronteiraAllCFOPs contém todos os CFOPs válidos para qualquer regime de fronteira.
+var fronteiraAllCFOPs = []string{
+	"2101", "2102", "2152",           // Antecipação sem liberação
+	"2403", "2409", "2651", "2652",   // ST (antecipação com liberação)
+	"2551", "2556",                    // DIFAL
 }
 
-// Sul/Sudeste states subject to 7 % interestadual rate (all others → 12 %).
+// Sul/Sudeste states subject to 7% interestadual rate (ES and MT excluded per legislação).
 var sulSudesteUF = map[string]bool{
 	"PR": true, "RS": true, "SC": true,
 	"MG": true, "RJ": true, "SP": true,
 }
 
-func aliqInterestadual(uf string) float64 {
+// aliqInterestadual retorna a alíquota interestadual aplicável.
+// cstOrig: código da Tabela A do CST (origem da mercadoria); uf: UF do fornecedor.
+// Origens 1,2,3,6,7,8 → mercadoria estrangeira/alto conteúdo importado → 4% (Res. Senado 13/2012).
+func aliqInterestadual(cstOrig, uf string) float64 {
+	switch cstOrig {
+	case "1", "2", "3", "6", "7", "8":
+		return 4.0
+	}
 	if sulSudesteUF[strings.ToUpper(strings.TrimSpace(uf))] {
 		return 7.0
 	}
@@ -103,34 +116,48 @@ WITH classified AS (
         COALESCE(ne.v_icms, 0)                              AS v_icms,
         COALESCE(ne.v_bc_st, 0)                             AS v_bc_st,
         COALESCE(ne.v_st, 0)                                AS v_st,
+        -- Alíquota interestadual: 4% para mercadoria importada (CST orig 1,2,3,6,7,8),
+        -- 7% para Sul/Sudeste (exceto ES e MT), 12% para demais.
         CASE
+            WHEN ne.cst_orig_pred IN ('1','2','3','6','7','8') THEN 4.0
             WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
             ELSE 12.0
         END                                                 AS aliq_inter,
         COALESCE(regra.aliquota_interna, 20.5)              AS aliq_interna,
+        -- Classificação por CFOP conforme especificação do contador
         CASE
-            WHEN ne.cfop IN ('2551','2556','1551','1556','6551','6556','5551','5556','2151')
+            WHEN ne.cfop IN ('2551','2556')
                 THEN 'DIFAL'
-            WHEN COALESCE(ne.v_st, 0) > 0
+            WHEN ne.cfop IN ('2403','2409','2651','2652')
                 THEN 'ST'
-            ELSE 'ANTECIPACAO'
+            WHEN ne.cfop IN ('2101','2102','2152')
+                THEN 'ANTECIPACAO'
         END                                                 AS regime,
-        -- Estimated ICMS due by regime
+        -- ICMS devido estimado por regime (cálculo provisório; BC completa no Bloco 2)
         CASE
-            WHEN ne.cfop IN ('2551','2556','1551','1556','6551','6556','5551','5556','2151')
-                THEN COALESCE(ne.v_prod, 0) *
-                     (COALESCE(regra.aliquota_interna, 20.5) -
-                      CASE WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP'])
-                           THEN 7.0 ELSE 12.0 END) / 100.0
-            WHEN COALESCE(ne.v_st, 0) > 0
+            WHEN ne.cfop IN ('2551','2556')
+                THEN GREATEST(0,
+                    COALESCE(ne.v_prod, 0) * (
+                        COALESCE(regra.aliquota_interna, 20.5) -
+                        CASE
+                            WHEN ne.cst_orig_pred IN ('1','2','3','6','7','8') THEN 4.0
+                            WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
+                            ELSE 12.0
+                        END
+                    ) / 100.0)
+            WHEN ne.cfop IN ('2403','2409','2651','2652')
                 THEN COALESCE(ne.v_st, 0)
-            ELSE
-                GREATEST(0,
-                    COALESCE(ne.v_prod, 0) *
-                    (COALESCE(regra.aliquota_interna, 20.5) -
-                     CASE WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP'])
-                          THEN 7.0 ELSE 12.0 END) / 100.0
-                )
+            WHEN ne.cfop IN ('2101','2102','2152')
+                THEN GREATEST(0,
+                    COALESCE(ne.v_prod, 0) * (
+                        COALESCE(regra.aliquota_interna, 20.5) -
+                        CASE
+                            WHEN ne.cst_orig_pred IN ('1','2','3','6','7','8') THEN 4.0
+                            WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
+                            ELSE 12.0
+                        END
+                    ) / 100.0)
+            ELSE 0
         END                                                 AS icms_devido_est
     FROM nfe_entradas ne
     LEFT JOIN LATERAL (
@@ -145,8 +172,8 @@ WITH classified AS (
     WHERE ne.company_id = $1
       AND ne.forn_uf IS NOT NULL
       AND ne.forn_uf != ''
-      AND ne.forn_uf != 'PE'
       AND ne.forn_uf != COALESCE(ne.dest_uf, 'PE')
+      AND ne.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
 )
 `
 

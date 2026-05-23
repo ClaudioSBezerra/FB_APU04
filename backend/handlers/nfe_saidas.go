@@ -88,8 +88,10 @@ type detImposto struct {
 	IPI    detIPI    `xml:"IPI"`
 }
 
-// detICMSGrupo captura qualquer sub-grupo ICMS (CST ou CSOSN) sem mapear ~30 variantes
+// detICMSGrupo captura qualquer sub-grupo ICMS (CST ou CSOSN) sem mapear ~30 variantes.
+// orig: código da Tabela A do CST (origem da mercadoria, 0-8).
 type detICMSGrupo struct {
+	Orig  string `xml:"orig"`
 	CST   string `xml:"CST"`
 	CSOSN string `xml:"CSOSN"`
 	VBC   string `xml:"vBC"`
@@ -361,8 +363,9 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 			continue
 		}
 
-		// Extrai CST/CSOSN do primeiro grupo ICMS presente
+		// Extrai CST/CSOSN e origem (Tabela A) do primeiro grupo ICMS presente
 		cstICMS := ""
+		cstOrig := ""
 		vBCICMS := 0.0
 		vICMS := 0.0
 		if len(d.Imposto.ICMS.Grupos) > 0 {
@@ -372,6 +375,7 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 			} else {
 				cstICMS = g.CST
 			}
+			cstOrig = strings.TrimSpace(g.Orig)
 			vBCICMS = toDecimal(g.VBC)
 			vICMS = toDecimal(g.VICMS)
 		}
@@ -381,6 +385,7 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 				nfe_id, company_id, n_item,
 				c_prod, x_prod, ncm, cfop,
 				cst_icms, cst_pis, cst_cofins,
+				cst_orig,
 				v_prod, v_bc_icms, v_icms,
 				v_bc_pis, v_pis,
 				v_bc_cofins, v_cofins,
@@ -389,10 +394,11 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 				$1, $2, $3,
 				$4, $5, $6, $7,
 				$8, $9, $10,
-				$11, $12, $13,
-				$14, $15,
-				$16, $17,
-				$18
+				$11,
+				$12, $13, $14,
+				$15, $16,
+				$17, $18,
+				$19
 			)
 			ON CONFLICT (nfe_id, n_item) DO UPDATE SET
 				c_prod       = EXCLUDED.c_prod,
@@ -402,6 +408,7 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 				cst_icms     = EXCLUDED.cst_icms,
 				cst_pis      = EXCLUDED.cst_pis,
 				cst_cofins   = EXCLUDED.cst_cofins,
+				cst_orig     = EXCLUDED.cst_orig,
 				v_prod       = EXCLUDED.v_prod,
 				v_bc_icms    = EXCLUDED.v_bc_icms,
 				v_icms       = EXCLUDED.v_icms,
@@ -414,6 +421,7 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 			nfeID, companyID, nItem,
 			d.Prod.CProd, d.Prod.XProd, d.Prod.NCM, d.Prod.CFOP,
 			cstICMS, d.Imposto.PIS.CST, d.Imposto.COFINS.CST,
+			cstOrig,
 			toDecimal(d.Prod.VProd), vBCICMS, vICMS,
 			toDecimal(d.Imposto.PIS.VBCPIS), toDecimal(d.Imposto.PIS.VPIS),
 			toDecimal(d.Imposto.COFINS.VBCCOFINS), toDecimal(d.Imposto.COFINS.VCOFINS),
