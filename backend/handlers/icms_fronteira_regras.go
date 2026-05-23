@@ -586,7 +586,9 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 			`, companyID, ncmPrefixo, descricao, regime, aliquotaInterna, mvaArg, reducaoBCPct, ufEstado)
 			if err2 != nil {
 				log.Printf("IcmsFronteiraRegrasImportar upsert error row %d: %v", i+1, err2)
-				res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": "+err2.Error())
+				if len(res.Errors) < 100 {
+					res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": "+err2.Error())
+				}
 				res.Skipped++
 				continue
 			}
