@@ -46,9 +46,9 @@ function fmtBRL(v: number | null | undefined): string {
 function colorScale(val: number, minVal: number, maxVal: number): string {
   if (val <= 0 || maxVal <= minVal) return '#e5e7eb'
   const t = Math.max(0, Math.min(1, (val - minVal) / (maxVal - minVal)))
-  // from: #dbeafe (219, 190, 254) to: #1d4ed8 (29, 78, 216)
+  // from: #dbeafe (219, 234, 254) to: #1d4ed8 (29, 78, 216)
   const r = Math.round(219 + (29 - 219) * t)
-  const g = Math.round(190 + (78 - 190) * t)
+  const g = Math.round(234 + (78 - 234) * t)
   const b = Math.round(254 + (216 - 254) * t)
   return `rgb(${r},${g},${b})`
 }
