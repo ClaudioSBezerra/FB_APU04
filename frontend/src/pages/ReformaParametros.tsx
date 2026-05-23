@@ -24,8 +24,6 @@ export default function ReformaParametros() {
   const mutation = useUpdateReformaParametros()
 
   const [targetAno, setTargetAno] = useState<number>(2027)
-  const [aliqIbs, setAliqIbs] = useState<number>(26.5)
-  const [aliqCbs, setAliqCbs] = useState<number>(9.9)
   const [fatorSimples, setFatorSimples] = useState<number>(20)
   const [taxaCdi, setTaxaCdi] = useState<number>(10.5)
   const [prazoMedio, setPrazoMedio] = useState<number>(30)
@@ -34,8 +32,6 @@ export default function ReformaParametros() {
     if (data?.parametros) {
       const p = data.parametros
       setTargetAno(p.target_ano)
-      setAliqIbs(p.aliq_ibs_pct)
-      setAliqCbs(p.aliq_cbs_pct)
       setFatorSimples(p.fator_simples_pct)
       setTaxaCdi(p.taxa_cdi_anual_pct)
       setPrazoMedio(p.prazo_medio_dias)
@@ -46,8 +42,6 @@ export default function ReformaParametros() {
     mutation.mutate(
       {
         target_ano: targetAno,
-        aliq_ibs_pct: aliqIbs,
-        aliq_cbs_pct: aliqCbs,
         fator_simples_pct: fatorSimples,
         taxa_cdi_anual_pct: taxaCdi,
         prazo_medio_dias: prazoMedio,
@@ -83,27 +77,18 @@ export default function ReformaParametros() {
           />
         </div>
 
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Alíquota IBS (%)</label>
-          <Input
-            type="number"
-            step="0.01"
-            value={aliqIbs}
-            onChange={e => setAliqIbs(Number(e.target.value))}
-            disabled={!isAdmin}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Alíquota CBS (%)</label>
-          <Input
-            type="number"
-            step="0.01"
-            value={aliqCbs}
-            onChange={e => setAliqCbs(Number(e.target.value))}
-            disabled={!isAdmin}
-          />
-        </div>
+        {data?.parametros && (
+          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Alíquota IBS (tabela)</span>
+              <span className="font-medium">{data.parametros.aliq_ibs_pct.toFixed(2)}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Alíquota CBS (tabela)</span>
+              <span className="font-medium">{data.parametros.aliq_cbs_pct.toFixed(2)}%</span>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-1">
           <label className="text-sm font-medium">

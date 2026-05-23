@@ -9,6 +9,8 @@ import (
 )
 
 // ReformaParametros holds the reforma tributária simulation parameters for a company.
+// AliqIBSPct e AliqCBSPct são campos computados — derivados de tabela_aliquotas via target_ano,
+// nunca armazenados em reforma_parametros.
 type ReformaParametros struct {
 	CompanyID       string  `json:"company_id"`
 	TargetAno       int     `json:"target_ano"`
@@ -41,10 +43,13 @@ func GetReformaParametrosHandler(db *sql.DB) http.HandlerFunc {
 
 		var p ReformaParametros
 		err = db.QueryRow(`
-			SELECT company_id, target_ano, aliq_ibs_pct, aliq_cbs_pct,
-			       fator_simples_pct, taxa_cdi_anual_pct, prazo_medio_dias
-			FROM reforma_parametros
-			WHERE company_id = $1
+			SELECT rp.company_id, rp.target_ano,
+			       COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7),
+			       COALESCE(ta.perc_cbs, 8.8),
+			       rp.fator_simples_pct, rp.taxa_cdi_anual_pct, rp.prazo_medio_dias
+			FROM reforma_parametros rp
+			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
+			WHERE rp.company_id = $1
 		`, companyID).Scan(&p.CompanyID, &p.TargetAno, &p.AliqIBSPct, &p.AliqCBSPct,
 			&p.FatorSimplesPct, &p.TaxaCDIAnualPct, &p.PrazoMedioDias)
 
@@ -90,14 +95,6 @@ func PutReformaParametrosHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Input validation — V5 ASVS ranges (T-06-11)
-		if req.AliqIBSPct < 0 || req.AliqIBSPct > 100 {
-			http.Error(w, "aliq_ibs_pct deve estar entre 0 e 100", http.StatusBadRequest)
-			return
-		}
-		if req.AliqCBSPct < 0 || req.AliqCBSPct > 100 {
-			http.Error(w, "aliq_cbs_pct deve estar entre 0 e 100", http.StatusBadRequest)
-			return
-		}
 		if req.FatorSimplesPct < 0 || req.FatorSimplesPct > 100 {
 			http.Error(w, "fator_simples_pct deve estar entre 0 e 100", http.StatusBadRequest)
 			return
@@ -118,21 +115,18 @@ func PutReformaParametrosHandler(db *sql.DB) http.HandlerFunc {
 		// UPSERT — DO UPDATE SET (never DO NOTHING for mutable parameters — Pitfall 2)
 		// company_id from JWT ($1) — never from req.CompanyID (IDOR protection — T-06-09)
 		// All values via parametrized placeholders — no string interpolation (T-06-10)
+		// aliq_ibs_pct e aliq_cbs_pct não são armazenados — derivados de tabela_aliquotas.
 		_, err = db.Exec(`
 			INSERT INTO reforma_parametros
-			  (company_id, target_ano, aliq_ibs_pct, aliq_cbs_pct,
-			   fator_simples_pct, taxa_cdi_anual_pct, prazo_medio_dias)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			  (company_id, target_ano, fator_simples_pct, taxa_cdi_anual_pct, prazo_medio_dias)
+			VALUES ($1, $2, $3, $4, $5)
 			ON CONFLICT (company_id) DO UPDATE SET
 			  target_ano         = $2,
-			  aliq_ibs_pct       = $3,
-			  aliq_cbs_pct       = $4,
-			  fator_simples_pct  = $5,
-			  taxa_cdi_anual_pct = $6,
-			  prazo_medio_dias   = $7,
+			  fator_simples_pct  = $3,
+			  taxa_cdi_anual_pct = $4,
+			  prazo_medio_dias   = $5,
 			  updated_at         = CURRENT_TIMESTAMP
-		`, companyID, req.TargetAno, req.AliqIBSPct, req.AliqCBSPct,
-			req.FatorSimplesPct, req.TaxaCDIAnualPct, req.PrazoMedioDias)
+		`, companyID, req.TargetAno, req.FatorSimplesPct, req.TaxaCDIAnualPct, req.PrazoMedioDias)
 		if err != nil {
 			http.Error(w, "Error saving parametros: "+err.Error(), http.StatusInternalServerError)
 			return

@@ -124,15 +124,15 @@ func CreditosBloqueadosHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Ler aliq_ibs_pct e aliq_cbs_pct de reforma_parametros com guard sql.ErrNoRows
 		var aliqIBS, aliqCBS float64
 		err = db.QueryRow(`
-			SELECT aliq_ibs_pct, aliq_cbs_pct
-			FROM reforma_parametros
-			WHERE company_id = $1
+			SELECT COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7), COALESCE(ta.perc_cbs, 8.8)
+			FROM reforma_parametros rp
+			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
+			WHERE rp.company_id = $1
 		`, companyID).Scan(&aliqIBS, &aliqCBS)
 		if err == sql.ErrNoRows {
-			aliqIBS, aliqCBS = 26.5, 9.9
+			aliqIBS, aliqCBS = 17.7, 8.8
 		} else if err != nil {
 			log.Printf("CreditosBloqueados parametros error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao ler parâmetros")
@@ -227,12 +227,13 @@ func CreditosBloqueadosCSVHandler(db *sql.DB) http.HandlerFunc {
 
 		var aliqIBS, aliqCBS float64
 		err = db.QueryRow(`
-			SELECT aliq_ibs_pct, aliq_cbs_pct
-			FROM reforma_parametros
-			WHERE company_id = $1
+			SELECT COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7), COALESCE(ta.perc_cbs, 8.8)
+			FROM reforma_parametros rp
+			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
+			WHERE rp.company_id = $1
 		`, companyID).Scan(&aliqIBS, &aliqCBS)
 		if err == sql.ErrNoRows {
-			aliqIBS, aliqCBS = 26.5, 9.9
+			aliqIBS, aliqCBS = 17.7, 8.8
 		} else if err != nil {
 			log.Printf("CreditosBloqueadosCSV parametros error: %v", err)
 			http.Error(w, "Erro ao ler parâmetros", http.StatusInternalServerError)
@@ -344,12 +345,15 @@ func RankingFornecedoresHandler(db *sql.DB) http.HandlerFunc {
 
 		var fatorSimples, aliqIBS, aliqCBS float64
 		err = db.QueryRow(`
-			SELECT fator_simples_pct, aliq_ibs_pct, aliq_cbs_pct
-			FROM reforma_parametros
-			WHERE company_id = $1
+			SELECT rp.fator_simples_pct,
+			       COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7),
+			       COALESCE(ta.perc_cbs, 8.8)
+			FROM reforma_parametros rp
+			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
+			WHERE rp.company_id = $1
 		`, companyID).Scan(&fatorSimples, &aliqIBS, &aliqCBS)
 		if err == sql.ErrNoRows {
-			fatorSimples, aliqIBS, aliqCBS = 20.0, 26.5, 9.9
+			fatorSimples, aliqIBS, aliqCBS = 20.0, 17.7, 8.8
 		} else if err != nil {
 			log.Printf("RankingFornecedores parametros error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao ler parâmetros")
@@ -438,12 +442,15 @@ func RankingFornecedoresCSVHandler(db *sql.DB) http.HandlerFunc {
 
 		var fatorSimples, aliqIBS, aliqCBS float64
 		err = db.QueryRow(`
-			SELECT fator_simples_pct, aliq_ibs_pct, aliq_cbs_pct
-			FROM reforma_parametros
-			WHERE company_id = $1
+			SELECT rp.fator_simples_pct,
+			       COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7),
+			       COALESCE(ta.perc_cbs, 8.8)
+			FROM reforma_parametros rp
+			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
+			WHERE rp.company_id = $1
 		`, companyID).Scan(&fatorSimples, &aliqIBS, &aliqCBS)
 		if err == sql.ErrNoRows {
-			fatorSimples, aliqIBS, aliqCBS = 20.0, 26.5, 9.9
+			fatorSimples, aliqIBS, aliqCBS = 20.0, 17.7, 8.8
 		} else if err != nil {
 			log.Printf("RankingFornecedoresCSV parametros error: %v", err)
 			http.Error(w, "Erro ao ler parâmetros", http.StatusInternalServerError)
@@ -556,12 +563,13 @@ func ReprecificacaoHandler(db *sql.DB) http.HandlerFunc {
 
 		var aliqIBS, aliqCBS float64
 		err = db.QueryRow(`
-			SELECT aliq_ibs_pct, aliq_cbs_pct
-			FROM reforma_parametros
-			WHERE company_id = $1
+			SELECT COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7), COALESCE(ta.perc_cbs, 8.8)
+			FROM reforma_parametros rp
+			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
+			WHERE rp.company_id = $1
 		`, companyID).Scan(&aliqIBS, &aliqCBS)
 		if err == sql.ErrNoRows {
-			aliqIBS, aliqCBS = 26.5, 9.9
+			aliqIBS, aliqCBS = 17.7, 8.8
 		} else if err != nil {
 			log.Printf("Reprecificacao parametros error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao ler parâmetros")
@@ -686,12 +694,13 @@ func ReprecificacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 
 		var aliqIBS, aliqCBS float64
 		err = db.QueryRow(`
-			SELECT aliq_ibs_pct, aliq_cbs_pct
-			FROM reforma_parametros
-			WHERE company_id = $1
+			SELECT COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7), COALESCE(ta.perc_cbs, 8.8)
+			FROM reforma_parametros rp
+			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
+			WHERE rp.company_id = $1
 		`, companyID).Scan(&aliqIBS, &aliqCBS)
 		if err == sql.ErrNoRows {
-			aliqIBS, aliqCBS = 26.5, 9.9
+			aliqIBS, aliqCBS = 17.7, 8.8
 		} else if err != nil {
 			log.Printf("ReprecificacaoCSV parametros error: %v", err)
 			http.Error(w, "Erro ao ler parâmetros", http.StatusInternalServerError)
@@ -837,12 +846,14 @@ func SplitPaymentHandler(db *sql.DB) http.HandlerFunc {
 		var aliqIBS, aliqCBS, taxaCDI float64
 		var prazoMedio int
 		err = db.QueryRow(`
-			SELECT aliq_ibs_pct, aliq_cbs_pct, taxa_cdi_anual_pct, prazo_medio_dias
-			FROM reforma_parametros
-			WHERE company_id = $1
+			SELECT COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7), COALESCE(ta.perc_cbs, 8.8),
+			       rp.taxa_cdi_anual_pct, rp.prazo_medio_dias
+			FROM reforma_parametros rp
+			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
+			WHERE rp.company_id = $1
 		`, companyID).Scan(&aliqIBS, &aliqCBS, &taxaCDI, &prazoMedio)
 		if err == sql.ErrNoRows {
-			aliqIBS, aliqCBS, taxaCDI, prazoMedio = 26.5, 9.9, 10.5, 30
+			aliqIBS, aliqCBS, taxaCDI, prazoMedio = 17.7, 8.8, 10.5, 30
 		} else if err != nil {
 			log.Printf("SplitPayment parametros error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao ler parâmetros")
