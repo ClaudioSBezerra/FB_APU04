@@ -5,6 +5,7 @@ status: draft
 shadcn_initialized: true
 preset: manual (components.json not present; shadcn/ui installed via package.json)
 created: 2026-05-22
+revised: 2026-05-22
 ---
 
 # Phase 7 — UI Design Contract
@@ -56,16 +57,19 @@ Source: default Tailwind scale confirmed consistent with existing page patterns 
 | Role | Size | Weight | Line Height | Font |
 |------|------|--------|-------------|------|
 | Body | 14px (text-sm) | 400 (normal) | 1.5 | Inter |
-| Label | 14px (text-sm) | 500 (medium) | 1.4 | Inter |
+| Label / mono / disclaimer | 12px (text-xs) | 600 (semibold) | 1.4 | Inter (labels); JetBrains Mono (numeric) |
 | Heading | 20px (text-xl) | 600 (semibold) | 1.2 | Inter |
 | Display | 28px (text-2xl) | 600 (semibold) | 1.2 | Inter |
-| Mono / numeric | 13px (text-xs/sm, font-mono) | 400 (normal) | 1.5 | JetBrains Mono |
 
 Notes:
-- Monetary values (R$ amounts in tables) use `font-mono` at 13px for alignment — JetBrains Mono is already loaded
+- Monetary values (R$ amounts in tables) use `font-mono text-xs` for alignment — JetBrains Mono is already loaded. Class: `text-xs font-mono`
 - KPI metric values (large number callouts such as total float in Módulo 1.4) use 28px / semibold / Inter
-- Table column headers use 12px (text-xs) / 500 weight, uppercase with `tracking-wide` — matches existing `TableHead` usage in ConciliacaoBridgeXML.tsx
-- Disclaimer text (regulatory notices) uses 12px / 400 / muted-foreground
+- Table column headers use 12px (text-xs) / 600 (semibold), uppercase with `tracking-wide` — matches existing `TableHead` usage in ConciliacaoBridgeXML.tsx. Class: `text-xs font-semibold uppercase tracking-wide`
+- Disclaimer text (regulatory notices) uses 12px (text-xs) / 400 (normal) / muted-foreground. Class: `text-xs text-muted-foreground`
+- All numeric cell values in tables use `text-xs font-mono` regardless of whether they are monetary
+- font-medium (500) is NOT used in this phase — only 400 (normal) and 600 (semibold)
+
+Revision note: Font size scale consolidated from 5 sizes to 4 by merging former 12px (disclaimer/headers) and 13px (mono/numeric) into a single 12px size (text-xs). Font weights collapsed from 3 (400/500/600) to 2 (400/600) — all former font-medium (500) uses replaced with font-semibold (600). Applied 2026-05-22.
 
 Source: existing component patterns verified in ReformaParametros.tsx and ConciliacaoBridgeXML.tsx
 
@@ -213,7 +217,7 @@ Source: derived from existing page patterns in ReformaParametros.tsx and Concili
 
 **KPI cards (top row):** `grid grid-cols-2 gap-4`. Card 1: "Float Tributário" — value in R$ at text-2xl font-semibold. Card 2: "Custo CDI Estimado (R$/ano)" — value in R$ at text-2xl font-semibold. Each card has a subtitle line in text-sm text-muted-foreground showing the formula basis: "IBS+CBS × Saídas × X dias / 365".
 
-**Sensitivity matrix:** Card with title "Tabela de Sensibilidade — DSO × CDI". Table: rows = DSO values (15, 30, 45, 60, 90 dias); columns = CDI values (8%, 10%, 12%, 14%). Cell values = custo CDI in R$. Use `font-mono text-sm` for all numeric cells. Highlight the current DSO/CDI combination (from `reforma_parametros`) with `bg-primary/10 font-semibold`.
+**Sensitivity matrix:** Card with title "Tabela de Sensibilidade — DSO × CDI". Table: rows = DSO values (15, 30, 45, 60, 90 dias); columns = CDI values (8%, 10%, 12%, 14%). Cell values = custo CDI in R$. Use `font-mono text-xs` for all numeric cells. Highlight the current DSO/CDI combination (from `reforma_parametros`) with `bg-primary/10 font-semibold`.
 
 **Disclaimer banner:** `Alert variant="default"` below KPIs. Copy: "Split payment entra em vigor gradualmente entre 2026 e 2033 conforme cronograma da Reforma. Os valores simulam o impacto no regime de transição plena." Icon: `Info`.
 
@@ -237,7 +241,7 @@ Source: derived from existing page patterns in ReformaParametros.tsx and Concili
 | Empty state — Module 1.1 | "Nenhum crédito ICMS encontrado para o período selecionado." |
 | Empty state — Module 1.3 | "Nenhum fornecedor Simples Nacional encontrado. Verifique se a tabela forn_simples está populada." |
 | Empty state — Module 1.2 | "Nenhum produto encontrado. Verifique se há notas fiscais de entrada importadas." |
-| Empty state — Module 1.4 | "Nenhuma nota fiscal de saída encontrada para calcular o split payment." |
+| Empty state — Module 1.4 | "Nenhuma nota fiscal de saída encontrada. Os módulos de split payment requerem dados de NF-e de saída importados via XML." |
 | Error state (all modules) | "Erro ao carregar dados. Verifique sua conexão e tente novamente." |
 | Loading state (all modules) | No copy — use Skeleton rows only (no spinner text) |
 | Simples Nacional badge | "Simples" |
@@ -310,6 +314,7 @@ Source: RESEARCH.md Standard Stack "Nenhuma dependência nova necessária" confi
 | ReformaParametros.tsx | Card/Input/Button/Tooltip/Loader2 patterns, admin-only editing pattern, toast feedback |
 | ConciliacaoBridgeXML.tsx | BarChart/Table/Badge/Select patterns, fmtBRL/fmtCNPJ helpers, downloadingCSV state pattern, empty state treatment |
 | navigation.ts | 4 disabled tab paths confirmed: /reforma/creditos, /reforma/reprecificacao, /reforma/ranking, /reforma/split-payment |
+| Revision (2026-05-22) | Typography: 5→4 sizes (merged 12px+13px into 12px); weights: 3→2 (removed 500/medium, kept 400+600). Empty state Module 1.4 aligned to fuller version with solution path hint. |
 | User input this session | 0 (all fields resolved from upstream artifacts and codebase inspection) |
 
 ---
