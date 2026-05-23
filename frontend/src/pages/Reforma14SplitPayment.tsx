@@ -11,6 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { Info } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -56,7 +62,30 @@ export default function Reforma14SplitPayment() {
     <div className="space-y-6 p-6">
       {/* Page header — sem botão Exportar CSV por design */}
       <div>
-        <h1 className="text-xl font-semibold">Split Payment e Capital de Giro — Módulo 1.4</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Split Payment e Capital de Giro — Módulo 1.4</h1>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 text-muted-foreground cursor-help shrink-0" />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-left" side="bottom">
+                <p className="font-medium mb-1">O que é</p>
+                <p className="text-xs text-muted-foreground">
+                  Com o Split Payment, o IBS/CBS é retido diretamente na conta bancária no momento
+                  do pagamento, eliminando o float tributário que as empresas usam para financiar
+                  capital de giro.
+                </p>
+                <p className="font-medium mb-1 mt-2">Como usar</p>
+                <p className="text-xs text-muted-foreground">
+                  O Float Tributário mostra o capital que deixará de estar disponível. A tabela
+                  DSO × CDI simula o custo de reposição desse caixa em diferentes cenários de
+                  prazo médio de recebimento e taxa de juros.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         <p className="text-sm text-muted-foreground">
           Float tributário e custo de reposição CDI com tabela de sensibilidade DSO × CDI
         </p>

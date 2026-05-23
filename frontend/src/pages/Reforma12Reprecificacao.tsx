@@ -21,7 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Download } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { Download, Info } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -136,7 +142,30 @@ export default function Reforma12Reprecificacao() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Reprecificação de Produtos — Módulo 1.2</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">Reprecificação de Produtos — Módulo 1.2</h1>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-4 w-4 text-muted-foreground cursor-help shrink-0" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs text-left" side="bottom">
+                  <p className="font-medium mb-1">O que é</p>
+                  <p className="text-xs text-muted-foreground">
+                    Compara o ICMS embutido no preço atual de cada produto com o IBS/CBS projetado
+                    no novo regime, por NCM e CST. O ICMS é "por dentro" (compõe a base); o IBS/CBS
+                    é "por fora" (incide sobre o preço líquido).
+                  </p>
+                  <p className="font-medium mb-1 mt-2">Como usar</p>
+                  <p className="text-xs text-muted-foreground">
+                    Ordene pela coluna Variação % para ver quais produtos encarecem ou barateiam.
+                    Ajuste o ano-alvo nos Parâmetros para simular diferentes momentos da transição
+                    (2027–2033).
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
           <p className="text-sm text-muted-foreground">
             Impacto da troca ICMS por dentro por IBS/CBS por fora por produto
           </p>

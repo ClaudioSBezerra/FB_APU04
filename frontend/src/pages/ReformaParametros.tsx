@@ -64,7 +64,30 @@ export default function ReformaParametros() {
   return (
     <Card className="max-w-lg">
       <CardHeader>
-        <CardTitle>Parâmetros da Reforma Tributária</CardTitle>
+        <div className="flex items-center gap-2">
+          <CardTitle>Parâmetros da Reforma Tributária</CardTitle>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 text-muted-foreground cursor-help shrink-0" />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-left" side="bottom">
+                <p className="font-medium mb-1">O que é</p>
+                <p className="text-xs text-muted-foreground">
+                  Define o ano-alvo e os parâmetros financeiros usados em todos os módulos da
+                  Reforma. As alíquotas IBS e CBS são carregadas automaticamente da tabela oficial
+                  de transição (EC 132/2023) com base no ano escolhido.
+                </p>
+                <p className="font-medium mb-1 mt-2">Como usar</p>
+                <p className="text-xs text-muted-foreground">
+                  Selecione o ano para comparar diferentes momentos da transição (2027–2033). Ajuste
+                  o Fator Simples Nacional conforme a estimativa do CG-IBS para fornecedores
+                  optantes, e o CDI/Prazo para simular o custo de capital no Split Payment.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-1">

@@ -19,11 +19,17 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as ChartTooltip,
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import { Download } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { Download, Info } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,7 +100,30 @@ export default function Reforma11CreditosBloqueados() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Créditos ICMS Bloqueados — Módulo 1.1</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">Créditos ICMS Bloqueados — Módulo 1.1</h1>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-4 w-4 text-muted-foreground cursor-help shrink-0" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs text-left" side="bottom">
+                  <p className="font-medium mb-1">O que é</p>
+                  <p className="text-xs text-muted-foreground">
+                    Mostra os créditos de ICMS que não poderão ser aproveitados na transição para o
+                    IBS/CBS, agrupados por CFOP. São créditos "presos" no regime atual sem
+                    equivalência direta no novo sistema.
+                  </p>
+                  <p className="font-medium mb-1 mt-2">Como usar</p>
+                  <p className="text-xs text-muted-foreground">
+                    Identifique os CFOPs com maior ICMS bloqueado. O equivalente IBS/CBS mostra o
+                    crédito que seria gerado sobre as mesmas operações no novo regime — use para
+                    estimar o impacto líquido da transição.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
           <p className="text-sm text-muted-foreground">
             Créditos ICMS não aproveitáveis na transição + equivalente IBS/CBS recuperável
           </p>
@@ -175,7 +204,7 @@ export default function Reforma11CreditosBloqueados() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="cfop" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={(v) => fmtBRL(v)} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(v) => fmtBRL(Number(v))} />
+                  <ChartTooltip formatter={(v) => fmtBRL(Number(v))} />
                   <Legend />
                   <Bar dataKey="vl_icms_total" name="ICMS Bloqueado" fill="var(--pis-cofins)" />
                   <Bar dataKey="ibs_equiv" name="Equiv. IBS" fill="var(--ibs-cbs)" />

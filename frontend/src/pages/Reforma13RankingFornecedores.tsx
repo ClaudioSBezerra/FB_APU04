@@ -20,11 +20,17 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as ChartTooltip,
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import { Download, AlertTriangle } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { Download, AlertTriangle, Info } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,7 +104,30 @@ export default function Reforma13RankingFornecedores() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Ranking de Fornecedores — Módulo 1.3</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">Ranking de Fornecedores — Módulo 1.3</h1>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-4 w-4 text-muted-foreground cursor-help shrink-0" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs text-left" side="bottom">
+                  <p className="font-medium mb-1">O que é</p>
+                  <p className="text-xs text-muted-foreground">
+                    Lista os fornecedores optantes pelo Simples Nacional ordenados por volume de
+                    compras. No novo regime o tomador não pode creditar o IBS/CBS desses
+                    fornecedores — o crédito estimado representa um custo adicional não recuperável.
+                  </p>
+                  <p className="font-medium mb-1 mt-2">Como usar</p>
+                  <p className="text-xs text-muted-foreground">
+                    Priorize negociações de preço com os fornecedores de maior IBS/CBS perdido, ou
+                    avalie substituição por fornecedores do regime regular que gerem crédito pleno.
+                    O Fator Simples (Parâmetros) ajusta a estimativa de crédito não aproveitável.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
           <p className="text-sm text-muted-foreground">
             Fornecedores Simples Nacional com crédito IBS/CBS estimado por empresa
           </p>
@@ -166,7 +195,7 @@ export default function Reforma13RankingFornecedores() {
                     tickFormatter={(v: string) => v.slice(0, 12)}
                   />
                   <YAxis tickFormatter={(v) => fmtBRL(v)} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v) => fmtBRL(Number(v))} />
+                  <ChartTooltip formatter={(v) => fmtBRL(Number(v))} />
                   <Legend />
                   <Bar dataKey="ibs_perdido_est" name="IBS+CBS Estimado" fill="var(--ibs-cbs)" />
                 </BarChart>
