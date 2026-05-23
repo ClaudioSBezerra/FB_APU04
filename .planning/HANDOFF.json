@@ -1,0 +1,56 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-05-23T17:58:44.790Z",
+  "phase": "8",
+  "phase_name": "Cadastro de Empresas + Ambiente Administrativo por UF",
+  "phase_dir": ".planning/phases/08-cadastro-empresas-ambiente-uf",
+  "plan": 0,
+  "task": 0,
+  "total_tasks": 0,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "GAP 4 — MVA no cálculo ST (icms_fronteira_itens + divergencias + export)",
+      "status": "done",
+      "commit": "ca11bb2"
+    },
+    {
+      "id": 2,
+      "name": "Diagnóstico das 3 funcionalidades faltantes (multi-empresa, ambiente UF, cadastro)",
+      "status": "done",
+      "commit": "ca11bb2"
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 3,
+      "name": "Planejar Phase 8 via /gsd:plan-phase 8",
+      "status": "not_started"
+    },
+    {
+      "id": 4,
+      "name": "Executar Phase 8 — migrations + backend + frontend",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "Phase 8 original (Módulos 2.x Analytics) renomeada para Phase 9",
+      "rationale": "Nova Phase 8 prioridade urgente: Cadastro Empresas + Ambiente Adm UF",
+      "phase": "8"
+    },
+    {
+      "decision": "GAP 4 MVA usa fórmula BC-ST = v_operacao * (1 + MVA/100); ICMS-ST = BC-ST * aliq_int - ICMS_proprio",
+      "rationale": "Padrão Convênio ICMS por fora; fallback para icms_retido quando MVA=NULL",
+      "phase": "7-hotfix"
+    }
+  ],
+  "uncommitted_files": [
+    ".planning/STATE.md"
+  ],
+  "next_action": "Nova conversa → /gsd:plan-phase 8 — vai criar Phase 8 dir e planejar as 3 funcionalidades",
+  "context_notes": "Contexto esgotado (75%+) durante execução do /gsd:plan-phase. Phase 8 ainda não tem diretório nem PLANs. O gsd-sdk init.plan-phase respondeu OK (model=sonnet/opus). O ROADMAP precisa ser atualizado: Phase 8 original (Módulos 2.x) vira Phase 9."
+}
