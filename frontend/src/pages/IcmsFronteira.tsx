@@ -2285,7 +2285,7 @@ export default function IcmsFronteira() {
     <div className="space-y-6 p-6">
       {/* Page header */}
       <div className="flex items-center gap-2">
-        <h1 className="text-xl font-semibold">ICMS Fronteira — PE</h1>
+        <h1 className="text-xl font-semibold">Módulo ICMS Fronteira</h1>
         <TooltipProvider delayDuration={200}>
           <Tooltip>
             <TooltipTrigger asChild>

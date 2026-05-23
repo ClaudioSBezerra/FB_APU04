@@ -57,13 +57,16 @@ export const modules: Record<string, ModuleConfig> = {
     ],
   },
   fronteira: {
-    label: 'ICMS Fronteira',
+    label: 'Módulo ICMS Fronteira',
     tabs: [
       { label: 'Resumo',               path: '/icms-fronteira' },
       { label: 'Antecipação',          path: '/icms-fronteira/antecipacao' },
       { label: 'Substituição Trib.',   path: '/icms-fronteira/st' },
       { label: 'DIFAL',                path: '/icms-fronteira/difal' },
       { label: 'Regras NCM',           path: '/icms-fronteira/regras' },
+      { label: 'Planilha de Itens',    path: '/icms-fronteira/planilha' },
+      { label: 'Divergências',         path: '/icms-fronteira/divergencias' },
+      { label: 'Apuração Mensal',      path: '/icms-fronteira/apuracao' },
       { label: 'Extrato SEFAZ',        path: '/icms-fronteira/extrato' },
       { label: 'Contestações',         path: '/icms-fronteira/contestacoes' },
     ],
