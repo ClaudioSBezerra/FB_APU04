@@ -231,6 +231,10 @@ func CfopAnalysisCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		userID, _ := claims["user_id"].(string)
+		if userID == "" {
+			http.Error(w, "Não autenticado", http.StatusUnauthorized)
+			return
+		}
 
 		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
 		if err != nil {
@@ -244,9 +248,6 @@ func CfopAnalysisCSVHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "Erro ao ler parâmetros", http.StatusInternalServerError)
 			return
 		}
-
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="analise-cfop.csv"`)
 
 		rows, err := db.Query(`
 			SELECT
@@ -291,6 +292,8 @@ func CfopAnalysisCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="analise-cfop.csv"`)
 		cw := csv.NewWriter(w)
 		header := []string{"Natureza CFOP", "Qtd Notas", "Valor Total (R$)", "IBS Projetado (R$)", "CBS Projetado (R$)"}
 		if err := cw.Write(header); err != nil {
@@ -359,7 +362,7 @@ func NcmAnalysisHandler(db *sql.DB) http.HandlerFunc {
 		rows, err := db.Query(`
 			SELECT
 			  nit.ncm,
-			  COALESCE(nit.x_prod,'') AS x_prod,
+			  MAX(COALESCE(nit.x_prod,'')) AS x_prod,
 			  SUM(nit.v_prod) AS vl_prod,
 			  SUM(nit.v_icms) AS vl_icms,
 			  COALESCE(ncmr.ibs_reducao_pct, 0) AS ibs_reducao_pct,
@@ -376,7 +379,7 @@ func NcmAnalysisHandler(db *sql.DB) http.HandlerFunc {
 			  LIMIT 1
 			) ncmr ON true
 			WHERE nit.company_id = $1 AND ne.cancelado = 'N' AND COALESCE(cf.tipo,'O') != 'T'
-			GROUP BY nit.ncm, nit.x_prod, ncmr.ibs_reducao_pct, ncmr.cbs_reducao_pct, ncmr.cclasstrib
+			GROUP BY nit.ncm, ncmr.ibs_reducao_pct, ncmr.cbs_reducao_pct, ncmr.cclasstrib
 			ORDER BY vl_prod DESC
 			LIMIT 100
 		`, companyID)
@@ -438,6 +441,10 @@ func NcmAnalysisCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		userID, _ := claims["user_id"].(string)
+		if userID == "" {
+			http.Error(w, "Não autenticado", http.StatusUnauthorized)
+			return
+		}
 
 		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
 		if err != nil {
@@ -452,13 +459,10 @@ func NcmAnalysisCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="analise-ncm.csv"`)
-
 		rows, err := db.Query(`
 			SELECT
 			  nit.ncm,
-			  COALESCE(nit.x_prod,'') AS x_prod,
+			  MAX(COALESCE(nit.x_prod,'')) AS x_prod,
 			  SUM(nit.v_prod) AS vl_prod,
 			  SUM(nit.v_icms) AS vl_icms,
 			  COALESCE(ncmr.ibs_reducao_pct, 0) AS ibs_reducao_pct,
@@ -475,7 +479,7 @@ func NcmAnalysisCSVHandler(db *sql.DB) http.HandlerFunc {
 			  LIMIT 1
 			) ncmr ON true
 			WHERE nit.company_id = $1 AND ne.cancelado = 'N' AND COALESCE(cf.tipo,'O') != 'T'
-			GROUP BY nit.ncm, nit.x_prod, ncmr.ibs_reducao_pct, ncmr.cbs_reducao_pct, ncmr.cclasstrib
+			GROUP BY nit.ncm, ncmr.ibs_reducao_pct, ncmr.cbs_reducao_pct, ncmr.cclasstrib
 			ORDER BY vl_prod DESC
 			LIMIT 100
 		`, companyID)
@@ -506,6 +510,8 @@ func NcmAnalysisCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="analise-ncm.csv"`)
 		cw := csv.NewWriter(w)
 		header := []string{"NCM", "Descrição", "VL Prod (R$)", "VL ICMS (R$)", "Alíq ICMS Efet (%)", "IBS Proj (R$)", "CBS Proj (R$)", "IS Flag"}
 		if err := cw.Write(header); err != nil {
