@@ -537,6 +537,64 @@ func main() {
 		}
 	})
 
+	// ── Reforma Tributária — Módulos 1.x (Phase 7) ──
+	http.HandleFunc("/api/reforma/modulo1/creditos", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.CreditosBloqueadosHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo1/creditos/csv", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.CreditosBloqueadosCSVHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo1/ranking", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.RankingFornecedoresHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo1/ranking/csv", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.RankingFornecedoresCSVHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo1/reprecificacao", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.ReprecificacaoHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo1/reprecificacao/csv", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.ReprecificacaoCSVHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo1/split", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.SplitPaymentHandler(database), "")(w, r)
+	})
+
 	// ── Apuração Assistida + Receita Federal — routes skipped in APP_MODULE=simulador ──
 	if appModule != "simulador" {
 		// RFB Credentials Endpoints (Conectar Receita Federal)
