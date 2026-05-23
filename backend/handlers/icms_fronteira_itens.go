@@ -50,7 +50,9 @@ type FronteiraItensResponse struct {
 // IcmsFronteiraItensHandler — GET /api/icms-fronteira/itens?regime=todos|ANTECIPACAO|ST|DIFAL
 // ---------------------------------------------------------------------------
 
-const fronteiraItensQuery = `
+// fronteiraItensQueryBody is the full item-level query without a row cap.
+// Append a LIMIT clause for interactive use; use as-is for exports.
+const fronteiraItensQueryBody = `
 WITH base AS (
     SELECT
         ne.chave_nfe,
@@ -142,8 +144,9 @@ SELECT
 FROM computed
 WHERE ($2::text = 'todos' OR regime = $2::text)
 ORDER BY data_emissao DESC, chave_nfe, n_item
-LIMIT 2000
 `
+
+const fronteiraItensQuery = fronteiraItensQueryBody + "LIMIT 2000\n"
 
 func IcmsFronteiraItensHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

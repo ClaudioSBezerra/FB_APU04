@@ -642,10 +642,32 @@ func main() {
 	})
 
 	// ── ICMS Fronteira — Divergências (calculado × SEFAZ) ────────────────────
+	http.HandleFunc("/api/icms-fronteira/divergencias/exportar/csv", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraExportDivCSVHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/divergencias/exportar/xlsx", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraExportDivXLSXHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/divergencias", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil { jsonServiceUnavailable(w); return }
 		handlers.AuthMiddleware(handlers.IcmsFronteiraDivergenciasHandler(database), "")(w, r)
+	})
+
+	// ── ICMS Fronteira — Export Planilha Itens ───────────────────────────────
+	http.HandleFunc("/api/icms-fronteira/itens/exportar/csv", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraExportItensCSVHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/itens/exportar/xlsx", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraExportItensXLSXHandler(database), "")(w, r)
 	})
 
 	// ── ICMS Fronteira — Regras NCM ──────────────────────────────────────────

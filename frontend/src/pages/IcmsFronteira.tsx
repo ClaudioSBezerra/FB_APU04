@@ -1580,11 +1580,29 @@ function DivergenciasTab({ token }: { token: string | null }) {
               ))}
           </SelectContent>
         </Select>
-        {data && (
-          <span className="text-xs text-muted-foreground ml-auto">
-            {rows.length} registro{rows.length !== 1 ? 's' : ''}
-          </span>
-        )}
+        <div className="flex items-center gap-2 ml-auto">
+          <Button size="sm" variant="outline" onClick={() => {
+            const a = document.createElement('a')
+            a.href = `/api/icms-fronteira/divergencias/exportar/csv${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ''}`
+            a.download = `divergencias${periodo ? '-' + periodo.replace('/','-') : ''}.csv`
+            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+          }}>
+            <FileDown className="h-3.5 w-3.5 mr-1" />CSV
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => {
+            const a = document.createElement('a')
+            a.href = `/api/icms-fronteira/divergencias/exportar/xlsx${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ''}`
+            a.download = `divergencias${periodo ? '-' + periodo.replace('/','-') : ''}.xlsx`
+            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+          }}>
+            <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Excel
+          </Button>
+          {data && (
+            <span className="text-xs text-muted-foreground">
+              {rows.length} registro{rows.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* KPI summary */}
@@ -1788,6 +1806,22 @@ function PlanilhaTab({ token }: { token: string | null }) {
               <SelectItem value="DIFAL">DIFAL</SelectItem>
             </SelectContent>
           </Select>
+          <Button size="sm" variant="outline" onClick={() => {
+            const a = document.createElement('a')
+            a.href = `/api/icms-fronteira/itens/exportar/csv?regime=${regimeFilter}`
+            a.download = `icms-fronteira-itens-${regimeFilter}.csv`
+            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+          }}>
+            <FileDown className="h-3.5 w-3.5 mr-1" />CSV
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => {
+            const a = document.createElement('a')
+            a.href = `/api/icms-fronteira/itens/exportar/xlsx?regime=${regimeFilter}`
+            a.download = `icms-fronteira-itens-${regimeFilter}.xlsx`
+            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+          }}>
+            <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Excel
+          </Button>
         </div>
         {data && (
           <span className="text-xs text-muted-foreground">

@@ -40,7 +40,8 @@ type DivergenciasResponse struct {
 // SQL
 // ---------------------------------------------------------------------------
 
-// divergenciasQuery: FULL OUTER JOIN entre extrato SEFAZ e cálculo por item.
+// divergenciasQueryBody is the full divergências query without a row cap.
+// Append a LIMIT clause for interactive use; use as-is for exports.
 //
 // $1 = company_id
 // $2 = periodo MM/YYYY ('' = sem filtro; quando vazio mostra tudo de ambos os lados)
@@ -51,7 +52,7 @@ type DivergenciasResponse struct {
 //   SEM_NOTA        — extrato sem NF correspondente no sistema
 //   NAO_COBRADO     — NF no sistema sem lançamento no extrato
 //   OK              — diferença < R$ 0,05 (tolerância de arredondamento)
-const divergenciasQuery = `
+const divergenciasQueryBody = `
 WITH item_icms AS (
     SELECT
         ne.chave_nfe,
@@ -175,8 +176,9 @@ ORDER BY
         ELSE 5
     END,
     ABS(diferenca) DESC
-LIMIT 1000
 `
+
+const divergenciasQuery = divergenciasQueryBody + "LIMIT 1000\n"
 
 // ---------------------------------------------------------------------------
 // IcmsFronteiraDivergenciasHandler — GET /api/icms-fronteira/divergencias
