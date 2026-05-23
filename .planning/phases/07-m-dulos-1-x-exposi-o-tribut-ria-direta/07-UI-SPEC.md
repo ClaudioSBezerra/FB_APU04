@@ -1,7 +1,8 @@
 ---
 phase: 7
 slug: modulos-1x-exposicao-tributaria-direta
-status: draft
+status: approved
+reviewed_at: 2026-05-22T00:00:00Z
 shadcn_initialized: true
 preset: manual (components.json not present; shadcn/ui installed via package.json)
 created: 2026-05-22
