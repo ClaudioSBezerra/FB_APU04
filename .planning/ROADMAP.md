@@ -179,12 +179,12 @@ Plans:
   4. Módulo 1.4 calcula float tributário e custo CDI com tabela de sensibilidade DSO × CDI
   5. Todos os handlers filtram cancelados (`cod_sit NOT IN ('02','03','04','05')`) e transferências (`tipo != 'T'`)
 
-**Plans:** 2 plans (2 waves)
+**Plans:** 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 07-01-PLAN.md — Backend: reforma_modulo1.go (4 handlers JSON + 3 CSV: creditosBloqueados, rankingFornecedores, reprecificacao, splitPayment) + 7 rotas em main.go
+- [x] 07-01-PLAN.md — Backend: reforma_modulo1.go (4 handlers JSON + 3 CSV: creditosBloqueados, rankingFornecedores, reprecificacao, splitPayment) + 7 rotas em main.go
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -220,7 +220,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. Conciliação Bridge vs XML | 2/2 | Complete | 2026-05-16 |
 | 5. Observabilidade e Alertas | 2/2 | Complete | 2026-05-17 |
 | 6. Infraestrutura Reforma Tributária | 4/4 | Complete   | 2026-05-22 |
-| 7. Módulos 1.x — Exposição Tributária Direta | 0/2 | Planned | — |
+| 7. Módulos 1.x — Exposição Tributária Direta | 1/2 | In Progress|  |
 | 8. Módulos 2.x — Analytics Dimensional | 0/2 | Planned | — |
 
 ---
