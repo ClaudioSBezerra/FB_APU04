@@ -600,6 +600,56 @@ func main() {
 		handlers.AuthMiddleware(handlers.SplitPaymentHandler(database), "")(w, r)
 	})
 
+	// ── Reforma Tributária — Módulos 2.x (Phase 9) ──
+	http.HandleFunc("/api/reforma/modulo2/cfop", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.CfopAnalysisHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo2/cfop/csv", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.CfopAnalysisCSVHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo2/ncm", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.NcmAnalysisHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo2/ncm/csv", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.NcmAnalysisCSVHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo2/uf-destino", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.UfDestinoHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/reforma/modulo2/b2b-b2c", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.B2bB2cHandler(database), "")(w, r)
+	})
+
 	// ── ICMS Fronteira ────────────────────────────────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/resumo", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
