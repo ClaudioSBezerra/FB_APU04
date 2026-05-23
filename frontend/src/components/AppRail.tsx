@@ -35,7 +35,7 @@ const mainItems = [
   { id: 'notas',     icon: FolderInput, label: 'Notas Importadas',      path: '/apuracao/entrada/notas' },
   { id: 'painel',    icon: BarChart3,   label: 'Painel XMLs',           path: '/painel/xmls' },
   { id: 'reforma',   icon: Scale,       label: 'Análise Reforma Trib.', path: '/reforma/creditos' },
-  { id: 'fronteira', icon: MapPin,      label: 'ICMS Fronteira — PE',   path: '/icms-fronteira' },
+  { id: 'fronteira', icon: MapPin,      label: 'Módulo ICMS Fronteira', path: '/icms-fronteira' },
 ]
 
 export function AppRail() {
