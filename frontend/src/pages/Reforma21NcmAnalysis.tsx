@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -90,10 +91,13 @@ export default function Reforma21NcmAnalysis() {
       const a = document.createElement('a')
       a.href = url
       a.download = 'analise-ncm.csv'
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
-    } catch (_err) {
-      // silent
+    } catch (err) {
+      console.error('Falha ao exportar CSV:', err)
+      toast.error('Erro ao exportar CSV')
     } finally {
       setDownloadingCSV(false)
     }
