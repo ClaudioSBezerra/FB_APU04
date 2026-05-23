@@ -58,6 +58,12 @@ interface Company {
   name: string;
   trade_name: string;
   regime_tributario: string;
+  inscricao_estadual?: string;
+  cnae_principal?: string;
+  cnae_secundario?: string[];
+  municipio?: string;
+  segmento_economico?: string;
+  incentivos_fiscais?: unknown;
   created_at: string;
 }
 
@@ -94,9 +100,18 @@ export default function GestaoAmbiente() {
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyTradeName, setNewCompanyTradeName] = useState("");
   const [newCompanyRegime, setNewCompanyRegime] = useState("lucro_real");
+  const [newCompanyIE, setNewCompanyIE] = useState("");
+  const [newCompanyCNAE, setNewCompanyCNAE] = useState("");
+  const [newCompanyMunicipio, setNewCompanyMunicipio] = useState("");
+  const [newCompanySegmento, setNewCompanySegmento] = useState("");
 
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [editRegime, setEditRegime] = useState("lucro_real");
+  const [editCNPJ, setEditCNPJ] = useState("");
+  const [editIE, setEditIE] = useState("");
+  const [editCNAE, setEditCNAE] = useState("");
+  const [editMunicipio, setEditMunicipio] = useState("");
+  const [editSegmento, setEditSegmento] = useState("");
 
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
@@ -281,6 +296,10 @@ export default function GestaoAmbiente() {
           name: newCompanyName,
           trade_name: newCompanyTradeName,
           regime_tributario: newCompanyRegime,
+          inscricao_estadual: newCompanyIE,
+          cnae_principal: newCompanyCNAE,
+          municipio: newCompanyMunicipio,
+          segmento_economico: newCompanySegmento,
         }),
       });
 
@@ -292,6 +311,10 @@ export default function GestaoAmbiente() {
       setNewCompanyName("");
       setNewCompanyTradeName("");
       setNewCompanyRegime("lucro_real");
+      setNewCompanyIE("");
+      setNewCompanyCNAE("");
+      setNewCompanyMunicipio("");
+      setNewCompanySegmento("");
       fetchCompanies(selectedGroup.id);
     } catch (error) {
       toast.error("Erro ao criar empresa");
@@ -332,20 +355,31 @@ export default function GestaoAmbiente() {
     }
   };
 
-  const handleUpdateCompanyRegime = async () => {
+  const handleUpdateCompany = async () => {
     if (!editingCompany) return;
     try {
       const res = await fetch(`/api/config/companies?id=${editingCompany.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ regime_tributario: editRegime }),
+        body: JSON.stringify({
+          regime_tributario: editRegime,
+          cnpj: editCNPJ,
+          inscricao_estadual: editIE,
+          cnae_principal: editCNAE,
+          municipio: editMunicipio,
+          segmento_economico: editSegmento,
+        }),
       });
-      if (!res.ok) throw new Error("Failed to update");
-      toast.success("Regime atualizado");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || "Failed to update");
+      }
+      toast.success("Empresa atualizada");
       setEditingCompany(null);
       if (selectedGroup) fetchCompanies(selectedGroup.id);
-    } catch {
-      toast.error("Erro ao atualizar regime");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao atualizar empresa";
+      toast.error(msg);
     }
   };
 
@@ -655,6 +689,22 @@ export default function GestaoAmbiente() {
                       </p>
                     )}
                   </div>
+                  <div className="space-y-2">
+                    <Label>Inscrição Estadual</Label>
+                    <Input value={newCompanyIE} onChange={(e) => setNewCompanyIE(e.target.value)} placeholder="Opcional" maxLength={30} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>CNAE Principal</Label>
+                    <Input value={newCompanyCNAE} onChange={(e) => setNewCompanyCNAE(e.target.value)} placeholder="Ex: 4711301" maxLength={7} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Município</Label>
+                    <Input value={newCompanyMunicipio} onChange={(e) => setNewCompanyMunicipio(e.target.value)} placeholder="Opcional" maxLength={100} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Segmento Econômico</Label>
+                    <Input value={newCompanySegmento} onChange={(e) => setNewCompanySegmento(e.target.value)} placeholder="Ex: Varejo de móveis" maxLength={100} />
+                  </div>
                 </div>
                 <DialogFooter>
                   <Button onClick={handleCreateCompany}>Cadastrar</Button>
@@ -705,7 +755,15 @@ export default function GestaoAmbiente() {
                       size="icon"
                       className="h-6 w-6 text-gray-400 hover:text-blue-500"
                       title="Alterar regime tributário"
-                      onClick={() => { setEditingCompany(company); setEditRegime(company.regime_tributario || 'lucro_real'); }}
+                      onClick={() => {
+                        setEditingCompany(company);
+                        setEditRegime(company.regime_tributario || 'lucro_real');
+                        setEditCNPJ(company.cnpj || '');
+                        setEditIE(company.inscricao_estadual || '');
+                        setEditCNAE(company.cnae_principal || '');
+                        setEditMunicipio(company.municipio || '');
+                        setEditSegmento(company.segmento_economico || '');
+                      }}
                     >
                       <Pencil className="w-3 h-3" />
                     </Button>
@@ -720,23 +778,78 @@ export default function GestaoAmbiente() {
                   </div>
                 </div>
 
-                {/* Modal inline de edição de regime */}
+                {/* Painel inline de edição de empresa */}
                 {editingCompany?.id === company.id && (
                   <div className="mt-2 p-3 border border-blue-200 rounded-md bg-blue-50">
-                    <p className="text-xs font-medium text-blue-800 mb-2">Alterar Regime Tributário</p>
-                    <Select value={editRegime} onValueChange={setEditRegime}>
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="lucro_real">Lucro Real</SelectItem>
-                        <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
-                        <SelectItem value="simples_nacional">Simples Nacional</SelectItem>
-                        <SelectItem value="nao_informado">Não informado</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <p className="text-xs font-medium text-blue-800 mb-2">Editar Empresa</p>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <div>
+                        <p className="text-[10px] text-blue-700 mb-0.5">CNPJ (só números)</p>
+                        <Input
+                          value={editCNPJ}
+                          onChange={(e) => setEditCNPJ(e.target.value)}
+                          placeholder="14 dígitos"
+                          maxLength={14}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-blue-700 mb-0.5">Inscrição Estadual</p>
+                        <Input
+                          value={editIE}
+                          onChange={(e) => setEditIE(e.target.value)}
+                          placeholder="Opcional"
+                          maxLength={30}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-blue-700 mb-0.5">CNAE Principal</p>
+                        <Input
+                          value={editCNAE}
+                          onChange={(e) => setEditCNAE(e.target.value)}
+                          placeholder="Ex: 4711301"
+                          maxLength={7}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-blue-700 mb-0.5">Município</p>
+                        <Input
+                          value={editMunicipio}
+                          onChange={(e) => setEditMunicipio(e.target.value)}
+                          placeholder="Opcional"
+                          maxLength={100}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-[10px] text-blue-700 mb-0.5">Segmento Econômico</p>
+                        <Input
+                          value={editSegmento}
+                          onChange={(e) => setEditSegmento(e.target.value)}
+                          placeholder="Ex: Varejo de móveis"
+                          maxLength={100}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-blue-700 mb-0.5">Regime Tributário</p>
+                      <Select value={editRegime} onValueChange={setEditRegime}>
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="lucro_real">Lucro Real</SelectItem>
+                          <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
+                          <SelectItem value="simples_nacional">Simples Nacional</SelectItem>
+                          <SelectItem value="nao_informado">Não informado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="flex gap-2 mt-2">
-                      <Button size="sm" className="h-7 text-xs flex-1" onClick={handleUpdateCompanyRegime}>
+                      <Button size="sm" className="h-7 text-xs flex-1" onClick={handleUpdateCompany}>
                         Salvar
                       </Button>
                       <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditingCompany(null)}>
