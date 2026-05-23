@@ -73,6 +73,16 @@ Requisitos do milestone v5.00, organizados pelas fases A/B/C definidas na pesqui
 - NCM: LATERAL com `ORDER BY length(ncm_digits) DESC LIMIT 1`
 - Fator Simples: sempre de `reforma_parametros.fator_simples_pct`, nunca hardcoded
 
+### Fase CADU — Cadastro de Empresas + Ambiente Administrativo por UF (prioridade 2b — urgente)
+
+- [ ] **CADU-01**: Migration para tabela `companies`: adicionar `cnpj VARCHAR(18)`, `inscricao_estadual VARCHAR(30)`, `cnae_principal VARCHAR(7)`, `cnae_secundario TEXT[]`, `municipio VARCHAR(100)`, `segmento_economico VARCHAR(100)`, `incentivos_fiscais JSONB`
+- [ ] **CADU-02**: Backend: atualizar struct `Company` em `environment.go`, `CreateCompanyHandler` e `UpdateCompanyHandler` para aceitar e persistir os novos campos; validação de CNPJ (14 dígitos, sem máscara)
+- [ ] **CADU-03**: Frontend: tela de cadastro/edição de empresa com todos os novos campos; integrada ao fluxo de gestão de ambiente existente
+- [ ] **CADU-04**: Migration para `icms_fronteira_regras_ncm`: adicionar `uf_estado VARCHAR(2) NOT NULL DEFAULT 'PE'`, `mva_ajustado_4pct NUMERIC(8,4)`, `mva_ajustado_7pct NUMERIC(8,4)`, `mva_ajustado_12pct NUMERIC(8,4)`; criar tabela `icms_fronteira_inaplicabilidades` com campos `id, ncm_digits, uf_estado, motivo, vigencia_inicio, vigencia_fim`
+- [ ] **CADU-05**: Seed inicial de regras para BA e CE (além do PE já existente em `091_icms_fronteira.sql`): ao menos os NCMs mais frequentes com suas alíquotas internas e MVAs estaduais
+- [ ] **CADU-06**: Backend: handlers CRUD de regras por UF (`ListRegrasByUF`, `CreateRegra`, `UpdateRegra`, `DeleteRegra`) + handler de upload de planilha (Excel/CSV) para importação de regras em lote; rotas em `main.go`
+- [ ] **CADU-07**: Frontend: tela de configuração ICMS-Fronteira com abas por UF (PE / BA / CE), edição inline de alíquotas e MVAs, upload de planilha para importação em lote
+
 ### Fase C — Módulos 2.x: Análise Dimensional (prioridade 3)
 
 - [ ] **RFMC-01**: Módulo 2.2 — Análise por CFOP: agrupamento por natureza de operação (uso/consumo, ativo permanente, transferências, exportação, revenda); impacto IBS/CBS por grupo; CFOPs de transferência excluídos
@@ -118,12 +128,13 @@ Mapeamento requisito → fase. Atualizado quando o ROADMAP.md for criado.
 | OBS-01 a OBS-02 | Phase 5 | Complete (2026-05-17) |
 | RFMA-01 a RFMA-08 | Phase 6 | Planned |
 | RFMB-01 a RFMB-04 | Phase 7 | Planned |
-| RFMC-01 a RFMC-04 | Phase 8 | Planned |
+| CADU-01 a CADU-07 | Phase 8 | Pending |
+| RFMC-01 a RFMC-04 | Phase 9 | Pending |
 
 **Coverage:**
 - v1 requirements: 25 total (all complete)
-- v5.00 requirements: 16 total
-- Mapped to phases: 16
+- v5.00 requirements: 23 total (16 originais + 7 CADU)
+- Mapped to phases: 23
 - Unmapped: 0 ✓
 
 ---
