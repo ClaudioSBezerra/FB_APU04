@@ -16,7 +16,7 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 *Milestone v5.00 — Análise da Reforma Tributária (início: 2026-05-22)*
 
 - [x] **Phase 6: Infraestrutura Reforma Tributária** - Schema blockers (reg_c190 + cst_icms/aliq_icms, ind_final em nfe_saidas), tabela reforma_parametros, seed CFOPs transferência, endpoints config, hook frontend, navegação e página de configuração de parâmetros (completed 2026-05-22)
-- [ ] **Phase 7: Módulos 1.x — Exposição Tributária Direta** - Créditos ICMS bloqueados (1.1), ranking fornecedores IBS/CBS (1.3), reprecificação de produtos (1.2), split payment capital de giro (1.4)
+- [x] **Phase 7: Módulos 1.x — Exposição Tributária Direta** - Créditos ICMS bloqueados (1.1), ranking fornecedores IBS/CBS (1.3), reprecificação de produtos (1.2), split payment capital de giro (1.4) (completed 2026-05-23)
 - [ ] **Phase 8: Módulos 2.x — Analytics Dimensional** - Por CFOP (2.2), por NCM (2.1), por UF/destino com mapa coroplético (2.3), segmentação B2B vs. B2C (2.4)
 
 ## Phase Details
@@ -179,7 +179,7 @@ Plans:
   4. Módulo 1.4 calcula float tributário e custo CDI com tabela de sensibilidade DSO × CDI
   5. Todos os handlers filtram cancelados (`cod_sit NOT IN ('02','03','04','05')`) e transferências (`tipo != 'T'`)
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 **Wave 1**
@@ -188,7 +188,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07-02-PLAN.md — Frontend: 4 páginas (Reforma11/12/13/14) + ativação de tabs em navigation.ts + 4 rotas em App.tsx + checkpoint de verificação visual
+- [x] 07-02-PLAN.md — Frontend: 4 páginas (Reforma11/12/13/14) + ativação de tabs em navigation.ts + 4 rotas em App.tsx + checkpoint de verificação visual
 
 ### Phase 8: Módulos 2.x — Analytics Dimensional
 
@@ -220,7 +220,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. Conciliação Bridge vs XML | 2/2 | Complete | 2026-05-16 |
 | 5. Observabilidade e Alertas | 2/2 | Complete | 2026-05-17 |
 | 6. Infraestrutura Reforma Tributária | 4/4 | Complete   | 2026-05-22 |
-| 7. Módulos 1.x — Exposição Tributária Direta | 1/2 | In Progress|  |
+| 7. Módulos 1.x — Exposição Tributária Direta | 2/2 | Complete   | 2026-05-23 |
 | 8. Módulos 2.x — Analytics Dimensional | 0/2 | Planned | — |
 
 ---
