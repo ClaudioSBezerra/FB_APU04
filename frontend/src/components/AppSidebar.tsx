@@ -21,6 +21,10 @@ import {
   Sparkles,
   Search,
   FileSpreadsheet,
+  Scale,
+  BarChart2,
+  Users2,
+  CreditCard,
 } from "lucide-react"
 import {
   Sidebar,
@@ -112,6 +116,18 @@ const sections: NavSection[] = [
       { title: "NF-e Entradas",   url: "/malha-fina/nfe-entradas", icon: FileText },
       { title: "CT-e",            url: "/malha-fina/cte",          icon: Truck },
       { title: "NFS-e Entradas",  url: "#",                        icon: FileText, disabled: true },
+    ],
+  },
+  {
+    id: "reforma",
+    title: "Análise Reforma Tributária",
+    sectionIcon: Scale,
+    items: [
+      { title: "Parâmetros",           url: "/reforma/parametros",     icon: Settings },
+      { title: "Créditos IBS/CBS",     url: "/reforma/creditos",       icon: CreditCard },
+      { title: "Reprecificação",       url: "/reforma/reprecificacao", icon: BarChart2 },
+      { title: "Ranking Fornecedores", url: "/reforma/ranking",        icon: Users2 },
+      { title: "Split Payment",        url: "/reforma/split-payment",  icon: Scale },
     ],
   },
   {
