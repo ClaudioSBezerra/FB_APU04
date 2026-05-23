@@ -114,7 +114,11 @@ interface RegraNCM {
   regime: string
   aliquota_interna: number
   mva_original: number | null
+  mva_ajustado_4pct: number | null
+  mva_ajustado_7pct: number | null
+  mva_ajustado_12pct: number | null
   reducao_bc_pct: number
+  uf_estado: string
   is_global: boolean
 }
 
@@ -620,6 +624,7 @@ function RegrasTab({ token }: { token: string | null }) {
   const [openCreate, setOpenCreate] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importLoading, setImportLoading] = useState(false)
+  const [selectedUF, setSelectedUF] = useState<'PE' | 'BA' | 'CE'>('PE')
 
   // Form state
   const [ncmPrefixo, setNcmPrefixo] = useState('')
@@ -630,9 +635,9 @@ function RegrasTab({ token }: { token: string | null }) {
   const [reducaoBC, setReducaoBC] = useState('0')
 
   const { data, isLoading, isError } = useQuery<RegrasResponse>({
-    queryKey: ['icms-fronteira/regras'],
+    queryKey: ['icms-fronteira/regras', selectedUF],
     queryFn: async () => {
-      const res = await fetch('/api/icms-fronteira/regras', {
+      const res = await fetch(`/api/icms-fronteira/regras?uf_estado=${selectedUF}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
@@ -648,13 +653,13 @@ function RegrasTab({ token }: { token: string | null }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, uf_estado: selectedUF }),
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       return res.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras', selectedUF] })
       toast.success('Regra criada com sucesso')
       setOpenCreate(false)
       resetForm()
@@ -671,7 +676,7 @@ function RegrasTab({ token }: { token: string | null }) {
       if (!res.ok) throw new Error(`Erro ${res.status}`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras', selectedUF] })
       toast.success('Regra removida')
     },
     onError: () => toast.error('Erro ao remover regra'),
@@ -703,6 +708,7 @@ function RegrasTab({ token }: { token: string | null }) {
     try {
       const fd = new FormData()
       fd.append('file', importFile)
+      fd.append('uf_estado', selectedUF)
       const res = await fetch('/api/icms-fronteira/regras/importar', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -714,7 +720,7 @@ function RegrasTab({ token }: { token: string | null }) {
       if (result.errors?.length) {
         toast.warning(`${result.errors.length} erro(s) na importação`)
       }
-      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras', selectedUF] })
       setImportFile(null)
     } catch {
       toast.error('Erro ao importar arquivo')
@@ -734,10 +740,19 @@ function RegrasTab({ token }: { token: string | null }) {
 
   return (
     <div className="space-y-4">
+      {/* Seletor de UF */}
+      <Tabs value={selectedUF} onValueChange={(v) => setSelectedUF(v as 'PE' | 'BA' | 'CE')}>
+        <TabsList>
+          <TabsTrigger value="PE">PE — Pernambuco</TabsTrigger>
+          <TabsTrigger value="BA">BA — Bahia</TabsTrigger>
+          <TabsTrigger value="CE">CE — Ceará</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* Import card */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold">Importar Regras (CSV/XLSX)</CardTitle>
+          <CardTitle className="text-sm font-semibold">Importar Regras (CSV/XLSX) — {selectedUF}</CardTitle>
         </CardHeader>
         <CardContent>
           <Alert className="mb-3">

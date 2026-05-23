@@ -57,7 +57,7 @@ export const modules: Record<string, ModuleConfig> = {
     ],
   },
   fronteira: {
-    label: 'ICMS Fronteira — PE',
+    label: 'ICMS Fronteira',
     tabs: [
       { label: 'Resumo',               path: '/icms-fronteira' },
       { label: 'Antecipação',          path: '/icms-fronteira/antecipacao' },
