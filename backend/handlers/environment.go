@@ -156,10 +156,31 @@ func UpdateEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 
 func DeleteEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		role, _ := claims["role"].(string)
+
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			http.Error(w, "Missing id parameter", http.StatusBadRequest)
 			return
+		}
+
+		// Non-admin users may only delete environments they are assigned to.
+		if role != "admin" {
+			var count int
+			err := db.QueryRow(`
+				SELECT COUNT(*) FROM user_environments
+				WHERE user_id = $1 AND environment_id = $2
+			`, userID, id).Scan(&count)
+			if err != nil || count == 0 {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		_, err := db.Exec("DELETE FROM environments WHERE id = $1", id)
@@ -239,10 +260,32 @@ func CreateGroupHandler(db *sql.DB) http.HandlerFunc {
 
 func DeleteGroupHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		role, _ := claims["role"].(string)
+
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			http.Error(w, "Missing id parameter", http.StatusBadRequest)
 			return
+		}
+
+		// Non-admin users may only delete groups that belong to their accessible environments.
+		if role != "admin" {
+			var count int
+			err := db.QueryRow(`
+				SELECT COUNT(*) FROM enterprise_groups eg
+				JOIN user_environments ue ON ue.environment_id = eg.environment_id
+				WHERE eg.id = $1 AND ue.user_id = $2
+			`, id, userID).Scan(&count)
+			if err != nil || count == 0 {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		_, err := db.Exec("DELETE FROM enterprise_groups WHERE id = $1", id)
@@ -499,10 +542,33 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 
 func DeleteCompanyHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		role, _ := claims["role"].(string)
+
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			http.Error(w, "Missing id parameter", http.StatusBadRequest)
 			return
+		}
+
+		// Non-admin users may only delete companies that belong to their accessible environments.
+		if role != "admin" {
+			var count int
+			err := db.QueryRow(`
+				SELECT COUNT(*) FROM companies c
+				JOIN enterprise_groups eg ON eg.id = c.group_id
+				JOIN user_environments ue ON ue.environment_id = eg.environment_id
+				WHERE c.id = $1 AND ue.user_id = $2
+			`, id, userID).Scan(&count)
+			if err != nil || count == 0 {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		_, err := db.Exec("DELETE FROM companies WHERE id = $1", id)
