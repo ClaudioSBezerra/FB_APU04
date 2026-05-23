@@ -156,6 +156,12 @@ func UpdateEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 
 func DeleteEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id parameter", http.StatusBadRequest)
+			return
+		}
+
 		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
 		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -163,12 +169,6 @@ func DeleteEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 		}
 		userID, _ := claims["user_id"].(string)
 		role, _ := claims["role"].(string)
-
-		id := r.URL.Query().Get("id")
-		if id == "" {
-			http.Error(w, "Missing id parameter", http.StatusBadRequest)
-			return
-		}
 
 		// Non-admin users may only delete environments they are assigned to.
 		if role != "admin" {
@@ -260,6 +260,12 @@ func CreateGroupHandler(db *sql.DB) http.HandlerFunc {
 
 func DeleteGroupHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id parameter", http.StatusBadRequest)
+			return
+		}
+
 		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
 		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -267,12 +273,6 @@ func DeleteGroupHandler(db *sql.DB) http.HandlerFunc {
 		}
 		userID, _ := claims["user_id"].(string)
 		role, _ := claims["role"].(string)
-
-		id := r.URL.Query().Get("id")
-		if id == "" {
-			http.Error(w, "Missing id parameter", http.StatusBadRequest)
-			return
-		}
 
 		// Non-admin users may only delete groups that belong to their accessible environments.
 		if role != "admin" {
@@ -542,6 +542,12 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 
 func DeleteCompanyHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id parameter", http.StatusBadRequest)
+			return
+		}
+
 		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
 		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -549,12 +555,6 @@ func DeleteCompanyHandler(db *sql.DB) http.HandlerFunc {
 		}
 		userID, _ := claims["user_id"].(string)
 		role, _ := claims["role"].(string)
-
-		id := r.URL.Query().Get("id")
-		if id == "" {
-			http.Error(w, "Missing id parameter", http.StatusBadRequest)
-			return
-		}
 
 		// Non-admin users may only delete companies that belong to their accessible environments.
 		if role != "admin" {
