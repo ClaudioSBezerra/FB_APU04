@@ -29,6 +29,10 @@ import ERPBridgeCredenciais from './pages/ERPBridgeCredenciais'
 import AdminUsers from './pages/AdminUsers'
 import LimparDados from './pages/LimparDados'
 import ReformaParametros from './pages/ReformaParametros'
+import Reforma11CreditosBloqueados from './pages/Reforma11CreditosBloqueados'
+import Reforma12Reprecificacao from './pages/Reforma12Reprecificacao'
+import Reforma13RankingFornecedores from './pages/Reforma13RankingFornecedores'
+import Reforma14SplitPayment from './pages/Reforma14SplitPayment'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ForgotPassword from './pages/ForgotPassword'
@@ -174,6 +178,10 @@ function AppLayout() {
               {/* Análise Reforma Tributária */}
               <Route path="/reforma/parametros"         element={<ReformaParametros />} />
               <Route path="/config/reforma-parametros"  element={<ReformaParametros />} />
+              <Route path="/reforma/creditos"           element={<Reforma11CreditosBloqueados />} />
+              <Route path="/reforma/reprecificacao"     element={<Reforma12Reprecificacao />} />
+              <Route path="/reforma/ranking"            element={<Reforma13RankingFornecedores />} />
+              <Route path="/reforma/split-payment"      element={<Reforma14SplitPayment />} />
 
               {/* Configurações */}
               <Route path="/config/aliquotas"                  element={<TabelaAliquotas />} />
