@@ -163,6 +163,29 @@ interface FronteiraItensResponse {
   count: number
 }
 
+interface DivergenciaRow {
+  chave_nfe: string
+  periodo: string
+  numero_nf: string
+  forn_cnpj: string
+  forn_nome: string
+  forn_uf: string
+  data_emissao: string
+  regime: string
+  icms_sefaz: number
+  icms_calculado: number
+  diferenca: number
+  status: string
+}
+
+interface DivergenciasResponse {
+  rows: DivergenciaRow[]
+  total_sefaz: number
+  total_calculado: number
+  total_diferenca: number
+  count: number
+}
+
 interface ContestacaoRow {
   id: number
   chave_nfe: string
@@ -1439,6 +1462,283 @@ function ContestacoesTab({ token }: { token: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
+// Divergências tab — calculado × SEFAZ
+// ---------------------------------------------------------------------------
+
+const STATUS_CFG: Record<string, { label: string; className: string; priority: number }> = {
+  COBRADO_A_MAIS:  { label: 'Cobrado a mais',  className: 'bg-red-100 text-red-800 border-red-200',       priority: 1 },
+  SEM_NOTA:        { label: 'Sem nota',         className: 'bg-orange-100 text-orange-800 border-orange-200', priority: 2 },
+  COBRADO_A_MENOS: { label: 'Cobrado a menos', className: 'bg-yellow-100 text-yellow-800 border-yellow-200', priority: 3 },
+  NAO_COBRADO:     { label: 'Não cobrado',      className: 'bg-blue-100 text-blue-800 border-blue-200',   priority: 4 },
+  OK:              { label: 'OK',               className: 'bg-green-100 text-green-800 border-green-200', priority: 5 },
+}
+
+function StatusDivBadge({ status }: { status: string }) {
+  const cfg = STATUS_CFG[status] ?? { label: status, className: 'bg-gray-100 text-gray-600 border-gray-200', priority: 9 }
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
+function DivergenciasTab({ token }: { token: string | null }) {
+  const queryClient = useQueryClient()
+  const [monthInput, setMonthInput] = useState('')
+  const [statusFilter, setStatusFilter] = useState('todos')
+  const [contestarRow, setContestarRow] = useState<DivergenciaRow | null>(null)
+
+  // Contestar form
+  const [cMotivo, setCMotivo] = useState('')
+
+  function monthToPeriodo(m: string): string {
+    if (!m) return ''
+    const [y, mo] = m.split('-')
+    return `${mo}/${y}`
+  }
+
+  const periodo = monthToPeriodo(monthInput)
+
+  const { data, isLoading, isError } = useQuery<DivergenciasResponse>({
+    queryKey: ['icms-fronteira/divergencias', periodo],
+    queryFn: async () => {
+      const url = periodo
+        ? `/api/icms-fronteira/divergencias?periodo=${encodeURIComponent(periodo)}`
+        : '/api/icms-fronteira/divergencias'
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+  })
+
+  const contestarMutation = useMutation({
+    mutationFn: async (body: object) => {
+      const res = await fetch('/api/icms-fronteira/contestacoes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/contestacoes'] })
+      toast.success('Contestação criada com sucesso')
+      setContestarRow(null)
+      setCMotivo('')
+    },
+    onError: () => toast.error('Erro ao criar contestação'),
+  })
+
+  function handleContestar() {
+    if (!contestarRow) return
+    contestarMutation.mutate({
+      chave_nfe:        contestarRow.chave_nfe,
+      numero_nf:        contestarRow.numero_nf,
+      forn_cnpj:        contestarRow.forn_cnpj,
+      forn_nome:        contestarRow.forn_nome,
+      periodo:          contestarRow.periodo,
+      valor_contestado: Math.abs(contestarRow.diferenca),
+      motivo:           cMotivo,
+    })
+  }
+
+  const rows = (data?.rows ?? []).filter(
+    (r) => statusFilter === 'todos' || r.status === statusFilter,
+  )
+
+  const countByStatus = (data?.rows ?? []).reduce<Record<string, number>>((acc, r) => {
+    acc[r.status] = (acc[r.status] ?? 0) + 1
+    return acc
+  }, {})
+
+  return (
+    <div className="space-y-4">
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <Label className="text-xs whitespace-nowrap">Período:</Label>
+          <Input
+            type="month"
+            value={monthInput}
+            onChange={(e) => setMonthInput(e.target.value)}
+            className="w-40 text-xs"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-44 text-xs">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos</SelectItem>
+            {Object.entries(STATUS_CFG)
+              .sort((a, b) => a[1].priority - b[1].priority)
+              .map(([k, v]) => (
+                <SelectItem key={k} value={k}>
+                  {v.label} {countByStatus[k] ? `(${countByStatus[k]})` : ''}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        {data && (
+          <span className="text-xs text-muted-foreground ml-auto">
+            {rows.length} registro{rows.length !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      {/* KPI summary */}
+      {data && (
+        <div className="grid grid-cols-3 gap-3">
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <p className="text-xs text-muted-foreground">SEFAZ cobrou</p>
+              <p className="text-lg font-bold tabular-nums">{fmtBRL(data.total_sefaz)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <p className="text-xs text-muted-foreground">Calculamos</p>
+              <p className="text-lg font-bold tabular-nums">{fmtBRL(data.total_calculado)}</p>
+            </CardContent>
+          </Card>
+          <Card className={data.total_diferenca > 0.05 ? 'border-red-300' : data.total_diferenca < -0.05 ? 'border-yellow-300' : ''}>
+            <CardContent className="pt-4 pb-3">
+              <p className="text-xs text-muted-foreground">Diferença total</p>
+              <p className={`text-lg font-bold tabular-nums ${data.total_diferenca > 0.05 ? 'text-red-600' : data.total_diferenca < -0.05 ? 'text-yellow-600' : 'text-green-600'}`}>
+                {fmtBRL(data.total_diferenca)}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+        </div>
+      )}
+
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar divergências. Verifique sua conexão.</AlertDescription>
+        </Alert>
+      )}
+
+      {data && rows.length === 0 && (
+        <div className="flex flex-col items-center gap-2 py-10 text-center">
+          <p className="text-sm font-medium">Nenhuma divergência encontrada</p>
+          <p className="text-xs text-muted-foreground max-w-sm">
+            Importe o Extrato SEFAZ-PE na tab correspondente e selecione um período para cruzar os dados.
+          </p>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="rounded-md border overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-transparent">
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Período</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">NF</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Data</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Regime</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">SEFAZ</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Calculado</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Diferença</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Status</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row, idx) => (
+                <TableRow key={`${row.chave_nfe}-${idx}`}>
+                  <TableCell className="text-xs font-mono">{row.periodo || '—'}</TableCell>
+                  <TableCell className="text-xs font-mono">{row.numero_nf || '—'}</TableCell>
+                  <TableCell className="text-xs max-w-[160px]">
+                    <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
+                    <div className="text-[10px] text-muted-foreground font-mono">{formatCNPJ(row.forn_cnpj)}</div>
+                  </TableCell>
+                  <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
+                  <TableCell className="text-xs font-mono whitespace-nowrap">
+                    {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                  </TableCell>
+                  <TableCell>
+                    {row.regime ? <RegimeBadge regime={row.regime} /> : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
+                  <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.icms_sefaz)}</TableCell>
+                  <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.icms_calculado)}</TableCell>
+                  <TableCell className={`text-xs text-right tabular-nums font-semibold ${row.diferenca > 0.05 ? 'text-red-600' : row.diferenca < -0.05 ? 'text-yellow-600' : 'text-green-600'}`}>
+                    {fmtBRL(row.diferenca)}
+                  </TableCell>
+                  <TableCell><StatusDivBadge status={row.status} /></TableCell>
+                  <TableCell>
+                    {row.status === 'COBRADO_A_MAIS' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => { setContestarRow(row); setCMotivo('') }}
+                      >
+                        Contestar
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Contestar dialog */}
+      <Dialog open={!!contestarRow} onOpenChange={(o) => { if (!o) { setContestarRow(null); setCMotivo('') } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nova Contestação</DialogTitle>
+          </DialogHeader>
+          {contestarRow && (
+            <div className="space-y-3">
+              <div className="rounded-md bg-muted/40 p-3 text-xs space-y-1">
+                <p><span className="text-muted-foreground">NF:</span> <span className="font-mono">{contestarRow.numero_nf}</span></p>
+                <p><span className="text-muted-foreground">Fornecedor:</span> {contestarRow.forn_nome}</p>
+                <p><span className="text-muted-foreground">Período:</span> {contestarRow.periodo}</p>
+                <p>
+                  <span className="text-muted-foreground">Diferença:</span>{' '}
+                  <span className="font-semibold text-red-600">{fmtBRL(Math.abs(contestarRow.diferenca))}</span>
+                  {' '}(SEFAZ cobrou {fmtBRL(contestarRow.icms_sefaz)}, calculamos {fmtBRL(contestarRow.icms_calculado)})
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="c-motivo-div">Motivo da contestação *</Label>
+                <Textarea
+                  id="c-motivo-div"
+                  rows={4}
+                  placeholder="Descreva o motivo da contestação..."
+                  value={cMotivo}
+                  onChange={(e) => setCMotivo(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setContestarRow(null); setCMotivo('') }}>Cancelar</Button>
+            <Button
+              onClick={handleContestar}
+              disabled={contestarMutation.isPending || !cMotivo.trim()}
+            >
+              {contestarMutation.isPending ? 'Salvando...' : 'Criar Contestação'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Planilha tab — item-level view
 // ---------------------------------------------------------------------------
 function PlanilhaTab({ token }: { token: string | null }) {
@@ -1636,6 +1936,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/st':           'st',
     '/icms-fronteira/difal':        'difal',
     '/icms-fronteira/planilha':     'planilha',
+    '/icms-fronteira/divergencias': 'divergencias',
     '/icms-fronteira/regras':       'regras',
     '/icms-fronteira/extrato':      'extrato',
     '/icms-fronteira/contestacoes': 'contestacoes',
@@ -1646,6 +1947,7 @@ export default function IcmsFronteira() {
     st:            '/icms-fronteira/st',
     difal:         '/icms-fronteira/difal',
     planilha:      '/icms-fronteira/planilha',
+    divergencias:  '/icms-fronteira/divergencias',
     regras:        '/icms-fronteira/regras',
     extrato:       '/icms-fronteira/extrato',
     contestacoes:  '/icms-fronteira/contestacoes',
@@ -1702,6 +2004,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="st">Subst. Tributária</TabsTrigger>
           <TabsTrigger value="difal">DIFAL</TabsTrigger>
           <TabsTrigger value="planilha">Planilha</TabsTrigger>
+          <TabsTrigger value="divergencias">Divergências</TabsTrigger>
           <TabsTrigger value="regras">Regras NCM</TabsTrigger>
           <TabsTrigger value="extrato">Extrato SEFAZ</TabsTrigger>
           <TabsTrigger value="contestacoes">Contestações</TabsTrigger>
@@ -1773,6 +2076,24 @@ export default function IcmsFronteira() {
                 <RecalcularButton />
               </div>
               <NotasTab endpoint="/api/icms-fronteira/difal" regime="difal" token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="divergencias" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+                Divergências — Calculado × SEFAZ
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                Cruzamento entre o ICMS calculado pelo sistema e o cobrado no Extrato SEFAZ-PE.
+                Selecione um período para identificar cobranças indevidas e gerar contestações.
+              </p>
+              <DivergenciasTab token={token} />
             </CardContent>
           </Card>
         </TabsContent>
