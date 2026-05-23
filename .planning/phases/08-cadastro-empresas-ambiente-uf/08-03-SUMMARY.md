@@ -35,6 +35,7 @@ decisions:
   - "cnae_secundario e incentivos_fiscais não expostos no formulário inline — array e JSONB requerem UX específica; deferidos para versão futura"
   - "Título do card de importação exibe UF selecionada para feedback visual imediato"
   - "handleUpdateCompany exibe mensagem de erro do backend via toast (suporta 'CNPJ deve ter 14 dígitos numéricos' do handler Go)"
+requirements-completed: [CADU-03, CADU-07]
 metrics:
   duration: "~20 minutos"
   completed: "2026-05-23"
@@ -54,7 +55,7 @@ metrics:
 |------|------|--------|----------|
 | 1 | Expandir GestaoAmbiente.tsx — modal e edição inline com 7 campos | 0c92dbf | frontend/src/pages/GestaoAmbiente.tsx |
 | 2 | Tabs UF em IcmsFronteira.tsx + filtros por UF + label navigation.ts | 356747a | frontend/src/pages/IcmsFronteira.tsx, frontend/src/lib/navigation.ts |
-| 3 | Checkpoint humano — verificação visual end-to-end | — | aguardando aprovação humana |
+| 3 | Checkpoint humano — verificação visual end-to-end | aprovado | usuário confirmou "approved" |
 
 ## O Que Foi Construído
 
@@ -98,9 +99,9 @@ metrics:
 
 **navigation.ts:** label `'ICMS Fronteira — PE'` → `'ICMS Fronteira'`.
 
-### Task 3 — Checkpoint humano (pendente)
+### Task 3 — Checkpoint humano (APROVADO)
 
-Verificação visual end-to-end aguardando aprovação do usuário. Veja detalhes no checkpoint.
+Verificação visual end-to-end aprovada pelo usuário com sinal "approved". Fluxo end-to-end confirmado: cadastro completo de empresa (CADU-03) e ambiente UF ICMS-Fronteira (CADU-07) funcionando com isolamento correto entre UFs.
 
 ## Deviations from Plan
 
@@ -143,3 +144,6 @@ Nenhuma nova superfície de rede introduzida além do mapeado no threat model do
 - [x] uf_estado: string na interface RegraNCM — confirmado
 - [x] navigation.ts label 'ICMS Fronteira' — confirmado
 - [x] navigation.ts sem 'ICMS Fronteira — PE' — confirmado (0 matches)
+- [x] Task 3 (checkpoint humano) — APROVADO pelo usuário com sinal "approved" em 2026-05-23
+- [x] CADU-03 (cadastro empresa) — aprovado end-to-end
+- [x] CADU-07 (ambiente UF fronteira) — aprovado end-to-end
