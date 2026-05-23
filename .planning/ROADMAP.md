@@ -18,7 +18,7 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 - [x] **Phase 6: Infraestrutura Reforma Tributária** - Schema blockers (reg_c190 + cst_icms/aliq_icms, ind_final em nfe_saidas), tabela reforma_parametros, seed CFOPs transferência, endpoints config, hook frontend, navegação e página de configuração de parâmetros (completed 2026-05-22)
 - [x] **Phase 7: Módulos 1.x — Exposição Tributária Direta** - Créditos ICMS bloqueados (1.1), ranking fornecedores IBS/CBS (1.3), reprecificação de produtos (1.2), split payment capital de giro (1.4) (completed 2026-05-23)
 - [x] **Phase 8: Cadastro de Empresas + Ambiente Administrativo por UF** - Cadastro completo de empresa (CNPJ/IE/CNAE), gestão multi-empresa na UI, ambiente administrativo por UF com regras ICMS-Fronteira (PE/BA/CE) (completed 2026-05-23)
-- [ ] **Phase 9: Módulos 2.x — Analytics Dimensional** - Por CFOP (2.2), por NCM (2.1), por UF/destino com mapa coroplético (2.3), segmentação B2B vs. B2C (2.4)
+- [x] **Phase 9: Módulos 2.x — Analytics Dimensional** - Por CFOP (2.2), por NCM (2.1), por UF/destino com mapa coroplético (2.3), segmentação B2B vs. B2C (2.4) (completed 2026-05-23)
 
 ## Phase Details
 
@@ -221,12 +221,12 @@ Plans:
   3. Módulo 2.3 exibe tabela UF + mapa coroplético colorido por volume de impacto
   4. Módulo 2.4 segmenta B2B/B2C em três vias (b2b_credit/b2b_nocredit/b2c) com nota sobre notas históricas sem `ind_final`
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 
 - [x] 09-01-PLAN.md — Backend: reforma_modulo2.go (4 handlers JSON + 2 CSV: cfopAnalysis, ncmAnalysis, ufDestino, b2bB2c) + 6 rotas em main.go (wave 1)
-- [ ] 09-02-PLAN.md — Frontend: 4 páginas (Reforma22/21/23/24) + ativação de 4 tabs em navigation.ts + 4 rotas em App.tsx (wave 2, depende de 09-01)
+- [x] 09-02-PLAN.md — Frontend: 4 páginas (Reforma22/21/23/24) + ativação de 4 tabs em navigation.ts + 4 rotas em App.tsx (wave 2, depende de 09-01)
 
 ## Progress
 
@@ -243,7 +243,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Infraestrutura Reforma Tributária | 4/4 | Complete   | 2026-05-22 |
 | 7. Módulos 1.x — Exposição Tributária Direta | 2/2 | Complete   | 2026-05-23 |
 | 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Complete   | 2026-05-23 |
-| 9. Módulos 2.x — Analytics Dimensional | 1/2 | In Progress|  |
+| 9. Módulos 2.x — Analytics Dimensional | 2/2 | Complete   | 2026-05-23 |
 
 ---
 *Roadmap created: 2026-05-08*
