@@ -634,6 +634,92 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraDIFALHandler(database), "")(w, r)
 	})
 
+	// ── ICMS Fronteira — Regras NCM ──────────────────────────────────────────
+	http.HandleFunc("/api/icms-fronteira/regras/importar", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraRegrasImportarHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/regras/", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraRegraDeleteHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/regras", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		switch r.Method {
+		case "GET":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraRegrasListHandler(database), "")(w, r)
+		case "POST":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraRegraCreateHandler(database), "")(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
+	// ── ICMS Fronteira — Export ───────────────────────────────────────────────
+	http.HandleFunc("/api/icms-fronteira/exportar/csv", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraExportCSVHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/exportar/xlsx", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraExportXLSXHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/exportar/pdf", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraExportHTMLHandler(database), "")(w, r)
+	})
+
+	// ── ICMS Fronteira — Extrato SEFAZ ───────────────────────────────────────
+	http.HandleFunc("/api/icms-fronteira/extrato/importar", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraExtratoImportarHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/extrato", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		switch r.Method {
+		case "GET":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraExtratoListHandler(database), "")(w, r)
+		case "DELETE":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraExtratoDeleteHandler(database), "")(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
+	// ── ICMS Fronteira — Contestações ────────────────────────────────────────
+	http.HandleFunc("/api/icms-fronteira/contestacoes/", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		switch r.Method {
+		case "PUT":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraContestacaoUpdateHandler(database), "")(w, r)
+		case "DELETE":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraContestacaoDeleteHandler(database), "")(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	http.HandleFunc("/api/icms-fronteira/contestacoes", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		switch r.Method {
+		case "GET":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraContestacaoListHandler(database), "")(w, r)
+		case "POST":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraContestacaoCreateHandler(database), "")(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
 	// ── Apuração Assistida + Receita Federal — routes skipped in APP_MODULE=simulador ──
 	if appModule != "simulador" {
 		// RFB Credentials Endpoints (Conectar Receita Federal)

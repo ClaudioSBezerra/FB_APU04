@@ -137,10 +137,13 @@ const sections: NavSection[] = [
     title: "ICMS Fronteira — PE",
     sectionIcon: MapPin,
     items: [
-      { title: "Resumo",             url: "/icms-fronteira",             icon: MapPin },
-      { title: "Antecipação",        url: "/icms-fronteira/antecipacao", icon: TrendingUp },
-      { title: "Subst. Tributária",  url: "/icms-fronteira/st",          icon: AlertTriangle },
-      { title: "DIFAL",              url: "/icms-fronteira/difal",       icon: BarChart2 },
+      { title: "Resumo",             url: "/icms-fronteira",                icon: MapPin },
+      { title: "Antecipação",        url: "/icms-fronteira/antecipacao",    icon: TrendingUp },
+      { title: "Subst. Tributária",  url: "/icms-fronteira/st",             icon: AlertTriangle },
+      { title: "DIFAL",              url: "/icms-fronteira/difal",          icon: BarChart2 },
+      { title: "Regras NCM",         url: "/icms-fronteira/regras",         icon: Table },
+      { title: "Extrato SEFAZ",      url: "/icms-fronteira/extrato",        icon: FileSpreadsheet },
+      { title: "Contestações",       url: "/icms-fronteira/contestacoes",   icon: Scale },
     ],
   },
   {

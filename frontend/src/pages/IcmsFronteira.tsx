@@ -1,11 +1,17 @@
+import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Table,
   TableBody,
@@ -15,12 +21,39 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { Info, TrendingUp, AlertTriangle, ArrowLeftRight } from 'lucide-react'
+import {
+  Info,
+  TrendingUp,
+  AlertTriangle,
+  ArrowLeftRight,
+  FileDown,
+  FileSpreadsheet,
+  Printer,
+  RefreshCw,
+  Trash2,
+  Plus,
+  Upload,
+} from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,6 +96,60 @@ interface FronteiraNotasResponse {
   count: number
 }
 
+interface RegraNCM {
+  id: number
+  ncm_prefixo: string
+  descricao: string
+  regime: string
+  aliquota_interna: number
+  mva_original: number | null
+  reducao_bc_pct: number
+  is_global: boolean
+}
+
+interface RegrasResponse {
+  rows: RegraNCM[]
+  count: number
+}
+
+interface ExtratoRow {
+  id: number
+  periodo: string
+  registro_nota: string
+  cnpj_emitente: string
+  nome_emitente: string
+  uf_emitente: string
+  numero_nf: string
+  chave_nfe: string
+  icms_devido: number
+}
+
+interface ExtratoResponse {
+  rows: ExtratoRow[]
+  total: number
+  count: number
+}
+
+interface ContestacaoRow {
+  id: number
+  chave_nfe: string
+  numero_nf: string
+  forn_cnpj: string
+  forn_nome: string
+  periodo: string
+  valor_contestado: number
+  motivo: string
+  status: string
+  resposta_sefaz: string | null
+  data_registro: string
+  data_resposta: string | null
+}
+
+interface ContestacaoResponse {
+  rows: ContestacaoRow[]
+  count: number
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -76,11 +163,18 @@ function fmtPct(v: number | null | undefined): string {
   return v.toFixed(1) + '%'
 }
 
+function formatCNPJ(cnpj: string): string {
+  if (!cnpj || cnpj.length !== 14) return cnpj || '—'
+  return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
+}
+
 function RegimeBadge({ regime }: { regime: string }) {
   const map: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
     ANTECIPACAO: { label: 'Antecipação', variant: 'default' },
     ST:          { label: 'ST',          variant: 'outline' },
     DIFAL:       { label: 'DIFAL',       variant: 'secondary' },
+    ISENTO:      { label: 'Isento',      variant: 'secondary' },
+    NORMAL:      { label: 'Normal',      variant: 'secondary' },
   }
   const cfg = map[regime] ?? { label: regime, variant: 'secondary' as const }
   return (
@@ -90,19 +184,101 @@ function RegimeBadge({ regime }: { regime: string }) {
   )
 }
 
-function formatCNPJ(cnpj: string): string {
-  if (!cnpj || cnpj.length !== 14) return cnpj || '—'
-  return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; className: string }> = {
+    pendente:    { label: 'Pendente',    className: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
+    enviada:     { label: 'Enviada',     className: 'bg-blue-100 text-blue-800 border-blue-200' },
+    deferida:    { label: 'Deferida',    className: 'bg-green-100 text-green-800 border-green-200' },
+    indeferida:  { label: 'Indeferida',  className: 'bg-red-100 text-red-800 border-red-200' },
+    cancelada:   { label: 'Cancelada',   className: 'bg-gray-100 text-gray-600 border-gray-200' },
+  }
+  const cfg = map[status] ?? { label: status, className: 'bg-gray-100 text-gray-600 border-gray-200' }
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  )
 }
 
 // ---------------------------------------------------------------------------
-// Resumo cards
+// Export buttons (shared by tabs)
 // ---------------------------------------------------------------------------
-function ResumoTab() {
+function ExportButtons({ regime, token }: { regime: string; token: string | null }) {
+  async function downloadFile(format: 'csv' | 'xlsx') {
+    try {
+      const res = await fetch(`/api/icms-fronteira/exportar/${format}?regime=${regime}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `icms-fronteira-${regime}.${format}`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success(`Arquivo ${format.toUpperCase()} gerado com sucesso`)
+    } catch {
+      toast.error(`Erro ao exportar ${format.toUpperCase()}`)
+    }
+  }
+
+  function openPDF() {
+    window.open(`/api/icms-fronteira/exportar/pdf?regime=${regime}`, '_blank')
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="outline" onClick={() => downloadFile('csv')}>
+        <FileDown className="h-3.5 w-3.5 mr-1" />
+        CSV
+      </Button>
+      <Button size="sm" variant="outline" onClick={() => downloadFile('xlsx')}>
+        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
+        Excel
+      </Button>
+      <Button size="sm" variant="outline" onClick={openPDF}>
+        <Printer className="h-3.5 w-3.5 mr-1" />
+        Imprimir/PDF
+      </Button>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Recalcular button
+// ---------------------------------------------------------------------------
+function RecalcularButton() {
+  const queryClient = useQueryClient()
+  const [loading, setLoading] = useState(false)
+
+  async function handleRecalcular() {
+    setLoading(true)
+    await queryClient.invalidateQueries({ queryKey: ['icms-fronteira'] })
+    await queryClient.invalidateQueries({ queryKey: ['icms-fronteira/resumo'] })
+    await queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
+    setLoading(false)
+    toast.success('Dados atualizados')
+  }
+
+  return (
+    <Button size="sm" variant="outline" onClick={handleRecalcular} disabled={loading}>
+      <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />
+      Recalcular
+    </Button>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Resumo tab
+// ---------------------------------------------------------------------------
+function ResumoTab({ token }: { token: string | null }) {
   const { data, isLoading, isError } = useQuery<FronteiraResumoResponse>({
     queryKey: ['icms-fronteira/resumo'],
     queryFn: async () => {
-      const res = await fetch('/api/icms-fronteira/resumo')
+      const res = await fetch('/api/icms-fronteira/resumo', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       return res.json()
     },
@@ -142,6 +318,12 @@ function ResumoTab() {
 
   return (
     <div className="space-y-6">
+      {/* Actions row */}
+      <div className="flex items-center gap-2 justify-end flex-wrap">
+        <ExportButtons regime="todos" token={token} />
+        <RecalcularButton />
+      </div>
+
       {/* KPI cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {data.rows.map((row) => (
@@ -213,11 +395,13 @@ function ResumoTab() {
 // ---------------------------------------------------------------------------
 // Notes table (shared by Antecipação, ST, DIFAL tabs)
 // ---------------------------------------------------------------------------
-function NotasTab({ endpoint, regime }: { endpoint: string; regime: string }) {
+function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: string; token: string | null }) {
   const { data, isLoading, isError } = useQuery<FronteiraNotasResponse>({
     queryKey: ['icms-fronteira', regime],
     queryFn: async () => {
-      const res = await fetch(endpoint)
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       return res.json()
     },
@@ -311,23 +495,941 @@ function EmptyState() {
 }
 
 // ---------------------------------------------------------------------------
+// Regras NCM tab
+// ---------------------------------------------------------------------------
+function RegrasTab({ token }: { token: string | null }) {
+  const queryClient = useQueryClient()
+  const [search, setSearch] = useState('')
+  const [openCreate, setOpenCreate] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importLoading, setImportLoading] = useState(false)
+
+  // Form state
+  const [ncmPrefixo, setNcmPrefixo] = useState('')
+  const [descricao, setDescricao] = useState('')
+  const [regimenForm, setRegimenForm] = useState('ANTECIPACAO')
+  const [aliqInterna, setAliqInterna] = useState('20.5')
+  const [mva, setMva] = useState('')
+  const [reducaoBC, setReducaoBC] = useState('0')
+
+  const { data, isLoading, isError } = useQuery<RegrasResponse>({
+    queryKey: ['icms-fronteira/regras'],
+    queryFn: async () => {
+      const res = await fetch('/api/icms-fronteira/regras', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async (body: object) => {
+      const res = await fetch('/api/icms-fronteira/regras', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
+      toast.success('Regra criada com sucesso')
+      setOpenCreate(false)
+      resetForm()
+    },
+    onError: () => toast.error('Erro ao criar regra'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/icms-fronteira/regras/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
+      toast.success('Regra removida')
+    },
+    onError: () => toast.error('Erro ao remover regra'),
+  })
+
+  function resetForm() {
+    setNcmPrefixo('')
+    setDescricao('')
+    setRegimenForm('ANTECIPACAO')
+    setAliqInterna('20.5')
+    setMva('')
+    setReducaoBC('0')
+  }
+
+  function handleCreate() {
+    createMutation.mutate({
+      ncm_prefixo: ncmPrefixo,
+      descricao,
+      regime: regimenForm,
+      aliquota_interna: parseFloat(aliqInterna) || 20.5,
+      mva_original: mva ? parseFloat(mva) : null,
+      reducao_bc_pct: parseFloat(reducaoBC) || 0,
+    })
+  }
+
+  async function handleImport() {
+    if (!importFile) return
+    setImportLoading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', importFile)
+      const res = await fetch('/api/icms-fronteira/regras/importar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const result = await res.json()
+      toast.success(`Importadas: ${result.imported}, ignoradas: ${result.skipped}`)
+      if (result.errors?.length) {
+        toast.warning(`${result.errors.length} erro(s) na importação`)
+      }
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
+      setImportFile(null)
+    } catch {
+      toast.error('Erro ao importar arquivo')
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  const filtered = (data?.rows ?? []).filter((r) => {
+    const q = search.toLowerCase()
+    return (
+      r.ncm_prefixo.toLowerCase().includes(q) ||
+      r.descricao.toLowerCase().includes(q) ||
+      r.regime.toLowerCase().includes(q)
+    )
+  })
+
+  return (
+    <div className="space-y-4">
+      {/* Import card */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold">Importar Regras (CSV/XLSX)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert className="mb-3">
+            <AlertDescription className="text-xs">
+              Formato esperado: <code>ncm_prefixo; descricao; regime; aliquota_interna; mva_original; reducao_bc_pct</code>
+            </AlertDescription>
+          </Alert>
+          <div className="flex items-center gap-2">
+            <Input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="max-w-sm text-xs"
+              onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+            />
+            <Button
+              size="sm"
+              onClick={handleImport}
+              disabled={!importFile || importLoading}
+            >
+              <Upload className="h-3.5 w-3.5 mr-1" />
+              {importLoading ? 'Importando...' : 'Importar'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Controls */}
+      <div className="flex items-center justify-between gap-2">
+        <Input
+          placeholder="Buscar por NCM, descrição ou regime..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-xs text-xs"
+        />
+        <Button size="sm" onClick={() => setOpenCreate(true)}>
+          <Plus className="h-3.5 w-3.5 mr-1" />
+          Nova Regra
+        </Button>
+      </div>
+
+      {/* Table */}
+      {isLoading && (
+        <div className="space-y-2">
+          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-8 w-full" />)}
+        </div>
+      )}
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar regras NCM.</AlertDescription>
+        </Alert>
+      )}
+      {data && (
+        <div className="rounded-md border overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-transparent">
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">NCM</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Descrição</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Regime</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Int. %</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA %</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Redução BC %</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-center">Global</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-xs text-muted-foreground py-6">
+                    Nenhuma regra encontrada
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="text-xs font-mono">{row.ncm_prefixo}</TableCell>
+                    <TableCell className="text-xs max-w-[200px]">
+                      <div className="truncate" title={row.descricao}>{row.descricao}</div>
+                    </TableCell>
+                    <TableCell><RegimeBadge regime={row.regime} /></TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliquota_interna)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{row.mva_original != null ? fmtPct(row.mva_original) : '—'}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.reducao_bc_pct)}</TableCell>
+                    <TableCell className="text-center">
+                      {row.is_global ? (
+                        <Badge variant="secondary" className="text-[10px]">Global</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {!row.is_global && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                          onClick={() => {
+                            if (confirm('Remover esta regra?')) deleteMutation.mutate(row.id)
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Create Dialog */}
+      <Dialog open={openCreate} onOpenChange={(o) => { setOpenCreate(o); if (!o) resetForm() }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nova Regra NCM</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="ncm-prefixo">NCM Prefixo</Label>
+              <Input
+                id="ncm-prefixo"
+                placeholder="ex: 8471"
+                value={ncmPrefixo}
+                onChange={(e) => setNcmPrefixo(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="descricao-regra">Descrição</Label>
+              <Input
+                id="descricao-regra"
+                placeholder="Descrição da regra"
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Regime</Label>
+              <Select value={regimenForm} onValueChange={setRegimenForm}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ANTECIPACAO">Antecipação</SelectItem>
+                  <SelectItem value="ST">Substituição Tributária (ST)</SelectItem>
+                  <SelectItem value="DIFAL">DIFAL</SelectItem>
+                  <SelectItem value="ISENTO">Isento</SelectItem>
+                  <SelectItem value="NORMAL">Normal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="aliq-interna">Alíq. Interna %</Label>
+                <Input
+                  id="aliq-interna"
+                  type="number"
+                  step="0.1"
+                  value={aliqInterna}
+                  onChange={(e) => setAliqInterna(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="mva">MVA % (opt.)</Label>
+                <Input
+                  id="mva"
+                  type="number"
+                  step="0.1"
+                  placeholder="—"
+                  value={mva}
+                  onChange={(e) => setMva(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="reducao-bc">Redução BC %</Label>
+                <Input
+                  id="reducao-bc"
+                  type="number"
+                  step="0.1"
+                  value={reducaoBC}
+                  onChange={(e) => setReducaoBC(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenCreate(false)}>Cancelar</Button>
+            <Button
+              onClick={handleCreate}
+              disabled={createMutation.isPending || !ncmPrefixo || !descricao}
+            >
+              {createMutation.isPending ? 'Salvando...' : 'Criar Regra'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Extrato SEFAZ tab
+// ---------------------------------------------------------------------------
+function ExtratoTab({ token }: { token: string | null }) {
+  const queryClient = useQueryClient()
+  // month input gives YYYY-MM, convert to MM/YYYY for API
+  const [monthInput, setMonthInput] = useState('')
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importPeriodo, setImportPeriodo] = useState('')
+  const [importLoading, setImportLoading] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
+
+  function monthToPeriodo(m: string): string {
+    if (!m) return ''
+    const [y, mo] = m.split('-')
+    return `${mo}/${y}`
+  }
+
+  const periodo = monthToPeriodo(monthInput)
+
+  const { data, isLoading, isError } = useQuery<ExtratoResponse>({
+    queryKey: ['icms-fronteira/extrato', periodo],
+    queryFn: async () => {
+      const url = periodo
+        ? `/api/icms-fronteira/extrato?periodo=${encodeURIComponent(periodo)}`
+        : '/api/icms-fronteira/extrato'
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: true,
+  })
+
+  async function handleImport() {
+    if (!importFile) return
+    setImportLoading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', importFile)
+      fd.append('periodo', importPeriodo)
+      const res = await fetch('/api/icms-fronteira/extrato/importar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const result = await res.json()
+      toast.success(`${result.imported} registros importados para ${result.periodo}`)
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/extrato'] })
+      setImportFile(null)
+    } catch {
+      toast.error('Erro ao importar extrato')
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  async function handleClearPeriodo() {
+    if (!periodo) return
+    try {
+      const res = await fetch(`/api/icms-fronteira/extrato?periodo=${encodeURIComponent(periodo)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      toast.success(`Período ${periodo} removido`)
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/extrato'] })
+    } catch {
+      toast.error('Erro ao limpar período')
+    } finally {
+      setConfirmClear(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Import card */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold">Importar Extrato SEFAZ</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert className="mb-3">
+            <AlertDescription className="text-xs">
+              Formato esperado: <code>registro_nota; cnpj_emitente; nome_emitente; uf_emitente; numero_nf; chave_nfe; icms_devido</code>
+            </AlertDescription>
+          </Alert>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="max-w-xs text-xs"
+              onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+            />
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs whitespace-nowrap">Período (MM/YYYY):</Label>
+              <Input
+                placeholder="ex: 05/2025"
+                value={importPeriodo}
+                onChange={(e) => setImportPeriodo(e.target.value)}
+                className="w-32 text-xs"
+              />
+            </div>
+            <Button
+              size="sm"
+              onClick={handleImport}
+              disabled={!importFile || !importPeriodo || importLoading}
+            >
+              <Upload className="h-3.5 w-3.5 mr-1" />
+              {importLoading ? 'Importando...' : 'Importar'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Period selector + actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <Label className="text-xs whitespace-nowrap">Período:</Label>
+          <Input
+            type="month"
+            value={monthInput}
+            onChange={(e) => setMonthInput(e.target.value)}
+            className="w-40 text-xs"
+          />
+        </div>
+        {periodo && (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => setConfirmClear(true)}
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1" />
+            Limpar período
+          </Button>
+        )}
+      </div>
+
+      {/* Table */}
+      {isLoading && (
+        <div className="space-y-2">
+          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-8 w-full" />)}
+        </div>
+      )}
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar extrato SEFAZ.</AlertDescription>
+        </Alert>
+      )}
+      {data && (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">{data.count} registro(s)</div>
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30 hover:bg-transparent">
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Período</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">CNPJ</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Nome Emitente</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">NF</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Devido</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-6">
+                      Nenhum registro encontrado
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  data.rows.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="text-xs font-mono">{row.periodo}</TableCell>
+                      <TableCell className="text-xs font-mono">{formatCNPJ(row.cnpj_emitente)}</TableCell>
+                      <TableCell className="text-xs max-w-[160px]">
+                        <div className="truncate" title={row.nome_emitente}>{row.nome_emitente}</div>
+                      </TableCell>
+                      <TableCell className="text-xs font-mono font-semibold">{row.uf_emitente}</TableCell>
+                      <TableCell className="text-xs font-mono">{row.numero_nf}</TableCell>
+                      <TableCell className="text-xs font-mono text-[10px] max-w-[140px]">
+                        <div className="truncate" title={row.chave_nfe}>{row.chave_nfe}</div>
+                      </TableCell>
+                      <TableCell className="text-xs text-right tabular-nums font-semibold">
+                        {fmtBRL(row.icms_devido)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+                {data.rows.length > 0 && (
+                  <TableRow className="bg-muted/30 font-semibold">
+                    <TableCell colSpan={6} className="text-xs text-right">Total</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(data.total)}</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm clear dialog */}
+      <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirmar exclusão</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Deseja remover todos os registros do período <strong>{periodo}</strong>? Esta ação não pode ser desfeita.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmClear(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleClearPeriodo}>Confirmar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Contestações tab
+// ---------------------------------------------------------------------------
+function ContestacoesTab({ token }: { token: string | null }) {
+  const queryClient = useQueryClient()
+  const [filterStatus, setFilterStatus] = useState('todos')
+  const [filterPeriodo, setFilterPeriodo] = useState('')
+  const [openCreate, setOpenCreate] = useState(false)
+  const [responderRow, setResponderRow] = useState<ContestacaoRow | null>(null)
+
+  // Create form
+  const [fChaveNfe, setFChaveNfe] = useState('')
+  const [fNumeroNf, setFNumeroNf] = useState('')
+  const [fFornCnpj, setFFornCnpj] = useState('')
+  const [fFornNome, setFFornNome] = useState('')
+  const [fPeriodo, setFPeriodo] = useState('')
+  const [fValor, setFValor] = useState('')
+  const [fMotivo, setFMotivo] = useState('')
+
+  // Responder form
+  const [rStatus, setRStatus] = useState('')
+  const [rResposta, setRResposta] = useState('')
+
+  const qParams = new URLSearchParams()
+  if (filterStatus && filterStatus !== 'todos') qParams.set('status', filterStatus)
+  if (filterPeriodo) qParams.set('periodo', filterPeriodo)
+
+  const { data, isLoading, isError } = useQuery<ContestacaoResponse>({
+    queryKey: ['icms-fronteira/contestacoes', filterStatus, filterPeriodo],
+    queryFn: async () => {
+      const res = await fetch(`/api/icms-fronteira/contestacoes?${qParams.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async (body: object) => {
+      const res = await fetch('/api/icms-fronteira/contestacoes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/contestacoes'] })
+      toast.success('Contestação criada com sucesso')
+      setOpenCreate(false)
+      resetCreateForm()
+    },
+    onError: () => toast.error('Erro ao criar contestação'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, body }: { id: number; body: object }) => {
+      const res = await fetch(`/api/icms-fronteira/contestacoes/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/contestacoes'] })
+      toast.success('Contestação atualizada')
+      setResponderRow(null)
+    },
+    onError: () => toast.error('Erro ao atualizar contestação'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/icms-fronteira/contestacoes/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/contestacoes'] })
+      toast.success('Contestação removida')
+    },
+    onError: () => toast.error('Erro ao remover contestação'),
+  })
+
+  function resetCreateForm() {
+    setFChaveNfe(''); setFNumeroNf(''); setFFornCnpj(''); setFFornNome('')
+    setFPeriodo(''); setFValor(''); setFMotivo('')
+  }
+
+  function handleCreate() {
+    createMutation.mutate({
+      chave_nfe: fChaveNfe,
+      numero_nf: fNumeroNf,
+      forn_cnpj: fFornCnpj,
+      forn_nome: fFornNome,
+      periodo: fPeriodo,
+      valor_contestado: parseFloat(fValor) || 0,
+      motivo: fMotivo,
+    })
+  }
+
+  function handleResponder() {
+    if (!responderRow) return
+    updateMutation.mutate({
+      id: responderRow.id,
+      body: { status: rStatus, resposta_sefaz: rResposta },
+    })
+  }
+
+  function openResponder(row: ContestacaoRow) {
+    setResponderRow(row)
+    setRStatus(row.status)
+    setRResposta(row.resposta_sefaz ?? '')
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="flex items-center gap-2 flex-wrap justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-36 text-xs">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="pendente">Pendente</SelectItem>
+              <SelectItem value="enviada">Enviada</SelectItem>
+              <SelectItem value="deferida">Deferida</SelectItem>
+              <SelectItem value="indeferida">Indeferida</SelectItem>
+              <SelectItem value="cancelada">Cancelada</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            placeholder="Período (MM/YYYY)"
+            value={filterPeriodo}
+            onChange={(e) => setFilterPeriodo(e.target.value)}
+            className="w-36 text-xs"
+          />
+        </div>
+        <Button size="sm" onClick={() => setOpenCreate(true)}>
+          <Plus className="h-3.5 w-3.5 mr-1" />
+          Nova Contestação
+        </Button>
+      </div>
+
+      {/* Table */}
+      {isLoading && (
+        <div className="space-y-2">
+          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-8 w-full" />)}
+        </div>
+      )}
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar contestações.</AlertDescription>
+        </Alert>
+      )}
+      {data && (
+        <div className="rounded-md border overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-transparent">
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">NF</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">CNPJ</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Período</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Valor</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Motivo</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Status</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap">Data Reg.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center text-xs text-muted-foreground py-6">
+                    Nenhuma contestação encontrada
+                  </TableCell>
+                </TableRow>
+              ) : (
+                data.rows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="text-xs font-mono">{row.numero_nf}</TableCell>
+                    <TableCell className="text-xs font-mono text-[10px]">{formatCNPJ(row.forn_cnpj)}</TableCell>
+                    <TableCell className="text-xs max-w-[140px]">
+                      <div className="truncate" title={row.forn_nome}>{row.forn_nome}</div>
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">{row.periodo}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.valor_contestado)}</TableCell>
+                    <TableCell className="text-xs max-w-[140px]">
+                      <div className="truncate" title={row.motivo}>{row.motivo}</div>
+                    </TableCell>
+                    <TableCell><StatusBadge status={row.status} /></TableCell>
+                    <TableCell className="text-xs font-mono whitespace-nowrap">
+                      {row.data_registro ? row.data_registro.slice(0, 10) : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => openResponder(row)}
+                        >
+                          Responder
+                        </Button>
+                        {row.status === 'pendente' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              if (confirm('Remover esta contestação?')) deleteMutation.mutate(row.id)
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Create dialog */}
+      <Dialog open={openCreate} onOpenChange={(o) => { setOpenCreate(o); if (!o) resetCreateForm() }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Nova Contestação</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="c-chave">Chave NF-e (44 dígitos)</Label>
+              <Input
+                id="c-chave"
+                maxLength={44}
+                placeholder="44 dígitos"
+                value={fChaveNfe}
+                onChange={(e) => setFChaveNfe(e.target.value)}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="c-numero">Número NF</Label>
+                <Input id="c-numero" value={fNumeroNf} onChange={(e) => setFNumeroNf(e.target.value)} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="c-periodo">Período (MM/YYYY)</Label>
+                <Input id="c-periodo" placeholder="05/2025" value={fPeriodo} onChange={(e) => setFPeriodo(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="c-cnpj">CNPJ Fornecedor</Label>
+                <Input id="c-cnpj" value={fFornCnpj} onChange={(e) => setFFornCnpj(e.target.value)} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="c-valor">Valor Contestado (R$)</Label>
+                <Input id="c-valor" type="number" step="0.01" value={fValor} onChange={(e) => setFValor(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="c-nome">Nome Fornecedor</Label>
+              <Input id="c-nome" value={fFornNome} onChange={(e) => setFFornNome(e.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="c-motivo">Motivo *</Label>
+              <Textarea
+                id="c-motivo"
+                rows={3}
+                placeholder="Descreva o motivo da contestação..."
+                value={fMotivo}
+                onChange={(e) => setFMotivo(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenCreate(false)}>Cancelar</Button>
+            <Button
+              onClick={handleCreate}
+              disabled={createMutation.isPending || !fChaveNfe || !fMotivo}
+            >
+              {createMutation.isPending ? 'Salvando...' : 'Criar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Responder dialog */}
+      <Dialog open={!!responderRow} onOpenChange={(o) => { if (!o) setResponderRow(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Atualizar Contestação</DialogTitle>
+          </DialogHeader>
+          {responderRow && (
+            <div className="space-y-1 text-xs text-muted-foreground mb-2">
+              <p>NF: <span className="font-mono text-foreground">{responderRow.numero_nf}</span></p>
+              <p>Fornecedor: {responderRow.forn_nome}</p>
+              <p>Valor: {fmtBRL(responderRow.valor_contestado)}</p>
+            </div>
+          )}
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-1.5">
+              <Label>Status</Label>
+              <Select value={rStatus} onValueChange={setRStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pendente">Pendente</SelectItem>
+                  <SelectItem value="enviada">Enviada</SelectItem>
+                  <SelectItem value="deferida">Deferida</SelectItem>
+                  <SelectItem value="indeferida">Indeferida</SelectItem>
+                  <SelectItem value="cancelada">Cancelada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="r-resposta">Resposta SEFAZ</Label>
+              <Textarea
+                id="r-resposta"
+                rows={4}
+                placeholder="Cole aqui a resposta da SEFAZ..."
+                value={rResposta}
+                onChange={(e) => setRResposta(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResponderRow(null)}>Cancelar</Button>
+            <Button onClick={handleResponder} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // IcmsFronteira — main page
 // ---------------------------------------------------------------------------
 export default function IcmsFronteira() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { token } = useAuth()
 
   const pathToTab: Record<string, string> = {
-    '/icms-fronteira':             'resumo',
-    '/icms-fronteira/antecipacao': 'antecipacao',
-    '/icms-fronteira/st':          'st',
-    '/icms-fronteira/difal':       'difal',
+    '/icms-fronteira':              'resumo',
+    '/icms-fronteira/antecipacao':  'antecipacao',
+    '/icms-fronteira/st':           'st',
+    '/icms-fronteira/difal':        'difal',
+    '/icms-fronteira/regras':       'regras',
+    '/icms-fronteira/extrato':      'extrato',
+    '/icms-fronteira/contestacoes': 'contestacoes',
   }
   const tabToPath: Record<string, string> = {
-    resumo:       '/icms-fronteira',
-    antecipacao:  '/icms-fronteira/antecipacao',
-    st:           '/icms-fronteira/st',
-    difal:        '/icms-fronteira/difal',
+    resumo:        '/icms-fronteira',
+    antecipacao:   '/icms-fronteira/antecipacao',
+    st:            '/icms-fronteira/st',
+    difal:         '/icms-fronteira/difal',
+    regras:        '/icms-fronteira/regras',
+    extrato:       '/icms-fronteira/extrato',
+    contestacoes:  '/icms-fronteira/contestacoes',
   }
 
   const tab = pathToTab[location.pathname] ?? 'resumo'
@@ -375,15 +1477,18 @@ export default function IcmsFronteira() {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={handleTabChange}>
-        <TabsList>
+        <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
           <TabsTrigger value="antecipacao">Antecipação</TabsTrigger>
           <TabsTrigger value="st">Subst. Tributária</TabsTrigger>
           <TabsTrigger value="difal">DIFAL</TabsTrigger>
+          <TabsTrigger value="regras">Regras NCM</TabsTrigger>
+          <TabsTrigger value="extrato">Extrato SEFAZ</TabsTrigger>
+          <TabsTrigger value="contestacoes">Contestações</TabsTrigger>
         </TabsList>
 
         <TabsContent value="resumo" className="mt-6">
-          <ResumoTab />
+          <ResumoTab token={token} />
         </TabsContent>
 
         <TabsContent value="antecipacao" className="mt-6">
@@ -399,7 +1504,11 @@ export default function IcmsFronteira() {
                 Notas interestaduais sem ST e sem CFOP de uso/consumo. ICMS estimado =
                 V.Prod × (alíq. interna − alíq. interestadual).
               </p>
-              <NotasTab endpoint="/api/icms-fronteira/antecipacao" regime="antecipacao" />
+              <div className="flex items-center gap-2 mb-4 justify-end flex-wrap">
+                <ExportButtons regime="antecipacao" token={token} />
+                <RecalcularButton />
+              </div>
+              <NotasTab endpoint="/api/icms-fronteira/antecipacao" regime="antecipacao" token={token} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -417,7 +1526,11 @@ export default function IcmsFronteira() {
                 Notas com ICMS-ST já retido pelo fornecedor (v_st {'>'} 0). O valor exibido
                 é o ST efetivamente destacado na nota.
               </p>
-              <NotasTab endpoint="/api/icms-fronteira/st" regime="st" />
+              <div className="flex items-center gap-2 mb-4 justify-end flex-wrap">
+                <ExportButtons regime="st" token={token} />
+                <RecalcularButton />
+              </div>
+              <NotasTab endpoint="/api/icms-fronteira/st" regime="st" token={token} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -435,7 +1548,59 @@ export default function IcmsFronteira() {
                 Notas com CFOP de compra para uso/consumo ou ativo imobilizado interestadual
                 (1551, 1556, 2551, 2556). DIFAL = V.Prod × (alíq. interna − alíq. inter.).
               </p>
-              <NotasTab endpoint="/api/icms-fronteira/difal" regime="difal" />
+              <div className="flex items-center gap-2 mb-4 justify-end flex-wrap">
+                <ExportButtons regime="difal" token={token} />
+                <RecalcularButton />
+              </div>
+              <NotasTab endpoint="/api/icms-fronteira/difal" regime="difal" token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="regras" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">
+                Regras NCM
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                Defina regras de regime tributário por prefixo NCM. Regras globais são pré-definidas pelo sistema e não podem ser removidas.
+              </p>
+              <RegrasTab token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="extrato" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">
+                Extrato SEFAZ
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                Importe e consulte o extrato oficial da SEFAZ-PE de ICMS devido na fronteira por período.
+              </p>
+              <ExtratoTab token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="contestacoes" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">
+                Contestações
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                Gerencie contestações de cobranças indevidas de ICMS Fronteira junto à SEFAZ-PE.
+              </p>
+              <ContestacoesTab token={token} />
             </CardContent>
           </Card>
         </TabsContent>

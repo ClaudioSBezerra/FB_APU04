@@ -185,10 +185,13 @@ function AppLayout() {
               <Route path="/reforma/split-payment"      element={<Reforma14SplitPayment />} />
 
               {/* ICMS Fronteira */}
-              <Route path="/icms-fronteira"             element={<IcmsFronteira />} />
-              <Route path="/icms-fronteira/antecipacao" element={<IcmsFronteira />} />
-              <Route path="/icms-fronteira/st"          element={<IcmsFronteira />} />
-              <Route path="/icms-fronteira/difal"       element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira"                    element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/antecipacao"        element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/st"                 element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/difal"              element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/regras"             element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/extrato"            element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/contestacoes"       element={<IcmsFronteira />} />
 
               {/* Configurações */}
               <Route path="/config/aliquotas"                  element={<TabelaAliquotas />} />

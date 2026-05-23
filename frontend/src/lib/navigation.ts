@@ -63,6 +63,9 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Antecipação',          path: '/icms-fronteira/antecipacao' },
       { label: 'Substituição Trib.',   path: '/icms-fronteira/st' },
       { label: 'DIFAL',                path: '/icms-fronteira/difal' },
+      { label: 'Regras NCM',           path: '/icms-fronteira/regras' },
+      { label: 'Extrato SEFAZ',        path: '/icms-fronteira/extrato' },
+      { label: 'Contestações',         path: '/icms-fronteira/contestacoes' },
     ],
   },
   config: {
