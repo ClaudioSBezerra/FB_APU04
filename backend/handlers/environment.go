@@ -93,6 +93,10 @@ func GetEnvironmentsHandler(db *sql.DB) http.HandlerFunc {
 			}
 			envs = append(envs, e)
 		}
+		if err := rows.Err(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		if envs == nil {
 			envs = []Environment{}
@@ -194,6 +198,10 @@ func GetGroupsHandler(db *sql.DB) http.HandlerFunc {
 			}
 			groups = append(groups, g)
 		}
+		if err := rows.Err(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		if groups == nil {
 			groups = []EnterpriseGroup{}
@@ -293,6 +301,10 @@ func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 				c.IncentivosFiscais = &raw
 			}
 			companies = append(companies, c)
+		}
+		if err := rows.Err(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		if companies == nil {

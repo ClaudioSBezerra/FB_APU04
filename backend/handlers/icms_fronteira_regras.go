@@ -136,6 +136,11 @@ func IcmsFronteiraRegrasListHandler(db *sql.DB) http.HandlerFunc {
 			}
 			result = append(result, row)
 		}
+		if err := rows.Err(); err != nil {
+			log.Printf("IcmsFronteiraRegrasList rows error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar regras NCM")
+			return
+		}
 
 		json.NewEncoder(w).Encode(FronteiraRegrasResponse{
 			Rows:  result,
