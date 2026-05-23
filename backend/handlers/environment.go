@@ -47,6 +47,7 @@ type Company struct {
 
 func GetEnvironmentsHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
 		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -107,6 +108,7 @@ func GetEnvironmentsHandler(db *sql.DB) http.HandlerFunc {
 
 func CreateEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		var e Environment
 		if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -129,6 +131,7 @@ func CreateEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 
 func UpdateEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		// Expects ID in URL or Body. For simplicity, we take from body now or just update based on ID
 		var e Environment
 		if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
@@ -172,6 +175,7 @@ func DeleteEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 
 func GetGroupsHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		envID := r.URL.Query().Get("environment_id")
 		query := "SELECT id, environment_id, name, COALESCE(description, ''), created_at FROM enterprise_groups"
 		args := []interface{}{}
@@ -212,6 +216,7 @@ func GetGroupsHandler(db *sql.DB) http.HandlerFunc {
 
 func CreateGroupHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		var g EnterpriseGroup
 		if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -253,6 +258,7 @@ func DeleteGroupHandler(db *sql.DB) http.HandlerFunc {
 
 func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		groupID := r.URL.Query().Get("group_id")
 		query := `SELECT id, group_id, name,
 			COALESCE(trade_name, ''),
@@ -316,6 +322,7 @@ func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 
 func CreateCompanyHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		var payload struct {
 			GroupID           string           `json:"group_id"`
 			Name              string           `json:"name"`
@@ -408,6 +415,7 @@ func CreateCompanyHandler(db *sql.DB) http.HandlerFunc {
 
 func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		if r.Method != http.MethodPut && r.Method != http.MethodPatch {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
