@@ -220,9 +220,17 @@ export default function Reforma12Reprecificacao() {
               </AlertDescription>
             </Alert>
           ) : !data || data.rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              Nenhum produto encontrado. Verifique se há notas fiscais de entrada importadas.
-            </p>
+            <div className="flex flex-col items-center gap-3 py-10 text-center">
+              <p className="text-sm font-medium text-foreground">
+                Nenhum produto encontrado
+              </p>
+              <p className="text-xs text-muted-foreground max-w-md">
+                Este módulo requer NF-e importadas via upload de XML. Dados sincronizados
+                pelo ERP Bridge (SAP/Oracle) não incluem itens por produto — apenas totais
+                por nota. Importe os XMLs das notas de entrada para visualizar a
+                reprecificação produto a produto.
+              </p>
+            </div>
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <Table>
