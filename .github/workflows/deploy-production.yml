@@ -35,6 +35,8 @@ jobs:
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -80,6 +82,8 @@ jobs:
       - name: Extract metadata (API)
         id: meta-api
         uses: docker/metadata-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api
           tags: |
@@ -90,6 +94,8 @@ jobs:
       - name: Extract metadata (Web)
         id: meta-web
         uses: docker/metadata-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-web
           tags: |
@@ -145,6 +151,8 @@ jobs:
       - name: Extract metadata (Bridge)
         id: meta-bridge
         uses: docker/metadata-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-bridge
           tags: |
