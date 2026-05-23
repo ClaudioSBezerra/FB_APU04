@@ -179,10 +179,16 @@ Plans:
   4. Módulo 1.4 calcula float tributário e custo CDI com tabela de sensibilidade DSO × CDI
   5. Todos os handlers filtram cancelados (`cod_sit NOT IN ('02','03','04','05')`) e transferências (`tipo != 'T'`)
 
-Plans:
+**Plans:** 2 plans (2 waves)
 
-- [ ] 07-01-PLAN.md — Backend: reforma_modulo1.go (4 handlers: creditosBloqueados, rankingFornecedores, reprecificacao, splitPayment)
-- [ ] 07-02-PLAN.md — Frontend: Reforma11CreditosBloqueados.tsx + Reforma13RankingFornecedores.tsx + Reforma12Reprecificacao.tsx + Reforma14SplitPayment.tsx
+Plans:
+**Wave 1**
+
+- [ ] 07-01-PLAN.md — Backend: reforma_modulo1.go (4 handlers JSON + 3 CSV: creditosBloqueados, rankingFornecedores, reprecificacao, splitPayment) + 7 rotas em main.go
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 07-02-PLAN.md — Frontend: 4 páginas (Reforma11/12/13/14) + ativação de tabs em navigation.ts + 4 rotas em App.tsx + checkpoint de verificação visual
 
 ### Phase 8: Módulos 2.x — Analytics Dimensional
 
