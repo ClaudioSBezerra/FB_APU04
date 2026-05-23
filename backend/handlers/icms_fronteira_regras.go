@@ -195,8 +195,9 @@ func IcmsFronteiraRegraCreateHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusBadRequest, "ncm_prefixo é obrigatório")
 			return
 		}
-		if len(body.NCMPrefixo) > 8 {
-			body.NCMPrefixo = body.NCMPrefixo[:8]
+		if len([]rune(body.NCMPrefixo)) > 8 {
+			jsonErr(w, http.StatusBadRequest, "ncm_prefixo não pode ter mais de 8 caracteres")
+			return
 		}
 
 		if body.AliquotaInterna == 0 {
@@ -523,8 +524,12 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 				res.Skipped++
 				continue
 			}
-			if len(ncmPrefixo) > 8 {
-				ncmPrefixo = ncmPrefixo[:8]
+			if len([]rune(ncmPrefixo)) > 8 {
+				if len(res.Errors) < 100 {
+					res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": ncm_prefixo não pode ter mais de 8 caracteres (valor: "+ncmPrefixo+")")
+				}
+				res.Skipped++
+				continue
 			}
 
 			descricao := ""
