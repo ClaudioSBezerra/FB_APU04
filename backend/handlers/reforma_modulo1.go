@@ -112,7 +112,11 @@ func CreditosBloqueadosHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
-		userID := claims["user_id"].(string)
+		userID, ok2 := claims["user_id"].(string)
+		if !ok2 || userID == "" {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
 
 		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
 		if err != nil {
@@ -167,6 +171,7 @@ func CreditosBloqueadosHandler(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var row Modulo11Row
 			if err := rows.Scan(&row.TipoCFOP, &row.CFOP, &row.VlIcmsTotal, &row.VlOprTotal, &row.QtdRegistros); err != nil {
+				log.Printf("[CreditosBloqueados] scan error: %v", err)
 				continue
 			}
 			// Projeção IBS/CBS usando vl_opr_total como base (decisão A1: substituição ICMS por IBS/CBS)
@@ -176,6 +181,11 @@ func CreditosBloqueadosHandler(db *sql.DB) http.HandlerFunc {
 			totalIBS += row.IBSEquiv
 			totalCBS += row.CBSEquiv
 			list = append(list, row)
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("[CreditosBloqueados] rows iteration error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao ler dados")
+			return
 		}
 
 		if list == nil {
@@ -263,6 +273,11 @@ func CreditosBloqueadosCSVHandler(db *sql.DB) http.HandlerFunc {
 			row.CBSEquiv = row.VlOprTotal * aliqCBS / 100.0
 			list = append(list, row)
 		}
+		if err := rows.Err(); err != nil {
+			log.Printf("[CreditosBloqueadosCSV] rows iteration error: %v", err)
+			http.Error(w, "Erro ao ler dados", http.StatusInternalServerError)
+			return
+		}
 
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="creditos-icms-bloqueados.csv"`)
@@ -315,7 +330,11 @@ func RankingFornecedoresHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
-		userID := claims["user_id"].(string)
+		userID, ok2 := claims["user_id"].(string)
+		if !ok2 || userID == "" {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
 
 		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
 		if err != nil {
@@ -367,6 +386,7 @@ func RankingFornecedoresHandler(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var row Modulo13Row
 			if err := rows.Scan(&row.FornCNPJ, &row.FornNome, &row.QtdNotas, &row.ValorTotal); err != nil {
+				log.Printf("[RankingFornecedores] scan error: %v", err)
 				continue
 			}
 			row.Simples = true
@@ -374,6 +394,11 @@ func RankingFornecedoresHandler(db *sql.DB) http.HandlerFunc {
 			row.IBSPerdidoEst = row.ValorTotal * fatorSimples / 100.0 * aliqIBS / 100.0
 			row.CBSPerdidoEst = row.ValorTotal * fatorSimples / 100.0 * aliqCBS / 100.0
 			list = append(list, row)
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("[RankingFornecedores] rows iteration error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao ler dados")
+			return
 		}
 
 		if list == nil {
@@ -459,6 +484,11 @@ func RankingFornecedoresCSVHandler(db *sql.DB) http.HandlerFunc {
 			row.CBSPerdidoEst = row.ValorTotal * fatorSimples / 100.0 * aliqCBS / 100.0
 			list = append(list, row)
 		}
+		if err := rows.Err(); err != nil {
+			log.Printf("[RankingFornecedoresCSV] rows iteration error: %v", err)
+			http.Error(w, "Erro ao ler dados", http.StatusInternalServerError)
+			return
+		}
 
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="ranking-fornecedores-simples.csv"`)
@@ -512,7 +542,11 @@ func ReprecificacaoHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
-		userID := claims["user_id"].(string)
+		userID, ok2 := claims["user_id"].(string)
+		if !ok2 || userID == "" {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
 
 		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
 		if err != nil {
@@ -607,6 +641,11 @@ func ReprecificacaoHandler(db *sql.DB) http.HandlerFunc {
 				CBSProjetado: cbsProjetado,
 				VariacaoPct:  variacaoPct,
 			})
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("[Reprecificacao] rows iteration error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao ler dados")
+			return
 		}
 
 		if list == nil {
@@ -725,6 +764,11 @@ func ReprecificacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 				VariacaoPct:  variacaoPct,
 			})
 		}
+		if err := rows.Err(); err != nil {
+			log.Printf("[ReprecificacaoCSV] rows iteration error: %v", err)
+			http.Error(w, "Erro ao ler dados", http.StatusInternalServerError)
+			return
+		}
 
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="reprecificacao-produtos.csv"`)
@@ -778,7 +822,11 @@ func SplitPaymentHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
-		userID := claims["user_id"].(string)
+		userID, ok2 := claims["user_id"].(string)
+		if !ok2 || userID == "" {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
 
 		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
 		if err != nil {
