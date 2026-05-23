@@ -52,7 +52,18 @@ import {
   Trash2,
   Plus,
   Upload,
+  BarChart2,
 } from 'lucide-react'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts'
 import { useAuth } from '@/contexts/AuthContext'
 
 // ---------------------------------------------------------------------------
@@ -219,6 +230,13 @@ function fmtPct(v: number | null | undefined): string {
   return v.toFixed(1) + '%'
 }
 
+// Converts <input type="month"> value (YYYY-MM) to API format MM/YYYY
+function monthToPeriodo(m: string): string {
+  if (!m) return ''
+  const [y, mo] = m.split('-')
+  return `${mo}/${y}`
+}
+
 function formatCNPJ(cnpj: string): string {
   if (!cnpj || cnpj.length !== 14) return cnpj || '—'
   return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
@@ -259,10 +277,12 @@ function StatusBadge({ status }: { status: string }) {
 // ---------------------------------------------------------------------------
 // Export buttons (shared by tabs)
 // ---------------------------------------------------------------------------
-function ExportButtons({ regime, token }: { regime: string; token: string | null }) {
+function ExportButtons({ regime, token, periodo }: { regime: string; token: string | null; periodo?: string }) {
   async function downloadFile(format: 'csv' | 'xlsx') {
     try {
-      const res = await fetch(`/api/icms-fronteira/exportar/${format}?regime=${regime}`, {
+      const params = new URLSearchParams({ regime })
+      if (periodo) params.set('periodo', periodo)
+      const res = await fetch(`/api/icms-fronteira/exportar/${format}?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
@@ -280,7 +300,9 @@ function ExportButtons({ regime, token }: { regime: string; token: string | null
   }
 
   function openPDF() {
-    window.open(`/api/icms-fronteira/exportar/pdf?regime=${regime}`, '_blank')
+    const params = new URLSearchParams({ regime })
+    if (periodo) params.set('periodo', periodo)
+    window.open(`/api/icms-fronteira/exportar/pdf?${params}`, '_blank')
   }
 
   return (
@@ -329,10 +351,16 @@ function RecalcularButton() {
 // Resumo tab
 // ---------------------------------------------------------------------------
 function ResumoTab({ token }: { token: string | null }) {
+  const [monthInput, setMonthInput] = useState('')
+  const periodo = monthToPeriodo(monthInput)
+
   const { data, isLoading, isError } = useQuery<FronteiraResumoResponse>({
-    queryKey: ['icms-fronteira/resumo'],
+    queryKey: ['icms-fronteira/resumo', periodo],
     queryFn: async () => {
-      const res = await fetch('/api/icms-fronteira/resumo', {
+      const url = periodo
+        ? `/api/icms-fronteira/resumo?periodo=${encodeURIComponent(periodo)}`
+        : '/api/icms-fronteira/resumo'
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
@@ -375,9 +403,21 @@ function ResumoTab({ token }: { token: string | null }) {
   return (
     <div className="space-y-6">
       {/* Actions row */}
-      <div className="flex items-center gap-2 justify-end flex-wrap">
-        <ExportButtons regime="todos" token={token} />
-        <RecalcularButton />
+      <div className="flex items-center gap-2 justify-between flex-wrap">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="resumo-periodo" className="text-xs whitespace-nowrap">Período:</Label>
+          <Input
+            id="resumo-periodo"
+            type="month"
+            className="w-36 text-xs h-8"
+            value={monthInput}
+            onChange={(e) => setMonthInput(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <ExportButtons regime="todos" token={token} periodo={periodo} />
+          <RecalcularButton />
+        </div>
       </div>
 
       {/* KPI cards */}
@@ -452,10 +492,16 @@ function ResumoTab({ token }: { token: string | null }) {
 // Notes table (shared by Antecipação, ST, DIFAL tabs)
 // ---------------------------------------------------------------------------
 function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: string; token: string | null }) {
+  const [monthInput, setMonthInput] = useState('')
+  const periodo = monthToPeriodo(monthInput)
+
   const { data, isLoading, isError } = useQuery<FronteiraNotasResponse>({
-    queryKey: ['icms-fronteira', regime],
+    queryKey: ['icms-fronteira', regime, periodo],
     queryFn: async () => {
-      const res = await fetch(endpoint, {
+      const url = periodo
+        ? `${endpoint}?periodo=${encodeURIComponent(periodo)}`
+        : endpoint
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
@@ -463,30 +509,41 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
     },
   })
 
-  if (isLoading) {
-    return (
-      <div className="space-y-2">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-8 w-full" />
-        ))}
-      </div>
-    )
-  }
-
-  if (isError) {
-    return (
-      <Alert variant="destructive">
-        <AlertDescription>Erro ao carregar notas. Verifique sua conexão.</AlertDescription>
-      </Alert>
-    )
-  }
-
-  if (!data || data.rows.length === 0) {
-    return <EmptyState />
-  }
-
   return (
     <div className="space-y-3">
+      {/* Period filter */}
+      <div className="flex items-center gap-2">
+        <Label htmlFor={`notas-periodo-${regime}`} className="text-xs whitespace-nowrap">Período:</Label>
+        <Input
+          id={`notas-periodo-${regime}`}
+          type="month"
+          className="w-36 text-xs h-8"
+          value={monthInput}
+          onChange={(e) => setMonthInput(e.target.value)}
+        />
+        {periodo && (
+          <span className="text-xs text-muted-foreground">{periodo}</span>
+        )}
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-full" />
+          ))}
+        </div>
+      )}
+
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar notas. Verifique sua conexão.</AlertDescription>
+        </Alert>
+      )}
+
+      {!isLoading && !isError && (!data || data.rows.length === 0) && <EmptyState />}
+
+      {data && data.rows.length > 0 && (
+        <>
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>{data.count} nota{data.count !== 1 ? 's' : ''} (máx. 500)</span>
         <span className="font-semibold text-foreground">Total: {fmtBRL(data.total)}</span>
@@ -531,6 +588,8 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
           </TableBody>
         </Table>
       </div>
+        </>
+      )}
     </div>
   )
 }
@@ -1761,11 +1820,15 @@ function DivergenciasTab({ token }: { token: string | null }) {
 // ---------------------------------------------------------------------------
 function PlanilhaTab({ token }: { token: string | null }) {
   const [regimeFilter, setRegimeFilter] = useState('todos')
+  const [monthInput, setMonthInput] = useState('')
+  const periodo = monthToPeriodo(monthInput)
 
   const { data, isLoading, isError } = useQuery<FronteiraItensResponse>({
-    queryKey: ['icms-fronteira/itens', regimeFilter],
+    queryKey: ['icms-fronteira/itens', regimeFilter, periodo],
     queryFn: async () => {
-      const res = await fetch(`/api/icms-fronteira/itens?regime=${regimeFilter}`, {
+      const params = new URLSearchParams({ regime: regimeFilter })
+      if (periodo) params.set('periodo', periodo)
+      const res = await fetch(`/api/icms-fronteira/itens?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
@@ -1793,7 +1856,14 @@ function PlanilhaTab({ token }: { token: string | null }) {
     <div className="space-y-4">
       {/* Controls */}
       <div className="flex items-center gap-3 flex-wrap justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Período:</span>
+          <Input
+            type="month"
+            className="w-36 text-xs h-8"
+            value={monthInput}
+            onChange={(e) => setMonthInput(e.target.value)}
+          />
           <span className="text-xs text-muted-foreground whitespace-nowrap">Regime:</span>
           <Select value={regimeFilter} onValueChange={setRegimeFilter}>
             <SelectTrigger className="w-44 text-xs">
@@ -1807,16 +1877,20 @@ function PlanilhaTab({ token }: { token: string | null }) {
             </SelectContent>
           </Select>
           <Button size="sm" variant="outline" onClick={() => {
+            const params = new URLSearchParams({ regime: regimeFilter })
+            if (periodo) params.set('periodo', periodo)
             const a = document.createElement('a')
-            a.href = `/api/icms-fronteira/itens/exportar/csv?regime=${regimeFilter}`
+            a.href = `/api/icms-fronteira/itens/exportar/csv?${params}`
             a.download = `icms-fronteira-itens-${regimeFilter}.csv`
             document.body.appendChild(a); a.click(); document.body.removeChild(a)
           }}>
             <FileDown className="h-3.5 w-3.5 mr-1" />CSV
           </Button>
           <Button size="sm" variant="outline" onClick={() => {
+            const params = new URLSearchParams({ regime: regimeFilter })
+            if (periodo) params.set('periodo', periodo)
             const a = document.createElement('a')
-            a.href = `/api/icms-fronteira/itens/exportar/xlsx?regime=${regimeFilter}`
+            a.href = `/api/icms-fronteira/itens/exportar/xlsx?${params}`
             a.download = `icms-fronteira-itens-${regimeFilter}.xlsx`
             document.body.appendChild(a); a.click(); document.body.removeChild(a)
           }}>
@@ -1957,6 +2031,163 @@ function PlanilhaTab({ token }: { token: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
+// Apuração Mensal tab (Bloco D)
+// ---------------------------------------------------------------------------
+interface FronteiraMensalRow {
+  periodo: string
+  regime: string
+  qtd_notas: number
+  v_prod_total: number
+  icms_devido: number
+}
+interface FronteiraMensalResponse {
+  rows: FronteiraMensalRow[]
+  total_devido: number
+  total_prod: number
+}
+
+// Palette: matches the app's CSS variables where possible
+const REGIME_COLORS: Record<string, string> = {
+  ANTECIPACAO: '#3b82f6',
+  ST:          '#f59e0b',
+  DIFAL:       '#8b5cf6',
+}
+
+function ApuracaoMensalTab({ token }: { token: string | null }) {
+  const { data, isLoading, isError } = useQuery<FronteiraMensalResponse>({
+    queryKey: ['icms-fronteira/mensal'],
+    queryFn: async () => {
+      const res = await fetch('/api/icms-fronteira/mensal', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>Erro ao carregar apuração mensal. Verifique sua conexão.</AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (!data || data.rows.length === 0) {
+    return <EmptyState />
+  }
+
+  // Pivot rows into { periodo, ANTECIPACAO, ST, DIFAL } for recharts
+  const periodos = [...new Set(data.rows.map((r) => r.periodo))].sort((a, b) => {
+    const [ma, ya] = a.split('/').map(Number)
+    const [mb, yb] = b.split('/').map(Number)
+    return ya !== yb ? ya - yb : ma - mb
+  })
+  const chartData = periodos.map((p) => {
+    const entry: Record<string, number | string> = { periodo: p }
+    for (const row of data.rows.filter((r) => r.periodo === p)) {
+      entry[row.regime] = row.icms_devido
+    }
+    return entry
+  })
+
+  const regimes = [...new Set(data.rows.map((r) => r.regime))].sort()
+
+  // KPI cards: last period per regime
+  const lastPeriodo = periodos[periodos.length - 1]
+  const lastRows = data.rows.filter((r) => r.periodo === lastPeriodo)
+
+  return (
+    <div className="space-y-6">
+      {/* KPI: last period */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {lastRows.map((row) => (
+          <Card key={row.regime}>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground">{lastPeriodo} — {row.regime}</span>
+                <RegimeBadge regime={row.regime} />
+              </div>
+              <p className="text-2xl font-bold tabular-nums">{fmtBRL(row.icms_devido)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {row.qtd_notas} nota{row.qtd_notas !== 1 ? 's' : ''} · Prod.: {fmtBRL(row.v_prod_total)}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <BarChart2 className="h-4 w-4 text-muted-foreground" />
+            Evolução Mensal — ICMS Devido Estimado por Regime
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={chartData} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <XAxis dataKey="periodo" tick={{ fontSize: 11 }} />
+              <YAxis tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} width={64} />
+              <RechartsTooltip
+                formatter={(value: number, name: string) => [fmtBRL(value), name]}
+                labelStyle={{ fontWeight: 600 }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              {regimes.map((regime) => (
+                <Bar
+                  key={regime}
+                  dataKey={regime}
+                  name={regime === 'ANTECIPACAO' ? 'Antecipação' : regime === 'ST' ? 'Subst. Tributária' : 'DIFAL'}
+                  fill={REGIME_COLORS[regime] ?? '#6b7280'}
+                  stackId="a"
+                />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Summary table */}
+      <div className="rounded-md border overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/30 hover:bg-transparent">
+              <TableHead className="text-xs font-semibold uppercase tracking-wide">Período</TableHead>
+              <TableHead className="text-xs font-semibold uppercase tracking-wide">Regime</TableHead>
+              <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Notas</TableHead>
+              <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Produtos</TableHead>
+              <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Devido Est.</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.rows.map((row, i) => (
+              <TableRow key={`${row.periodo}-${row.regime}-${i}`}>
+                <TableCell className="text-xs font-mono">{row.periodo}</TableCell>
+                <TableCell><RegimeBadge regime={row.regime} /></TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{row.qtd_notas}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod_total)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(row.icms_devido)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // IcmsFronteira — main page
 // ---------------------------------------------------------------------------
 export default function IcmsFronteira() {
@@ -1974,6 +2205,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/regras':       'regras',
     '/icms-fronteira/extrato':      'extrato',
     '/icms-fronteira/contestacoes': 'contestacoes',
+    '/icms-fronteira/apuracao':     'apuracao',
   }
   const tabToPath: Record<string, string> = {
     resumo:        '/icms-fronteira',
@@ -1985,6 +2217,7 @@ export default function IcmsFronteira() {
     regras:        '/icms-fronteira/regras',
     extrato:       '/icms-fronteira/extrato',
     contestacoes:  '/icms-fronteira/contestacoes',
+    apuracao:      '/icms-fronteira/apuracao',
   }
 
   const tab = pathToTab[location.pathname] ?? 'resumo'
@@ -2039,6 +2272,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="difal">DIFAL</TabsTrigger>
           <TabsTrigger value="planilha">Planilha</TabsTrigger>
           <TabsTrigger value="divergencias">Divergências</TabsTrigger>
+          <TabsTrigger value="apuracao">Apuração Mensal</TabsTrigger>
           <TabsTrigger value="regras">Regras NCM</TabsTrigger>
           <TabsTrigger value="extrato">Extrato SEFAZ</TabsTrigger>
           <TabsTrigger value="contestacoes">Contestações</TabsTrigger>
@@ -2146,6 +2380,23 @@ export default function IcmsFronteira() {
                 Um item por linha, com subtotal por NF e total geral.
               </p>
               <PlanilhaTab token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="apuracao" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <BarChart2 className="h-4 w-4 text-blue-500" />
+                Apuração Mensal
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                Evolução do ICMS Fronteira estimado por regime ao longo dos meses, com gráfico de barras empilhadas.
+              </p>
+              <ApuracaoMensalTab token={token} />
             </CardContent>
           </Card>
         </TabsContent>

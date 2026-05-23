@@ -38,12 +38,12 @@ SELECT
 FROM classified
 `
 
-func buildExportQuery(regime string) (string, []interface{}) {
+func buildExportQuery(regime, periodo string) (string, []interface{}) {
 	if regime == "todos" || regime == "" {
 		q := fronteiraBaseQuery + fronteiraExportSelectCols + `ORDER BY regime, data_emissao DESC LIMIT 2000`
 		return q, nil
 	}
-	q := fronteiraBaseQuery + fronteiraExportSelectCols + `WHERE regime = $2 ORDER BY data_emissao DESC LIMIT 2000`
+	q := fronteiraBaseQuery + fronteiraExportSelectCols + `WHERE regime = $3 ORDER BY data_emissao DESC LIMIT 2000`
 	return q, []interface{}{strings.ToUpper(regime)}
 }
 
@@ -64,11 +64,11 @@ type fronteiraExportRow struct {
 	IcmsDevidoEst float64
 }
 
-func fetchExportRows(db *sql.DB, companyID, regime string) ([]fronteiraExportRow, error) {
-	baseQuery, extraArgs := buildExportQuery(regime)
+func fetchExportRows(db *sql.DB, companyID, regime, periodo string) ([]fronteiraExportRow, error) {
+	baseQuery, extraArgs := buildExportQuery(regime, periodo)
 
 	var args []interface{}
-	args = append(args, companyID)
+	args = append(args, companyID, periodo)
 	args = append(args, extraArgs...)
 
 	rows, err := db.Query(baseQuery, args...)
@@ -156,8 +156,9 @@ func IcmsFronteiraExportCSVHandler(db *sql.DB) http.HandlerFunc {
 		if regime == "" {
 			regime = "todos"
 		}
+		periodo := r.URL.Query().Get("periodo")
 
-		rows, err := fetchExportRows(db, companyID, regime)
+		rows, err := fetchExportRows(db, companyID, regime, periodo)
 		if err != nil {
 			log.Printf("IcmsFronteiraExportCSV error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")
@@ -217,8 +218,9 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		if regime == "" {
 			regime = "todos"
 		}
+		periodo := r.URL.Query().Get("periodo")
 
-		dataRows, err := fetchExportRows(db, companyID, regime)
+		dataRows, err := fetchExportRows(db, companyID, regime, periodo)
 		if err != nil {
 			log.Printf("IcmsFronteiraExportXLSX error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")
@@ -337,6 +339,7 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 		if regime == "" {
 			regime = "todos"
 		}
+		periodo := r.URL.Query().Get("periodo")
 
 		// Fetch company name
 		var companyName string
@@ -345,7 +348,7 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			companyName = companyID
 		}
 
-		dataRows, err := fetchExportRows(db, companyID, regime)
+		dataRows, err := fetchExportRows(db, companyID, regime, periodo)
 		if err != nil {
 			log.Printf("IcmsFronteiraExportHTML error: %v", err)
 			http.Error(w, "Erro ao consultar dados", http.StatusInternalServerError)

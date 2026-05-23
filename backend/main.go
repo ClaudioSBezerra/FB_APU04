@@ -641,6 +641,13 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraItensHandler(database), "")(w, r)
 	})
 
+	// ── ICMS Fronteira — Apuração Mensal (Bloco D) ───────────────────────────
+	http.HandleFunc("/api/icms-fronteira/mensal", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraMensalHandler(database), "")(w, r)
+	})
+
 	// ── ICMS Fronteira — Divergências (calculado × SEFAZ) ────────────────────
 	http.HandleFunc("/api/icms-fronteira/divergencias/exportar/csv", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()

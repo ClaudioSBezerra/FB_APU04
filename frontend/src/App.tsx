@@ -194,6 +194,7 @@ function AppLayout() {
               <Route path="/icms-fronteira/regras"             element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/extrato"            element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/contestacoes"       element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/apuracao"           element={<IcmsFronteira />} />
 
               {/* Configurações */}
               <Route path="/config/aliquotas"                  element={<TabelaAliquotas />} />

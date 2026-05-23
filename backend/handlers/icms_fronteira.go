@@ -181,6 +181,10 @@ WITH classified AS (
       AND ne.forn_uf != ''
       AND ne.forn_uf != COALESCE(ne.dest_uf, 'PE')
       AND ne.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
+      AND ($2::text = '' OR (
+          EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
+          AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',2)::int
+      ))
 )
 `
 
@@ -210,6 +214,8 @@ func IcmsFronteiraResumoHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		periodo := r.URL.Query().Get("periodo")
+
 		query := fronteiraBaseQuery + `
 SELECT
     regime,
@@ -221,7 +227,7 @@ FROM classified
 GROUP BY regime
 ORDER BY regime
 `
-		rows, err := db.Query(query, companyID)
+		rows, err := db.Query(query, companyID, periodo)
 		if err != nil {
 			log.Printf("IcmsFronteiraResumo error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar resumo ICMS Fronteira")
@@ -272,17 +278,19 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
+	periodo := r.URL.Query().Get("periodo")
+
 	query := fronteiraBaseQuery + `
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
     cfop, v_prod, v_icms, v_bc_st, v_st,
     aliq_inter, aliq_interna, icms_devido_est, regime
 FROM classified
-WHERE regime = $2
+WHERE regime = $3
 ORDER BY data_emissao DESC, chave_nfe
 LIMIT 500
 `
-	rows, err := db.Query(query, companyID, regime)
+	rows, err := db.Query(query, companyID, periodo, regime)
 	if err != nil {
 		log.Printf("IcmsFronteiraNotas[%s] error: %v", regime, err)
 		jsonErr(w, http.StatusInternalServerError, "Erro ao consultar notas ICMS Fronteira")

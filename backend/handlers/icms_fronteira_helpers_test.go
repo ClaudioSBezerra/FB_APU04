@@ -86,7 +86,7 @@ func TestRowToCSVRecord_Values(t *testing.T) {
 // ── buildExportQuery ─────────────────────────────────────────────────────────
 
 func TestBuildExportQuery_Todos(t *testing.T) {
-	q, args := buildExportQuery("todos")
+	q, args := buildExportQuery("todos", "")
 	if len(args) != 0 {
 		t.Errorf("todos: expected 0 extra args, got %d", len(args))
 	}
@@ -96,7 +96,7 @@ func TestBuildExportQuery_Todos(t *testing.T) {
 }
 
 func TestBuildExportQuery_Regime(t *testing.T) {
-	q, args := buildExportQuery("ST")
+	q, args := buildExportQuery("ST", "")
 	if len(args) != 1 {
 		t.Errorf("ST: expected 1 extra arg, got %d", len(args))
 	}
@@ -109,7 +109,7 @@ func TestBuildExportQuery_Regime(t *testing.T) {
 }
 
 func TestBuildExportQuery_Antecipacao(t *testing.T) {
-	_, args := buildExportQuery("antecipacao")
+	_, args := buildExportQuery("antecipacao", "")
 	if len(args) != 1 {
 		t.Errorf("antecipacao: expected 1 extra arg, got %d", len(args))
 	}

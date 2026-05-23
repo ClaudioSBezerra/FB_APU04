@@ -107,6 +107,10 @@ WITH base AS (
       AND ne.forn_uf != ''
       AND ne.forn_uf != COALESCE(ne.dest_uf, 'PE')
       AND ne.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
+      AND ($3::text = '' OR (
+          EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($3::text,'/',1)::int
+          AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($3::text,'/',2)::int
+      ))
 ), computed AS (
     SELECT
         chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
@@ -174,8 +178,9 @@ func IcmsFronteiraItensHandler(db *sql.DB) http.HandlerFunc {
 		if regime == "" {
 			regime = "todos"
 		}
+		periodo := r.URL.Query().Get("periodo")
 
-		rows, err := db.Query(fronteiraItensQuery, companyID, regime)
+		rows, err := db.Query(fronteiraItensQuery, companyID, regime, periodo)
 		if err != nil {
 			log.Printf("IcmsFronteiraItens error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar itens ICMS Fronteira")

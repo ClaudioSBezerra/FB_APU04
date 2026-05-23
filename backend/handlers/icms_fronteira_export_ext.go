@@ -72,8 +72,8 @@ var itensCSVHeaders = []string{
 	"Alíq.Inter%", "Alíq.Int%", "BC", "ICMS Calc.", "ICMS Ret.",
 }
 
-func fetchItensExport(db *sql.DB, companyID, regime string) ([]FronteiraItemRow, error) {
-	rows, err := db.Query(fronteiraItensQueryBody, companyID, regime)
+func fetchItensExport(db *sql.DB, companyID, regime, periodo string) ([]FronteiraItemRow, error) {
+	rows, err := db.Query(fronteiraItensQueryBody, companyID, regime, periodo)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +131,8 @@ func IcmsFronteiraExportItensCSVHandler(db *sql.DB) http.HandlerFunc {
 		if regime == "" {
 			regime = "todos"
 		}
-		rows, err := fetchItensExport(db, companyID, regime)
+		periodo := r.URL.Query().Get("periodo")
+		rows, err := fetchItensExport(db, companyID, regime, periodo)
 		if err != nil {
 			log.Printf("ExportItensCSV error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")
@@ -161,7 +162,8 @@ func IcmsFronteiraExportItensXLSXHandler(db *sql.DB) http.HandlerFunc {
 		if regime == "" {
 			regime = "todos"
 		}
-		dataRows, err := fetchItensExport(db, companyID, regime)
+		periodo := r.URL.Query().Get("periodo")
+		dataRows, err := fetchItensExport(db, companyID, regime, periodo)
 		if err != nil {
 			log.Printf("ExportItensXLSX error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")
