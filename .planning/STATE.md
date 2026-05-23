@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v5.00
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-23T18:34:05.325Z"
-last_activity: 2026-05-23 -- Phase 08 execution started
+last_updated: "2026-05-23T20:07:48.964Z"
+last_activity: 2026-05-23
 progress:
   total_phases: 9
-  completed_phases: 2
-  total_plans: 9
-  completed_plans: 6
-  percent: 22
+  completed_phases: 3
+  total_plans: 11
+  completed_plans: 10
+  percent: 33
 ---
 
 # State: FB_APU04
@@ -21,17 +21,19 @@ See: `.planning/PROJECT.md` (updated 2026-05-22)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Phase 08 — cadastro-empresas-ambiente-uf
+**Current focus:** Phase 09 — modulos-2x-analytics-dimensional
 
 ## Current Position
 
-Phase: 08 (cadastro-empresas-ambiente-uf) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 08
-Last activity: 2026-05-23 -- Phase 08 execution started
+Phase: 09 (modulos-2x-analytics-dimensional) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-05-23
 
 ## Decisions Made
 
+- **readModulo2Params usa tabela_aliquotas via target_ano:** migration 090 removeu aliq_ibs_pct/aliq_cbs_pct de reforma_parametros — padrão idêntico ao modulo1.go
+- **IBS/CBS de Transferências = 0.0 no Módulo 2.2:** regime distinto na transição EC 132/2023 — não geram obrigação IBS/CBS
 - **Token de confirmação estático `DELETE-FB_APU04`:** simplicidade auditável; defesa real é combinação de 5 gates independentes (aceite T-01-02 do threat model)
 - **Backup falha recusa truncar sem exceção:** fail-safe sobre disponibilidade — integridade dos dados prioritária
 - **Gate DB allowlist reseta rate limiter quando disparado:** guard estrutural não penaliza o usuário
@@ -59,6 +61,7 @@ Last activity: 2026-05-23 -- Phase 08 execution started
 
 ## Recent History
 
+- 2026-05-23: Phase 09 Plan 01 executado — 4 handlers JSON + 2 CSV Módulo 2.x (CFOP/NCM/UF-Destino/B2B-B2C); 6 rotas registradas em main.go; guard tests PASS
 - 2026-05-22: Milestone v5.00 roadmap criado — Phases 6 (infra), 7 (Módulos 1.x), 8 (Módulos 2.x); REQUIREMENTS.md atualizado com RFMA/RFMB/RFMC
 - 2026-05-22: Milestone v5.00 iniciado — Análise da Reforma Tributária (Módulos 1 e 2)
 - 2026-05-17: Phase 05 Plan 02 executado — fiscal.yml (6 alertas); alertmanager.yml.tpl; 5 runbooks; OBS-02 atendido. Phase 05 COMPLETA. Projeto v4.00 milestone COMPLETO (5/5 fases).
@@ -78,4 +81,4 @@ Last activity: 2026-05-23 -- Phase 08 execution started
 - **Commit docs:** Yes
 
 ---
-*Last updated: 2026-05-22 — Milestone v5.00 roadmap approved*
+*Last updated: 2026-05-23 — Phase 09 Plan 01 complete — Backend Módulos 2.x*

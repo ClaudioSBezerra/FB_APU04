@@ -85,10 +85,10 @@ Requisitos do milestone v5.00, organizados pelas fases A/B/C definidas na pesqui
 
 ### Fase C — Módulos 2.x: Análise Dimensional (prioridade 3)
 
-- [ ] **RFMC-01**: Módulo 2.2 — Análise por CFOP: agrupamento por natureza de operação (uso/consumo, ativo permanente, transferências, exportação, revenda); impacto IBS/CBS por grupo; CFOPs de transferência excluídos
-- [ ] **RFMC-02**: Módulo 2.1 — Análise por NCM: receita e volume de compras agrupados por NCM; alíquota ICMS efetiva atual vs. IBS+CBS projetada; flag de Imposto Seletivo (IS) por NCM; join LATERAL em `ncm_cclasstrib_reforma`
-- [ ] **RFMC-03**: Módulo 2.3 — Análise por UF/destino: volume de vendas por UF de destino; ICMS origem vs. IBS destino; tabela de resumo + mapa coroplético com `react-simple-maps` e `brazil-states.json`
-- [ ] **RFMC-04**: Módulo 2.4 — Segmentação B2B vs. B2C: três vias (b2b_credit / b2b_nocredit / b2c) usando `ind_final` (Phase A migration) + fallback CPF/CNPJ (`LENGTH(dest_cnpj_cpf) = 11` → B2C); nota de UI sobre notas históricas sem `ind_final`
+- [x] **RFMC-01**: Módulo 2.2 — Análise por CFOP: agrupamento por natureza de operação (uso/consumo, ativo permanente, transferências, exportação, revenda); impacto IBS/CBS por grupo; CFOPs de transferência excluídos
+- [x] **RFMC-02**: Módulo 2.1 — Análise por NCM: receita e volume de compras agrupados por NCM; alíquota ICMS efetiva atual vs. IBS+CBS projetada; flag de Imposto Seletivo (IS) por NCM; join LATERAL em `ncm_cclasstrib_reforma`
+- [x] **RFMC-03**: Módulo 2.3 — Análise por UF/destino: volume de vendas por UF de destino; ICMS origem vs. IBS destino; tabela de resumo + mapa coroplético com `react-simple-maps` e `brazil-states.json`
+- [x] **RFMC-04**: Módulo 2.4 — Segmentação B2B vs. B2C: três vias (b2b_credit / b2b_nocredit / b2c) usando `ind_final` (Phase A migration) + fallback CPF/CNPJ (`LENGTH(dest_cnpj_cpf) = 11` → B2C); nota de UI sobre notas históricas sem `ind_final`
 
 ## v2 Requirements
 

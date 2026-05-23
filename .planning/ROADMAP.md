@@ -221,7 +221,12 @@ Plans:
   3. Módulo 2.3 exibe tabela UF + mapa coroplético colorido por volume de impacto
   4. Módulo 2.4 segmenta B2B/B2C em três vias (b2b_credit/b2b_nocredit/b2c) com nota sobre notas históricas sem `ind_final`
 
+**Plans:** 1/2 plans executed
+
 Plans:
+
+- [x] 09-01-PLAN.md — Backend: reforma_modulo2.go (4 handlers JSON + 2 CSV: cfopAnalysis, ncmAnalysis, ufDestino, b2bB2c) + 6 rotas em main.go (wave 1)
+- [ ] 09-02-PLAN.md — Frontend: 4 páginas (Reforma22/21/23/24) + ativação de 4 tabs em navigation.ts + 4 rotas em App.tsx (wave 2, depende de 09-01)
 
 ## Progress
 
@@ -238,7 +243,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Infraestrutura Reforma Tributária | 4/4 | Complete   | 2026-05-22 |
 | 7. Módulos 1.x — Exposição Tributária Direta | 2/2 | Complete   | 2026-05-23 |
 | 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Complete   | 2026-05-23 |
-| 9. Módulos 2.x — Analytics Dimensional | 0/2 | Pending | — |
+| 9. Módulos 2.x — Analytics Dimensional | 1/2 | In Progress|  |
 
 ---
 *Roadmap created: 2026-05-08*
