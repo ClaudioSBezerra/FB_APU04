@@ -126,18 +126,31 @@ export default function GestaoAmbiente() {
     }
   }, [user]);
 
-  // Load Groups when Env selected
+  // Load Groups when Env selected — clear state first to avoid stale flash,
+  // then guard against out-of-order responses with a cancellation flag.
   useEffect(() => {
-    if (selectedEnv) {
-      fetchGroups(selectedEnv.id);
-      setGroups([]);
-      setSelectedGroup(null);
-      setCompanies([]);
-    } else {
-      setGroups([]);
-      setSelectedGroup(null);
-      setCompanies([]);
-    }
+    setGroups([]);
+    setSelectedGroup(null);
+    setCompanies([]);
+    if (!selectedEnv) return;
+
+    let cancelled = false;
+    fetch(`/api/config/groups?environment_id=${selectedEnv.id}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch groups");
+        return res.json();
+      })
+      .then((data) => {
+        if (!cancelled) setGroups(data);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error(error);
+          toast.error("Erro ao carregar grupos de empresas");
+        }
+      });
+
+    return () => { cancelled = true; };
   }, [selectedEnv]);
 
   // Load Companies when Group selected
