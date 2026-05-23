@@ -17,7 +17,9 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS segmento_economico VARCHAR(100);
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS incentivos_fiscais JSONB;
 
 COMMENT ON COLUMN companies.cnpj IS
-    'CNPJ da empresa no formato de 14 dígitos numéricos ou formatado (18 chars com pontos/barras/traço). '
+    'CNPJ da empresa. O handler de API valida e armazena APENAS 14 dígitos numéricos (ex.: 12345678000195). '
+    'A coluna é VARCHAR(18) para reservar espaço caso o formato formatado (XX.XXX.XXX/XXXX-XX) seja adotado '
+    'no futuro, mas a validação atual rejeita qualquer formato diferente de 14 dígitos. '
     'Nullable — empresas existentes e novas não são obrigadas a informar. Sem UNIQUE: multi-filial '
     'pode compartilhar CNPJs relacionados.';
 
