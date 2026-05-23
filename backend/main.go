@@ -686,7 +686,14 @@ func main() {
 	http.HandleFunc("/api/icms-fronteira/regras/", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil { jsonServiceUnavailable(w); return }
-		handlers.AuthMiddleware(handlers.IcmsFronteiraRegraDeleteHandler(database), "")(w, r)
+		switch r.Method {
+		case http.MethodDelete:
+			handlers.AuthMiddleware(handlers.IcmsFronteiraRegraDeleteHandler(database), "")(w, r)
+		case http.MethodPut, http.MethodPatch:
+			handlers.AuthMiddleware(handlers.IcmsFronteiraRegraUpdateHandler(database), "")(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	})
 	http.HandleFunc("/api/icms-fronteira/regras", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
