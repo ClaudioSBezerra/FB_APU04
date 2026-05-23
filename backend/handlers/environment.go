@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lib/pq"
 )
 
 // Structures
@@ -26,13 +28,19 @@ type EnterpriseGroup struct {
 }
 
 type Company struct {
-	ID      string `json:"id"`
-	GroupID string `json:"group_id"`
-	// CNPJ      string `json:"cnpj"` // Deprecated
-	Name              string `json:"name"`
-	TradeName         string `json:"trade_name"` // Fantasia
-	RegimeTributario  string `json:"regime_tributario"`
-	CreatedAt         string `json:"created_at"`
+	ID                string           `json:"id"`
+	GroupID           string           `json:"group_id"`
+	Name              string           `json:"name"`
+	TradeName         string           `json:"trade_name"`
+	RegimeTributario  string           `json:"regime_tributario"`
+	CNPJ              string           `json:"cnpj,omitempty"`
+	InscricaoEstadual string           `json:"inscricao_estadual,omitempty"`
+	CNAEPrincipal     string           `json:"cnae_principal,omitempty"`
+	CNAESecundario    []string         `json:"cnae_secundario,omitempty"`
+	Municipio         string           `json:"municipio,omitempty"`
+	SegmentoEconomico string           `json:"segmento_economico,omitempty"`
+	IncentivosFiscais *json.RawMessage `json:"incentivos_fiscais,omitempty"`
+	CreatedAt         string           `json:"created_at"`
 }
 
 // --- Environment Handlers ---
@@ -234,7 +242,18 @@ func DeleteGroupHandler(db *sql.DB) http.HandlerFunc {
 func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := r.URL.Query().Get("group_id")
-		query := "SELECT id, group_id, name, COALESCE(trade_name, ''), COALESCE(regime_tributario, 'nao_informado'), created_at FROM companies"
+		query := `SELECT id, group_id, name,
+			COALESCE(trade_name, ''),
+			COALESCE(regime_tributario, 'nao_informado'),
+			COALESCE(cnpj, ''),
+			COALESCE(inscricao_estadual, ''),
+			COALESCE(cnae_principal, ''),
+			COALESCE(cnae_secundario, '{}'::text[]),
+			COALESCE(municipio, ''),
+			COALESCE(segmento_economico, ''),
+			incentivos_fiscais,
+			created_at
+		FROM companies`
 		args := []interface{}{}
 
 		if groupID != "" {
@@ -253,9 +272,21 @@ func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 		var companies []Company
 		for rows.Next() {
 			var c Company
-			if err := rows.Scan(&c.ID, &c.GroupID, &c.Name, &c.TradeName, &c.RegimeTributario, &c.CreatedAt); err != nil {
+			var inc sql.NullString
+			if err := rows.Scan(
+				&c.ID, &c.GroupID, &c.Name, &c.TradeName, &c.RegimeTributario,
+				&c.CNPJ, &c.InscricaoEstadual, &c.CNAEPrincipal,
+				pq.Array(&c.CNAESecundario),
+				&c.Municipio, &c.SegmentoEconomico,
+				&inc,
+				&c.CreatedAt,
+			); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
+			}
+			if inc.Valid && inc.String != "" {
+				raw := json.RawMessage(inc.String)
+				c.IncentivosFiscais = &raw
 			}
 			companies = append(companies, c)
 		}
@@ -269,16 +300,37 @@ func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 
 func CreateCompanyHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var c Company
-		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		var payload struct {
+			GroupID           string           `json:"group_id"`
+			Name              string           `json:"name"`
+			TradeName         string           `json:"trade_name"`
+			RegimeTributario  string           `json:"regime_tributario"`
+			CNPJ              string           `json:"cnpj"`
+			InscricaoEstadual string           `json:"inscricao_estadual"`
+			CNAEPrincipal     string           `json:"cnae_principal"`
+			CNAESecundario    []string         `json:"cnae_secundario"`
+			Municipio         string           `json:"municipio"`
+			SegmentoEconomico string           `json:"segmento_economico"`
+			IncentivosFiscais *json.RawMessage `json:"incentivos_fiscais"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		// Basic validation
-		if c.Name == "" || c.GroupID == "" {
+		if payload.Name == "" || payload.GroupID == "" {
 			http.Error(w, "Missing required fields (name, group_id)", http.StatusBadRequest)
 			return
+		}
+
+		// Validação CNPJ: 14 dígitos numéricos quando fornecido
+		if payload.CNPJ != "" {
+			re := regexp.MustCompile(`^\d{14}$`)
+			if !re.MatchString(payload.CNPJ) {
+				http.Error(w, "CNPJ deve ter 14 dígitos numéricos", http.StatusBadRequest)
+				return
+			}
 		}
 
 		// Resolve owner: use group's environment owner (first user linked to the environment)
@@ -290,25 +342,49 @@ func CreateCompanyHandler(db *sql.DB) http.HandlerFunc {
 			WHERE eg.id = $1
 			ORDER BY ue.created_at ASC
 			LIMIT 1
-		`, c.GroupID).Scan(&ownerID)
+		`, payload.GroupID).Scan(&ownerID)
 		if err != nil {
 			ownerID = nil // no owner found, leave NULL (still visible via group query)
 		}
 
-		regime := c.RegimeTributario
+		regime := payload.RegimeTributario
 		if regime == "" {
 			regime = "lucro_real"
 		}
 
-		err = db.QueryRow(
-			"INSERT INTO companies (group_id, name, trade_name, owner_id, regime_tributario) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at",
-			c.GroupID, c.Name, c.TradeName, ownerID, regime,
+		var c Company
+		err = db.QueryRow(`
+			INSERT INTO companies
+				(group_id, name, trade_name, owner_id, regime_tributario,
+				 cnpj, inscricao_estadual, cnae_principal, cnae_secundario,
+				 municipio, segmento_economico, incentivos_fiscais)
+			VALUES
+				($1, $2, $3, $4, $5,
+				 NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9,
+				 NULLIF($10,''), NULLIF($11,''), $12)
+			RETURNING id, created_at`,
+			payload.GroupID, payload.Name, payload.TradeName, ownerID, regime,
+			payload.CNPJ, payload.InscricaoEstadual, payload.CNAEPrincipal,
+			pq.Array(payload.CNAESecundario),
+			payload.Municipio, payload.SegmentoEconomico, payload.IncentivosFiscais,
 		).Scan(&c.ID, &c.CreatedAt)
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		c.GroupID = payload.GroupID
+		c.Name = payload.Name
+		c.TradeName = payload.TradeName
+		c.RegimeTributario = regime
+		c.CNPJ = payload.CNPJ
+		c.InscricaoEstadual = payload.InscricaoEstadual
+		c.CNAEPrincipal = payload.CNAEPrincipal
+		c.CNAESecundario = payload.CNAESecundario
+		c.Municipio = payload.Municipio
+		c.SegmentoEconomico = payload.SegmentoEconomico
+		c.IncentivosFiscais = payload.IncentivosFiscais
 
 		json.NewEncoder(w).Encode(c)
 	}
@@ -328,7 +404,14 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		var payload struct {
-			RegimeTributario string `json:"regime_tributario"`
+			RegimeTributario  string           `json:"regime_tributario"`
+			CNPJ              string           `json:"cnpj"`
+			InscricaoEstadual string           `json:"inscricao_estadual"`
+			CNAEPrincipal     string           `json:"cnae_principal"`
+			CNAESecundario    []string         `json:"cnae_secundario"`
+			Municipio         string           `json:"municipio"`
+			SegmentoEconomico string           `json:"segmento_economico"`
+			IncentivosFiscais *json.RawMessage `json:"incentivos_fiscais"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -344,11 +427,39 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		_, err := db.Exec(
-			"UPDATE companies SET regime_tributario = $1, updated_at = NOW() WHERE id = $2",
-			payload.RegimeTributario, id,
+		// Validação CNPJ: 14 dígitos numéricos quando fornecido
+		if payload.CNPJ != "" {
+			re := regexp.MustCompile(`^\d{14}$`)
+			if !re.MatchString(payload.CNPJ) {
+				http.Error(w, "CNPJ deve ter 14 dígitos numéricos", http.StatusBadRequest)
+				return
+			}
+		}
+
+		_, err := db.Exec(`
+			UPDATE companies SET
+				regime_tributario  = $1,
+				cnpj               = NULLIF($2, ''),
+				inscricao_estadual = NULLIF($3, ''),
+				cnae_principal     = NULLIF($4, ''),
+				cnae_secundario    = $5,
+				municipio          = NULLIF($6, ''),
+				segmento_economico = NULLIF($7, ''),
+				incentivos_fiscais = $8,
+				updated_at         = NOW()
+			WHERE id = $9`,
+			payload.RegimeTributario,
+			payload.CNPJ,
+			payload.InscricaoEstadual,
+			payload.CNAEPrincipal,
+			pq.Array(payload.CNAESecundario),
+			payload.Municipio,
+			payload.SegmentoEconomico,
+			payload.IncentivosFiscais,
+			id,
 		)
 		if err != nil {
+			log.Printf("UpdateCompany error: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
