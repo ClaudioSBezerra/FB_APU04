@@ -24,7 +24,7 @@ VALUES
     ('4011', 'Pneumáticos novos',                      'ST', 20.5,  42.00, 'BA'),
     ('2523', 'Cimento',                                'ST', 17.5,  25.00, 'BA'),
     ('8517', 'Aparelhos telefônicos',                  'ST', 20.5,  15.00, 'BA')
-ON CONFLICT DO NOTHING;
+ON CONFLICT ON CONSTRAINT uq_icms_fronteira_regras_uf DO NOTHING;
 
 -- Bloco 2: Seed regras Ceará (uf_estado='CE')
 -- Alíquotas internas diferem de BA em 2202, 2203 e 2523 (RICMS/CE)
@@ -38,4 +38,4 @@ VALUES
     ('4011', 'Pneumáticos novos',                      'ST', 20.5,  42.00, 'CE'),
     ('2523', 'Cimento',                                'ST', 17.0,  25.00, 'CE'),
     ('8517', 'Aparelhos telefônicos',                  'ST', 20.5,  15.00, 'CE')
-ON CONFLICT DO NOTHING;
+ON CONFLICT ON CONSTRAINT uq_icms_fronteira_regras_uf DO NOTHING;

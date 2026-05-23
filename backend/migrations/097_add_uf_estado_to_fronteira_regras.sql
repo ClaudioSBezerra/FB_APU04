@@ -8,6 +8,11 @@
 -- PE existentes (Pitfall 1 do RESEARCH). A constraint nova (uq_icms_fronteira_regras_uf)
 -- inclui uf_estado para permitir a mesma NCM em UFs distintas.
 --
+-- ATENÇÃO: Requires PostgreSQL >= 15 for UNIQUE NULLS NOT DISTINCT (Bloco 3).
+-- Em PostgreSQL 14 ou anterior, a sintaxe NULLS NOT DISTINCT não é suportada
+-- e a migration falhará. Verifique a versão do banco antes de executar:
+--   SELECT version();
+--
 -- Idempotente: ADD COLUMN IF NOT EXISTS, DROP CONSTRAINT IF EXISTS,
 -- DO block com EXCEPTION WHEN duplicate_object, CREATE TABLE/INDEX IF NOT EXISTS.
 
