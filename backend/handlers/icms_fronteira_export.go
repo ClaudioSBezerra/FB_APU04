@@ -113,6 +113,7 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string) ([]fronteira
 var exportCSVHeaders = []string{
 	"Bloco", "Data Emissão", "Número NF-e", "Fornecedor", "CNPJ", "UF", "CFOP", "Regime",
 	"V.Prod", "ICMS Atual", "V.BC ST", "V.ST", "Alíq.Inter.%", "Alíq.Interna.%", "ICMS Devido Est.",
+	"Chave NF-e", "Chave CT-e",
 }
 
 func blocoLabel(bloco string) string {
@@ -139,6 +140,8 @@ func rowToCSVRecord(row fronteiraExportRow) []string {
 		fmt.Sprintf("%.2f", row.AliqInter),
 		fmt.Sprintf("%.2f", row.AliqInterna),
 		fmt.Sprintf("%.2f", row.IcmsDevidoEst),
+		row.ChaveNFe,
+		"",
 	}
 }
 
@@ -259,7 +262,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 
 		// exportCSVHeaders[0] = "Bloco", drop it (already separated by sheet)
 		sheetHeaders := exportCSVHeaders[1:]
-		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"}
+		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"}
 
 		// Monta mapa de parâmetros das NFs para cálculo do frete
 		nfParams := make(map[string]nfFreteParams)
@@ -324,6 +327,8 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
 				f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
 				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.IcmsDevidoEst)
+				f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.ChaveNFe)
+				f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), "")
 				if sd.warn {
 					for _, c := range cols {
 						cell := fmt.Sprintf("%s%d", c, excelRow)
@@ -358,6 +363,8 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
 					f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
 					f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), cte.IcmsFronteira)
+					f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.ChaveNFe)
+					f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), cte.ChaveCTe)
 					for _, c := range cols {
 						cell := fmt.Sprintf("%s%d", c, excelRow)
 						f.SetCellStyle(sheetName, cell, cell, cteStyle)

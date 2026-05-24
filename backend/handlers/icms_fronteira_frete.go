@@ -53,7 +53,8 @@ func fetchFreteLinks(
 ) map[string][]FreteLink {
 
 	result := make(map[string][]FreteLink)
-	seen := make(map[string]bool) // evita duplicar mesma chave_nfe+chave_cte
+	seen := make(map[string]bool)        // evita duplicar mesma chave_nfe+chave_cte
+	seenCTe := make(map[string]bool)     // Layer 3 only: cada CT-e é atribuído a no máximo 1 NF-e
 
 	// ── Camada 1: SPED D162 → D100 ──────────────────────────────────────────
 	// D162 vincula diretamente chv_nfe (NF) ao D100 (CT-e) via SPED.
@@ -196,10 +197,11 @@ func fetchFreteLinks(
 				}
 				fl.Fonte = "CTE-REM"
 				key := fl.ChaveNFe + "|" + fl.ChaveCTe
-				if seen[key] {
+				if seen[key] || seenCTe[fl.ChaveCTe] {
 					continue
 				}
 				seen[key] = true
+				seenCTe[fl.ChaveCTe] = true
 				if p, ok := nfParams[fl.ChaveNFe]; ok {
 					fl.IcmsFronteira = calcICMSFrete(fl.VPrest, p.Regime, p.AliqInter, p.AliqInterna, fl.VIcmsCTe)
 				}
