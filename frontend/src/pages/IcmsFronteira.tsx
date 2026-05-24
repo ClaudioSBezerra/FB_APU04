@@ -1280,9 +1280,9 @@ function FretesTab({ token }: { token: string | null }) {
           <Alert className="border-blue-200 bg-blue-50">
             <Info className="h-4 w-4 text-blue-600" />
             <AlertDescription className="text-xs text-blue-800">
-              <strong>Tomador:</strong> só são considerados CT-es cujo tomador é o
-              destinatário (= empresa do cliente) — pois apenas nesses casos o frete é por conta
-              dela. CT-es de fornecedores com frete FOB (tomador = Remetente) são ignorados.
+              <strong>Tomador:</strong> são considerados <strong>apenas</strong> CT-es cujo tomador é o
+              destinatário (= empresa do cliente). CT-es com frete por conta do remetente
+              (FOB), de outros tomadores, ou sem o campo informado, são ignorados.
               <br />
               O ICMS fronteira sobre o frete usa o mesmo regime da NF de mercadoria correspondente.
               Fontes: <strong>D162</strong> = vínculo direto no SPED (mais confiável);{' '}

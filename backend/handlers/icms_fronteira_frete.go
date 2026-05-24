@@ -112,9 +112,10 @@ func fetchFreteLinks(
 	// período). Não filtra por mes_ano do CT-e: um CT-e de maio pode transportar
 	// NFs de abril, o que importa é a NF-e, não a emissão do CT-e.
 	//
-	// Filtro fiscal: só considera o frete quando o tomador é o destinatário
-	// (toma='3'). Quando toma='4' (Outros), aceita se toma4_cnpj coincide com
-	// o CNPJ da empresa do destinatário (verificação na linha — dest_cnpj_cpf).
+	// Filtro fiscal: SÓ considera o frete quando o tomador é o destinatário
+	// (toma='3') ou toma='4' apontando para o mesmo CNPJ do destinatário.
+	// CT-es sem campo (importados antes da migration 105) NÃO entram —
+	// regra estrita exigida pelo contador. Reimportar para popular `toma`.
 	nfKeys := make([]string, 0, len(nfParams))
 	for k := range nfParams {
 		nfKeys = append(nfKeys, k)
@@ -137,8 +138,6 @@ func fetchFreteLinks(
 		  AND (
 		      ce.toma = '3'                                                  -- Destinatário paga
 		      OR (ce.toma = '4' AND ce.toma4_cnpj = ce.dest_cnpj_cpf)         -- "Outros" = destinatário
-		      OR ce.toma IS NULL                                              -- CT-e antigo sem o campo
-		      OR ce.toma = ''
 		  )
 	`
 	rows2, err := db.Query(qXML, companyID, nfKeys)
