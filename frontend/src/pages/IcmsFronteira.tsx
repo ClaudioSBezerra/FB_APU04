@@ -835,7 +835,6 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Opr.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS CT-e</TableHead>
-            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq.Inter</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq.Interna</TableHead>
             {isST && (
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA</TableHead>
@@ -865,7 +864,6 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_opr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_cte)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums">{(row.aliq_inter || 0).toFixed(2)}%</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{(row.aliq_interna || 0).toFixed(2)}%</TableCell>
               {isST && (
                 <TableCell className="text-xs text-right tabular-nums">{(row.mva || 0).toFixed(2)}%</TableCell>
@@ -893,7 +891,7 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcmsCTe)}</TableCell>
-              <TableCell colSpan={isST ? 3 : 2} />
+              <TableCell colSpan={isST ? 2 : 1} />
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
               <TableCell />
             </TableRow>
