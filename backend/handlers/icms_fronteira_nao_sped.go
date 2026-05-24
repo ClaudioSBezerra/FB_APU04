@@ -127,6 +127,30 @@ WHERE COALESCE(cm.regime,
 ORDER BY m.data_emissao, m.chave_nfe
 `
 
+// fetchNaoSpedRows é usado pelo export handler para montar o Bloco C.
+func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime string) ([]FronteiraXmlNaoSpedRow, error) {
+	rows, err := db.Query(naoSpedQuery, companyID, periodo, regime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []FronteiraXmlNaoSpedRow
+	for rows.Next() {
+		var row FronteiraXmlNaoSpedRow
+		if err := rows.Scan(
+			&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
+			&row.FornCNPJ, &row.FornNome, &row.FornUF,
+			&row.CfopSaida,
+			&row.Regime, &row.ClassStatus,
+			&row.VOpr, &row.IcmsDevidoEst,
+		); err != nil {
+			continue
+		}
+		result = append(result, row)
+	}
+	return result, nil
+}
+
 // ---------------------------------------------------------------------------
 // IcmsFronteiraXmlNaoSpedHandler — GET /api/icms-fronteira/nao-sped
 //

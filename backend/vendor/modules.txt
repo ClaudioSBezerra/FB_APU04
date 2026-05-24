@@ -19,6 +19,9 @@ github.com/klauspost/compress/internal/cpuinfo
 github.com/klauspost/compress/internal/snapref
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
+# github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
+## explicit; go 1.24.1
+github.com/ledongthuc/pdf
 # github.com/lib/pq v1.11.2
 ## explicit; go 1.21
 github.com/lib/pq

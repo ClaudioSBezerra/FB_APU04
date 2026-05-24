@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fb_apu04/services"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	pdflib "github.com/ledongthuc/pdf"
 )
 
 // ---------------------------------------------------------------------------
@@ -94,9 +96,44 @@ raciocínio. Formato exato:
   ]
 }`
 
+// extractPDFText extrai texto de um PDF em memória usando ledongthuc/pdf.
+func extractPDFText(data []byte) (string, error) {
+	r := bytes.NewReader(data)
+	pr, err := pdflib.NewReader(r, int64(len(data)))
+	if err != nil {
+		return "", fmt.Errorf("falha ao abrir PDF: %w", err)
+	}
+	var sb strings.Builder
+	for i := 1; i <= pr.NumPage(); i++ {
+		page := pr.Page(i)
+		if page.V.IsNull() {
+			continue
+		}
+		content := page.Content()
+		prevY := -1.0
+		for _, t := range content.Text {
+			if prevY >= 0 && abs64(t.Y-prevY) > 2 {
+				sb.WriteByte('\n')
+			}
+			sb.WriteString(t.S)
+			sb.WriteByte(' ')
+			prevY = t.Y
+		}
+		sb.WriteByte('\n')
+	}
+	return sb.String(), nil
+}
+
+func abs64(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
 func extractLegislacaoText(r *http.Request) (string, string, error) {
 	ct := r.Header.Get("Content-Type")
-	// JSON simples
+	// JSON simples (texto colado)
 	if strings.HasPrefix(ct, "application/json") {
 		var body struct {
 			Titulo        string `json:"titulo"`
@@ -107,9 +144,9 @@ func extractLegislacaoText(r *http.Request) (string, string, error) {
 		}
 		return body.Titulo, body.ConteudoTexto, nil
 	}
-	// multipart com arquivo .txt
+	// multipart — aceita PDF, TXT ou texto colado
 	if strings.HasPrefix(ct, "multipart/form-data") {
-		if err := r.ParseMultipartForm(4 << 20); err != nil {
+		if err := r.ParseMultipartForm(20 << 20); err != nil { // 20 MB para PDFs maiores
 			return "", "", err
 		}
 		titulo := r.FormValue("titulo")
@@ -119,16 +156,29 @@ func extractLegislacaoText(r *http.Request) (string, string, error) {
 		}
 		f, hdr, err := r.FormFile("file")
 		if err != nil {
-			return "", "", fmt.Errorf("anexo 'file' ou campo 'conteudo_texto' obrigatório")
+			return "", "", fmt.Errorf("campo 'file' ou 'conteudo_texto' obrigatório")
 		}
 		defer f.Close()
-		buf, err := io.ReadAll(io.LimitReader(f, 4<<20))
+
+		buf, err := io.ReadAll(io.LimitReader(f, 20<<20))
 		if err != nil {
 			return "", "", err
 		}
 		if titulo == "" {
 			titulo = hdr.Filename
 		}
+
+		// Detecta PDF pelos primeiros bytes (%PDF-)
+		if len(buf) > 4 && string(buf[:5]) == "%PDF-" {
+			texto, err := extractPDFText(buf)
+			if err != nil {
+				log.Printf("extractPDFText error: %v", err)
+				return "", "", fmt.Errorf("não foi possível extrair texto do PDF: %v", err)
+			}
+			return titulo, texto, nil
+		}
+
+		// TXT ou outro texto
 		return titulo, string(buf), nil
 	}
 	return "", "", fmt.Errorf("Content-Type não suportado: use multipart/form-data ou application/json")

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm view *)",
+      "Bash(/tmp/apu04-backend)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(docker exec fb_apu04-db psql -U postgres -d fiscal_apu04_db -tc ' *)",
+      "Bash(docker exec *)",
+      "Bash(curl -s http://localhost:8084/api/health)"
+    ]
+  }
+}

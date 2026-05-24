@@ -799,6 +799,7 @@ function NotasTabBlocos({
   endpointSped: string
   regime: RegimedStr
   token: string | null
+  // ExportButtons rendered inside with access to periodo
 }) {
   const [monthInput, setMonthInput] = useState('')
   const periodo = monthToPeriodo(monthInput)
@@ -848,21 +849,24 @@ function NotasTabBlocos({
 
   return (
     <div className="space-y-4">
-      {/* Filtro período */}
-      <div className="flex items-center gap-2">
-        <Label htmlFor={`notas-periodo-${regime}`} className="text-xs whitespace-nowrap">Período (SPED):</Label>
-        <Input
-          id={`notas-periodo-${regime}`}
-          type="text"
-          placeholder="MM/AAAA"
-          maxLength={7}
-          className="w-36 text-xs h-8"
-          value={monthInput}
-          onChange={(e) => setMonthInput(e.target.value)}
-        />
-        {periodo && (
-          <span className="text-xs text-muted-foreground">{periodo}</span>
-        )}
+      {/* Filtro período + export */}
+      <div className="flex items-center gap-2 flex-wrap justify-between">
+        <div className="flex items-center gap-2">
+          <Label htmlFor={`notas-periodo-${regime}`} className="text-xs whitespace-nowrap">Período (SPED):</Label>
+          <Input
+            id={`notas-periodo-${regime}`}
+            type="text"
+            placeholder="MM/AAAA"
+            maxLength={7}
+            className="w-36 text-xs h-8"
+            value={monthInput}
+            onChange={(e) => setMonthInput(e.target.value)}
+          />
+          {periodo && (
+            <span className="text-xs text-muted-foreground">{periodo}</span>
+          )}
+        </div>
+        {periodo && <ExportButtons regime={regime} token={token} periodo={periodo} />}
       </div>
 
       {!periodo && (
@@ -1296,6 +1300,8 @@ function LegislacaoTab({ token }: { token: string | null }) {
   const [uf, setUf] = useState('BA')
   const [titulo, setTitulo] = useState('')
   const [texto, setTexto] = useState('')
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadMode, setUploadMode] = useState<'file' | 'text'>('file')
   const [busy, setBusy] = useState(false)
   const [detail, setDetail] = useState<LegislacaoDetail | null>(null)
   const [editedRegras, setEditedRegras] = useState<LegislacaoRegraItem[]>([])
@@ -1313,25 +1319,39 @@ function LegislacaoTab({ token }: { token: string | null }) {
   })
 
   async function uploadDecreto() {
-    if (!titulo.trim() || !texto.trim()) {
-      toast.error('Informe título e cole o texto do decreto')
-      return
-    }
-    if (texto.trim().length < 50) {
-      toast.error('Texto muito curto — cole o conteúdo do decreto')
+    if (!titulo.trim()) {
+      toast.error('Informe o título do decreto')
       return
     }
     setBusy(true)
     try {
-      const res = await fetch(`/api/icms-fronteira/legislacao/upload?uf_estado=${uf}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ titulo, conteudo_texto: texto }),
-      })
+      let res: Response
+      if (uploadMode === 'file' && uploadFile) {
+        const fd = new FormData()
+        fd.append('titulo', titulo)
+        fd.append('uf_estado', uf)
+        fd.append('file', uploadFile)
+        res = await fetch(`/api/icms-fronteira/legislacao/upload?uf_estado=${uf}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        })
+      } else {
+        if (texto.trim().length < 50) {
+          toast.error('Texto muito curto — cole o conteúdo do decreto')
+          setBusy(false)
+          return
+        }
+        res = await fetch(`/api/icms-fronteira/legislacao/upload?uf_estado=${uf}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ titulo, conteudo_texto: texto }),
+        })
+      }
       if (!res.ok) throw new Error((await res.json()).error || 'falha')
       toast.success('Legislação importada e interpretada pela IA')
       setUploadOpen(false)
-      setTitulo(''); setTexto('')
+      setTitulo(''); setTexto(''); setUploadFile(null)
       queryClient.invalidateQueries({ queryKey: ['icms-fronteira/legislacao'] })
     } catch (e) {
       toast.error('Upload falhou: ' + (e instanceof Error ? e.message : ''))
@@ -1443,7 +1463,7 @@ function LegislacaoTab({ token }: { token: string | null }) {
       </CardHeader>
       <CardContent>
         <p className="text-xs text-muted-foreground mb-4">
-          Importe um decreto/RICMS (cole o texto). A IA extrai automaticamente os NCMs sujeitos a ST,
+          Faça upload do PDF ou TXT do decreto/RICMS. A IA extrai automaticamente os NCMs sujeitos a ST,
           alíquotas e MVAs. Você revisa item a item, confirma o que está correto e aplica nas Regras NCM.
         </p>
         <div className="flex justify-end mb-3">
@@ -1495,14 +1515,16 @@ function LegislacaoTab({ token }: { token: string | null }) {
         )}
 
         {/* Modal upload */}
-        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <Dialog open={uploadOpen} onOpenChange={o => { setUploadOpen(o); if (!o) { setTitulo(''); setTexto(''); setUploadFile(null); setUploadMode('file') } }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Importar legislação</DialogTitle>
               <DialogDescription className="text-xs">
-                Cole o texto do decreto/RICMS. A IA vai extrair os NCMs sujeitos a ST.
+                Faça upload do arquivo PDF ou TXT do decreto. A IA vai extrair os NCMs sujeitos a ST automaticamente.
               </DialogDescription>
             </DialogHeader>
+
+            {/* UF + Título */}
             <div className="grid grid-cols-4 gap-3">
               <div className="col-span-1">
                 <Label className="text-xs">UF</Label>
@@ -1520,14 +1542,67 @@ function LegislacaoTab({ token }: { token: string | null }) {
                 <Input className="text-xs" value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ex: Decreto BA 13.870/2012 — Lista ST" />
               </div>
             </div>
-            <div>
-              <Label className="text-xs">Texto do decreto</Label>
-              <Textarea className="text-xs h-64 font-mono" value={texto} onChange={e => setTexto(e.target.value)} placeholder="Cole o conteúdo aqui (ou o trecho que contém a lista de NCMs sujeitos a ST)..." />
-              <p className="text-[10px] text-muted-foreground mt-1">Limite ~200k caracteres. PDF: converta para texto antes de colar.</p>
+
+            {/* Tabs file / text */}
+            <div className="flex gap-1 border-b pb-2">
+              <button
+                type="button"
+                onClick={() => setUploadMode('file')}
+                className={`px-3 py-1 text-xs rounded-t ${uploadMode === 'file' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Upload de arquivo
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadMode('text')}
+                className={`px-3 py-1 text-xs rounded-t ${uploadMode === 'text' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Colar texto
+              </button>
             </div>
+
+            {uploadMode === 'file' ? (
+              <div className="space-y-2">
+                <Label className="text-xs">Arquivo (PDF ou TXT)</Label>
+                <Input
+                  type="file"
+                  accept=".pdf,.txt,.text"
+                  className="text-xs"
+                  onChange={e => {
+                    const f = e.target.files?.[0] ?? null
+                    setUploadFile(f)
+                    if (f && !titulo.trim()) {
+                      setTitulo(f.name.replace(/\.[^.]+$/, ''))
+                    }
+                  }}
+                />
+                {uploadFile && (
+                  <p className="text-[10px] text-muted-foreground">
+                    {uploadFile.name} — {(uploadFile.size / 1024).toFixed(0)} KB
+                  </p>
+                )}
+                <Alert className="py-2">
+                  <Info className="h-3 w-3" />
+                  <AlertDescription className="text-[11px]">
+                    PDFs com texto selecionável são extraídos automaticamente. PDFs escaneados (imagem) não funcionam — use a aba "Colar texto" nesses casos.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            ) : (
+              <div>
+                <Label className="text-xs">Texto do decreto</Label>
+                <Textarea className="text-xs h-56 font-mono" value={texto} onChange={e => setTexto(e.target.value)} placeholder="Cole o conteúdo aqui (ou o trecho que contém a lista de NCMs sujeitos a ST)..." />
+                <p className="text-[10px] text-muted-foreground mt-1">Limite ~200k caracteres.</p>
+              </div>
+            )}
+
             <DialogFooter>
               <Button variant="outline" size="sm" onClick={() => setUploadOpen(false)}>Cancelar</Button>
-              <Button size="sm" disabled={busy} onClick={uploadDecreto}>
+              <Button
+                size="sm"
+                disabled={busy || (uploadMode === 'file' ? !uploadFile : texto.trim().length < 50)}
+                onClick={uploadDecreto}
+              >
                 {busy ? 'Processando...' : 'Importar e interpretar'}
               </Button>
             </DialogFooter>
@@ -3495,8 +3570,7 @@ export default function IcmsFronteira() {
                 V.Prod × (alíq. interna − alíq. interestadual). Três blocos: meses anteriores
                 no SPED, mês atual no SPED, e XML não lançadas no SPED.
               </p>
-              <div className="flex items-center gap-2 mb-4 justify-end flex-wrap">
-                <ExportButtons regime="antecipacao" token={token} />
+              <div className="flex justify-end mb-2">
                 <RecalcularButton />
               </div>
               <NotasTabBlocos endpointSped="/api/icms-fronteira/antecipacao" regime="antecipacao" token={token} />
@@ -3518,8 +3592,7 @@ export default function IcmsFronteira() {
                 pois o MVA pode diferir por NCM e uma mesma NF pode ter itens de regimes distintos.
                 Três blocos: meses anteriores no SPED, mês atual no SPED, e XML não lançadas.
               </p>
-              <div className="flex items-center gap-2 mb-4 justify-end flex-wrap">
-                <ExportButtons regime="st" token={token} />
+              <div className="flex justify-end mb-2">
                 <RecalcularButton />
               </div>
               <NotasTabBlocos endpointSped="/api/icms-fronteira/st" regime="st" token={token} />
@@ -3541,8 +3614,7 @@ export default function IcmsFronteira() {
                 (2551, 2556). DIFAL = V.Prod × (alíq. interna − alíq. inter.). Três blocos:
                 meses anteriores no SPED, mês atual, e XML não lançadas.
               </p>
-              <div className="flex items-center gap-2 mb-4 justify-end flex-wrap">
-                <ExportButtons regime="difal" token={token} />
+              <div className="flex justify-end mb-2">
                 <RecalcularButton />
               </div>
               <NotasTabBlocos endpointSped="/api/icms-fronteira/difal" regime="difal" token={token} />

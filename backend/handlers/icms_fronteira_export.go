@@ -253,10 +253,11 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		sheetHeaders := exportCSVHeaders[1:]
 		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"}
 
-		type sheetDef struct{ key, name, fillColor string }
+		// ── Sheets B e A (SPED) ──────────────────────────────────────────────
+		type sheetDef struct{ key, name string; warn bool }
 		sheets := []sheetDef{
-			{"mes_atual", "B - Mês Atual", "D4EDDA"},
-			{"mes_anterior", "A - Mês Anterior", "FFF3CD"},
+			{"mes_atual", "B - Mês Atual", false},
+			{"mes_anterior", "A - Mês Anterior", true},
 		}
 
 		firstSheet := true
@@ -301,7 +302,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
 				f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
 				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.IcmsDevidoEst)
-				if sd.key == "mes_anterior" {
+				if sd.warn {
 					for _, c := range cols {
 						cell := fmt.Sprintf("%s%d", c, excelRow)
 						f.SetCellStyle(sheetName, cell, cell, warnStyle)
@@ -321,6 +322,51 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVBcST)
 			f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVST)
 			f.SetCellValue(sheetName, fmt.Sprintf("N%d", totalRow), totalIcmsDevido)
+		}
+
+		// ── Sheet C — XML não lançadas no SPED ───────────────────────────────
+		if periodo != "" && regime != "todos" {
+			regimeUpper := strings.ToUpper(regime)
+			cRows, err := fetchNaoSpedRows(db, companyID, periodo, regimeUpper)
+			if err != nil {
+				log.Printf("IcmsFronteiraExportXLSX nao-sped error: %v", err)
+			} else {
+				cSheet := "C - Não no SPED (XML)"
+				f.NewSheet(cSheet)
+				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "ICMS Est.", "Classificação"}
+				cCols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"}
+				for i, h := range cHeaders {
+					cell := fmt.Sprintf("%s1", cCols[i])
+					f.SetCellValue(cSheet, cell, h)
+					f.SetCellStyle(cSheet, cell, cell, headerStyle)
+				}
+				slateStyle, _ := f.NewStyle(&excelize.Style{
+					Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}},
+				})
+				var totalIcmsC float64
+				for rowIdx, row := range cRows {
+					er := rowIdx + 2
+					f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), row.DataEmissao)
+					f.SetCellValue(cSheet, fmt.Sprintf("B%d", er), row.NumeroNFe)
+					f.SetCellValue(cSheet, fmt.Sprintf("C%d", er), row.FornNome)
+					f.SetCellValue(cSheet, fmt.Sprintf("D%d", er), row.FornCNPJ)
+					f.SetCellValue(cSheet, fmt.Sprintf("E%d", er), row.FornUF)
+					f.SetCellValue(cSheet, fmt.Sprintf("F%d", er), row.CfopSaida)
+					f.SetCellValue(cSheet, fmt.Sprintf("G%d", er), row.Regime)
+					f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), row.VOpr)
+					f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), row.IcmsDevidoEst)
+					f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), row.ClassStatus)
+					for _, c := range cCols {
+						cell := fmt.Sprintf("%s%d", c, er)
+						f.SetCellStyle(cSheet, cell, cell, slateStyle)
+					}
+					totalIcmsC += row.IcmsDevidoEst
+				}
+				tr := len(cRows) + 2
+				f.SetCellValue(cSheet, fmt.Sprintf("A%d", tr), "TOTAL")
+				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", tr), fmt.Sprintf("J%d", tr), boldStyle)
+				f.SetCellValue(cSheet, fmt.Sprintf("I%d", tr), totalIcmsC)
+			}
 		}
 
 		var buf bytes.Buffer
