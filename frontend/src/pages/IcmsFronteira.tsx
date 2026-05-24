@@ -616,6 +616,186 @@ function EmptyState() {
 }
 
 // ---------------------------------------------------------------------------
+// Reconciliação SPED × XML — notas sobrando e faltando
+// ---------------------------------------------------------------------------
+interface ReconNota {
+  chave_nfe: string
+  data_emissao: string
+  data_entrada: string
+  numero_nfe: string
+  forn_cnpj: string
+  forn_nome: string
+  forn_uf: string
+  cfop: string
+  cfop_entrada: string
+  regime: string
+  v_opr: number
+  icms_devido_est: number
+  origem: string
+  alerta?: string
+}
+interface ReconBlock { rows: ReconNota[]; total: number; count: number }
+interface ReconResponse {
+  periodo: string
+  normal: ReconBlock
+  emitida_mes_anterior: ReconBlock
+  nao_localizada_sped: ReconBlock
+}
+
+function ReconBlockTable({ block, showCfopMap }: { block: ReconBlock; showCfopMap?: boolean }) {
+  if (!block.rows.length) {
+    return <p className="text-xs text-muted-foreground py-4">Nenhuma nota neste bloco.</p>
+  }
+  return (
+    <div className="rounded-md border overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="text-xs">Emissão</TableHead>
+            <TableHead className="text-xs">NF</TableHead>
+            <TableHead className="text-xs">Fornecedor</TableHead>
+            <TableHead className="text-xs">UF</TableHead>
+            {showCfopMap
+              ? <TableHead className="text-xs">CFOP saída→entrada</TableHead>
+              : <TableHead className="text-xs">CFOP</TableHead>}
+            <TableHead className="text-xs">Regime</TableHead>
+            <TableHead className="text-xs text-right">V. Operação</TableHead>
+            <TableHead className="text-xs text-right">ICMS estimado</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {block.rows.map((r, i) => (
+            <TableRow key={`${r.chave_nfe}-${i}`}>
+              <TableCell className="text-xs">{r.data_emissao ? r.data_emissao.slice(0, 10) : '—'}</TableCell>
+              <TableCell className="text-xs">{r.numero_nfe || '—'}</TableCell>
+              <TableCell className="text-xs">{r.forn_nome || formatCNPJ(r.forn_cnpj)}</TableCell>
+              <TableCell className="text-xs">{r.forn_uf || '—'}</TableCell>
+              <TableCell className="text-xs tabular-nums">
+                {showCfopMap ? `${r.cfop} → ${r.cfop_entrada}` : r.cfop}
+              </TableCell>
+              <TableCell className="text-xs"><RegimeBadge regime={r.regime} /></TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(r.v_opr)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(r.icms_devido_est)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function ReconciliacaoTab({ token }: { token: string | null }) {
+  const [monthInput, setMonthInput] = useState('')
+  const periodo = monthToPeriodo(monthInput)
+
+  const { data, isLoading, error } = useQuery<ReconResponse>({
+    queryKey: ['icms-fronteira/reconciliacao', periodo],
+    queryFn: async () => {
+      const res = await fetch(`/api/icms-fronteira/reconciliacao?periodo=${encodeURIComponent(periodo)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Erro ao carregar reconciliação')
+      return res.json()
+    },
+    enabled: !!token && !!periodo,
+  })
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <ArrowLeftRight className="h-4 w-4 text-teal-600" />
+          Reconciliação SPED × XML (notas sobrando e faltando)
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs text-muted-foreground mb-4">
+          O ICMS antecipado é devido pela <strong>data de emissão</strong>, mas o SPED registra por
+          recebimento. Informe o <strong>mês de análise (MM/YYYY)</strong> para segregar as notas em
+          três blocos.
+        </p>
+        <div className="flex items-center gap-2 mb-4">
+          <Label htmlFor="recon-periodo" className="text-xs whitespace-nowrap">Mês de análise:</Label>
+          <Input
+            id="recon-periodo"
+            type="month"
+            value={monthInput}
+            onChange={e => setMonthInput(e.target.value)}
+            className="w-40 h-8 text-xs"
+          />
+          {periodo && <span className="text-xs text-muted-foreground">{periodo}</span>}
+        </div>
+
+        {!periodo && (
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            Selecione o mês de análise para gerar a reconciliação.
+          </p>
+        )}
+        {periodo && isLoading && <p className="text-sm text-muted-foreground py-6">Carregando...</p>}
+        {periodo && error && (
+          <Alert variant="destructive"><AlertDescription>Erro ao carregar reconciliação.</AlertDescription></Alert>
+        )}
+
+        {periodo && data && (
+          <div className="space-y-6">
+            {/* Bloco 1 — Normal */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Normal</Badge>
+                  Emitidas no mês e presentes no SPED ({data.normal.count})
+                </h3>
+                <span className="text-xs font-semibold">ICMS: {fmtBRL(data.normal.total)}</span>
+              </div>
+              <ReconBlockTable block={data.normal} />
+            </div>
+
+            {/* Bloco 2 — Emitida mês anterior */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Sobrando</Badge>
+                  Emitidas em mês anterior — verificar recolhimento ({data.emitida_mes_anterior.count})
+                </h3>
+                <span className="text-xs font-semibold">ICMS: {fmtBRL(data.emitida_mes_anterior.total)}</span>
+              </div>
+              <Alert className="mb-2">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription className="text-xs">
+                  Estas notas entraram no SPED deste mês mas foram emitidas antes. O ICMS antecipado
+                  provavelmente já foi recolhido no mês de emissão — <strong>verificar</strong> antes de recolher novamente.
+                </AlertDescription>
+              </Alert>
+              <ReconBlockTable block={data.emitida_mes_anterior} />
+            </div>
+
+            {/* Bloco 3 — Não localizada no SPED */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Faltando</Badge>
+                  Não localizadas no SPED — do XML ({data.nao_localizada_sped.count})
+                </h3>
+                <span className="text-xs font-semibold">ICMS: {fmtBRL(data.nao_localizada_sped.total)}</span>
+              </div>
+              <Alert className="mb-2">
+                <Info className="h-4 w-4" />
+                <AlertDescription className="text-xs">
+                  Notas emitidas no mês, presentes nos XMLs mas ausentes do SPED. Classificadas
+                  automaticamente pelo CFOP de saída do fornecedor (6xxx→2xxx). ICMS é
+                  <strong> estimado</strong> — validar a classificação com o contador antes de incluir no cálculo oficial.
+                </AlertDescription>
+              </Alert>
+              <ReconBlockTable block={data.nao_localizada_sped} showCfopMap />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Regras NCM tab
 // ---------------------------------------------------------------------------
 function RegrasTab({ token }: { token: string | null }) {
@@ -2257,6 +2437,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/difal':        'difal',
     '/icms-fronteira/planilha':     'planilha',
     '/icms-fronteira/divergencias': 'divergencias',
+    '/icms-fronteira/reconciliacao': 'reconciliacao',
     '/icms-fronteira/regras':       'regras',
     '/icms-fronteira/extrato':      'extrato',
     '/icms-fronteira/contestacoes': 'contestacoes',
@@ -2269,6 +2450,7 @@ export default function IcmsFronteira() {
     difal:         '/icms-fronteira/difal',
     planilha:      '/icms-fronteira/planilha',
     divergencias:  '/icms-fronteira/divergencias',
+    reconciliacao: '/icms-fronteira/reconciliacao',
     regras:        '/icms-fronteira/regras',
     extrato:       '/icms-fronteira/extrato',
     contestacoes:  '/icms-fronteira/contestacoes',
@@ -2327,6 +2509,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="difal">DIFAL</TabsTrigger>
           <TabsTrigger value="planilha">Planilha</TabsTrigger>
           <TabsTrigger value="divergencias">Divergências</TabsTrigger>
+          <TabsTrigger value="reconciliacao">Reconciliação</TabsTrigger>
           <TabsTrigger value="apuracao">Apuração Mensal</TabsTrigger>
           <TabsTrigger value="regras">Regras NCM</TabsTrigger>
           <TabsTrigger value="extrato">Extrato SEFAZ</TabsTrigger>
@@ -2437,6 +2620,10 @@ export default function IcmsFronteira() {
               <PlanilhaTab token={token} />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="reconciliacao" className="mt-6">
+          <ReconciliacaoTab token={token} />
         </TabsContent>
 
         <TabsContent value="apuracao" className="mt-6">

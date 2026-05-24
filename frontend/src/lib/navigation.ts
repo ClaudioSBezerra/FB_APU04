@@ -66,6 +66,7 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Regras NCM',           path: '/icms-fronteira/regras' },
       { label: 'Planilha de Itens',    path: '/icms-fronteira/planilha' },
       { label: 'Divergências',         path: '/icms-fronteira/divergencias' },
+      { label: 'Reconciliação',        path: '/icms-fronteira/reconciliacao' },
       { label: 'Apuração Mensal',      path: '/icms-fronteira/apuracao' },
       { label: 'Extrato SEFAZ',        path: '/icms-fronteira/extrato' },
       { label: 'Contestações',         path: '/icms-fronteira/contestacoes' },
