@@ -236,11 +236,14 @@ function fmtPct(v: number | null | undefined): string {
   return v.toFixed(1) + '%'
 }
 
-// Converts <input type="month"> value (YYYY-MM) to API format MM/YYYY
+// Normaliza o período para MM/YYYY. Aceita MM/YYYY (digitado direto) e o legado
+// YYYY-MM do <input type="month">. Retorna '' se inválido (não dispara query).
 function monthToPeriodo(m: string): string {
   if (!m) return ''
-  const [y, mo] = m.split('-')
-  return `${mo}/${y}`
+  const s = m.trim()
+  if (/^\d{2}\/\d{4}$/.test(s)) return s
+  const [y, mo] = s.split('-')
+  return mo && y ? `${mo}/${y}` : ''
 }
 
 function formatCNPJ(cnpj: string): string {
@@ -414,7 +417,9 @@ function ResumoTab({ token }: { token: string | null }) {
           <Label htmlFor="resumo-periodo" className="text-xs whitespace-nowrap">Período:</Label>
           <Input
             id="resumo-periodo"
-            type="month"
+            type="text"
+            placeholder="MM/AAAA"
+            maxLength={7}
             className="w-36 text-xs h-8"
             value={monthInput}
             onChange={(e) => setMonthInput(e.target.value)}
@@ -522,7 +527,9 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
         <Label htmlFor={`notas-periodo-${regime}`} className="text-xs whitespace-nowrap">Período:</Label>
         <Input
           id={`notas-periodo-${regime}`}
-          type="month"
+          type="text"
+          placeholder="MM/AAAA"
+          maxLength={7}
           className="w-36 text-xs h-8"
           value={monthInput}
           onChange={(e) => setMonthInput(e.target.value)}
@@ -718,7 +725,9 @@ function ReconciliacaoTab({ token }: { token: string | null }) {
           <Label htmlFor="recon-periodo" className="text-xs whitespace-nowrap">Mês de análise:</Label>
           <Input
             id="recon-periodo"
-            type="month"
+            type="text"
+            placeholder="MM/AAAA"
+            maxLength={7}
             value={monthInput}
             onChange={e => setMonthInput(e.target.value)}
             className="w-40 h-8 text-xs"
@@ -1149,8 +1158,10 @@ function ExtratoTab({ token }: { token: string | null }) {
 
   function monthToPeriodo(m: string): string {
     if (!m) return ''
-    const [y, mo] = m.split('-')
-    return `${mo}/${y}`
+    const s = m.trim()
+    if (/^\d{2}\/\d{4}$/.test(s)) return s
+    const [y, mo] = s.split('-')
+    return mo && y ? `${mo}/${y}` : ''
   }
 
   const periodo = monthToPeriodo(monthInput)
@@ -1257,7 +1268,9 @@ function ExtratoTab({ token }: { token: string | null }) {
         <div className="flex items-center gap-1.5">
           <Label className="text-xs whitespace-nowrap">Período:</Label>
           <Input
-            type="month"
+            type="text"
+            placeholder="MM/AAAA"
+            maxLength={7}
             value={monthInput}
             onChange={(e) => setMonthInput(e.target.value)}
             className="w-40 text-xs"
@@ -1749,8 +1762,10 @@ function DivergenciasTab({ token }: { token: string | null }) {
 
   function monthToPeriodo(m: string): string {
     if (!m) return ''
-    const [y, mo] = m.split('-')
-    return `${mo}/${y}`
+    const s = m.trim()
+    if (/^\d{2}\/\d{4}$/.test(s)) return s
+    const [y, mo] = s.split('-')
+    return mo && y ? `${mo}/${y}` : ''
   }
 
   const periodo = monthToPeriodo(monthInput)
@@ -1815,7 +1830,9 @@ function DivergenciasTab({ token }: { token: string | null }) {
         <div className="flex items-center gap-1.5">
           <Label className="text-xs whitespace-nowrap">Período:</Label>
           <Input
-            type="month"
+            type="text"
+            placeholder="MM/AAAA"
+            maxLength={7}
             value={monthInput}
             onChange={(e) => setMonthInput(e.target.value)}
             className="w-40 text-xs"
@@ -2072,7 +2089,9 @@ function PlanilhaTab({ token }: { token: string | null }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-muted-foreground whitespace-nowrap">Período:</span>
           <Input
-            type="month"
+            type="text"
+            placeholder="MM/AAAA"
+            maxLength={7}
             className="w-36 text-xs h-8"
             value={monthInput}
             onChange={(e) => setMonthInput(e.target.value)}
