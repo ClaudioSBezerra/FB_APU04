@@ -250,15 +250,23 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
 			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"4472C4"}},
 		})
-		boldStyle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
-		warnStyle, _ := f.NewStyle(&excelize.Style{
-			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}},
-		})
+		// Formato monetário BR — "R$ #,##0.00" — e número 2 casas para alíquotas
+		moneyFmt := `"R$" #,##0.00`
+		numFmt   := `#,##0.00`
+
+		boldStyle, _      := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+		moneyBoldStyle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}, CustomNumFmt: &moneyFmt})
+		moneyStyle, _     := f.NewStyle(&excelize.Style{CustomNumFmt: &moneyFmt})
+		numStyle, _       := f.NewStyle(&excelize.Style{CustomNumFmt: &numFmt})
+
+		warnStyle, _      := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}}})
+		moneyWarnStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}}, CustomNumFmt: &moneyFmt})
+		numWarnStyle, _   := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}}, CustomNumFmt: &numFmt})
+
 		// CT-e rows: fundo verde-claro para distinguir da NF
-		cteStyle, _ := f.NewStyle(&excelize.Style{
-			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}},
-			Font: &excelize.Font{Italic: true},
-		})
+		cteStyle, _      := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}})
+		moneyCteStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}, CustomNumFmt: &moneyFmt})
+		numCteStyle, _   := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}, CustomNumFmt: &numFmt})
 
 		// exportCSVHeaders[0] = "Bloco", drop it (already separated by sheet)
 		sheetHeaders := exportCSVHeaders[1:]
@@ -329,11 +337,25 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.IcmsDevidoEst)
 				f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.ChaveNFe)
 				f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), "")
+				// Aplica estilos por tipo de coluna
+				textStyle := 0
+				mStyle := moneyStyle
+				nStyle := numStyle
 				if sd.warn {
-					for _, c := range cols {
-						cell := fmt.Sprintf("%s%d", c, excelRow)
-						f.SetCellStyle(sheetName, cell, cell, warnStyle)
+					textStyle = warnStyle
+					mStyle = moneyWarnStyle
+					nStyle = numWarnStyle
+				}
+				if textStyle > 0 {
+					for _, c := range []string{"A","B","C","D","E","F","G","O","P"} {
+						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), textStyle)
 					}
+				}
+				for _, c := range []string{"H","I","J","K","N"} {
+					f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), mStyle)
+				}
+				for _, c := range []string{"L","M"} {
+					f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), nStyle)
 				}
 				totalVProd += row.VProd
 				totalVIcms += row.VIcms
@@ -365,9 +387,14 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), cte.IcmsFronteira)
 					f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.ChaveNFe)
 					f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), cte.ChaveCTe)
-					for _, c := range cols {
-						cell := fmt.Sprintf("%s%d", c, excelRow)
-						f.SetCellStyle(sheetName, cell, cell, cteStyle)
+					for _, c := range []string{"A","B","C","D","E","F","G","O","P"} {
+						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), cteStyle)
+					}
+					for _, c := range []string{"H","I","J","K","N"} {
+						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), moneyCteStyle)
+					}
+					for _, c := range []string{"L","M"} {
+						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), numCteStyle)
 					}
 					totalVProd += cte.VPrest
 					totalVIcms += cte.VIcmsCTe
@@ -380,6 +407,10 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("N%d", totalRow), boldStyle)
 			f.SetCellValue(sheetName, fmt.Sprintf("H%d", totalRow), totalVProd)
 			f.SetCellValue(sheetName, fmt.Sprintf("I%d", totalRow), totalVIcms)
+			// Aplica formato monetário nas células TOTAL (mantém bold)
+			for _, c := range []string{"H","I","J","K","N"} {
+				f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, totalRow), fmt.Sprintf("%s%d", c, totalRow), moneyBoldStyle)
+			}
 			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVBcST)
 			f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVST)
 			f.SetCellValue(sheetName, fmt.Sprintf("N%d", totalRow), totalIcmsDevido)
@@ -408,13 +439,10 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(cSheet, cell, h)
 					f.SetCellStyle(cSheet, cell, cell, headerStyle)
 				}
-				slateStyle, _ := f.NewStyle(&excelize.Style{
-					Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}},
-				})
-				cteRowStyle, _ := f.NewStyle(&excelize.Style{
-					Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}},
-					Font: &excelize.Font{Italic: true},
-				})
+				slateStyle, _      := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}}})
+				moneySlateStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}}, CustomNumFmt: &moneyFmt})
+				cteRowStyle, _     := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}})
+				moneyCteRowStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}, CustomNumFmt: &moneyFmt})
 				var totalIcmsC float64
 				er := 2
 				for _, row := range cRows {
@@ -430,9 +458,11 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), row.IcmsDevidoEst)
 					f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), row.ClassStatus)
 					f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ChaveNFe)
-					for _, c := range cCols {
-						cell := fmt.Sprintf("%s%d", c, er)
-						f.SetCellStyle(cSheet, cell, cell, slateStyle)
+					for _, c := range []string{"A","B","C","D","E","F","G","J","K","L"} {
+						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), slateStyle)
+					}
+					for _, c := range []string{"H","I"} {
+						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneySlateStyle)
 					}
 					totalIcmsC += row.IcmsDevidoEst
 					er++
@@ -452,9 +482,11 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 						f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), "")
 						f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ChaveNFe)
 						f.SetCellValue(cSheet, fmt.Sprintf("L%d", er), cte.ChaveCTe)
-						for _, c := range cCols {
-							cell := fmt.Sprintf("%s%d", c, er)
-							f.SetCellStyle(cSheet, cell, cell, cteRowStyle)
+						for _, c := range []string{"A","B","C","D","E","F","G","J","K","L"} {
+							f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), cteRowStyle)
+						}
+						for _, c := range []string{"H","I"} {
+							f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneyCteRowStyle)
 						}
 						er++
 					}
@@ -462,6 +494,10 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), "TOTAL")
 				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", er), fmt.Sprintf("L%d", er), boldStyle)
 				f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), totalIcmsC)
+				// Aplica moeda+bold nas colunas H e I do TOTAL
+				for _, c := range []string{"H","I"} {
+					f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneyBoldStyle)
+				}
 			}
 		}
 
