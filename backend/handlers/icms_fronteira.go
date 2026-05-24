@@ -134,10 +134,11 @@ WITH classified AS (
                 THEN 'ANTECIPACAO'
         END                                                 AS regime,
         -- ICMS devido estimado por regime (cálculo provisório; BC completa no Bloco 2)
+        -- G4: BC inclui v_frete (frete CIF) + v_outro além do v_prod
         CASE
             WHEN ne.cfop IN ('2551','2556')
                 THEN GREATEST(0,
-                    COALESCE(ne.v_prod, 0) * (
+                    (COALESCE(ne.v_prod, 0) + COALESCE(ne.v_frete, 0) + COALESCE(ne.v_outro, 0)) * (
                         COALESCE(regra.aliquota_interna, 20.5) -
                         CASE
                             WHEN ne.cst_orig_pred IN ('1','2','3','6','7','8') THEN 4.0
@@ -149,7 +150,7 @@ WITH classified AS (
                 THEN COALESCE(ne.v_st, 0)
             WHEN ne.cfop IN ('2101','2102','2152')
                 THEN GREATEST(0,
-                    COALESCE(ne.v_prod, 0) * (
+                    (COALESCE(ne.v_prod, 0) + COALESCE(ne.v_frete, 0) + COALESCE(ne.v_outro, 0)) * (
                         COALESCE(regra.aliquota_interna, 20.5) -
                         CASE
                             WHEN ne.cst_orig_pred IN ('1','2','3','6','7','8') THEN 4.0
@@ -171,6 +172,7 @@ WITH classified AS (
         SELECT r.aliquota_interna
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
+          AND r.uf_estado = COALESCE(ne.dest_uf, 'PE')
           AND top_item.ncm IS NOT NULL
           AND LEFT(top_item.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC

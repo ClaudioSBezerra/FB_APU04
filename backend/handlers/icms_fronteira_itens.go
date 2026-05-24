@@ -82,6 +82,12 @@ WITH base AS (
             THEN ROUND(COALESCE(ne.v_outro, 0) * COALESCE(nii.v_prod, 0) / ne.v_prod, 2)
             ELSE 0
         END                                                             AS v_outro_rateado,
+        -- G4: frete CIF rateado proporcional ao valor do produto
+        CASE
+            WHEN COALESCE(ne.v_prod, 0) > 0
+            THEN ROUND(COALESCE(ne.v_frete, 0) * COALESCE(nii.v_prod, 0) / ne.v_prod, 2)
+            ELSE 0
+        END                                                             AS v_frete_rateado,
         COALESCE(nii.v_icms, 0)                                         AS v_icms_item,
         CASE
             WHEN COALESCE(nii.cst_orig, ne.cst_orig_pred) IN ('1','2','3','6','7','8') THEN 4.0
@@ -90,6 +96,12 @@ WITH base AS (
         END                                                             AS aliq_inter,
         COALESCE(regra.aliquota_interna, 20.5)                          AS aliq_interna,
         regra.mva_original                                               AS mva_original,
+        -- G2: MVA ajustado pelas alíquotas pré-calculadas + fallback Convênio ICMS 110/07
+        regra.mva_ajustado_4pct                                          AS mva_aj_4pct,
+        regra.mva_ajustado_7pct                                          AS mva_aj_7pct,
+        regra.mva_ajustado_12pct                                         AS mva_aj_12pct,
+        -- G3: redução de BC (ex.: medicamentos)
+        COALESCE(regra.reducao_bc_pct, 0)                                AS reducao_bc_pct,
         COALESCE(ne.v_prod, 0)                                          AS v_prod_nf_total,
         COALESCE(ne.v_st, 0)                                            AS v_st_nf_total,
         COALESCE(ne.forn_uf, '')                                        AS forn_uf_raw
@@ -97,9 +109,13 @@ WITH base AS (
     INNER JOIN nfe_entradas_itens nii ON nii.nfe_id = ne.id
     LEFT JOIN forn_simples fs ON fs.cnpj = ne.forn_cnpj
     LEFT JOIN LATERAL (
-        SELECT r.aliquota_interna, r.mva_original
+        -- G1: filtro por uf_estado evita aplicar regra de PE em nota destinada à BA/CE
+        SELECT r.aliquota_interna, r.mva_original,
+               r.mva_ajustado_4pct, r.mva_ajustado_7pct, r.mva_ajustado_12pct,
+               r.reducao_bc_pct
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
+          AND r.uf_estado = COALESCE(ne.dest_uf, 'PE')
           AND nii.ncm IS NOT NULL
           AND LEFT(nii.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
@@ -119,21 +135,62 @@ WITH base AS (
         chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
         forn_simples, cfop, regime,
         n_item, c_prod, x_prod, ncm, cest,
-        v_prod_item, v_ipi_item, v_outro_rateado,
-        (v_prod_item + v_ipi_item + v_outro_rateado)                    AS v_operacao,
+        v_prod_item, v_ipi_item, v_outro_rateado, v_frete_rateado,
+        -- G4: v_operacao agora inclui v_frete rateado
+        (v_prod_item + v_ipi_item + v_outro_rateado + v_frete_rateado)  AS v_operacao,
         v_icms_item, aliq_inter, aliq_interna, mva_original,
-        -- BC: PE antecipação usa preço presumido; BA/CE e DIFAL usam v_operacao direta
+        reducao_bc_pct,
+        -- G2: MVA efetivo: preferência por mva_ajustado pré-calculado; fallback fórmula Convênio 110/07; último fallback mva_original
+        COALESCE(
+            CASE
+                WHEN aliq_inter = 4.0  THEN mva_aj_4pct
+                WHEN aliq_inter = 7.0  THEN mva_aj_7pct
+                WHEN aliq_inter = 12.0 THEN mva_aj_12pct
+            END,
+            CASE WHEN mva_original IS NOT NULL AND aliq_interna < 100 THEN
+                ((1.0 + mva_original/100.0) * (1.0 - aliq_inter/100.0)
+                 / NULLIF(1.0 - aliq_interna/100.0, 0) - 1.0) * 100.0
+            END,
+            mva_original
+        )                                                                AS mva_efetivo,
+        -- BC: PE antecipação usa preço presumido (gross-up) APENAS quando fornecedor NÃO é Simples Nacional (G5).
+        -- BA/CE, DIFAL e Simples Nacional usam v_operacao direta. G3: aplicar redução de BC sobre o resultado.
         CASE
-            WHEN regime = 'ANTECIPACAO' AND forn_uf_raw NOT IN ('BA','CE')
+            WHEN regime = 'ANTECIPACAO' AND forn_uf_raw NOT IN ('BA','CE') AND NOT forn_simples
                 THEN GREATEST(0,
-                    (v_prod_item + v_ipi_item + v_outro_rateado - v_icms_item)
+                    (v_prod_item + v_ipi_item + v_outro_rateado + v_frete_rateado - v_icms_item)
                     / NULLIF(1.0 - aliq_interna / 100.0, 0))
-            ELSE (v_prod_item + v_ipi_item + v_outro_rateado)
+                    * (1.0 - reducao_bc_pct/100.0)
+            ELSE (v_prod_item + v_ipi_item + v_outro_rateado + v_frete_rateado)
+                 * (1.0 - reducao_bc_pct/100.0)
         END                                                             AS bc,
-        -- BC-ST via MVA: base presumida de varejo para substituição tributária
+        -- BC-ST via MVA efetivo: base presumida de varejo para substituição tributária (G2 + G3 + G4)
         CASE
-            WHEN regime = 'ST' AND mva_original IS NOT NULL
-                THEN ROUND((v_prod_item + v_ipi_item + v_outro_rateado) * (1.0 + mva_original/100.0), 2)
+            WHEN regime = 'ST' AND COALESCE(
+                CASE WHEN aliq_inter = 4.0  THEN mva_aj_4pct
+                     WHEN aliq_inter = 7.0  THEN mva_aj_7pct
+                     WHEN aliq_inter = 12.0 THEN mva_aj_12pct
+                END,
+                CASE WHEN mva_original IS NOT NULL AND aliq_interna < 100 THEN
+                    ((1.0 + mva_original/100.0) * (1.0 - aliq_inter/100.0)
+                     / NULLIF(1.0 - aliq_interna/100.0, 0) - 1.0) * 100.0
+                END,
+                mva_original
+            ) IS NOT NULL
+                THEN ROUND(
+                    (v_prod_item + v_ipi_item + v_outro_rateado + v_frete_rateado)
+                    * (1.0 + COALESCE(
+                        CASE WHEN aliq_inter = 4.0  THEN mva_aj_4pct
+                             WHEN aliq_inter = 7.0  THEN mva_aj_7pct
+                             WHEN aliq_inter = 12.0 THEN mva_aj_12pct
+                        END,
+                        CASE WHEN mva_original IS NOT NULL AND aliq_interna < 100 THEN
+                            ((1.0 + mva_original/100.0) * (1.0 - aliq_inter/100.0)
+                             / NULLIF(1.0 - aliq_interna/100.0, 0) - 1.0) * 100.0
+                        END,
+                        mva_original
+                    )/100.0)
+                    * (1.0 - reducao_bc_pct/100.0), 2)
             ELSE 0
         END                                                             AS bc_st,
         CASE
@@ -150,7 +207,7 @@ SELECT
     v_prod_item, v_ipi_item, v_outro_rateado, v_operacao, v_icms_item,
     aliq_inter, aliq_interna, bc,
     CASE
-        WHEN regime = 'ST' AND mva_original IS NOT NULL
+        WHEN regime = 'ST' AND mva_efetivo IS NOT NULL
             THEN GREATEST(0, ROUND(bc_st * aliq_interna/100.0 - v_operacao * aliq_inter/100.0, 2))
         WHEN regime = 'ST' THEN icms_retido
         ELSE GREATEST(0, bc * (aliq_interna - aliq_inter) / 100.0)

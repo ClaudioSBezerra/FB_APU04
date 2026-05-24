@@ -53,7 +53,9 @@ type DivergenciasResponse struct {
 //   NAO_COBRADO     — NF no sistema sem lançamento no extrato
 //   OK              — diferença < R$ 0,05 (tolerância de arredondamento)
 const divergenciasQueryBody = `
-WITH item_icms AS (
+WITH item_base AS (
+    -- Pré-calcula campos comuns (rateios, alíquotas, MVA efetivo, redução BC) para evitar
+    -- duplicação de CASEs gigantes no SELECT final. G1+G2+G3+G4+G5 ficam centralizados aqui.
     SELECT
         ne.chave_nfe,
         ne.data_emissao,
@@ -67,61 +69,41 @@ WITH item_icms AS (
             WHEN ne.cfop IN ('2403','2409','2651','2652') THEN 'ST'
             WHEN ne.cfop IN ('2101','2102','2152')        THEN 'ANTECIPACAO'
         END                            AS regime,
-        -- icms_calculado por item
+        COALESCE(nii.v_prod, 0)        AS v_prod_item,
+        COALESCE(nii.v_ipi, 0)         AS v_ipi_item,
+        COALESCE(nii.v_icms, 0)        AS v_icms_item,
+        -- G4: rateio de v_outro e v_frete por valor do produto
+        CASE WHEN COALESCE(ne.v_prod, 0) > 0
+            THEN ROUND(COALESCE(ne.v_outro, 0) * COALESCE(nii.v_prod, 0) / ne.v_prod, 2)
+            ELSE 0
+        END                            AS v_outro_rateado,
+        CASE WHEN COALESCE(ne.v_prod, 0) > 0
+            THEN ROUND(COALESCE(ne.v_frete, 0) * COALESCE(nii.v_prod, 0) / ne.v_prod, 2)
+            ELSE 0
+        END                            AS v_frete_rateado,
         CASE
-            WHEN ne.cfop IN ('2403','2409','2651','2652') THEN
-                CASE WHEN regra.mva_original IS NOT NULL THEN
-                    -- GAP 4: BC-ST = v_operacao * (1 + MVA/100); ICMS-ST = BC-ST * aliq_int - ICMS próprio
-                    GREATEST(0, ROUND(
-                        ( COALESCE(nii.v_prod,0) + COALESCE(nii.v_ipi,0)
-                          + CASE WHEN COALESCE(ne.v_prod,0) > 0
-                                 THEN COALESCE(ne.v_outro,0) * COALESCE(nii.v_prod,0) / ne.v_prod
-                                 ELSE 0 END )
-                        * (1.0 + regra.mva_original/100.0)
-                        * COALESCE(regra.aliquota_interna, 20.5)/100.0
-                        - ( COALESCE(nii.v_prod,0) + COALESCE(nii.v_ipi,0)
-                            + CASE WHEN COALESCE(ne.v_prod,0) > 0
-                                   THEN COALESCE(ne.v_outro,0) * COALESCE(nii.v_prod,0) / ne.v_prod
-                                   ELSE 0 END )
-                        * CASE WHEN COALESCE(nii.cst_orig, ne.cst_orig_pred) IN ('1','2','3','6','7','8') THEN 4.0
-                               WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
-                               ELSE 12.0 END
-                        / 100.0, 2))
-                WHEN COALESCE(ne.v_prod, 0) > 0
-                    THEN ne.v_st * COALESCE(nii.v_prod, 0) / ne.v_prod
-                ELSE 0 END
-            WHEN ne.cfop IN ('2101','2102','2152') AND COALESCE(ne.forn_uf,'') NOT IN ('BA','CE') THEN
-                GREATEST(0,
-                    GREATEST(0,
-                        ( COALESCE(nii.v_prod,0) + COALESCE(nii.v_ipi,0)
-                          + CASE WHEN COALESCE(ne.v_prod,0) > 0
-                                 THEN COALESCE(ne.v_outro,0) * COALESCE(nii.v_prod,0) / ne.v_prod
-                                 ELSE 0 END
-                          - COALESCE(nii.v_icms,0) )
-                        / NULLIF(1.0 - COALESCE(regra.aliquota_interna, 20.5) / 100.0, 0))
-                    * ( COALESCE(regra.aliquota_interna, 20.5)
-                        - CASE WHEN COALESCE(nii.cst_orig, ne.cst_orig_pred) IN ('1','2','3','6','7','8') THEN 4.0
-                               WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
-                               ELSE 12.0 END )
-                    / 100.0)
-            ELSE
-                GREATEST(0,
-                    ( COALESCE(nii.v_prod,0) + COALESCE(nii.v_ipi,0)
-                      + CASE WHEN COALESCE(ne.v_prod,0) > 0
-                             THEN COALESCE(ne.v_outro,0) * COALESCE(nii.v_prod,0) / ne.v_prod
-                             ELSE 0 END )
-                    * ( COALESCE(regra.aliquota_interna, 20.5)
-                        - CASE WHEN COALESCE(nii.cst_orig, ne.cst_orig_pred) IN ('1','2','3','6','7','8') THEN 4.0
-                               WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
-                               ELSE 12.0 END )
-                    / 100.0)
-        END AS icms_item
+            WHEN COALESCE(nii.cst_orig, ne.cst_orig_pred) IN ('1','2','3','6','7','8') THEN 4.0
+            WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP'])                THEN 7.0
+            ELSE 12.0
+        END                            AS aliq_inter,
+        COALESCE(regra.aliquota_interna, 20.5)  AS aliq_interna,
+        regra.mva_original,
+        regra.mva_ajustado_4pct, regra.mva_ajustado_7pct, regra.mva_ajustado_12pct,
+        COALESCE(regra.reducao_bc_pct, 0)       AS reducao_bc_pct,
+        (fs.cnpj IS NOT NULL)                   AS forn_simples,
+        COALESCE(ne.v_prod, 0)                  AS v_prod_nf_total,
+        COALESCE(ne.v_st, 0)                    AS v_st_nf_total
     FROM nfe_entradas ne
     INNER JOIN nfe_entradas_itens nii ON nii.nfe_id = ne.id
+    LEFT JOIN forn_simples fs ON fs.cnpj = ne.forn_cnpj
     LEFT JOIN LATERAL (
-        SELECT r.aliquota_interna, r.mva_original
+        -- G1: filtrar pela UF de destino da nota — evita aplicar regra de PE em BA/CE
+        SELECT r.aliquota_interna, r.mva_original,
+               r.mva_ajustado_4pct, r.mva_ajustado_7pct, r.mva_ajustado_12pct,
+               r.reducao_bc_pct
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
+          AND r.uf_estado = COALESCE(ne.dest_uf, 'PE')
           AND nii.ncm IS NOT NULL
           AND LEFT(nii.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
@@ -135,6 +117,60 @@ WITH item_icms AS (
           EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
           AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',2)::int
       ))
+), item_icms AS (
+    SELECT
+        chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf, cfop, regime,
+        -- G2: MVA efetivo (pré-calculado ou Convênio 110/07 ou original)
+        COALESCE(
+            CASE WHEN aliq_inter = 4.0  THEN mva_ajustado_4pct
+                 WHEN aliq_inter = 7.0  THEN mva_ajustado_7pct
+                 WHEN aliq_inter = 12.0 THEN mva_ajustado_12pct
+            END,
+            CASE WHEN mva_original IS NOT NULL AND aliq_interna < 100 THEN
+                ((1.0 + mva_original/100.0) * (1.0 - aliq_inter/100.0)
+                 / NULLIF(1.0 - aliq_interna/100.0, 0) - 1.0) * 100.0
+            END,
+            mva_original
+        )                                       AS mva_efetivo,
+        -- v_operacao com v_frete (G4)
+        (v_prod_item + v_ipi_item + v_outro_rateado + v_frete_rateado) AS v_operacao,
+        v_icms_item, aliq_inter, aliq_interna, reducao_bc_pct,
+        forn_simples, v_prod_nf_total, v_st_nf_total
+    FROM item_base
+), item_calc AS (
+    SELECT
+        chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf, cfop, regime,
+        -- ICMS por item conforme regime, aplicando G1/G2/G3/G4/G5
+        CASE
+            -- ST: usa MVA efetivo se disponível, senão rateia v_st da nota
+            WHEN regime = 'ST' AND mva_efetivo IS NOT NULL THEN
+                GREATEST(0, ROUND(
+                    v_operacao * (1.0 + mva_efetivo/100.0) * (1.0 - reducao_bc_pct/100.0)
+                    * aliq_interna/100.0
+                    - v_operacao * aliq_inter/100.0
+                , 2))
+            WHEN regime = 'ST' AND v_prod_nf_total > 0 THEN
+                ROUND(v_st_nf_total * v_prod_item / v_prod_nf_total, 2)
+            -- ANTECIPACAO PE (não Simples): gross-up sobre BC com redução
+            WHEN regime = 'ANTECIPACAO' AND forn_uf NOT IN ('BA','CE') AND NOT forn_simples THEN
+                GREATEST(0, ROUND(
+                    ((v_operacao - v_icms_item) / NULLIF(1.0 - aliq_interna/100.0, 0))
+                    * (1.0 - reducao_bc_pct/100.0)
+                    * (aliq_interna - aliq_inter) / 100.0
+                , 2))
+            -- DIFAL / Antecipação BA/CE / Antecipação de Simples: BC direta com redução
+            ELSE
+                GREATEST(0, ROUND(
+                    v_operacao * (1.0 - reducao_bc_pct/100.0)
+                    * (aliq_interna - aliq_inter) / 100.0
+                , 2))
+        END AS icms_item,
+        v_prod_item, v_prod_nf_total
+    FROM item_icms
+),
+item_icms_final AS (
+    SELECT chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf, cfop, regime, icms_item
+    FROM item_calc
 ),
 nf_calc AS (
     SELECT
@@ -147,7 +183,7 @@ nf_calc AS (
         MAX(cfop)                AS cfop,
         MAX(regime)              AS regime,
         ROUND(SUM(icms_item), 2) AS icms_calculado
-    FROM item_icms
+    FROM item_icms_final
     GROUP BY chave_nfe
 ),
 ext_data AS (
