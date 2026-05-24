@@ -43,7 +43,8 @@ WITH xml_falt AS (
         ne.id, ne.chave_nfe, ne.data_emissao, ne.forn_cnpj, ne.forn_nome,
         ne.forn_uf, ne.dest_uf, COALESCE(ne.numero_nfe,'') AS numero_nfe,
         COALESCE(ne.v_prod,0) AS v_prod, COALESCE(ne.v_frete,0) AS v_frete,
-        COALESCE(ne.v_outro,0) AS v_outro
+        COALESCE(ne.v_outro,0) AS v_outro,
+        COALESCE(ne.v_icms,0) AS v_icms   -- ICMS interestadual pago pelo fornecedor (<vICMS>)
     FROM nfe_entradas ne
     WHERE ne.company_id = $1
       AND EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
@@ -55,7 +56,8 @@ WITH xml_falt AS (
 ), top AS (
     SELECT DISTINCT ON (xf.id)
         xf.id, xf.chave_nfe, xf.data_emissao, xf.forn_cnpj, xf.forn_nome,
-        xf.forn_uf, xf.dest_uf, xf.numero_nfe, xf.v_prod, xf.v_frete, xf.v_outro,
+        xf.forn_uf, xf.dest_uf, xf.numero_nfe,
+        xf.v_prod, xf.v_frete, xf.v_outro, xf.v_icms,
         COALESCE(nii.cfop,'') AS cfop_saida, COALESCE(nii.ncm,'') AS ncm
     FROM xml_falt xf
     JOIN nfe_entradas_itens nii ON nii.nfe_id = xf.id
@@ -85,22 +87,25 @@ SELECT
     ) AS regime,
     COALESCE(cm.status, 'auto') AS class_status,
     (m.v_prod + m.v_frete + m.v_outro) AS v_opr,
+    -- Mesma lógica do Bloco B (fronteiraBaseQuery):
+    --   ANTECIPACAO/DIFAL: v_opr × aliq_interna% − v_icms_pago
+    --   ST: usa MVA com fallback igual ao Bloco B
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN
-            GREATEST(0, (m.v_prod+m.v_frete+m.v_outro)
-                * (COALESCE(regra.aliquota_interna,20.5)
-                   - CASE WHEN m.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0 ELSE 12.0 END)/100.0)
+            GREATEST(0,
+                (m.v_prod+m.v_frete+m.v_outro) * COALESCE(regra.aliquota_interna,20.5)/100.0
+                - m.v_icms)
         WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
-            GREATEST(0, (m.v_prod+m.v_frete+m.v_outro)
-                * (COALESCE(regra.aliquota_interna,20.5)
-                   - CASE WHEN m.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0 ELSE 12.0 END)/100.0)
+            GREATEST(0,
+                (m.v_prod+m.v_frete+m.v_outro) * COALESCE(regra.aliquota_interna,20.5)/100.0
+                - m.v_icms)
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
             CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
-                THEN GREATEST(0, (m.v_prod+m.v_frete+m.v_outro)
+                THEN GREATEST(0,
+                     (m.v_prod+m.v_frete+m.v_outro)
                      * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
                      * COALESCE(regra.aliquota_interna,20.5)/100.0
-                     - (m.v_prod+m.v_frete+m.v_outro)
-                       * CASE WHEN m.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0 ELSE 12.0 END/100.0)
+                     - m.v_icms)
                 ELSE 0 END
         ELSE 0
     END AS icms_devido_est
