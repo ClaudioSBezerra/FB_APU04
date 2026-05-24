@@ -64,8 +64,8 @@ func TestRowToCSVRecord_FieldCount(t *testing.T) {
 		AliqInter: 12, AliqInterna: 20.5, IcmsDevidoEst: 85,
 	}
 	rec := rowToCSVRecord(row)
-	if len(rec) != 15 {
-		t.Errorf("expected 15 CSV fields, got %d", len(rec))
+	if len(rec) != 17 {
+		t.Errorf("expected 17 CSV fields, got %d", len(rec))
 	}
 }
 

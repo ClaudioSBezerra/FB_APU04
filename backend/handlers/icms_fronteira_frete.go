@@ -147,12 +147,11 @@ func fetchFreteLinks(
 		rows2.Close()
 	}
 
-	// ── Camada 3: cte_entradas por CNPJ remetente + proximidade de data ────
-	// Quando não há D162 nem XML-CTE, usa o campo rem_cnpj_cpf de cte_entradas
-	// (remetente = o fornecedor da mercadoria) para cruzar com o participante
-	// da NF. Janela de ±10 dias absorve variações de emissão/chegada.
-	// Substitui o fallback D100 anterior que usava cod_part incorretamente
-	// (transportadora ≠ fornecedor → nunca produzia resultado).
+	// ── Camada 3: desativada temporariamente ─────────────────────────────────
+	// A heurística CNPJ remetente + ±10 dias produz falsos positivos em volume
+	// (ex: um CT-e de courier batendo dezenas de NF-es do mesmo fornecedor).
+	// Reativar quando houver critério de seleção mais preciso.
+	if false {
 	pendentes := []string{}
 	for chave := range nfParams {
 		if _, found := result[chave]; !found {
@@ -210,6 +209,7 @@ func fetchFreteLinks(
 			rows3.Close()
 		}
 	}
+	} // fim if false — Layer 3 desativada
 
 	return result
 }
