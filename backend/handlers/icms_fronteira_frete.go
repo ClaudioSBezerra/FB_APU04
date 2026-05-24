@@ -107,7 +107,14 @@ func fetchFreteLinks(
 	}
 
 	// ── Camada 2: XML do CT-e (cte_entradas_nfe_refs) ───────────────────────
-	// Referências de NF-e extraídas do XML do CT-e durante o upload.
+	// Filtra pelas chaves de NF-e que já estão em nfParams (NFs de fronteira do
+	// período). Não filtra por mes_ano do CT-e: um CT-e de maio pode transportar
+	// NFs de abril, o que importa é a NF-e, não a emissão do CT-e.
+	nfKeys := make([]string, 0, len(nfParams))
+	for k := range nfParams {
+		nfKeys = append(nfKeys, k)
+	}
+
 	const qXML = `
 		SELECT
 			ref.chave_nfe,
@@ -120,9 +127,9 @@ func fetchFreteLinks(
 		FROM cte_entradas_nfe_refs ref
 		JOIN cte_entradas ce ON ce.id = ref.cte_id
 		WHERE ref.company_id = $1
-		  AND ($2 = '' OR ce.mes_ano = $2)
+		  AND ref.chave_nfe = ANY($2::varchar[])
 	`
-	rows2, err := db.Query(qXML, companyID, periodo)
+	rows2, err := db.Query(qXML, companyID, nfKeys)
 	if err != nil {
 		log.Printf("fetchFreteLinks XML-CTE query error: %v", err)
 	} else {
