@@ -1,0 +1,52 @@
+INSTRUÇÕES — Preenchimento da Tabela de MVA / ICMS Fronteira
+=============================================================
+
+Arquivo: modelo-mva-fronteira-ROLIMEC-BA.csv
+Já vem preenchido com os NCMs que a empresa realmente compra (extraídos das
+notas importadas). O contador só precisa preencher as 5 colunas de alíquota/MVA.
+
+COLUNAS
+-------
+- UF              : estado onde o ICMS é devido (BA já preenchido). Use PE/BA/CE.
+- Segmento (Grupo): segmento do produto (AUTOPECAS, LUBRIFICANTES, etc.). Serve
+                    para desambiguar quando o mesmo NCM existe em segmentos
+                    diferentes. Pode ajustar se necessário.
+- NCM             : já preenchido (8 dígitos). NÃO alterar.
+- CEST            : já preenchido quando disponível.
+- Descrição       : referência do produto. Pode ajustar.
+- Alíq. Int. (%)  : alíquota INTERNA do ICMS no estado de destino (ex.: 20,5).
+                    >>> PREENCHER <<<
+- MVA Orig. (%)   : MVA original (operação interna). Deixe em branco ("-") se o
+                    estado fornece apenas as MVA ajustadas.
+- MVA 4% (%)      : MVA AJUSTADA para alíquota interestadual de 4% (importados).
+                    >>> PREENCHER <<<
+- MVA 7% (%)      : MVA AJUSTADA para 7% (origem Sul/Sudeste, exceto ES/MT).
+                    >>> PREENCHER <<<
+- MVA 12% (%)     : MVA AJUSTADA para 12% (demais origens).
+                    >>> PREENCHER <<<
+
+REGRAS DE PREENCHIMENTO
+-----------------------
+1. Use VÍRGULA ou PONTO como separador decimal (ambos aceitos). Ex.: 112,04 ou 112.04
+2. Para produtos SEM substituição/MVA (tributação normal), deixe as 4 colunas de
+   MVA em branco e preencha só a Alíq. Int. — o sistema tratará como antecipação
+   simples (BC × alíq. interna − ICMS interestadual).
+3. Se o estado publicar MVA por NCM de 4 dígitos (família), pode trocar o NCM de
+   8 para 4 dígitos — o sistema casa pelo prefixo (busca o NCM completo e, se não
+   achar, os 4 iniciais).
+4. Pode adicionar/remover linhas livremente (outros NCMs, outras UFs).
+5. NÃO altere a primeira linha (cabeçalho).
+
+COMO IMPORTAR (depois de preenchido)
+------------------------------------
+Sistema → Módulo ICMS Fronteira → aba "Regras NCM" → botão Importar.
+Aceita .csv e .xlsx (pode salvar este arquivo como Excel se preferir).
+As regras GLOBAIS de fábrica (PE/BA/CE) NÃO são afetadas — o import cria/atualiza
+apenas as regras desta empresa.
+
+OBSERVAÇÃO SOBRE A TABELA DE PE JÁ ENVIADA
+------------------------------------------
+A planilha "Base de Regras Unificada — LUBRIFICANTES" recebida é de PERNAMBUCO.
+A ROLIMEC opera na BAHIA, então é necessária a tabela MVA da BA (e do CE, se
+houver operação lá), especialmente para ROLAMENTOS (NCM 8482), que é o principal
+produto e hoje não tem MVA cadastrada.
