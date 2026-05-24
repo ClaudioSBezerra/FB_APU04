@@ -59,15 +59,16 @@ type Modulo13Response struct {
 // ---------------------------------------------------------------------------
 
 type Modulo12Row struct {
-	NCM          string  `json:"ncm"`
-	XProd        string  `json:"x_prod"`
-	CSTICMS      string  `json:"cst_icms"`
-	CSTPath      string  `json:"cst_path"`
-	PrecoAtual   float64 `json:"preco_atual"`
-	IcmsAtual    float64 `json:"icms_atual"`
-	IBSProjetado float64 `json:"ibs_projetado"`
-	CBSProjetado float64 `json:"cbs_projetado"`
-	VariacaoPct  float64 `json:"variacao_pct"`
+	NCM            string  `json:"ncm"`
+	XProd          string  `json:"x_prod"`
+	CSTICMS        string  `json:"cst_icms"`
+	CSTPath        string  `json:"cst_path"`
+	PrecoAtual     float64 `json:"preco_atual"`
+	IcmsAtual      float64 `json:"icms_atual"`
+	IBSProjetado   float64 `json:"ibs_projetado"`
+	CBSProjetado   float64 `json:"cbs_projetado"`
+	PrecoSugerido  float64 `json:"preco_sugerido"`  // preco_atual + (ibs + cbs − icms_atual)
+	VariacaoPct    float64 `json:"variacao_pct"`
 }
 
 type Modulo12Response struct {
@@ -690,21 +691,31 @@ func ReprecificacaoHandler(db *sql.DB) http.HandlerFunc {
 			ibsProjetado := vProd * aliqIBS / 100.0 * (1 - ibsReducao/100.0)
 			cbsProjetado := vProd * aliqCBS / 100.0 * (1 - cbsReducao/100.0)
 
+			// Preço sugerido = preço atual + delta de carga tributária.
+			// Mantém receita líquida do vendedor (interpretação A2): se IBS+CBS
+			// projetado > ICMS atual, o preço sobe na mesma proporção; se for
+			// menor, o preço desce.
+			precoSugerido := vProd + (ibsProjetado + cbsProjetado - vIcms)
+			if precoSugerido < 0 {
+				precoSugerido = 0
+			}
+
 			variacaoPct := 0.0
 			if vProd > 0 {
 				variacaoPct = (ibsProjetado + cbsProjetado - vIcms) / vProd * 100.0
 			}
 
 			list = append(list, Modulo12Row{
-				NCM:          ncm,
-				XProd:        xprod,
-				CSTICMS:      cstIcms,
-				CSTPath:      cstPath,
-				PrecoAtual:   vProd,
-				IcmsAtual:    vIcms,
-				IBSProjetado: ibsProjetado,
-				CBSProjetado: cbsProjetado,
-				VariacaoPct:  variacaoPct,
+				NCM:           ncm,
+				XProd:         xprod,
+				CSTICMS:       cstIcms,
+				CSTPath:       cstPath,
+				PrecoAtual:    vProd,
+				IcmsAtual:     vIcms,
+				IBSProjetado:  ibsProjetado,
+				CBSProjetado:  cbsProjetado,
+				PrecoSugerido: precoSugerido,
+				VariacaoPct:   variacaoPct,
 			})
 		}
 		if err := rows.Err(); err != nil {
@@ -817,20 +828,25 @@ func ReprecificacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 			}
 			ibsProjetado := vProd * aliqIBS / 100.0 * (1 - ibsReducao/100.0)
 			cbsProjetado := vProd * aliqCBS / 100.0 * (1 - cbsReducao/100.0)
+			precoSugerido := vProd + (ibsProjetado + cbsProjetado - vIcms)
+			if precoSugerido < 0 {
+				precoSugerido = 0
+			}
 			variacaoPct := 0.0
 			if vProd > 0 {
 				variacaoPct = (ibsProjetado + cbsProjetado - vIcms) / vProd * 100.0
 			}
 			list = append(list, Modulo12Row{
-				NCM:          ncm,
-				XProd:        xprod,
-				CSTICMS:      cstIcms,
-				CSTPath:      cstPath,
-				PrecoAtual:   vProd,
-				IcmsAtual:    vIcms,
-				IBSProjetado: ibsProjetado,
-				CBSProjetado: cbsProjetado,
-				VariacaoPct:  variacaoPct,
+				NCM:           ncm,
+				XProd:         xprod,
+				CSTICMS:       cstIcms,
+				CSTPath:       cstPath,
+				PrecoAtual:    vProd,
+				IcmsAtual:     vIcms,
+				IBSProjetado:  ibsProjetado,
+				CBSProjetado:  cbsProjetado,
+				PrecoSugerido: precoSugerido,
+				VariacaoPct:   variacaoPct,
 			})
 		}
 		if err := rows.Err(); err != nil {
@@ -840,7 +856,7 @@ func ReprecificacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		cw := csv.NewWriter(w)
-		header := []string{"NCM", "Descrição Produto", "CST ICMS", "Preço Atual (R$)", "ICMS Atual (R$)", "IBS Projetado (R$)", "CBS Projetado (R$)", "Variação (%)"}
+		header := []string{"NCM", "Descrição Produto", "CST ICMS", "Preço Atual (R$)", "ICMS Atual (R$)", "IBS Projetado (R$)", "CBS Projetado (R$)", "Preço Sugerido (R$)", "Variação (%)"}
 		if err := cw.Write(header); err != nil {
 			log.Printf("[ReprecificacaoCSV] write header error: %v", err)
 			return
@@ -855,6 +871,7 @@ func ReprecificacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 				fmt.Sprintf("%.2f", row.IcmsAtual),
 				fmt.Sprintf("%.2f", row.IBSProjetado),
 				fmt.Sprintf("%.2f", row.CBSProjetado),
+				fmt.Sprintf("%.2f", row.PrecoSugerido),
 				fmt.Sprintf("%.2f", row.VariacaoPct),
 			}
 			if err := cw.Write(record); err != nil {

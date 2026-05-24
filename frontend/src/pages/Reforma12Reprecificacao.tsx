@@ -41,6 +41,7 @@ interface Modulo12Row {
   icms_atual: number
   ibs_projetado: number
   cbs_projetado: number
+  preco_sugerido: number
   variacao_pct: number
 }
 
@@ -258,6 +259,9 @@ export default function Reforma12Reprecificacao() {
                       CBS Projetado (R$)
                     </TableHead>
                     <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">
+                      Preço Sugerido (R$)
+                    </TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">
                       Variação (%)
                     </TableHead>
                   </TableRow>
@@ -283,6 +287,9 @@ export default function Reforma12Reprecificacao() {
                       </TableCell>
                       <TableCell className="text-xs font-mono text-right">
                         {row.cst_icms ? fmtBRL(row.cbs_projetado) : '—'}
+                      </TableCell>
+                      <TableCell className="text-xs font-mono text-right font-semibold">
+                        {row.cst_icms ? fmtBRL(row.preco_sugerido) : '—'}
                       </TableCell>
                       <TableCell className="text-right">
                         {fmtVariacao(row.variacao_pct)}
