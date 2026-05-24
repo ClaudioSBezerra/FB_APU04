@@ -134,7 +134,7 @@ type infCTeNormDoc struct {
 }
 
 type infCTeNFe struct {
-	ChNFe string `xml:"chNFe"`
+	ChNFe string `xml:"chave"`
 }
 
 // ---------------------------------------------------------------------------
