@@ -21,6 +21,7 @@ import (
 // fronteiraExportSelectCols is the column list appended after fronteiraBaseQuery CTE.
 const fronteiraExportSelectCols = `
 SELECT
+    chave_nfe,
     data_emissao,
     numero_nfe,
     forn_nome,
@@ -49,6 +50,7 @@ func buildExportQuery(regime, periodo string) (string, []interface{}) {
 }
 
 type fronteiraExportRow struct {
+	ChaveNFe      string
 	DataEmissao   string
 	NumeroNFe     string
 	FornNome      string
@@ -83,6 +85,7 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string) ([]fronteira
 	for rows.Next() {
 		var row fronteiraExportRow
 		if err := rows.Scan(
+			&row.ChaveNFe,
 			&row.DataEmissao,
 			&row.NumeroNFe,
 			&row.FornNome,
@@ -248,10 +251,28 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		warnStyle, _ := f.NewStyle(&excelize.Style{
 			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}},
 		})
+		// CT-e rows: fundo verde-claro para distinguir da NF
+		cteStyle, _ := f.NewStyle(&excelize.Style{
+			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}},
+			Font: &excelize.Font{Italic: true},
+		})
 
 		// exportCSVHeaders[0] = "Bloco", drop it (already separated by sheet)
 		sheetHeaders := exportCSVHeaders[1:]
 		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"}
+
+		// Monta mapa de parâmetros das NFs para cálculo do frete
+		nfParams := make(map[string]nfFreteParams)
+		for _, row := range dataRows {
+			if row.ChaveNFe != "" && row.Regime != "" {
+				nfParams[row.ChaveNFe] = nfFreteParams{
+					Regime:      row.Regime,
+					AliqInter:   row.AliqInter,
+					AliqInterna: row.AliqInterna,
+				}
+			}
+		}
+		freteLinks := fetchFreteLinks(db, companyID, periodo, nfParams)
 
 		// ── Sheets B e A (SPED) ──────────────────────────────────────────────
 		type sheetDef struct{ key, name string; warn bool }
@@ -286,8 +307,9 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			}
 
 			var totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido float64
-			for rowIdx, row := range sheetRows {
-				excelRow := rowIdx + 2
+			excelRow := 2
+			for _, row := range sheetRows {
+				// ── linha da NF ──────────────────────────────────────────────
 				f.SetCellValue(sheetName, fmt.Sprintf("A%d", excelRow), row.DataEmissao)
 				f.SetCellValue(sheetName, fmt.Sprintf("B%d", excelRow), row.NumeroNFe)
 				f.SetCellValue(sheetName, fmt.Sprintf("C%d", excelRow), row.FornNome)
@@ -313,8 +335,40 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				totalVBcST += row.VBcST
 				totalVST += row.VST
 				totalIcmsDevido += row.IcmsDevidoEst
+				excelRow++
+
+				// ── linhas de CT-e abaixo da NF ─────────────────────────────
+				for _, cte := range freteLinks[row.ChaveNFe] {
+					// Coluna A: identificação "CT-e NNNNNN" + fonte
+					label := fmt.Sprintf("CT-e %s", cte.NumeroCTe)
+					if cte.Fonte != "D162" && cte.Fonte != "XML-CTE" {
+						label += " (" + cte.Fonte + ")"
+					}
+					f.SetCellValue(sheetName, fmt.Sprintf("A%d", excelRow), row.DataEmissao)
+					f.SetCellValue(sheetName, fmt.Sprintf("B%d", excelRow), label)
+					f.SetCellValue(sheetName, fmt.Sprintf("C%d", excelRow), cte.EmitNome)
+					f.SetCellValue(sheetName, fmt.Sprintf("D%d", excelRow), cte.EmitCNPJ)
+					f.SetCellValue(sheetName, fmt.Sprintf("E%d", excelRow), "") // UF transportadora não crítica
+					f.SetCellValue(sheetName, fmt.Sprintf("F%d", excelRow), "CTE")
+					f.SetCellValue(sheetName, fmt.Sprintf("G%d", excelRow), row.Regime)
+					f.SetCellValue(sheetName, fmt.Sprintf("H%d", excelRow), cte.VPrest)
+					f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), cte.VIcmsCTe)
+					f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), 0) // V.BC ST (n/a)
+					f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), 0) // V.ST (n/a)
+					f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
+					f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
+					f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), cte.IcmsFronteira)
+					for _, c := range cols {
+						cell := fmt.Sprintf("%s%d", c, excelRow)
+						f.SetCellStyle(sheetName, cell, cell, cteStyle)
+					}
+					totalVProd += cte.VPrest
+					totalVIcms += cte.VIcmsCTe
+					totalIcmsDevido += cte.IcmsFronteira
+					excelRow++
+				}
 			}
-			totalRow := len(sheetRows) + 2
+			totalRow := excelRow
 			f.SetCellValue(sheetName, fmt.Sprintf("A%d", totalRow), "TOTAL")
 			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("N%d", totalRow), boldStyle)
 			f.SetCellValue(sheetName, fmt.Sprintf("H%d", totalRow), totalVProd)

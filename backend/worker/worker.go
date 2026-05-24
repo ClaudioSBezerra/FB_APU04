@@ -411,10 +411,10 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 	}
 
 	var (
-		count0000, count0150, countC100, countC190, countC500, countC600, countD100, countD500 int
+		count0000, count0150, countC100, countC190, countC500, countC600, countD100, countD500, countD162 int
 		countC190IpiNonZero                                                                    int
 		totalC190IPI                                                                           float64
-		company, filialCNPJ, dtIni, dtFin, currentC100ID                                       string
+		company, filialCNPJ, dtIni, dtFin, currentC100ID, currentD100ID                       string
 		rates                                                                                  TaxRates
 		debugLog                                                                               strings.Builder
 		foundEOF                                                                               bool
@@ -453,7 +453,7 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 	// 5000 balances throughput (fewer Prepare cycles) vs responsiveness
 	const BatchSize = 5000
 	var tx *sql.Tx
-	var stmtPart, stmtC100, stmtC190, stmtC500, stmtC600, stmtD100, stmtD500 *sql.Stmt
+	var stmtPart, stmtC100, stmtC190, stmtC500, stmtC600, stmtD100, stmtD500, stmtD162 *sql.Stmt
 
 	// Initial dummy participants (outside batch loop for simplicity, or inside first batch)
 	// We'll do it quickly in a separate mini-tx to ensure they exist
@@ -474,6 +474,7 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 			stmtC600 = nil
 			stmtD100 = nil
 			stmtD500 = nil
+			stmtD162 = nil
 
 			err = func() error {
 				tx, err = db.Begin()
@@ -506,9 +507,14 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 					return fmt.Errorf("prepare stmtC600: %w", err)
 				}
 
-				stmtD100, err = tx.Prepare(`INSERT INTO reg_d100 (job_id, filial_cnpj, ind_oper, ind_emit, cod_part, cod_mod, cod_sit, ser, num_doc, chv_cte, dt_doc, dt_a_p, vl_doc, vl_icms, vl_pis, vl_cofins, vl_piscofins, vl_icms_projetado, vl_ibs_projetado, vl_cbs_projetado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`)
+				stmtD100, err = tx.Prepare(`INSERT INTO reg_d100 (job_id, filial_cnpj, ind_oper, ind_emit, cod_part, cod_mod, cod_sit, ser, num_doc, chv_cte, dt_doc, dt_a_p, vl_doc, vl_icms, vl_pis, vl_cofins, vl_piscofins, vl_icms_projetado, vl_ibs_projetado, vl_cbs_projetado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id`)
 				if err != nil {
 					return fmt.Errorf("prepare stmtD100: %w", err)
+				}
+
+				stmtD162, err = tx.Prepare(`INSERT INTO reg_d162 (job_id, d100_id, num_item, chv_nfe) VALUES ($1, $2, $3, $4)`)
+				if err != nil {
+					return fmt.Errorf("prepare stmtD162: %w", err)
 				}
 
 				stmtD500, err = tx.Prepare(`INSERT INTO reg_d500 (job_id, filial_cnpj, ind_oper, ind_emit, cod_part, cod_mod, cod_sit, ser, sub, num_doc, dt_doc, dt_a_p, vl_doc, vl_icms, vl_pis, vl_cofins, vl_piscofins, vl_icms_projetado, vl_ibs_projetado, vl_cbs_projetado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`)
@@ -544,6 +550,9 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 			}
 			if stmtD500 != nil {
 				stmtD500.Close()
+			}
+			if stmtD162 != nil {
+				stmtD162.Close()
 			}
 			if tx != nil {
 				tx.Rollback()
@@ -583,6 +592,9 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 		}
 		if stmtC600 != nil {
 			stmtC600.Close()
+		}
+		if stmtD162 != nil {
+			stmtD162.Close()
 		}
 
 		// Commit transaction
@@ -833,7 +845,25 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 				vlIbsProj := vlDoc * ((rates.PercIBS_UF + rates.PercIBS_Mun) / 100.0)
 				vlCbsProj := vlDoc * (rates.PercCBS / 100.0)
 
-				stmtD100.Exec(jobID, filialCNPJ, parts[2], parts[3], parts[4], parts[5], parts[6], parts[7], parts[9], parts[10], parseDate(parts[11]), parseDate(parts[12]), vlDoc, vlIcms, vlPis, vlCofins, vlPis+vlCofins, vlIcmsProj, vlIbsProj, vlCbsProj)
+				currentD100ID = ""
+				stmtD100.QueryRow(jobID, filialCNPJ, parts[2], parts[3], parts[4], parts[5], parts[6], parts[7], parts[9], parts[10], parseDate(parts[11]), parseDate(parts[12]), vlDoc, vlIcms, vlPis, vlCofins, vlPis+vlCofins, vlIcmsProj, vlIbsProj, vlCbsProj).Scan(&currentD100ID)
+			}
+		case "D162":
+			// D162: NF-e referenciada pelo CT-e pai (D100).
+			// Layout: |D162|NUM_ITEM|CHV_NFE|UNID_TRANSP|QT_CRT|QT_VOLUMES|PESO_BUTO|
+			if stmtD162 != nil && currentD100ID != "" {
+				parts := strings.Split(line, "|")
+				if len(parts) >= 4 {
+					chvNFe := strings.TrimSpace(parts[3])
+					numItem := 0
+					if len(parts) >= 3 {
+						fmt.Sscanf(parts[2], "%d", &numItem)
+					}
+					if len(chvNFe) == 44 {
+						countD162++
+						stmtD162.Exec(jobID, currentD100ID, numItem, chvNFe)
+					}
+				}
 			}
 		case "D500":
 			parts := strings.Split(line, "|")
@@ -920,8 +950,8 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 	db.QueryRow("SELECT COUNT(*) FROM reg_d500 WHERE job_id=$1", jobID).Scan(&dbCountD500)
 
 	fmt.Printf("Worker: C190 IPI summary — registros com IPI>0: %d / %d | total IPI: %.2f\n", countC190IpiNonZero, countC190, totalC190IPI)
-	return fmt.Sprintf("Imported: 0000=%d, 0150=%d, C100=%d(DB:%d), C190=%d(IPI_nz=%d,IPI_total=%.2f), C500=%d(DB:%d), C600=%d, D100=%d(DB:%d), D500=%d(DB:%d)%s",
-		count0000, count0150, countC100, dbCountC100, countC190, countC190IpiNonZero, totalC190IPI, countC500, dbCountC500, countC600, countD100, dbCountD100, countD500, dbCountD500, debugLog.String()), nil
+	return fmt.Sprintf("Imported: 0000=%d, 0150=%d, C100=%d(DB:%d), C190=%d(IPI_nz=%d,IPI_total=%.2f), C500=%d(DB:%d), C600=%d, D100=%d(DB:%d), D162=%d, D500=%d(DB:%d)%s",
+		count0000, count0150, countC100, dbCountC100, countC190, countC190IpiNonZero, totalC190IPI, countC500, dbCountC500, countC600, countD100, dbCountD100, countD162, countD500, dbCountD500, debugLog.String()), nil
 }
 
 func runAggregations(tx *sql.Tx, jobID string, rates TaxRates) error {

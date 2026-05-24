@@ -232,10 +232,28 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 
 		// Para decretos grandes (>30k chars), extrair apenas linhas relevantes
 		// (NCMs, MVAs, percentuais) para caber no contexto da IA.
+		// Se o resultado filtrado for curto demais, usa o texto bruto como fallback
+		// (acontece com PDFs de texto escasso ou formatação incomum do LegisWeb).
 		textoIA := texto
 		if len(texto) > 30_000 {
-			textoIA = extrairLinhasRelevantes(texto)
-			log.Printf("Legislacao: texto reduzido de %d para %d chars para IA", len(texto), len(textoIA))
+			filtrado := extrairLinhasRelevantes(texto)
+			log.Printf("Legislacao: texto reduzido de %d para %d chars para IA", len(texto), len(filtrado))
+			if len(strings.TrimSpace(filtrado)) >= 200 {
+				textoIA = filtrado
+			} else {
+				// Fallback: primeiros 80k chars do texto bruto
+				log.Printf("Legislacao: filtro produziu texto curto (%d chars) — usando texto bruto truncado", len(filtrado))
+				if len(texto) > 80_000 {
+					textoIA = texto[:80_000]
+				}
+			}
+		}
+		if len(strings.TrimSpace(textoIA)) < 100 {
+			jsonErr(w, http.StatusUnprocessableEntity,
+				"Não foi possível extrair texto legível do arquivo. "+
+					"O PDF pode ser uma imagem digitalizada (sem camada de texto). "+
+					"Tente colar o texto manualmente no campo 'conteudo_texto'.")
+			return
 		}
 
 		// Chama IA

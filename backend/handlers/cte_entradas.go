@@ -122,10 +122,19 @@ type gCBSCTe struct {
 
 type infCTeNorm struct {
 	InfCarga infCTeNormCarga `xml:"infCarga"`
+	InfDoc   infCTeNormDoc   `xml:"infDoc"`
 }
 
 type infCTeNormCarga struct {
 	VCarga string `xml:"vCarga"`
+}
+
+type infCTeNormDoc struct {
+	InfNFe []infCTeNFe `xml:"infNFe"`
+}
+
+type infCTeNFe struct {
+	ChNFe string `xml:"chNFe"`
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +348,8 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 			ib := inf.Imp.IBSCBSTot
 			modInt, _ := strconv.Atoi(mod)
 
-			_, err = db.Exec(`
+			var cteID string
+			err = db.QueryRow(`
 				INSERT INTO cte_entradas (
 					company_id, chave_cte, modelo, serie, numero_cte,
 					data_emissao, mes_ano, nat_op, cfop, modal,
@@ -359,7 +369,9 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					$23,$24,
 					$25,$26,$27
 				)
-				ON CONFLICT ON CONSTRAINT uq_cte_entradas_company_chave DO NOTHING`,
+				ON CONFLICT ON CONSTRAINT uq_cte_entradas_company_chave DO UPDATE
+					SET mes_ano = EXCLUDED.mes_ano
+				RETURNING id`,
 				companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NCT,
 				dataEmissao, mesAno, inf.Ide.NatOp, inf.Ide.CFOP, inf.Ide.Modal,
 				inf.Emit.CNPJ, inf.Emit.XNome, inf.Emit.EnderEmit.UF,
@@ -369,11 +381,24 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 				toDecimal(inf.InfCTeNorm.InfCarga.VCarga),
 				vBC, vICMS,
 				toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GCBS.VCBS),
-			)
+			).Scan(&cteID)
 			if err != nil {
 				log.Printf("CteEntradas INSERT error [%s]: %v", chave, err)
 				result.Erros = append(result.Erros, cteErro{filename, "Erro ao salvar no banco: " + err.Error()})
 				continue
+			}
+
+			// Persiste referências NF-e extraídas do XML (infCTeNorm/infDoc/infNFe)
+			for _, nfeRef := range inf.InfCTeNorm.InfDoc.InfNFe {
+				chNFe := strings.TrimSpace(nfeRef.ChNFe)
+				if len(chNFe) != 44 {
+					continue
+				}
+				_, _ = db.Exec(`
+					INSERT INTO cte_entradas_nfe_refs (cte_id, company_id, chave_nfe)
+					VALUES ($1, $2, $3)
+					ON CONFLICT ON CONSTRAINT uq_cte_nfe_ref DO NOTHING`,
+					cteID, companyID, chNFe)
 			}
 
 			result.Importados++
