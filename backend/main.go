@@ -699,6 +699,13 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraMensalHandler(database), "")(w, r)
 	})
 
+	// Reconciliação SPED × XML — notas sobrando/faltando (mês de análise por emissão)
+	http.HandleFunc("/api/icms-fronteira/reconciliacao", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraReconciliacaoHandler(database), "")(w, r)
+	})
+
 	// ── ICMS Fronteira — Divergências (calculado × SEFAZ) ────────────────────
 	http.HandleFunc("/api/icms-fronteira/divergencias/exportar/csv", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
