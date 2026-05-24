@@ -251,7 +251,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 
 		// exportCSVHeaders[0] = "Bloco", drop it (already separated by sheet)
 		sheetHeaders := exportCSVHeaders[1:]
-		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"}
+		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"}
 
 		type sheetDef struct{ key, name, fillColor string }
 		sheets := []sheetDef{
@@ -300,7 +300,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), row.VST)
 				f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
 				f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
-				// Note: IcmsDevidoEst not included — already accounted by regime
+				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.IcmsDevidoEst)
 				if sd.key == "mes_anterior" {
 					for _, c := range cols {
 						cell := fmt.Sprintf("%s%d", c, excelRow)
@@ -315,11 +315,12 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			}
 			totalRow := len(sheetRows) + 2
 			f.SetCellValue(sheetName, fmt.Sprintf("A%d", totalRow), "TOTAL")
-			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("M%d", totalRow), boldStyle)
+			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("N%d", totalRow), boldStyle)
 			f.SetCellValue(sheetName, fmt.Sprintf("H%d", totalRow), totalVProd)
 			f.SetCellValue(sheetName, fmt.Sprintf("I%d", totalRow), totalVIcms)
 			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVBcST)
 			f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVST)
+			f.SetCellValue(sheetName, fmt.Sprintf("N%d", totalRow), totalIcmsDevido)
 		}
 
 		var buf bytes.Buffer

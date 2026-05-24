@@ -3325,7 +3325,8 @@ function ApuracaoMensalTab({ token }: { token: string | null }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
+          <div style={{ width: '100%', height: 300 }}>
+          <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
               <XAxis dataKey="periodo" tick={{ fontSize: 11 }} />
@@ -3346,6 +3347,7 @@ function ApuracaoMensalTab({ token }: { token: string | null }) {
               ))}
             </BarChart>
           </ResponsiveContainer>
+          </div>
         </CardContent>
       </Card>
 
