@@ -56,7 +56,17 @@ import {
   Upload,
   BarChart2,
   Sparkles,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  FileQuestion,
+  CheckCircle2,
 } from 'lucide-react'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   BarChart,
   Bar,
@@ -102,10 +112,35 @@ interface FronteiraNotaRow {
   aliq_interna: number
   icms_devido_est: number
   regime: string
+  bloco: string // 'mes_atual' | 'mes_anterior'
 }
 
 interface FronteiraNotasResponse {
   rows: FronteiraNotaRow[]
+  total: number
+  count: number
+  total_mes_atual: number
+  total_mes_anterior: number
+  count_mes_atual: number
+  count_mes_anterior: number
+}
+
+interface FronteiraXmlNaoSpedRow {
+  chave_nfe: string
+  data_emissao: string
+  numero_nfe: string
+  forn_cnpj: string
+  forn_nome: string
+  forn_uf: string
+  cfop_saida: string
+  v_opr: number
+  icms_devido_est: number
+  regime: string
+  class_status: string // 'auto' | 'manual'
+}
+
+interface FronteiraXmlNaoSpedResponse {
+  rows: FronteiraXmlNaoSpedRow[]
   total: number
   count: number
 }
@@ -604,6 +639,346 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
           </TableBody>
         </Table>
       </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// NotasTabBlocos — 3 blocks: mes_anterior (SPED), mes_atual (SPED), nao_sped (XML)
+// ---------------------------------------------------------------------------
+
+type RegimedStr = 'antecipacao' | 'st' | 'difal'
+const REGIME_PARAM: Record<RegimedStr, string> = {
+  antecipacao: 'ANTECIPACAO',
+  st: 'ST',
+  difal: 'DIFAL',
+}
+
+function TabelaNotasSped({
+  rows,
+  showAliq,
+}: {
+  rows: FronteiraNotaRow[]
+  showAliq: boolean
+}) {
+  return (
+    <div className="rounded-md border overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/30 hover:bg-transparent">
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Data</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
+            {showAliq && (
+              <>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Inter.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Int.</TableHead>
+              </>
+            )}
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Est.</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, idx) => (
+            <TableRow key={`${row.chave_nfe}-${idx}`}>
+              <TableCell className="text-xs font-mono whitespace-nowrap">
+                {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+              </TableCell>
+              <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+              <TableCell className="text-xs max-w-[180px]">
+                <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
+                <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
+              </TableCell>
+              <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
+              <TableCell className="text-xs font-mono">{row.cfop || '—'}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
+              {showAliq && (
+                <>
+                  <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
+                  <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
+                </>
+              )}
+              <TableCell className="text-xs text-right tabular-nums font-semibold">
+                {fmtBRL(row.icms_devido_est)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
+  return (
+    <div className="rounded-md border overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/30 hover:bg-transparent">
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Data</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP Saída</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Opr.</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Est.</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Classif.</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, idx) => (
+            <TableRow key={`${row.chave_nfe}-${idx}`}>
+              <TableCell className="text-xs font-mono whitespace-nowrap">
+                {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+              </TableCell>
+              <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+              <TableCell className="text-xs max-w-[180px]">
+                <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
+                <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
+              </TableCell>
+              <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
+              <TableCell className="text-xs font-mono">{row.cfop_saida || '—'}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_opr)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-semibold">
+                {fmtBRL(row.icms_devido_est)}
+              </TableCell>
+              <TableCell>
+                {row.class_status === 'manual' ? (
+                  <Badge variant="outline" className="text-[10px] border-green-400 text-green-700">validado</Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">auto</Badge>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function BlocoHeader({
+  open,
+  icon,
+  label,
+  count,
+  total,
+  colorClass,
+}: {
+  open: boolean
+  icon: React.ReactNode
+  label: string
+  count: number
+  total: number
+  colorClass: string
+}) {
+  return (
+    <div className={`flex items-center justify-between w-full px-3 py-2 rounded-md border ${colorClass} cursor-pointer select-none`}>
+      <div className="flex items-center gap-2">
+        {open ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+        {icon}
+        <span className="text-sm font-semibold">{label}</span>
+        <Badge variant="secondary" className="text-xs">{count} nota{count !== 1 ? 's' : ''}</Badge>
+      </div>
+      <span className="text-sm font-semibold tabular-nums">{fmtBRL(total)}</span>
+    </div>
+  )
+}
+
+function NotasTabBlocos({
+  endpointSped,
+  regime,
+  token,
+}: {
+  endpointSped: string
+  regime: RegimedStr
+  token: string | null
+}) {
+  const [monthInput, setMonthInput] = useState('')
+  const periodo = monthToPeriodo(monthInput)
+
+  const [openA, setOpenA] = useState(false)
+  const [openB, setOpenB] = useState(true)
+  const [openC, setOpenC] = useState(true)
+
+  const regimeParam = REGIME_PARAM[regime]
+  const showAliq = regime !== 'st'
+
+  // Bloco A + B — SPED
+  const spedQuery = useQuery<FronteiraNotasResponse>({
+    queryKey: ['icms-fronteira', regime, periodo, 'sped'],
+    queryFn: async () => {
+      const url = periodo
+        ? `${endpointSped}?periodo=${encodeURIComponent(periodo)}`
+        : endpointSped
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: !!periodo,
+  })
+
+  // Bloco C — XML não lançado no SPED
+  const xmlQuery = useQuery<FronteiraXmlNaoSpedResponse>({
+    queryKey: ['icms-fronteira-nao-sped', regime, periodo],
+    queryFn: async () => {
+      if (!periodo) return { rows: [], total: 0, count: 0 }
+      const url = `/api/icms-fronteira/nao-sped?periodo=${encodeURIComponent(periodo)}&regime=${encodeURIComponent(regimeParam)}`
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: !!periodo,
+  })
+
+  const rowsAnterior = spedQuery.data?.rows.filter(r => r.bloco === 'mes_anterior') ?? []
+  const rowsAtual    = spedQuery.data?.rows.filter(r => r.bloco === 'mes_atual') ?? []
+  const rowsXml      = xmlQuery.data?.rows ?? []
+
+  const totalAnterior = spedQuery.data?.total_mes_anterior ?? 0
+  const totalAtual    = spedQuery.data?.total_mes_atual ?? 0
+  const totalXml      = xmlQuery.data?.total ?? 0
+  const totalGeral    = totalAtual + totalXml // mes_anterior não entra no total (já recolhido)
+
+  return (
+    <div className="space-y-4">
+      {/* Filtro período */}
+      <div className="flex items-center gap-2">
+        <Label htmlFor={`notas-periodo-${regime}`} className="text-xs whitespace-nowrap">Período (SPED):</Label>
+        <Input
+          id={`notas-periodo-${regime}`}
+          type="text"
+          placeholder="MM/AAAA"
+          maxLength={7}
+          className="w-36 text-xs h-8"
+          value={monthInput}
+          onChange={(e) => setMonthInput(e.target.value)}
+        />
+        {periodo && (
+          <span className="text-xs text-muted-foreground">{periodo}</span>
+        )}
+      </div>
+
+      {!periodo && (
+        <Alert>
+          <AlertDescription className="text-xs">
+            Informe o período no formato MM/AAAA para carregar os cálculos.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {periodo && (
+        <>
+          {/* Total geral */}
+          {!spedQuery.isLoading && !xmlQuery.isLoading && (
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs text-muted-foreground">
+                Total do mês ({rowsAtual.length + rowsXml.length} nota{rowsAtual.length + rowsXml.length !== 1 ? 's' : ''})
+              </span>
+              <span className="text-base font-bold tabular-nums">{fmtBRL(totalGeral)}</span>
+            </div>
+          )}
+
+          {/* ── Bloco A: NFs mês anterior no SPED ── */}
+          <Collapsible open={openA} onOpenChange={setOpenA}>
+            <CollapsibleTrigger asChild>
+              <BlocoHeader
+                open={openA}
+                icon={<Clock className="h-4 w-4 text-amber-500" />}
+                label="Bloco A — NFs de meses anteriores no SPED"
+                count={rowsAnterior.length}
+                total={totalAnterior}
+                colorClass="bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100"
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-2 space-y-2">
+                <Alert className="border-amber-200 bg-amber-50">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-xs text-amber-800">
+                    Estas notas têm data de emissão em meses anteriores mas entraram no SPED deste período.
+                    O imposto correspondente <strong>pode já ter sido recolhido</strong> no mês de emissão.
+                    Verifique o comprovante de pagamento antes de incluir no cálculo.
+                  </AlertDescription>
+                </Alert>
+                {spedQuery.isLoading ? (
+                  <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+                ) : rowsAnterior.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2 text-center">Nenhuma nota de mês anterior neste SPED.</p>
+                ) : (
+                  <TabelaNotasSped rows={rowsAnterior} showAliq={showAliq} />
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* ── Bloco B: NFs do mês no SPED ── */}
+          <Collapsible open={openB} onOpenChange={setOpenB}>
+            <CollapsibleTrigger asChild>
+              <BlocoHeader
+                open={openB}
+                icon={<CheckCircle2 className="h-4 w-4 text-green-600" />}
+                label="Bloco B — NFs do mês presentes no SPED"
+                count={rowsAtual.length}
+                total={totalAtual}
+                colorClass="bg-green-50 border-green-200 text-green-900 hover:bg-green-100"
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-2">
+                {spedQuery.isLoading ? (
+                  <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+                ) : spedQuery.isError ? (
+                  <Alert variant="destructive"><AlertDescription>Erro ao carregar notas do SPED.</AlertDescription></Alert>
+                ) : rowsAtual.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2 text-center">Nenhuma nota do mês encontrada no SPED.</p>
+                ) : (
+                  <TabelaNotasSped rows={rowsAtual} showAliq={showAliq} />
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* ── Bloco C: NFs XML não lançadas no SPED ── */}
+          <Collapsible open={openC} onOpenChange={setOpenC}>
+            <CollapsibleTrigger asChild>
+              <BlocoHeader
+                open={openC}
+                icon={<FileQuestion className="h-4 w-4 text-slate-500" />}
+                label="Bloco C — NFs do mês não localizadas no SPED (apenas XML)"
+                count={rowsXml.length}
+                total={totalXml}
+                colorClass="bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-2 space-y-2">
+                <Alert className="border-slate-200 bg-slate-50">
+                  <Info className="h-4 w-4 text-slate-500" />
+                  <AlertDescription className="text-xs text-slate-700">
+                    Notas emitidas neste mês encontradas no XML mas <strong>ausentes do SPED</strong>.
+                    Podem ter sido recebidas no mês seguinte ou excluídas do escrituração.
+                    A classificação de regime é automática pelo CFOP do fornecedor —
+                    <strong> valide na aba Reconciliação antes de incluir no cálculo oficial</strong>.
+                  </AlertDescription>
+                </Alert>
+                {xmlQuery.isLoading ? (
+                  <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+                ) : xmlQuery.isError ? (
+                  <Alert variant="destructive"><AlertDescription>Erro ao carregar notas XML.</AlertDescription></Alert>
+                ) : rowsXml.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2 text-center">Todas as notas XML do mês estão no SPED.</p>
+                ) : (
+                  <TabelaNotasXml rows={rowsXml} />
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </>
       )}
     </div>
@@ -3117,13 +3492,14 @@ export default function IcmsFronteira() {
             <CardContent>
               <p className="text-xs text-muted-foreground mb-4">
                 Notas interestaduais sem ST e sem CFOP de uso/consumo. ICMS estimado =
-                V.Prod × (alíq. interna − alíq. interestadual).
+                V.Prod × (alíq. interna − alíq. interestadual). Três blocos: meses anteriores
+                no SPED, mês atual no SPED, e XML não lançadas no SPED.
               </p>
               <div className="flex items-center gap-2 mb-4 justify-end flex-wrap">
                 <ExportButtons regime="antecipacao" token={token} />
                 <RecalcularButton />
               </div>
-              <NotasTab endpoint="/api/icms-fronteira/antecipacao" regime="antecipacao" token={token} />
+              <NotasTabBlocos endpointSped="/api/icms-fronteira/antecipacao" regime="antecipacao" token={token} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -3138,14 +3514,15 @@ export default function IcmsFronteira() {
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground mb-4">
-                Notas com ICMS-ST já retido pelo fornecedor (v_st {'>'} 0). O valor exibido
-                é o ST efetivamente destacado na nota.
+                Notas com ICMS-ST. Na aba Planilha de Itens cada nota é detalhada por produto,
+                pois o MVA pode diferir por NCM e uma mesma NF pode ter itens de regimes distintos.
+                Três blocos: meses anteriores no SPED, mês atual no SPED, e XML não lançadas.
               </p>
               <div className="flex items-center gap-2 mb-4 justify-end flex-wrap">
                 <ExportButtons regime="st" token={token} />
                 <RecalcularButton />
               </div>
-              <NotasTab endpoint="/api/icms-fronteira/st" regime="st" token={token} />
+              <NotasTabBlocos endpointSped="/api/icms-fronteira/st" regime="st" token={token} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -3161,13 +3538,14 @@ export default function IcmsFronteira() {
             <CardContent>
               <p className="text-xs text-muted-foreground mb-4">
                 Notas com CFOP de compra para uso/consumo ou ativo imobilizado interestadual
-                (1551, 1556, 2551, 2556). DIFAL = V.Prod × (alíq. interna − alíq. inter.).
+                (2551, 2556). DIFAL = V.Prod × (alíq. interna − alíq. inter.). Três blocos:
+                meses anteriores no SPED, mês atual, e XML não lançadas.
               </p>
               <div className="flex items-center gap-2 mb-4 justify-end flex-wrap">
                 <ExportButtons regime="difal" token={token} />
                 <RecalcularButton />
               </div>
-              <NotasTab endpoint="/api/icms-fronteira/difal" regime="difal" token={token} />
+              <NotasTabBlocos endpointSped="/api/icms-fronteira/difal" regime="difal" token={token} />
             </CardContent>
           </Card>
         </TabsContent>
