@@ -87,12 +87,17 @@ type FronteiraNotaRow struct {
 	AliqInterna   float64 `json:"aliq_interna"`
 	IcmsDevidoEst float64 `json:"icms_devido_est"`
 	Regime        string  `json:"regime"`
+	Bloco         string  `json:"bloco"`
 }
 
 type FronteiraNotasResponse struct {
-	Rows  []FronteiraNotaRow `json:"rows"`
-	Total float64            `json:"total"`
-	Count int                `json:"count"`
+	Rows             []FronteiraNotaRow `json:"rows"`
+	Total            float64            `json:"total"`
+	Count            int                `json:"count"`
+	TotalMesAtual    float64            `json:"total_mes_atual"`
+	TotalMesAnterior float64            `json:"total_mes_anterior"`
+	CountMesAtual    int                `json:"count_mes_atual"`
+	CountMesAnterior int                `json:"count_mes_anterior"`
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +137,13 @@ WITH classified AS (
             WHEN c190.cfop IN ('2101','2102','2152')
                 THEN 'ANTECIPACAO'
         END                                                 AS regime,
+        CASE
+            WHEN $2::text = ''
+              OR (EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
+                  AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int)
+            THEN 'mes_atual'
+            ELSE 'mes_anterior'
+        END                                                 AS bloco,
         -- ICMS devido estimado por regime (nota-nível; detalhe item no Bloco 2)
         CASE
             WHEN c190.cfop IN ('2551','2556')
@@ -207,10 +219,12 @@ WITH classified AS (
     WHERE j.company_id = $1
       AND c100.cod_sit NOT IN ('02','03','04','05')
       AND c190.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
-      AND ($2::text = '' OR (
-          EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
-          AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int
-      ))
+      AND ($2::text = '' OR j.mes_ano = $2
+          OR (j.mes_ano IS NULL AND (
+              EXTRACT(MONTH FROM j.dt_ini)::int = SPLIT_PART($2::text,'/',1)::int
+              AND EXTRACT(YEAR  FROM j.dt_ini)::int = SPLIT_PART($2::text,'/',2)::int
+          ))
+      )
 )
 `
 
@@ -309,16 +323,17 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 
 	// G14: window functions retornam totais do conjunto completo (sem LIMIT),
 	// resolvendo o bug onde totais exibidos só refletiam as primeiras 500 notas.
+	// bloco classifica cada nota em "mes_atual" ou "mes_anterior" conforme dt_doc.
 	query := fronteiraBaseQuery + `
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
     cfop, v_prod, v_icms, v_bc_st, v_st,
-    aliq_inter, aliq_interna, icms_devido_est, regime,
+    aliq_inter, aliq_interna, icms_devido_est, regime, bloco,
     COUNT(*)            OVER () AS total_count,
     SUM(icms_devido_est) OVER () AS total_full
 FROM classified
 WHERE regime = $3
-ORDER BY data_emissao DESC, chave_nfe
+ORDER BY bloco, data_emissao DESC, chave_nfe
 LIMIT 500
 `
 	rows, err := db.Query(query, companyID, periodo, regime)
@@ -332,6 +347,8 @@ LIMIT 500
 	result := []FronteiraNotaRow{}
 	var totalFull float64
 	var totalCount int
+	var totalMesAtual, totalMesAnterior float64
+	var countMesAtual, countMesAnterior int
 
 	for rows.Next() {
 		var row FronteiraNotaRow
@@ -342,6 +359,7 @@ LIMIT 500
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
 			&row.CFOP, &row.VProd, &row.VIcms, &row.VBcST, &row.VST,
 			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.Regime,
+			&row.Bloco,
 			&rowTotalCount, &rowTotalFull,
 		); err != nil {
 			log.Printf("IcmsFronteiraNotas[%s] scan error: %v", regime, err)
@@ -351,13 +369,24 @@ LIMIT 500
 		if rowTotalFull.Valid {
 			totalFull = rowTotalFull.Float64
 		}
+		if row.Bloco == "mes_atual" {
+			totalMesAtual += row.IcmsDevidoEst
+			countMesAtual++
+		} else {
+			totalMesAnterior += row.IcmsDevidoEst
+			countMesAnterior++
+		}
 		result = append(result, row)
 	}
 
 	json.NewEncoder(w).Encode(FronteiraNotasResponse{
-		Rows:  result,
-		Total: totalFull,
-		Count: totalCount,
+		Rows:             result,
+		Total:            totalFull,
+		Count:            totalCount,
+		TotalMesAtual:    totalMesAtual,
+		TotalMesAnterior: totalMesAnterior,
+		CountMesAtual:    countMesAtual,
+		CountMesAnterior: countMesAnterior,
 	})
 }
 

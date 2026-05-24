@@ -699,6 +699,16 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraMensalHandler(database), "")(w, r)
 	})
 
+	// Block C — NFs em XML não encontradas em nenhum SPED (nao_sped)
+	http.HandleFunc("/api/icms-fronteira/nao-sped", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraXmlNaoSpedHandler(database), "")(w, r)
+	})
+
 	// Reconciliação SPED × XML — notas sobrando/faltando (mês de análise por emissão)
 	http.HandleFunc("/api/icms-fronteira/reconciliacao", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
