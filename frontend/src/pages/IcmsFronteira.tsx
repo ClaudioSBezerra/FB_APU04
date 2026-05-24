@@ -314,6 +314,33 @@ function monthToPeriodo(m: string): string {
   return mo && y ? `${mo}/${y}` : ''
 }
 
+// Célula compacta de chave de 44 dígitos: mostra os últimos 9 dígitos
+// (cNF + DV) com tooltip da chave completa e clique para copiar.
+function ChaveCell({ chave, label }: { chave: string; label?: string }) {
+  if (!chave) return <span className="text-muted-foreground">—</span>
+  const short = chave.length === 44 ? chave.slice(-9) : chave
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="text-[10px] font-mono text-muted-foreground hover:text-foreground cursor-pointer"
+            onClick={() => { navigator.clipboard?.writeText(chave) }}
+            title="Clique para copiar"
+          >
+            …{short}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-md">
+          <div className="text-[10px] font-mono break-all">{chave}</div>
+          {label && <div className="text-[10px] text-muted-foreground mt-1">{label}</div>}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 function formatCNPJ(cnpj: string): string {
   if (!cnpj || cnpj.length !== 14) return cnpj || '—'
   return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
@@ -693,6 +720,9 @@ function TabelaNotasSped({
   rows: FronteiraNotaRow[]
   showAliq: boolean
 }) {
+  const totalVProd = rows.reduce((a, r) => a + (r.v_prod || 0), 0)
+  const totalVIcms = rows.reduce((a, r) => a + (r.v_icms || 0), 0)
+  const totalIcms  = rows.reduce((a, r) => a + (r.icms_devido_est || 0), 0)
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
@@ -703,7 +733,9 @@ function TabelaNotasSped({
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
             {showAliq && (
               <>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Inter.</TableHead>
@@ -726,7 +758,9 @@ function TabelaNotasSped({
               </TableCell>
               <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
               <TableCell className="text-xs font-mono">{row.cfop || '—'}</TableCell>
+              <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms)}</TableCell>
               {showAliq && (
                 <>
                   <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
@@ -739,6 +773,17 @@ function TabelaNotasSped({
             </TableRow>
           ))}
         </TableBody>
+        {rows.length > 0 && (
+          <TableFooter>
+            <TableRow className="bg-muted/60 hover:bg-muted/60">
+              <TableCell colSpan={6} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
+              {showAliq && <TableCell colSpan={2} />}
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
+            </TableRow>
+          </TableFooter>
+        )}
       </Table>
     </div>
   )
@@ -761,6 +806,7 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">NCM</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Frete</TableHead>
@@ -788,6 +834,7 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
               </TableCell>
               <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
               <TableCell className="text-xs font-mono">{row.cfop_saida || '—'}</TableCell>
+              <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
               <TableCell className="text-xs font-mono">{row.ncm || '—'}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_frete)}</TableCell>
@@ -814,7 +861,7 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
         {rows.length > 0 && (
           <TableFooter>
             <TableRow className="bg-muted/60 hover:bg-muted/60">
-              <TableCell colSpan={6} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
+              <TableCell colSpan={7} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVFrete)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
@@ -1193,6 +1240,21 @@ function FretesTab({ token }: { token: string | null }) {
                   </TableRow>
                 ))}
               </TableBody>
+              {data.rows.length > 0 && (
+                <TableFooter>
+                  <TableRow className="bg-muted/60 hover:bg-muted/60">
+                    <TableCell colSpan={7} className="text-xs font-bold uppercase">
+                      Total — {data.count} CT-e{data.count !== 1 ? 's' : ''}
+                    </TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(data.total_v_prest)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">
+                      {fmtBRL(data.rows.reduce((a, r) => a + (r.v_icms_cte || 0), 0))}
+                    </TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(data.total_icms_fronteira)}</TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableFooter>
+              )}
             </Table>
           </div>
 

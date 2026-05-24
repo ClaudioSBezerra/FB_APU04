@@ -394,8 +394,8 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			} else {
 				cSheet := "C - Não no SPED (XML)"
 				f.NewSheet(cSheet)
-				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "ICMS Est.", "Classificação"}
-				cCols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"}
+				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "ICMS Est.", "Classificação", "Chave NF-e"}
+				cCols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"}
 				for i, h := range cHeaders {
 					cell := fmt.Sprintf("%s1", cCols[i])
 					f.SetCellValue(cSheet, cell, h)
@@ -417,6 +417,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), row.VOpr)
 					f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), row.IcmsDevidoEst)
 					f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), row.ClassStatus)
+					f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ChaveNFe)
 					for _, c := range cCols {
 						cell := fmt.Sprintf("%s%d", c, er)
 						f.SetCellStyle(cSheet, cell, cell, slateStyle)
@@ -425,7 +426,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				}
 				tr := len(cRows) + 2
 				f.SetCellValue(cSheet, fmt.Sprintf("A%d", tr), "TOTAL")
-				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", tr), fmt.Sprintf("J%d", tr), boldStyle)
+				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", tr), fmt.Sprintf("K%d", tr), boldStyle)
 				f.SetCellValue(cSheet, fmt.Sprintf("I%d", tr), totalIcmsC)
 			}
 		}
