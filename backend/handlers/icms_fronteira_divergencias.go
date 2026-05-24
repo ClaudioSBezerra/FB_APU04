@@ -52,23 +52,44 @@ type DivergenciasResponse struct {
 //   SEM_NOTA        — extrato sem NF correspondente no sistema
 //   NAO_COBRADO     — NF no sistema sem lançamento no extrato
 //   OK              — diferença < R$ 0,05 (tolerância de arredondamento)
+// Fonte: SPED (reg_c190) classifica pelo CFOP de entrada; detalhe item via XML
+// por chave. Lado "calculado" da divergência usa as mesmas regras G1-G5.
 const divergenciasQueryBody = `
-WITH item_base AS (
-    -- Pré-calcula campos comuns (rateios, alíquotas, MVA efetivo, redução BC) para evitar
-    -- duplicação de CASEs gigantes no SELECT final. G1+G2+G3+G4+G5 ficam centralizados aqui.
-    SELECT
-        ne.chave_nfe,
-        ne.data_emissao,
-        COALESCE(ne.numero_nfe, '')    AS numero_nfe,
-        COALESCE(ne.forn_cnpj, '')     AS forn_cnpj,
-        COALESCE(ne.forn_nome, '')     AS forn_nome,
-        COALESCE(ne.forn_uf, '')       AS forn_uf,
-        COALESCE(ne.cfop, '')          AS cfop,
+WITH sped_class AS (
+    SELECT DISTINCT ON (c100.chv_nfe)
+        c100.chv_nfe                                  AS chave_nfe,
+        c100.dt_doc                                   AS data_emissao,
+        COALESCE(c100.num_doc, '')                    AS numero_nfe,
+        c100.cod_part                                 AS cod_part,
+        c100.job_id                                   AS job_id,
+        c190.cfop                                     AS cfop,
+        COALESCE(NULLIF(c190.aliq_icms, 0), 12.0)     AS aliq_inter,
         CASE
-            WHEN ne.cfop IN ('2551','2556')               THEN 'DIFAL'
-            WHEN ne.cfop IN ('2403','2409','2651','2652') THEN 'ST'
-            WHEN ne.cfop IN ('2101','2102','2152')        THEN 'ANTECIPACAO'
-        END                            AS regime,
+            WHEN c190.cfop IN ('2551','2556')               THEN 'DIFAL'
+            WHEN c190.cfop IN ('2403','2409','2651','2652') THEN 'ST'
+            WHEN c190.cfop IN ('2101','2102','2152')        THEN 'ANTECIPACAO'
+        END                                           AS regime
+    FROM reg_c190 c190
+    JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
+    JOIN import_jobs j ON j.id = c100.job_id
+    WHERE j.company_id = $1
+      AND c100.cod_sit NOT IN ('02','03','04','05')
+      AND c190.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
+      AND ($2::text = '' OR (
+          EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
+          AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int
+      ))
+    ORDER BY c100.chv_nfe, c190.vl_opr DESC NULLS LAST
+), item_base AS (
+    SELECT
+        sc.chave_nfe,
+        sc.data_emissao,
+        sc.numero_nfe,
+        COALESCE(part.cnpj, ne.forn_cnpj, '')   AS forn_cnpj,
+        COALESCE(part.nome, ne.forn_nome, '')   AS forn_nome,
+        COALESCE(ne.forn_uf, '')       AS forn_uf,
+        sc.cfop                        AS cfop,
+        sc.regime                      AS regime,
         COALESCE(nii.v_prod, 0)        AS v_prod_item,
         COALESCE(nii.v_ipi, 0)         AS v_ipi_item,
         COALESCE(nii.v_icms, 0)        AS v_icms_item,
@@ -81,11 +102,7 @@ WITH item_base AS (
             THEN ROUND(COALESCE(ne.v_frete, 0) * COALESCE(nii.v_prod, 0) / ne.v_prod, 2)
             ELSE 0
         END                            AS v_frete_rateado,
-        CASE
-            WHEN COALESCE(nii.cst_orig, ne.cst_orig_pred) IN ('1','2','3','6','7','8') THEN 4.0
-            WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP'])                THEN 7.0
-            ELSE 12.0
-        END                            AS aliq_inter,
+        sc.aliq_inter                  AS aliq_inter,
         COALESCE(regra.aliquota_interna, 20.5)  AS aliq_interna,
         regra.mva_original,
         regra.mva_ajustado_4pct, regra.mva_ajustado_7pct, regra.mva_ajustado_12pct,
@@ -93,8 +110,10 @@ WITH item_base AS (
         (fs.cnpj IS NOT NULL)                   AS forn_simples,
         COALESCE(ne.v_prod, 0)                  AS v_prod_nf_total,
         COALESCE(ne.v_st, 0)                    AS v_st_nf_total
-    FROM nfe_entradas ne
+    FROM sped_class sc
+    JOIN nfe_entradas ne ON ne.chave_nfe = sc.chave_nfe
     INNER JOIN nfe_entradas_itens nii ON nii.nfe_id = ne.id
+    LEFT JOIN participants part ON part.job_id = sc.job_id AND part.cod_part = sc.cod_part
     LEFT JOIN forn_simples fs ON fs.cnpj = ne.forn_cnpj
     LEFT JOIN LATERAL (
         -- G1: filtrar pela UF de destino da nota — evita aplicar regra de PE em BA/CE
@@ -109,14 +128,6 @@ WITH item_base AS (
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
         LIMIT 1
     ) regra ON true
-    WHERE ne.company_id = $1
-      AND ne.forn_uf IS NOT NULL AND ne.forn_uf != ''
-      AND ne.forn_uf != COALESCE(ne.dest_uf, 'PE')
-      AND ne.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
-      AND ($2::text = '' OR (
-          EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
-          AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',2)::int
-      ))
 ), item_icms AS (
     SELECT
         chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf, cfop, regime,
@@ -134,6 +145,7 @@ WITH item_base AS (
         )                                       AS mva_efetivo,
         -- v_operacao com v_frete (G4)
         (v_prod_item + v_ipi_item + v_outro_rateado + v_frete_rateado) AS v_operacao,
+        v_prod_item,
         v_icms_item, aliq_inter, aliq_interna, reducao_bc_pct,
         forn_simples, v_prod_nf_total, v_st_nf_total
     FROM item_base

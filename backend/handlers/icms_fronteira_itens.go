@@ -54,22 +54,47 @@ type FronteiraItensResponse struct {
 
 // fronteiraItensQueryBody is the full item-level query without a row cap.
 // Append a LIMIT clause for interactive use; use as-is for exports.
+// Fonte: SPED (reg_c190) classifica o regime pelo CFOP de entrada; o detalhe de
+// item (NCM/CEST/produto p/ regra MVA) vem do XML por chave NF-e. Notas no SPED
+// sem XML correspondente não aparecem na planilha de itens (sem detalhe), mas
+// entram nos totais nota-nível das outras abas. aliq_inter = alíquota real do SPED.
 const fronteiraItensQueryBody = `
-WITH base AS (
+WITH sped_class AS (
+    SELECT DISTINCT ON (c100.chv_nfe)
+        c100.chv_nfe                                  AS chave_nfe,
+        c100.dt_doc::text                             AS data_emissao,
+        COALESCE(c100.num_doc, '')                    AS numero_nfe,
+        c100.cod_part                                 AS cod_part,
+        c100.job_id                                   AS job_id,
+        c190.cfop                                     AS cfop,
+        COALESCE(NULLIF(c190.aliq_icms, 0), 12.0)     AS aliq_inter,
+        CASE
+            WHEN c190.cfop IN ('2551','2556')               THEN 'DIFAL'
+            WHEN c190.cfop IN ('2403','2409','2651','2652') THEN 'ST'
+            WHEN c190.cfop IN ('2101','2102','2152')        THEN 'ANTECIPACAO'
+        END                                           AS regime
+    FROM reg_c190 c190
+    JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
+    JOIN import_jobs j ON j.id = c100.job_id
+    WHERE j.company_id = $1
+      AND c100.cod_sit NOT IN ('02','03','04','05')
+      AND c190.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
+      AND ($3::text = '' OR (
+          EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($3::text,'/',1)::int
+          AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($3::text,'/',2)::int
+      ))
+    ORDER BY c100.chv_nfe, c190.vl_opr DESC NULLS LAST
+), base AS (
     SELECT
-        ne.chave_nfe,
-        ne.data_emissao::text                                           AS data_emissao,
-        COALESCE(ne.numero_nfe, '')                                     AS numero_nfe,
-        COALESCE(ne.forn_cnpj, '')                                      AS forn_cnpj,
-        COALESCE(ne.forn_nome, '')                                      AS forn_nome,
+        sc.chave_nfe,
+        sc.data_emissao,
+        sc.numero_nfe,
+        COALESCE(part.cnpj, ne.forn_cnpj, '')                          AS forn_cnpj,
+        COALESCE(part.nome, ne.forn_nome, '')                          AS forn_nome,
         COALESCE(ne.forn_uf, '')                                        AS forn_uf,
         (fs.cnpj IS NOT NULL)                                           AS forn_simples,
-        COALESCE(ne.cfop, '')                                           AS cfop,
-        CASE
-            WHEN ne.cfop IN ('2551','2556')               THEN 'DIFAL'
-            WHEN ne.cfop IN ('2403','2409','2651','2652') THEN 'ST'
-            WHEN ne.cfop IN ('2101','2102','2152')        THEN 'ANTECIPACAO'
-        END                                                             AS regime,
+        sc.cfop                                                          AS cfop,
+        sc.regime                                                       AS regime,
         nii.n_item::int                                                 AS n_item,
         COALESCE(nii.c_prod, '')                                        AS c_prod,
         COALESCE(nii.x_prod, '')                                        AS x_prod,
@@ -89,14 +114,10 @@ WITH base AS (
             ELSE 0
         END                                                             AS v_frete_rateado,
         COALESCE(nii.v_icms, 0)                                         AS v_icms_item,
-        CASE
-            WHEN COALESCE(nii.cst_orig, ne.cst_orig_pred) IN ('1','2','3','6','7','8') THEN 4.0
-            WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP'])                 THEN 7.0
-            ELSE 12.0
-        END                                                             AS aliq_inter,
+        sc.aliq_inter                                                   AS aliq_inter,
         COALESCE(regra.aliquota_interna, 20.5)                          AS aliq_interna,
         regra.mva_original                                               AS mva_original,
-        -- G2: MVA ajustado pelas alíquotas pré-calculadas + fallback Convênio ICMS 110/07
+        -- G2: MVA ajustado pré-calculado + fallback Convênio ICMS 110/07
         regra.mva_ajustado_4pct                                          AS mva_aj_4pct,
         regra.mva_ajustado_7pct                                          AS mva_aj_7pct,
         regra.mva_ajustado_12pct                                         AS mva_aj_12pct,
@@ -105,8 +126,10 @@ WITH base AS (
         COALESCE(ne.v_prod, 0)                                          AS v_prod_nf_total,
         COALESCE(ne.v_st, 0)                                            AS v_st_nf_total,
         COALESCE(ne.forn_uf, '')                                        AS forn_uf_raw
-    FROM nfe_entradas ne
+    FROM sped_class sc
+    JOIN nfe_entradas ne ON ne.chave_nfe = sc.chave_nfe
     INNER JOIN nfe_entradas_itens nii ON nii.nfe_id = ne.id
+    LEFT JOIN participants part ON part.job_id = sc.job_id AND part.cod_part = sc.cod_part
     LEFT JOIN forn_simples fs ON fs.cnpj = ne.forn_cnpj
     LEFT JOIN LATERAL (
         -- G1: filtro por uf_estado evita aplicar regra de PE em nota destinada à BA/CE
@@ -121,15 +144,6 @@ WITH base AS (
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
         LIMIT 1
     ) regra ON true
-    WHERE ne.company_id = $1
-      AND ne.forn_uf IS NOT NULL
-      AND ne.forn_uf != ''
-      AND ne.forn_uf != COALESCE(ne.dest_uf, 'PE')
-      AND ne.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
-      AND ($3::text = '' OR (
-          EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($3::text,'/',1)::int
-          AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($3::text,'/',2)::int
-      ))
 ), computed AS (
     SELECT
         chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,

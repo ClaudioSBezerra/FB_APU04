@@ -102,65 +102,66 @@ type FronteiraNotasResponse struct {
 // baseQuery returns the common SELECT that classifies each nota and computes
 // the estimated ICMS due. Caller appends a WHERE clause for the regime filter
 // and the $1 company_id placeholder.
+// Fonte: SPED Fiscal (reg_c190 → reg_c100 → import_jobs). O CFOP de entrada
+// (2xxx) que classifica o regime de fronteira só existe no SPED — o XML traz o
+// CFOP de saída do fornecedor (6xxx). Detalhe de NCM (p/ regra MVA) vem do XML
+// via join por chave. aliq_icms e vl_icms do SPED são os valores reais da
+// operação interestadual (não estimados por CST de origem).
 const fronteiraBaseQuery = `
 WITH classified AS (
     SELECT
-        ne.chave_nfe,
-        ne.data_emissao::text                               AS data_emissao,
-        COALESCE(ne.numero_nfe, '')                         AS numero_nfe,
-        COALESCE(ne.forn_cnpj, '')                          AS forn_cnpj,
-        COALESCE(ne.forn_nome, '')                          AS forn_nome,
+        c100.chv_nfe                                        AS chave_nfe,
+        c100.dt_doc::text                                   AS data_emissao,
+        COALESCE(c100.num_doc, '')                          AS numero_nfe,
+        COALESCE(part.cnpj, ne.forn_cnpj, '')               AS forn_cnpj,
+        COALESCE(part.nome, ne.forn_nome, '')               AS forn_nome,
         COALESCE(ne.forn_uf, '')                            AS forn_uf,
-        COALESCE(ne.cfop, '')                               AS cfop,
-        COALESCE(ne.v_prod, 0)                              AS v_prod,
-        COALESCE(ne.v_icms, 0)                              AS v_icms,
-        COALESCE(ne.v_bc_st, 0)                             AS v_bc_st,
-        COALESCE(ne.v_st, 0)                                AS v_st,
-        -- Alíquota interestadual: 4% para mercadoria importada (CST orig 1,2,3,6,7,8),
-        -- 7% para Sul/Sudeste (exceto ES e MT), 12% para demais.
-        CASE
-            WHEN ne.cst_orig_pred IN ('1','2','3','6','7','8') THEN 4.0
-            WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
-            ELSE 12.0
-        END                                                 AS aliq_inter,
+        c190.cfop                                           AS cfop,
+        COALESCE(c190.vl_opr, 0)                            AS v_prod,
+        COALESCE(c190.vl_icms, 0)                           AS v_icms,
+        COALESCE(c190.vl_bc_icms_st, 0)                     AS v_bc_st,
+        COALESCE(c190.vl_icms_st, 0)                        AS v_st,
+        -- Alíquota interestadual: real do SPED (aliq_icms); fallback 12% se ausente.
+        COALESCE(NULLIF(c190.aliq_icms, 0), 12.0)           AS aliq_inter,
         COALESCE(regra.aliquota_interna, 20.5)              AS aliq_interna,
-        -- Classificação por CFOP conforme especificação do contador
         CASE
-            WHEN ne.cfop IN ('2551','2556')
+            WHEN c190.cfop IN ('2551','2556')
                 THEN 'DIFAL'
-            WHEN ne.cfop IN ('2403','2409','2651','2652')
+            WHEN c190.cfop IN ('2403','2409','2651','2652')
                 THEN 'ST'
-            WHEN ne.cfop IN ('2101','2102','2152')
+            WHEN c190.cfop IN ('2101','2102','2152')
                 THEN 'ANTECIPACAO'
         END                                                 AS regime,
-        -- ICMS devido estimado por regime (cálculo provisório; BC completa no Bloco 2)
-        -- G4: BC inclui v_frete (frete CIF) + v_outro além do v_prod
+        -- ICMS devido estimado por regime (nota-nível; detalhe item no Bloco 2)
         CASE
-            WHEN ne.cfop IN ('2551','2556')
+            WHEN c190.cfop IN ('2551','2556')
                 THEN GREATEST(0,
-                    (COALESCE(ne.v_prod, 0) + COALESCE(ne.v_frete, 0) + COALESCE(ne.v_outro, 0)) * (
-                        COALESCE(regra.aliquota_interna, 20.5) -
-                        CASE
-                            WHEN ne.cst_orig_pred IN ('1','2','3','6','7','8') THEN 4.0
-                            WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
-                            ELSE 12.0
-                        END
+                    COALESCE(c190.vl_opr, 0) * (
+                        COALESCE(regra.aliquota_interna, 20.5)
+                        - COALESCE(NULLIF(c190.aliq_icms, 0), 12.0)
                     ) / 100.0)
-            WHEN ne.cfop IN ('2403','2409','2651','2652')
-                THEN COALESCE(ne.v_st, 0)
-            WHEN ne.cfop IN ('2101','2102','2152')
+            WHEN c190.cfop IN ('2403','2409','2651','2652')
+                THEN CASE
+                    WHEN regra.mva_original IS NOT NULL
+                        THEN GREATEST(0,
+                            COALESCE(c190.vl_opr, 0)
+                            * (1.0 + regra.mva_original/100.0)
+                            * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                            - COALESCE(c190.vl_icms, 0))
+                    ELSE COALESCE(c190.vl_icms_st, 0)
+                END
+            WHEN c190.cfop IN ('2101','2102','2152')
                 THEN GREATEST(0,
-                    (COALESCE(ne.v_prod, 0) + COALESCE(ne.v_frete, 0) + COALESCE(ne.v_outro, 0)) * (
-                        COALESCE(regra.aliquota_interna, 20.5) -
-                        CASE
-                            WHEN ne.cst_orig_pred IN ('1','2','3','6','7','8') THEN 4.0
-                            WHEN ne.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0
-                            ELSE 12.0
-                        END
-                    ) / 100.0)
+                    COALESCE(c190.vl_opr, 0) * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                    - COALESCE(c190.vl_icms, 0))
             ELSE 0
         END                                                 AS icms_devido_est
-    FROM nfe_entradas ne
+    FROM reg_c190 c190
+    JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
+    JOIN import_jobs j ON j.id = c100.job_id
+    LEFT JOIN participants part
+        ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
+    LEFT JOIN nfe_entradas ne ON ne.chave_nfe = c100.chv_nfe
     LEFT JOIN LATERAL (
         SELECT nii.ncm AS ncm
         FROM nfe_entradas_itens nii
@@ -169,7 +170,7 @@ WITH classified AS (
         LIMIT 1
     ) top_item ON true
     LEFT JOIN LATERAL (
-        SELECT r.aliquota_interna
+        SELECT r.aliquota_interna, r.mva_original
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
           AND r.uf_estado = COALESCE(ne.dest_uf, 'PE')
@@ -178,14 +179,12 @@ WITH classified AS (
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
         LIMIT 1
     ) regra ON true
-    WHERE ne.company_id = $1
-      AND ne.forn_uf IS NOT NULL
-      AND ne.forn_uf != ''
-      AND ne.forn_uf != COALESCE(ne.dest_uf, 'PE')
-      AND ne.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
+    WHERE j.company_id = $1
+      AND c100.cod_sit NOT IN ('02','03','04','05')
+      AND c190.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
       AND ($2::text = '' OR (
-          EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
-          AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',2)::int
+          EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
+          AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int
       ))
 )
 `
@@ -221,11 +220,12 @@ func IcmsFronteiraResumoHandler(db *sql.DB) http.HandlerFunc {
 		query := fronteiraBaseQuery + `
 SELECT
     regime,
-    COUNT(*)            AS qtd_notas,
+    COUNT(DISTINCT chave_nfe) AS qtd_notas,
     SUM(v_prod)         AS v_prod_total,
     SUM(v_st)           AS v_st_retido,
     SUM(icms_devido_est) AS icms_devido_est
 FROM classified
+WHERE regime IS NOT NULL
 GROUP BY regime
 ORDER BY regime
 `
