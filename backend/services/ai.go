@@ -89,7 +89,7 @@ func (c *AIClient) GenerateFastRaw(system, userPrompt, model string, maxTokens i
 	if maxTokens == 0 {
 		maxTokens = 4096
 	}
-	fastClient := &http.Client{Timeout: 90 * time.Second}
+	fastClient := &http.Client{Timeout: 150 * time.Second} // 150s para acomodar backoff de até 30s em rate limit
 	origClient := c.httpClient
 	c.httpClient = fastClient
 	defer func() { c.httpClient = origClient }()
@@ -103,12 +103,27 @@ func (c *AIClient) GenerateFastRaw(system, userPrompt, model string, maxTokens i
 	resp, err := c.doRequestRaw(reqBody)
 	if err != nil {
 		errStr := err.Error()
-		if strings.Contains(errStr, "429") && reqBody.Model == ModelFlash {
-			fmt.Printf("[AI Raw] Rate limited on %s, single attempt with %s\n", ModelFlash, ModelFlashFallback)
-			reqBody.Model = ModelFlashFallback
-			resp, err = c.doRequestRaw(reqBody)
+		if strings.Contains(errStr, "429") {
+			// Primary hit rate limit — try fallback model immediately
+			if reqBody.Model == ModelFlash {
+				fmt.Printf("[AI Raw] Rate limited on %s, trying %s\n", ModelFlash, ModelFlashFallback)
+				reqBody.Model = ModelFlashFallback
+				resp, err = c.doRequestRaw(reqBody)
+			}
+			// Both models rate-limited — wait and retry primary once more
+			if err != nil && strings.Contains(err.Error(), "429") {
+				fmt.Printf("[AI Raw] Both models rate-limited, waiting 20s then retrying %s\n", ModelFlash)
+				time.Sleep(20 * time.Second)
+				reqBody.Model = ModelFlash
+				resp, err = c.doRequestRaw(reqBody)
+				// One final fallback if still 429
+				if err != nil && strings.Contains(err.Error(), "429") {
+					time.Sleep(10 * time.Second)
+					reqBody.Model = ModelFlashFallback
+					resp, err = c.doRequestRaw(reqBody)
+				}
+			}
 		} else if isTransientNetworkError(errStr) {
-			// TLS timeout, connection reset, dial error — retry once after short backoff
 			fmt.Printf("[AI Raw] Transient network error (%s), retrying in 3s...\n", errStr)
 			time.Sleep(3 * time.Second)
 			resp, err = c.doRequestRaw(reqBody)
