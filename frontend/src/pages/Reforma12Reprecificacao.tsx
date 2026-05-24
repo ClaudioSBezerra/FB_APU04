@@ -49,6 +49,8 @@ interface Modulo12Response {
   rows: Modulo12Row[]
   aliq_ibs_pct: number
   aliq_cbs_pct: number
+  ano: number
+  anos_disponiveis: number[]
 }
 
 // ---------------------------------------------------------------------------
@@ -93,11 +95,14 @@ function fmtVariacao(v: number | null | undefined): React.ReactNode {
 export default function Reforma12Reprecificacao() {
   const [downloadingCSV, setDownloadingCSV] = useState(false)
   const [cstFilter, setCstFilter] = useState('todos')
+  const [anoBase, setAnoBase] = useState<string>('') // '' = usa default do backend
+
+  const anoQS = anoBase ? `?ano=${anoBase}` : ''
 
   const { data, isLoading, isError } = useQuery<Modulo12Response>({
-    queryKey: ['reforma/modulo1/reprecificacao'],
+    queryKey: ['reforma/modulo1/reprecificacao', anoBase],
     queryFn: async () => {
-      const res = await fetch('/api/reforma/modulo1/reprecificacao')
+      const res = await fetch(`/api/reforma/modulo1/reprecificacao${anoQS}`)
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       return res.json()
     },
@@ -106,7 +111,7 @@ export default function Reforma12Reprecificacao() {
   const handleExportCSV = async () => {
     setDownloadingCSV(true)
     try {
-      const res = await fetch('/api/reforma/modulo1/reprecificacao/csv')
+      const res = await fetch(`/api/reforma/modulo1/reprecificacao/csv${anoQS}`)
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -193,6 +198,27 @@ export default function Reforma12Reprecificacao() {
         <CardContent>
           {/* Filter row */}
           <div className="flex items-center gap-4 flex-wrap mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Ano-base:</span>
+              <Select
+                value={anoBase || (data?.ano ? String(data.ano) : '')}
+                onValueChange={(v) => setAnoBase(v)}
+              >
+                <SelectTrigger className="h-8 w-28">
+                  <SelectValue placeholder="Ano" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(data?.anos_disponiveis ?? []).map((a) => (
+                    <SelectItem key={a} value={String(a)}>{a}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {data && (
+                <span className="text-xs text-muted-foreground">
+                  IBS {data.aliq_ibs_pct.toFixed(2)}% + CBS {data.aliq_cbs_pct.toFixed(2)}%
+                </span>
+              )}
+            </div>
             <Select value={cstFilter} onValueChange={setCstFilter}>
               <SelectTrigger className="h-8 w-52">
                 <SelectValue placeholder="Filtrar por CST" />

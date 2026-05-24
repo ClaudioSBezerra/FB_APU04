@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -72,9 +73,11 @@ type Modulo12Row struct {
 }
 
 type Modulo12Response struct {
-	Rows      []Modulo12Row `json:"rows"`
-	AliqIBSPct float64      `json:"aliq_ibs_pct"`
-	AliqCBSPct float64      `json:"aliq_cbs_pct"`
+	Rows            []Modulo12Row `json:"rows"`
+	AliqIBSPct      float64       `json:"aliq_ibs_pct"`
+	AliqCBSPct      float64       `json:"aliq_cbs_pct"`
+	Ano             int           `json:"ano"`               // ano-base usado nas projeções
+	AnosDisponiveis []int         `json:"anos_disponiveis"`  // anos da tabela_aliquotas
 }
 
 // ---------------------------------------------------------------------------
@@ -619,13 +622,44 @@ func ReprecificacaoHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Lista de anos disponíveis na tabela_aliquotas (curva de transição).
+		anosDisponiveis := []int{}
+		if anoRows, err := db.Query(`SELECT ano FROM tabela_aliquotas ORDER BY ano`); err == nil {
+			for anoRows.Next() {
+				var a int
+				if anoRows.Scan(&a) == nil {
+					anosDisponiveis = append(anosDisponiveis, a)
+				}
+			}
+			anoRows.Close()
+		}
+
+		// Resolução do ano-base:
+		//   1) query string ?ano=NNNN (se válido na tabela_aliquotas)
+		//   2) target_ano configurado em reforma_parametros
+		//   3) último ano da tabela_aliquotas (carga máxima)
+		anoSolicitado, _ := strconv.Atoi(r.URL.Query().Get("ano"))
+		ano := 0
+		if anoSolicitado > 0 {
+			for _, a := range anosDisponiveis {
+				if a == anoSolicitado {
+					ano = a
+					break
+				}
+			}
+		}
+		if ano == 0 {
+			_ = db.QueryRow(`SELECT target_ano FROM reforma_parametros WHERE company_id=$1`, companyID).Scan(&ano)
+		}
+		if ano == 0 && len(anosDisponiveis) > 0 {
+			ano = anosDisponiveis[len(anosDisponiveis)-1]
+		}
+
 		var aliqIBS, aliqCBS float64
 		err = db.QueryRow(`
-			SELECT COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7), COALESCE(ta.perc_cbs, 8.8)
-			FROM reforma_parametros rp
-			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
-			WHERE rp.company_id = $1
-		`, companyID).Scan(&aliqIBS, &aliqCBS)
+			SELECT COALESCE(perc_ibs_uf + perc_ibs_mun, 17.7), COALESCE(perc_cbs, 8.8)
+			FROM tabela_aliquotas WHERE ano = $1
+		`, ano).Scan(&aliqIBS, &aliqCBS)
 		if err == sql.ErrNoRows {
 			aliqIBS, aliqCBS = 17.7, 8.8
 		} else if err != nil {
@@ -729,9 +763,11 @@ func ReprecificacaoHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		json.NewEncoder(w).Encode(Modulo12Response{
-			Rows:       list,
-			AliqIBSPct: aliqIBS,
-			AliqCBSPct: aliqCBS,
+			Rows:            list,
+			AliqIBSPct:      aliqIBS,
+			AliqCBSPct:      aliqCBS,
+			Ano:             ano,
+			AnosDisponiveis: anosDisponiveis,
 		})
 	}
 }
@@ -760,13 +796,28 @@ func ReprecificacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Ano-base — query string ?ano=NNNN, ou target_ano, ou último da tabela
+		anoSolicitado, _ := strconv.Atoi(r.URL.Query().Get("ano"))
+		ano := 0
+		if anoSolicitado > 0 {
+			var exists bool
+			_ = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM tabela_aliquotas WHERE ano=$1)`, anoSolicitado).Scan(&exists)
+			if exists {
+				ano = anoSolicitado
+			}
+		}
+		if ano == 0 {
+			_ = db.QueryRow(`SELECT target_ano FROM reforma_parametros WHERE company_id=$1`, companyID).Scan(&ano)
+		}
+		if ano == 0 {
+			_ = db.QueryRow(`SELECT MAX(ano) FROM tabela_aliquotas`).Scan(&ano)
+		}
+
 		var aliqIBS, aliqCBS float64
 		err = db.QueryRow(`
-			SELECT COALESCE(ta.perc_ibs_uf + ta.perc_ibs_mun, 17.7), COALESCE(ta.perc_cbs, 8.8)
-			FROM reforma_parametros rp
-			LEFT JOIN tabela_aliquotas ta ON ta.ano = rp.target_ano
-			WHERE rp.company_id = $1
-		`, companyID).Scan(&aliqIBS, &aliqCBS)
+			SELECT COALESCE(perc_ibs_uf + perc_ibs_mun, 17.7), COALESCE(perc_cbs, 8.8)
+			FROM tabela_aliquotas WHERE ano = $1
+		`, ano).Scan(&aliqIBS, &aliqCBS)
 		if err == sql.ErrNoRows {
 			aliqIBS, aliqCBS = 17.7, 8.8
 		} else if err != nil {
