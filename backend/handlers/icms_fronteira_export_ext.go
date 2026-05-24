@@ -82,6 +82,10 @@ func fetchItensExport(db *sql.DB, companyID, regime, periodo string) ([]Fronteir
 	for rows.Next() {
 		var row FronteiraItemRow
 		var mvaOrig sql.NullFloat64
+		// G14: query inclui total_count e total_full via window functions;
+		// exports descartam pois o CSV/XLSX é linha-a-linha sem agregado.
+		var totalCount sql.NullInt64
+		var totalFull sql.NullFloat64
 		if err := rows.Scan(
 			&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
@@ -91,6 +95,7 @@ func fetchItensExport(db *sql.DB, companyID, regime, periodo string) ([]Fronteir
 			&row.AliqInter, &row.AliqInterna, &row.BC,
 			&row.IcmsCalculado, &row.IcmsRetido,
 			&mvaOrig, &row.BcSt,
+			&totalCount, &totalFull,
 		); err != nil {
 			log.Printf("fetchItensExport scan: %v", err)
 			continue
@@ -268,11 +273,15 @@ func fetchDivExport(db *sql.DB, companyID, periodo string) ([]DivergenciaRow, er
 	var result []DivergenciaRow
 	for rows.Next() {
 		var row DivergenciaRow
+		// G14: query inclui 4 window functions; exports descartam.
+		var totalCount sql.NullInt64
+		var totalSefazFull, totalCalcFull, totalDifFull sql.NullFloat64
 		if err := rows.Scan(
 			&row.ChaveNFe, &row.Periodo, &row.NumeroNF,
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
 			&row.DataEmissao, &row.Regime,
 			&row.IcmsSefaz, &row.IcmsCalculado, &row.Diferenca, &row.Status,
+			&totalCount, &totalSefazFull, &totalCalcFull, &totalDifFull,
 		); err != nil {
 			log.Printf("fetchDivExport scan: %v", err)
 			continue

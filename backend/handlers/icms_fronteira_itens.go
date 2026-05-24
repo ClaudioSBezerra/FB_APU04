@@ -200,6 +200,7 @@ WITH base AS (
         END                                                             AS icms_retido
     FROM base
 )
+-- G14: window functions retornam totais do conjunto completo (sem LIMIT).
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
     forn_simples, cfop, regime,
@@ -214,7 +215,16 @@ SELECT
     END                                                                 AS icms_calculado,
     icms_retido,
     mva_original,
-    bc_st
+    bc_st,
+    COUNT(*) OVER ()                                                    AS total_count,
+    SUM(
+        CASE
+            WHEN regime = 'ST' AND mva_efetivo IS NOT NULL
+                THEN GREATEST(0, ROUND(bc_st * aliq_interna/100.0 - v_operacao * aliq_inter/100.0, 2))
+            WHEN regime = 'ST' THEN icms_retido
+            ELSE GREATEST(0, bc * (aliq_interna - aliq_inter) / 100.0)
+        END
+    ) OVER ()                                                           AS total_full
 FROM computed
 WHERE ($2::text = 'todos' OR regime = $2::text)
 ORDER BY data_emissao DESC, chave_nfe, n_item
@@ -259,11 +269,17 @@ func IcmsFronteiraItensHandler(db *sql.DB) http.HandlerFunc {
 		defer rows.Close()
 
 		result := []FronteiraItemRow{}
-		var total float64
+		var totalFull float64
+		var totalCount int
 
 		for rows.Next() {
 			var row FronteiraItemRow
 			var mvaOrig sql.NullFloat64
+			// G14: total_count/total_full via window functions retornam o agregado
+			// do conjunto completo (sem o LIMIT 2000). Backend ainda limita as
+			// linhas materializadas, mas o usuário vê o total real.
+			var rowTotalCount sql.NullInt64
+			var rowTotalFull sql.NullFloat64
 			if err := rows.Scan(
 				&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 				&row.FornCNPJ, &row.FornNome, &row.FornUF,
@@ -273,6 +289,7 @@ func IcmsFronteiraItensHandler(db *sql.DB) http.HandlerFunc {
 				&row.AliqInter, &row.AliqInterna, &row.BC,
 				&row.IcmsCalculado, &row.IcmsRetido,
 				&mvaOrig, &row.BcSt,
+				&rowTotalCount, &rowTotalFull,
 			); err != nil {
 				log.Printf("IcmsFronteiraItens scan error: %v", err)
 				continue
@@ -280,14 +297,19 @@ func IcmsFronteiraItensHandler(db *sql.DB) http.HandlerFunc {
 			if mvaOrig.Valid {
 				row.MvaOriginal = &mvaOrig.Float64
 			}
-			total += row.IcmsCalculado
+			if rowTotalCount.Valid {
+				totalCount = int(rowTotalCount.Int64)
+			}
+			if rowTotalFull.Valid {
+				totalFull = rowTotalFull.Float64
+			}
 			result = append(result, row)
 		}
 
 		json.NewEncoder(w).Encode(FronteiraItensResponse{
 			Rows:  result,
-			Total: total,
-			Count: len(result),
+			Total: totalFull,
+			Count: totalCount,
 		})
 	}
 }

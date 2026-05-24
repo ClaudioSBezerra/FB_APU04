@@ -282,11 +282,15 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 
 	periodo := r.URL.Query().Get("periodo")
 
+	// G14: window functions retornam totais do conjunto completo (sem LIMIT),
+	// resolvendo o bug onde totais exibidos só refletiam as primeiras 500 notas.
 	query := fronteiraBaseQuery + `
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
     cfop, v_prod, v_icms, v_bc_st, v_st,
-    aliq_inter, aliq_interna, icms_devido_est, regime
+    aliq_inter, aliq_interna, icms_devido_est, regime,
+    COUNT(*)            OVER () AS total_count,
+    SUM(icms_devido_est) OVER () AS total_full
 FROM classified
 WHERE regime = $3
 ORDER BY data_emissao DESC, chave_nfe
@@ -301,27 +305,34 @@ LIMIT 500
 	defer rows.Close()
 
 	result := []FronteiraNotaRow{}
-	var total float64
+	var totalFull float64
+	var totalCount int
 
 	for rows.Next() {
 		var row FronteiraNotaRow
+		var rowTotalCount int
+		var rowTotalFull sql.NullFloat64
 		if err := rows.Scan(
 			&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
 			&row.CFOP, &row.VProd, &row.VIcms, &row.VBcST, &row.VST,
 			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.Regime,
+			&rowTotalCount, &rowTotalFull,
 		); err != nil {
 			log.Printf("IcmsFronteiraNotas[%s] scan error: %v", regime, err)
 			continue
 		}
-		total += row.IcmsDevidoEst
+		totalCount = rowTotalCount
+		if rowTotalFull.Valid {
+			totalFull = rowTotalFull.Float64
+		}
 		result = append(result, row)
 	}
 
 	json.NewEncoder(w).Encode(FronteiraNotasResponse{
 		Rows:  result,
-		Total: total,
-		Count: len(result),
+		Total: totalFull,
+		Count: totalCount,
 	})
 }
 

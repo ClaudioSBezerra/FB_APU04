@@ -215,10 +215,16 @@ joined AS (
     FROM ext_data ext
     FULL OUTER JOIN nf_calc calc ON calc.chave_nfe = ext.chave_nfe
 )
+-- G14: window functions retornam totais do conjunto completo, evitando que
+-- o LIMIT 1000 quebre os agregados exibidos no rodapé da divergências.
 SELECT
     chave_nfe, periodo, numero_nf, forn_cnpj, forn_nome, forn_uf,
     data_emissao, regime,
-    icms_sefaz, icms_calculado, diferenca, status
+    icms_sefaz, icms_calculado, diferenca, status,
+    COUNT(*)         OVER () AS total_count,
+    SUM(icms_sefaz)  OVER () AS total_sefaz_full,
+    SUM(icms_calculado) OVER () AS total_calc_full,
+    SUM(diferenca)   OVER () AS total_dif_full
 FROM joined
 ORDER BY
     CASE status
@@ -271,21 +277,36 @@ func IcmsFronteiraDivergenciasHandler(db *sql.DB) http.HandlerFunc {
 
 		result := []DivergenciaRow{}
 		var totalSefaz, totalCalculado, totalDiferenca float64
+		var totalCount int
 
 		for rows.Next() {
 			var row DivergenciaRow
+			// G14: window functions devolvem o agregado do conjunto completo,
+			// independente do LIMIT 1000 que controla apenas as linhas materializadas.
+			var rowTotalCount sql.NullInt64
+			var rowTotalSefaz, rowTotalCalc, rowTotalDif sql.NullFloat64
 			if err := rows.Scan(
 				&row.ChaveNFe, &row.Periodo, &row.NumeroNF,
 				&row.FornCNPJ, &row.FornNome, &row.FornUF,
 				&row.DataEmissao, &row.Regime,
 				&row.IcmsSefaz, &row.IcmsCalculado, &row.Diferenca, &row.Status,
+				&rowTotalCount, &rowTotalSefaz, &rowTotalCalc, &rowTotalDif,
 			); err != nil {
 				log.Printf("IcmsFronteiraDivergencias scan error: %v", err)
 				continue
 			}
-			totalSefaz += row.IcmsSefaz
-			totalCalculado += row.IcmsCalculado
-			totalDiferenca += row.Diferenca
+			if rowTotalCount.Valid {
+				totalCount = int(rowTotalCount.Int64)
+			}
+			if rowTotalSefaz.Valid {
+				totalSefaz = rowTotalSefaz.Float64
+			}
+			if rowTotalCalc.Valid {
+				totalCalculado = rowTotalCalc.Float64
+			}
+			if rowTotalDif.Valid {
+				totalDiferenca = rowTotalDif.Float64
+			}
 			result = append(result, row)
 		}
 
@@ -294,7 +315,7 @@ func IcmsFronteiraDivergenciasHandler(db *sql.DB) http.HandlerFunc {
 			TotalSefaz:     totalSefaz,
 			TotalCalculado: totalCalculado,
 			TotalDiferenca: totalDiferenca,
-			Count:          len(result),
+			Count:          totalCount,
 		})
 	}
 }
