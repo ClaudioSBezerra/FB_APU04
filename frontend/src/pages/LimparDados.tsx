@@ -36,6 +36,12 @@ const GROUPS: { id: string; label: string; description: string; tables: string[]
     description: 'Apelidos de filiais',
     tables: ['filial_apelidos'],
   },
+  {
+    id: 'fronteira',
+    label: 'ICMS Fronteira',
+    description: 'Regras NCM/MVA importadas, extrato SEFAZ e contestações desta empresa (as regras globais PE/BA/CE são preservadas)',
+    tables: ['icms_fronteira_regras_ncm', 'icms_fronteira_extrato_sefaz', 'icms_fronteira_contestacoes'],
+  },
 ];
 
 export default function LimparDados() {
