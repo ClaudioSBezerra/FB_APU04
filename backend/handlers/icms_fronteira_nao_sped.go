@@ -24,9 +24,11 @@ type FronteiraXmlNaoSpedRow struct {
 	NCM           string  `json:"ncm"`
 	VProd         float64 `json:"v_prod"`
 	VFrete        float64 `json:"v_frete"`
+	VFreteCTe     float64 `json:"v_frete_cte"`       // soma dos CT-es onde tomador=destinatário
 	VOutro        float64 `json:"v_outro"`
 	VOpr          float64 `json:"v_opr"`
 	VIcmsNF       float64 `json:"v_icms_nf"`        // ICMS destacado na NF (<vICMS>)
+	VIcmsCTe      float64 `json:"v_icms_cte"`        // ICMS dos CT-es do destinatário
 	AliqInter     float64 `json:"aliq_inter"`        // alíquota interestadual efetiva = vIcms/vProd × 100
 	AliqInterna   float64 `json:"aliq_interna"`      // alíquota interna usada (regra ou fallback)
 	MVA           float64 `json:"mva"`               // MVA original (só usado em ST)
@@ -78,6 +80,21 @@ WITH xml_falt AS (
             ELSE cfop_saida
         END AS cfop_entrada
     FROM top
+), cte_por_nfe AS (
+    -- Frete CT-e por NF-e, considerando APENAS quando tomador = destinatário
+    -- (mesma regra fiscal aplicada na aba Fretes / Layer 2 do fetchFreteLinks).
+    SELECT
+        ref.chave_nfe,
+        SUM(COALESCE(ce.v_prest, 0)) AS v_frete_cte,
+        SUM(COALESCE(ce.v_icms, 0))  AS v_icms_cte
+    FROM cte_entradas_nfe_refs ref
+    JOIN cte_entradas ce ON ce.id = ref.cte_id
+    WHERE ref.company_id = $1
+      AND (
+          ce.toma = '3'                                                   -- Destinatário
+          OR (ce.toma = '4' AND ce.toma4_cnpj = ce.dest_cnpj_cpf)          -- Outros = destinatário
+      )
+    GROUP BY ref.chave_nfe
 )
 SELECT
     m.chave_nfe,
@@ -97,31 +114,34 @@ SELECT
     COALESCE(cm.status, 'auto') AS class_status,
     m.v_prod,
     m.v_frete,
+    COALESCE(cte.v_frete_cte, 0) AS v_frete_cte,
     m.v_outro,
-    (m.v_prod + m.v_frete + m.v_outro) AS v_opr,
+    (m.v_prod + m.v_frete + COALESCE(cte.v_frete_cte, 0) + m.v_outro) AS v_opr,
     m.v_icms AS v_icms_nf,
+    COALESCE(cte.v_icms_cte, 0) AS v_icms_cte,
     CASE WHEN m.v_prod > 0 THEN ROUND((m.v_icms / m.v_prod * 100.0)::numeric, 2) ELSE 0 END AS aliq_inter,
     COALESCE(regra.aliquota_interna, 20.5) AS aliq_interna,
     COALESCE(regra.mva_original, regra.mva_ajustado_12pct, 0) AS mva,
-    -- Mesma lógica do Bloco B (fronteiraBaseQuery):
-    --   ANTECIPACAO/DIFAL: v_opr × aliq_interna% − v_icms_pago
-    --   ST: usa MVA com fallback igual ao Bloco B
+    -- Mesma lógica do Bloco B, agora somando o frete do CT-e (tomador=destinatário)
+    -- e deduzindo o ICMS recolhido pela transportadora.
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN
             GREATEST(0,
-                (m.v_prod+m.v_frete+m.v_outro) * COALESCE(regra.aliquota_interna,20.5)/100.0
-                - m.v_icms)
+                (m.v_prod + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                * COALESCE(regra.aliquota_interna,20.5)/100.0
+                - m.v_icms - COALESCE(cte.v_icms_cte,0))
         WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
             GREATEST(0,
-                (m.v_prod+m.v_frete+m.v_outro) * COALESCE(regra.aliquota_interna,20.5)/100.0
-                - m.v_icms)
+                (m.v_prod + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                * COALESCE(regra.aliquota_interna,20.5)/100.0
+                - m.v_icms - COALESCE(cte.v_icms_cte,0))
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
             CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
                 THEN GREATEST(0,
-                     (m.v_prod+m.v_frete+m.v_outro)
+                     (m.v_prod + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                      * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
                      * COALESCE(regra.aliquota_interna,20.5)/100.0
-                     - m.v_icms)
+                     - m.v_icms - COALESCE(cte.v_icms_cte,0))
                 ELSE 0 END
         ELSE 0
     END AS icms_devido_est
@@ -135,6 +155,7 @@ LEFT JOIN LATERAL (
       AND LEFT(m.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
     ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC LIMIT 1
 ) regra ON true
+LEFT JOIN cte_por_nfe cte ON cte.chave_nfe = m.chave_nfe
 LEFT JOIN icms_fronteira_classificacao_manual cm
     ON cm.company_id = $1 AND cm.chave_nfe = m.chave_nfe
 WHERE COALESCE(cm.regime,
@@ -163,8 +184,8 @@ func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime string) ([]Fronteir
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
 			&row.CfopSaida, &row.NCM,
 			&row.Regime, &row.ClassStatus,
-			&row.VProd, &row.VFrete, &row.VOutro, &row.VOpr,
-			&row.VIcmsNF, &row.AliqInter, &row.AliqInterna, &row.MVA,
+			&row.VProd, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
+			&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
 			&row.IcmsDevidoEst,
 		); err != nil {
 			continue
@@ -233,8 +254,8 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 				&row.FornCNPJ, &row.FornNome, &row.FornUF,
 				&row.CfopSaida, &row.NCM,
 				&row.Regime, &row.ClassStatus,
-				&row.VProd, &row.VFrete, &row.VOutro, &row.VOpr,
-				&row.VIcmsNF, &row.AliqInter, &row.AliqInterna, &row.MVA,
+				&row.VProd, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
+				&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
 				&row.IcmsDevidoEst,
 			); err != nil {
 				log.Printf("IcmsFronteiraXmlNaoSped[%s] scan error: %v", regime, err)

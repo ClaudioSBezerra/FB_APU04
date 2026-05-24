@@ -133,9 +133,11 @@ interface FronteiraXmlNaoSpedRow {
   ncm: string
   v_prod: number
   v_frete: number
+  v_frete_cte: number
   v_outro: number
   v_opr: number
   v_icms_nf: number
+  v_icms_cte: number
   aliq_inter: number
   aliq_interna: number
   mva: number
@@ -807,11 +809,13 @@ function TabelaNotasSped({
 }
 
 function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
-  const totalVProd  = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
-  const totalVFrete = rows.reduce((acc, r) => acc + (r.v_frete || 0), 0)
-  const totalVOpr   = rows.reduce((acc, r) => acc + (r.v_opr || 0), 0)
-  const totalVIcms  = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
-  const totalIcms   = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
+  const totalVProd     = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
+  const totalVFrete    = rows.reduce((acc, r) => acc + (r.v_frete || 0), 0)
+  const totalVFreteCTe = rows.reduce((acc, r) => acc + (r.v_frete_cte || 0), 0)
+  const totalVOpr      = rows.reduce((acc, r) => acc + (r.v_opr || 0), 0)
+  const totalVIcms     = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
+  const totalVIcmsCTe  = rows.reduce((acc, r) => acc + (r.v_icms_cte || 0), 0)
+  const totalIcms      = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
   const isST = rows.some(r => r.regime === 'ST')
   return (
     <div className="rounded-md border overflow-x-auto">
@@ -827,8 +831,10 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
             <TableHead className="text-xs font-semibold uppercase tracking-wide">NCM</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Frete</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Frete CT-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Opr.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS CT-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq.Inter</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq.Interna</TableHead>
             {isST && (
@@ -855,8 +861,10 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
               <TableCell className="text-xs font-mono">{row.ncm || '—'}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_frete)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_frete_cte)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_opr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_cte)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{(row.aliq_inter || 0).toFixed(2)}%</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{(row.aliq_interna || 0).toFixed(2)}%</TableCell>
               {isST && (
@@ -881,8 +889,10 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
               <TableCell colSpan={7} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVFrete)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVFreteCTe)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcmsCTe)}</TableCell>
               <TableCell colSpan={isST ? 3 : 2} />
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
               <TableCell />
