@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -173,11 +174,18 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		if len(texto) > 200_000 {
-			// Limite de segurança para tokens da IA
 			texto = texto[:200_000]
 		}
 		if titulo == "" {
 			titulo = "Legislação importada"
+		}
+
+		// Para decretos grandes (>30k chars), extrair apenas linhas relevantes
+		// (NCMs, MVAs, percentuais) para caber no contexto da IA.
+		textoIA := texto
+		if len(texto) > 30_000 {
+			textoIA = extrairLinhasRelevantes(texto)
+			log.Printf("Legislacao: texto reduzido de %d para %d chars para IA", len(texto), len(textoIA))
 		}
 
 		// Chama IA
@@ -186,14 +194,19 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusServiceUnavailable, "IA não configurada (ZAI_API_KEY ausente)")
 			return
 		}
-		userPrompt := "UF: " + ufEstado + "\nTÍTULO: " + titulo + "\n---\n" + texto
-		aiResp, err := client.GenerateFastRaw(legislacaoSystemPrompt, userPrompt, "", 4096)
+		userPrompt := "UF: " + ufEstado + "\nTÍTULO: " + titulo + "\n---\n" + textoIA
+		aiResp, err := client.GenerateFastRaw(legislacaoSystemPrompt, userPrompt, "", 8192)
 		if err != nil {
 			log.Printf("Legislacao IA error: %v", err)
 			jsonErr(w, http.StatusBadGateway, "Falha na IA: "+err.Error())
 			return
 		}
 		interp := parseLegislacaoJSON(aiResp.Text)
+		if interp.Resumo == "" && len(interp.Regras) == 0 {
+			log.Printf("Legislacao IA: resposta não parseável — primeiros 500 chars: %.500s", aiResp.Text)
+			jsonErr(w, http.StatusUnprocessableEntity, "IA não extraiu regras do texto. Verifique se o conteúdo contém NCMs e MVAs legíveis.")
+			return
+		}
 
 		// Persiste
 		interpJSON, _ := json.Marshal(interp)
@@ -215,6 +228,30 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 			"interpretacao": interp,
 		})
 	}
+}
+
+// extrairLinhasRelevantes filtra linhas de um decreto que contenham NCMs (4+ dígitos
+// seguidos) ou valores percentuais (ex: "42,00%", "20.5"). Reduz textos longos
+// preservando as linhas que a IA realmente precisa para extrair regras.
+var reNCMOrPct = regexp.MustCompile(`\d{4}|\d+[,\.]\d+\s*%|\bMVA\b|\bNCM\b|\bCEST\b`)
+
+func extrairLinhasRelevantes(texto string) string {
+	lines := strings.Split(texto, "\n")
+	var kept []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if len(trimmed) == 0 {
+			continue
+		}
+		if reNCMOrPct.MatchString(trimmed) {
+			kept = append(kept, trimmed)
+		}
+	}
+	result := strings.Join(kept, "\n")
+	if len(result) > 80_000 {
+		result = result[:80_000]
+	}
+	return result
 }
 
 // parseLegislacaoJSON extrai o último JSON válido com campo "resumo" ou "regras"
