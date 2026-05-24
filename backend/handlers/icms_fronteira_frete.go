@@ -146,9 +146,12 @@ func fetchFreteLinks(
 		rows2.Close()
 	}
 
-	// ── Camada 3: D100 por cod_part + data (fallback documental) ────────────
-	// Quando não há D162 nem XML, tenta associar pelo fornecedor e data.
-	// Apenas para NFs que ainda não têm CT-e vinculado após as camadas 1 e 2.
+	// ── Camada 3: cte_entradas por CNPJ remetente + proximidade de data ────
+	// Quando não há D162 nem XML-CTE, usa o campo rem_cnpj_cpf de cte_entradas
+	// (remetente = o fornecedor da mercadoria) para cruzar com o participante
+	// da NF. Janela de ±10 dias absorve variações de emissão/chegada.
+	// Substitui o fallback D100 anterior que usava cod_part incorretamente
+	// (transportadora ≠ fornecedor → nunca produzia resultado).
 	pendentes := []string{}
 	for chave := range nfParams {
 		if _, found := result[chave]; !found {
@@ -157,35 +160,32 @@ func fetchFreteLinks(
 	}
 
 	if len(pendentes) > 0 {
-		const qD100 = `
+		const qCteRem = `
 			SELECT
 				c100.chv_nfe,
-				COALESCE(d100.chv_cte, '')         AS chave_cte,
-				COALESCE(d100.num_doc, '')          AS numero_cte,
-				COALESCE(part_d.nome, '')            AS emit_nome,
-				COALESCE(part_d.cnpj, '')            AS emit_cnpj,
-				COALESCE(d100.vl_doc, 0)            AS v_prest,
-				COALESCE(d100.vl_icms, 0)           AS v_icms_cte
-			FROM reg_d100 d100
-			JOIN import_jobs jd ON jd.id = d100.job_id
-			JOIN reg_c100 c100 ON c100.job_id = d100.job_id
-				AND c100.cod_part = d100.cod_part
-				AND ABS(EXTRACT(EPOCH FROM (c100.dt_doc - d100.dt_doc))) <= 86400 * 5
-			LEFT JOIN participants part_d
-				ON part_d.job_id = jd.id AND part_d.cod_part = d100.cod_part
-			WHERE jd.company_id = $1
-			  AND d100.ind_oper = '0'
-			  AND (
-				$2 = ''
-				OR jd.mes_ano = $2
-				OR (jd.mes_ano IS NULL AND TO_CHAR(d100.dt_doc, 'MM/YYYY') = $2)
-			  )
-			  AND c100.chv_nfe = ANY($3::varchar[])
+				ce.chave_cte,
+				COALESCE(ce.numero_cte, '')  AS numero_cte,
+				COALESCE(ce.emit_nome, '')   AS emit_nome,
+				COALESCE(ce.emit_cnpj, '')   AS emit_cnpj,
+				COALESCE(ce.v_prest, 0)     AS v_prest,
+				COALESCE(ce.v_icms, 0)      AS v_icms_cte
+			FROM reg_c100 c100
+			JOIN import_jobs j  ON j.id = c100.job_id AND j.company_id = $1
+			JOIN participants p ON p.job_id = j.id AND p.cod_part = c100.cod_part
+			JOIN cte_entradas ce ON ce.company_id = $1
+			                    AND ce.rem_cnpj_cpf = p.cnpj
+			                    AND (
+			                        $2 = ''
+			                        OR ce.mes_ano = $2
+			                    )
+			                    AND ABS(EXTRACT(EPOCH FROM (c100.dt_doc - ce.data_emissao))) <= 86400 * 10
+			WHERE c100.chv_nfe = ANY($3::varchar[])
 			  AND c100.cod_sit NOT IN ('02','03','04','05')
+			  AND COALESCE(p.cnpj, '') != ''
 		`
-		rows3, err := db.Query(qD100, companyID, periodo, pendentes)
+		rows3, err := db.Query(qCteRem, companyID, periodo, pendentes)
 		if err != nil {
-			log.Printf("fetchFreteLinks D100-DOC query error: %v", err)
+			log.Printf("fetchFreteLinks CTE-REM query error: %v", err)
 		} else {
 			defer rows3.Close()
 			for rows3.Next() {
@@ -194,7 +194,7 @@ func fetchFreteLinks(
 					&fl.EmitNome, &fl.EmitCNPJ, &fl.VPrest, &fl.VIcmsCTe); err != nil {
 					continue
 				}
-				fl.Fonte = "D100-DOC"
+				fl.Fonte = "CTE-REM"
 				key := fl.ChaveNFe + "|" + fl.ChaveCTe
 				if seen[key] {
 					continue

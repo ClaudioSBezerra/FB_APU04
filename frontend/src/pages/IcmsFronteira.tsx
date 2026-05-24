@@ -1019,9 +1019,9 @@ function NotasTabBlocos({
 
 function FonteBadge({ fonte }: { fonte: string }) {
   const map: Record<string, string> = {
-    'D162':     'bg-green-100 text-green-800 border-green-200',
-    'XML-CTE':  'bg-blue-100 text-blue-800 border-blue-200',
-    'D100-DOC': 'bg-amber-100 text-amber-800 border-amber-200',
+    'D162':    'bg-green-100 text-green-800 border-green-200',
+    'XML-CTE': 'bg-blue-100 text-blue-800 border-blue-200',
+    'CTE-REM': 'bg-amber-100 text-amber-800 border-amber-200',
   }
   const cls = map[fonte] ?? 'bg-gray-100 text-gray-600 border-gray-200'
   return (
@@ -1155,7 +1155,7 @@ function FretesTab({ token }: { token: string | null }) {
               O ICMS fronteira sobre o frete usa o mesmo regime da NF de mercadoria correspondente.
               Fontes: <strong>D162</strong> = vínculo direto no SPED (mais confiável);{' '}
               <strong>XML-CTE</strong> = CT-e importado com referência à NF;{' '}
-              <strong>D100-DOC</strong> = correspondência por fornecedor e data (fallback).
+              <strong>CTE-REM</strong> = correspondência por CNPJ remetente + data (fallback).
             </AlertDescription>
           </Alert>
         </>
