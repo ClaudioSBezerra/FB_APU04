@@ -185,6 +185,35 @@ func resolveICMSCTe(w icmsCTeWrapper) (float64, float64) {
 	return 0, 0
 }
 
+// persistCTeNFeRefs grava as referências de NF-e do CT-e em cte_entradas_nfe_refs.
+// Usa o chave_cte para localizar o cte_id, pois processSingleCTe usa INSERT...ON CONFLICT
+// sem RETURNING id. Idempotente — pode ser chamada após insert ou re-import.
+func persistCTeNFeRefs(db *sql.DB, companyID, chaveCTe string, infNFes []infCTeNFe) {
+	if len(infNFes) == 0 {
+		return
+	}
+	var cteID string
+	err := db.QueryRow(
+		`SELECT id FROM cte_entradas WHERE company_id=$1 AND chave_cte=$2`,
+		companyID, chaveCTe,
+	).Scan(&cteID)
+	if err != nil {
+		log.Printf("persistCTeNFeRefs: cte_id lookup falhou [%s]: %v", chaveCTe, err)
+		return
+	}
+	for _, nfeRef := range infNFes {
+		chNFe := strings.TrimSpace(nfeRef.ChNFe)
+		if len(chNFe) != 44 {
+			continue
+		}
+		_, _ = db.Exec(`
+			INSERT INTO cte_entradas_nfe_refs (cte_id, company_id, chave_nfe)
+			VALUES ($1, $2, $3)
+			ON CONFLICT ON CONSTRAINT uq_cte_nfe_ref DO NOTHING`,
+			cteID, companyID, chNFe)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Tipos de resposta JSON
 // ---------------------------------------------------------------------------
@@ -389,17 +418,7 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 			}
 
 			// Persiste referências NF-e extraídas do XML (infCTeNorm/infDoc/infNFe)
-			for _, nfeRef := range inf.InfCTeNorm.InfDoc.InfNFe {
-				chNFe := strings.TrimSpace(nfeRef.ChNFe)
-				if len(chNFe) != 44 {
-					continue
-				}
-				_, _ = db.Exec(`
-					INSERT INTO cte_entradas_nfe_refs (cte_id, company_id, chave_nfe)
-					VALUES ($1, $2, $3)
-					ON CONFLICT ON CONSTRAINT uq_cte_nfe_ref DO NOTHING`,
-					cteID, companyID, chNFe)
-			}
+			persistCTeNFeRefs(db, companyID, chave, inf.InfCTeNorm.InfDoc.InfNFe)
 
 			result.Importados++
 		}

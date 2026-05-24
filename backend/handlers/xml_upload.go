@@ -557,6 +557,10 @@ func processSingleCTe(db *sql.DB, companyID string, competencia string, data []b
 	if err != nil {
 		return fmt.Errorf("erro ao persistir CT-e: %w", err)
 	}
+
+	// Persiste referências de NF-e (infCTeNorm/infDoc/infNFe/chave) para
+	// alimentar a Layer 2 do cálculo de frete de fronteira.
+	persistCTeNFeRefs(db, companyID, chave, inf.InfCTeNorm.InfDoc.InfNFe)
 	return nil
 }
 
