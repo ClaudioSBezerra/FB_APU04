@@ -28,6 +28,7 @@ SELECT
     forn_uf,
     cfop,
     regime,
+    bloco,
     v_prod,
     v_icms,
     v_bc_st,
@@ -40,10 +41,10 @@ FROM classified
 
 func buildExportQuery(regime, periodo string) (string, []interface{}) {
 	if regime == "todos" || regime == "" {
-		q := fronteiraBaseQuery + fronteiraExportSelectCols + `ORDER BY regime, data_emissao DESC LIMIT 2000`
+		q := fronteiraBaseQuery + fronteiraExportSelectCols + `ORDER BY regime, bloco, data_emissao DESC LIMIT 2000`
 		return q, nil
 	}
-	q := fronteiraBaseQuery + fronteiraExportSelectCols + `WHERE regime = $3 ORDER BY data_emissao DESC LIMIT 2000`
+	q := fronteiraBaseQuery + fronteiraExportSelectCols + `WHERE regime = $3 ORDER BY bloco, data_emissao DESC LIMIT 2000`
 	return q, []interface{}{strings.ToUpper(regime)}
 }
 
@@ -55,6 +56,7 @@ type fronteiraExportRow struct {
 	FornUF        string
 	CFOP          string
 	Regime        string
+	Bloco         string // "mes_atual" | "mes_anterior"
 	VProd         float64
 	VIcms         float64
 	VBcST         float64
@@ -88,6 +90,7 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string) ([]fronteira
 			&row.FornUF,
 			&row.CFOP,
 			&row.Regime,
+			&row.Bloco,
 			&row.VProd,
 			&row.VIcms,
 			&row.VBcST,
@@ -105,12 +108,20 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string) ([]fronteira
 }
 
 var exportCSVHeaders = []string{
-	"Data Emissão", "Número NF-e", "Fornecedor", "CNPJ", "UF", "CFOP", "Regime",
+	"Bloco", "Data Emissão", "Número NF-e", "Fornecedor", "CNPJ", "UF", "CFOP", "Regime",
 	"V.Prod", "ICMS Atual", "V.BC ST", "V.ST", "Alíq.Inter.%", "Alíq.Interna.%", "ICMS Devido Est.",
+}
+
+func blocoLabel(bloco string) string {
+	if bloco == "mes_anterior" {
+		return "A - Mês Anterior"
+	}
+	return "B - Mês Atual"
 }
 
 func rowToCSVRecord(row fronteiraExportRow) []string {
 	return []string{
+		blocoLabel(row.Bloco),
 		row.DataEmissao,
 		row.NumeroNFe,
 		row.FornNome,
@@ -228,73 +239,88 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		f := excelize.NewFile()
-		sheetName := "ICMS Fronteira"
-		f.SetSheetName("Sheet1", sheetName)
 
-		// Header style: bold, blue bg, white font
 		headerStyle, _ := f.NewStyle(&excelize.Style{
-			Font: &excelize.Font{
-				Bold:  true,
-				Color: "FFFFFF",
-			},
-			Fill: excelize.Fill{
-				Type:    "pattern",
-				Pattern: 1,
-				Color:   []string{"4472C4"},
-			},
+			Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
+			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"4472C4"}},
+		})
+		boldStyle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+		warnStyle, _ := f.NewStyle(&excelize.Style{
+			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}},
 		})
 
-		// Write header row
-		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"}
-		for i, h := range exportCSVHeaders {
-			cell := fmt.Sprintf("%s1", cols[i])
-			f.SetCellValue(sheetName, cell, h)
-			f.SetCellStyle(sheetName, cell, cell, headerStyle)
+		// exportCSVHeaders[0] = "Bloco", drop it (already separated by sheet)
+		sheetHeaders := exportCSVHeaders[1:]
+		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"}
+
+		type sheetDef struct{ key, name, fillColor string }
+		sheets := []sheetDef{
+			{"mes_atual", "B - Mês Atual", "D4EDDA"},
+			{"mes_anterior", "A - Mês Anterior", "FFF3CD"},
 		}
 
-		// Write data rows
-		var totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido float64
-		for rowIdx, row := range dataRows {
-			excelRow := rowIdx + 2
-			f.SetCellValue(sheetName, fmt.Sprintf("A%d", excelRow), row.DataEmissao)
-			f.SetCellValue(sheetName, fmt.Sprintf("B%d", excelRow), row.NumeroNFe)
-			f.SetCellValue(sheetName, fmt.Sprintf("C%d", excelRow), row.FornNome)
-			f.SetCellValue(sheetName, fmt.Sprintf("D%d", excelRow), row.FornCNPJ)
-			f.SetCellValue(sheetName, fmt.Sprintf("E%d", excelRow), row.FornUF)
-			f.SetCellValue(sheetName, fmt.Sprintf("F%d", excelRow), row.CFOP)
-			f.SetCellValue(sheetName, fmt.Sprintf("G%d", excelRow), row.Regime)
-			f.SetCellValue(sheetName, fmt.Sprintf("H%d", excelRow), row.VProd)
-			f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), row.VIcms)
-			f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), row.VBcST)
-			f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), row.VST)
-			f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
-			f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
-			f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.IcmsDevidoEst)
+		firstSheet := true
+		for _, sd := range sheets {
+			var sheetRows []fronteiraExportRow
+			for _, row := range dataRows {
+				if row.Bloco == sd.key || (sd.key == "mes_atual" && row.Bloco == "") {
+					sheetRows = append(sheetRows, row)
+				}
+			}
 
-			totalVProd += row.VProd
-			totalVIcms += row.VIcms
-			totalVBcST += row.VBcST
-			totalVST += row.VST
-			totalIcmsDevido += row.IcmsDevidoEst
+			var sheetName string
+			if firstSheet {
+				f.SetSheetName("Sheet1", sd.name)
+				sheetName = sd.name
+				firstSheet = false
+			} else {
+				f.NewSheet(sd.name)
+				sheetName = sd.name
+			}
+
+			for i, h := range sheetHeaders {
+				cell := fmt.Sprintf("%s1", cols[i])
+				f.SetCellValue(sheetName, cell, h)
+				f.SetCellStyle(sheetName, cell, cell, headerStyle)
+			}
+
+			var totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido float64
+			for rowIdx, row := range sheetRows {
+				excelRow := rowIdx + 2
+				f.SetCellValue(sheetName, fmt.Sprintf("A%d", excelRow), row.DataEmissao)
+				f.SetCellValue(sheetName, fmt.Sprintf("B%d", excelRow), row.NumeroNFe)
+				f.SetCellValue(sheetName, fmt.Sprintf("C%d", excelRow), row.FornNome)
+				f.SetCellValue(sheetName, fmt.Sprintf("D%d", excelRow), row.FornCNPJ)
+				f.SetCellValue(sheetName, fmt.Sprintf("E%d", excelRow), row.FornUF)
+				f.SetCellValue(sheetName, fmt.Sprintf("F%d", excelRow), row.CFOP)
+				f.SetCellValue(sheetName, fmt.Sprintf("G%d", excelRow), row.Regime)
+				f.SetCellValue(sheetName, fmt.Sprintf("H%d", excelRow), row.VProd)
+				f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), row.VIcms)
+				f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), row.VBcST)
+				f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), row.VST)
+				f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
+				f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
+				// Note: IcmsDevidoEst not included — already accounted by regime
+				if sd.key == "mes_anterior" {
+					for _, c := range cols {
+						cell := fmt.Sprintf("%s%d", c, excelRow)
+						f.SetCellStyle(sheetName, cell, cell, warnStyle)
+					}
+				}
+				totalVProd += row.VProd
+				totalVIcms += row.VIcms
+				totalVBcST += row.VBcST
+				totalVST += row.VST
+				totalIcmsDevido += row.IcmsDevidoEst
+			}
+			totalRow := len(sheetRows) + 2
+			f.SetCellValue(sheetName, fmt.Sprintf("A%d", totalRow), "TOTAL")
+			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("M%d", totalRow), boldStyle)
+			f.SetCellValue(sheetName, fmt.Sprintf("H%d", totalRow), totalVProd)
+			f.SetCellValue(sheetName, fmt.Sprintf("I%d", totalRow), totalVIcms)
+			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVBcST)
+			f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVST)
 		}
-
-		// Totals row (bold)
-		boldStyle, _ := f.NewStyle(&excelize.Style{
-			Font: &excelize.Font{Bold: true},
-		})
-		totalRow := len(dataRows) + 2
-		f.SetCellValue(sheetName, fmt.Sprintf("A%d", totalRow), "TOTAL")
-		f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("A%d", totalRow), boldStyle)
-		f.SetCellValue(sheetName, fmt.Sprintf("H%d", totalRow), totalVProd)
-		f.SetCellStyle(sheetName, fmt.Sprintf("H%d", totalRow), fmt.Sprintf("H%d", totalRow), boldStyle)
-		f.SetCellValue(sheetName, fmt.Sprintf("I%d", totalRow), totalVIcms)
-		f.SetCellStyle(sheetName, fmt.Sprintf("I%d", totalRow), fmt.Sprintf("I%d", totalRow), boldStyle)
-		f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVBcST)
-		f.SetCellStyle(sheetName, fmt.Sprintf("J%d", totalRow), fmt.Sprintf("J%d", totalRow), boldStyle)
-		f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVST)
-		f.SetCellStyle(sheetName, fmt.Sprintf("K%d", totalRow), fmt.Sprintf("K%d", totalRow), boldStyle)
-		f.SetCellValue(sheetName, fmt.Sprintf("N%d", totalRow), totalIcmsDevido)
-		f.SetCellStyle(sheetName, fmt.Sprintf("N%d", totalRow), fmt.Sprintf("N%d", totalRow), boldStyle)
 
 		var buf bytes.Buffer
 		if err := f.Write(&buf); err != nil {
@@ -383,34 +409,63 @@ tr:nth-child(even) td { background: #f0f4ff; }
 		sb.WriteString(fmt.Sprintf(`<h1>%s</h1>`, title))
 		sb.WriteString(fmt.Sprintf(`<h2>Empresa: %s</h2>`, companyName))
 
-		sb.WriteString(`<table><thead><tr>`)
-		for _, h := range exportCSVHeaders {
-			sb.WriteString(fmt.Sprintf(`<th>%s</th>`, h))
+		// Separar por bloco
+		blocos := []struct{ key, label, color string }{
+			{"mes_anterior", "Bloco A — NFs de Meses Anteriores no SPED", "#fff3cd"},
+			{"mes_atual", "Bloco B — NFs do Mês Presentes no SPED", "#d4edda"},
 		}
-		sb.WriteString(`</tr></thead><tbody>`)
+		headers := exportCSVHeaders[1:] // sem coluna "Bloco" no HTML (já separado em seções)
 
-		var totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido float64
-		for _, row := range dataRows {
-			sb.WriteString(`<tr>`)
-			sb.WriteString(fmt.Sprintf(`<td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>`,
-				row.DataEmissao, row.NumeroNFe, htmlEscape(row.FornNome), row.FornCNPJ, row.FornUF, row.CFOP, row.Regime))
-			sb.WriteString(fmt.Sprintf(`<td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td>`,
-				row.VProd, row.VIcms, row.VBcST, row.VST, row.AliqInter, row.AliqInterna, row.IcmsDevidoEst))
-			sb.WriteString(`</tr>`)
-			totalVProd += row.VProd
-			totalVIcms += row.VIcms
-			totalVBcST += row.VBcST
-			totalVST += row.VST
-			totalIcmsDevido += row.IcmsDevidoEst
+		var totalVProdGeral, totalIcmsDevidoGeral float64
+		for _, bloco := range blocos {
+			var blocoRows []fronteiraExportRow
+			for _, row := range dataRows {
+				if row.Bloco == bloco.key || (bloco.key == "mes_atual" && row.Bloco == "") {
+					blocoRows = append(blocoRows, row)
+				}
+			}
+			sb.WriteString(fmt.Sprintf(`<h3 style="margin-top:18px;padding:6px 8px;background:%s;border-radius:4px;font-size:12px;">%s <span style="font-weight:normal;color:#555;">(%d nota(s))</span></h3>`,
+				bloco.color, bloco.label, len(blocoRows)))
+			if bloco.key == "mes_anterior" {
+				sb.WriteString(`<p style="font-size:10px;color:#856404;margin:0 0 6px;">⚠ O imposto pode já ter sido recolhido no mês de emissão. Verifique antes de incluir no cálculo.</p>`)
+			}
+			sb.WriteString(`<table><thead><tr>`)
+			for _, h := range headers {
+				sb.WriteString(fmt.Sprintf(`<th>%s</th>`, h))
+			}
+			sb.WriteString(`</tr></thead><tbody>`)
+			var totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido float64
+			for _, row := range blocoRows {
+				sb.WriteString(`<tr>`)
+				sb.WriteString(fmt.Sprintf(`<td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>`,
+					row.DataEmissao, row.NumeroNFe, htmlEscape(row.FornNome), row.FornCNPJ, row.FornUF, row.CFOP, row.Regime))
+				sb.WriteString(fmt.Sprintf(`<td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td>`,
+					row.VProd, row.VIcms, row.VBcST, row.VST, row.AliqInter, row.AliqInterna, row.IcmsDevidoEst))
+				sb.WriteString(`</tr>`)
+				totalVProd += row.VProd
+				totalVIcms += row.VIcms
+				totalVBcST += row.VBcST
+				totalVST += row.VST
+				totalIcmsDevido += row.IcmsDevidoEst
+			}
+			if len(blocoRows) > 0 {
+				sb.WriteString(`<tr class="total-row"><td colspan="7"><strong>Subtotal</strong></td>`)
+				sb.WriteString(fmt.Sprintf(`<td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td></td><td></td><td>%.2f</td>`,
+					totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido))
+				sb.WriteString(`</tr>`)
+			} else {
+				sb.WriteString(`<tr><td colspan="14" style="text-align:center;color:#888;font-style:italic;">Nenhuma nota neste bloco.</td></tr>`)
+			}
+			sb.WriteString(`</tbody></table>`)
+			if bloco.key == "mes_atual" {
+				totalVProdGeral += totalVProd
+				totalIcmsDevidoGeral += totalIcmsDevido
+			}
 		}
+		sb.WriteString(fmt.Sprintf(`<p style="margin-top:12px;font-size:12px;">Bloco C (XML não lançadas no SPED) não consta neste relatório — consulte a aba Reconciliação para validar.</p>`))
+		sb.WriteString(fmt.Sprintf(`<p style="font-weight:bold;font-size:13px;">Total do Mês (Bloco B): V.Prod = %.2f | ICMS Devido Est. = %.2f</p>`,
+			totalVProdGeral, totalIcmsDevidoGeral))
 
-		// Totals row
-		sb.WriteString(`<tr class="total-row"><td colspan="7"><strong>TOTAL</strong></td>`)
-		sb.WriteString(fmt.Sprintf(`<td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td></td><td></td><td>%.2f</td>`,
-			totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido))
-		sb.WriteString(`</tr>`)
-
-		sb.WriteString(`</tbody></table>`)
 		sb.WriteString(`<script>window.onload=function(){window.print()}</script>`)
 		sb.WriteString(`</body></html>`)
 

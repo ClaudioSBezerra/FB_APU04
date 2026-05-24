@@ -63,11 +63,6 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import {
   BarChart,
   Bar,
   XAxis,
@@ -329,9 +324,8 @@ function ExportButtons({ regime, token, periodo }: { regime: string; token: stri
     try {
       const params = new URLSearchParams({ regime })
       if (periodo) params.set('periodo', periodo)
-      const res = await fetch(`/api/icms-fronteira/exportar/${format}?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      if (token) params.set('token', token)
+      const res = await fetch(`/api/icms-fronteira/exportar/${format}?${params}`)
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -349,6 +343,7 @@ function ExportButtons({ regime, token, periodo }: { regime: string; token: stri
   function openPDF() {
     const params = new URLSearchParams({ regime })
     if (periodo) params.set('periodo', periodo)
+    if (token) params.set('token', token)
     window.open(`/api/icms-fronteira/exportar/pdf?${params}`, '_blank')
   }
 
@@ -769,6 +764,7 @@ function BlocoHeader({
   count,
   total,
   colorClass,
+  onClick,
 }: {
   open: boolean
   icon: React.ReactNode
@@ -776,9 +772,14 @@ function BlocoHeader({
   count: number
   total: number
   colorClass: string
+  onClick?: () => void
 }) {
   return (
-    <div className={`flex items-center justify-between w-full px-3 py-2 rounded-md border ${colorClass} cursor-pointer select-none`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center justify-between w-full px-3 py-2 rounded-md border ${colorClass} cursor-pointer select-none text-left`}
+    >
       <div className="flex items-center gap-2">
         {open ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
         {icon}
@@ -786,7 +787,7 @@ function BlocoHeader({
         <Badge variant="secondary" className="text-xs">{count} nota{count !== 1 ? 's' : ''}</Badge>
       </div>
       <span className="text-sm font-semibold tabular-nums">{fmtBRL(total)}</span>
-    </div>
+    </button>
   )
 }
 
@@ -802,7 +803,7 @@ function NotasTabBlocos({
   const [monthInput, setMonthInput] = useState('')
   const periodo = monthToPeriodo(monthInput)
 
-  const [openA, setOpenA] = useState(false)
+  const [openA, setOpenA] = useState(true)
   const [openB, setOpenB] = useState(true)
   const [openC, setOpenC] = useState(true)
 
@@ -885,18 +886,17 @@ function NotasTabBlocos({
           )}
 
           {/* ── Bloco A: NFs mês anterior no SPED ── */}
-          <Collapsible open={openA} onOpenChange={setOpenA}>
-            <CollapsibleTrigger asChild>
-              <BlocoHeader
-                open={openA}
-                icon={<Clock className="h-4 w-4 text-amber-500" />}
-                label="Bloco A — NFs de meses anteriores no SPED"
-                count={rowsAnterior.length}
-                total={totalAnterior}
-                colorClass="bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100"
-              />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
+          <div>
+            <BlocoHeader
+              open={openA}
+              icon={<Clock className="h-4 w-4 text-amber-500" />}
+              label="Bloco A — NFs de meses anteriores no SPED"
+              count={rowsAnterior.length}
+              total={totalAnterior}
+              colorClass="bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100"
+              onClick={() => setOpenA(v => !v)}
+            />
+            {openA && (
               <div className="mt-2 space-y-2">
                 <Alert className="border-amber-200 bg-amber-50">
                   <AlertTriangle className="h-4 w-4 text-amber-600" />
@@ -914,22 +914,21 @@ function NotasTabBlocos({
                   <TabelaNotasSped rows={rowsAnterior} showAliq={showAliq} />
                 )}
               </div>
-            </CollapsibleContent>
-          </Collapsible>
+            )}
+          </div>
 
           {/* ── Bloco B: NFs do mês no SPED ── */}
-          <Collapsible open={openB} onOpenChange={setOpenB}>
-            <CollapsibleTrigger asChild>
-              <BlocoHeader
-                open={openB}
-                icon={<CheckCircle2 className="h-4 w-4 text-green-600" />}
-                label="Bloco B — NFs do mês presentes no SPED"
-                count={rowsAtual.length}
-                total={totalAtual}
-                colorClass="bg-green-50 border-green-200 text-green-900 hover:bg-green-100"
-              />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
+          <div>
+            <BlocoHeader
+              open={openB}
+              icon={<CheckCircle2 className="h-4 w-4 text-green-600" />}
+              label="Bloco B — NFs do mês presentes no SPED"
+              count={rowsAtual.length}
+              total={totalAtual}
+              colorClass="bg-green-50 border-green-200 text-green-900 hover:bg-green-100"
+              onClick={() => setOpenB(v => !v)}
+            />
+            {openB && (
               <div className="mt-2">
                 {spedQuery.isLoading ? (
                   <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
@@ -941,28 +940,27 @@ function NotasTabBlocos({
                   <TabelaNotasSped rows={rowsAtual} showAliq={showAliq} />
                 )}
               </div>
-            </CollapsibleContent>
-          </Collapsible>
+            )}
+          </div>
 
           {/* ── Bloco C: NFs XML não lançadas no SPED ── */}
-          <Collapsible open={openC} onOpenChange={setOpenC}>
-            <CollapsibleTrigger asChild>
-              <BlocoHeader
-                open={openC}
-                icon={<FileQuestion className="h-4 w-4 text-slate-500" />}
-                label="Bloco C — NFs do mês não localizadas no SPED (apenas XML)"
-                count={rowsXml.length}
-                total={totalXml}
-                colorClass="bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
-              />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
+          <div>
+            <BlocoHeader
+              open={openC}
+              icon={<FileQuestion className="h-4 w-4 text-slate-500" />}
+              label="Bloco C — NFs do mês não localizadas no SPED (apenas XML)"
+              count={rowsXml.length}
+              total={totalXml}
+              colorClass="bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
+              onClick={() => setOpenC(v => !v)}
+            />
+            {openC && (
               <div className="mt-2 space-y-2">
                 <Alert className="border-slate-200 bg-slate-50">
                   <Info className="h-4 w-4 text-slate-500" />
                   <AlertDescription className="text-xs text-slate-700">
                     Notas emitidas neste mês encontradas no XML mas <strong>ausentes do SPED</strong>.
-                    Podem ter sido recebidas no mês seguinte ou excluídas do escrituração.
+                    Podem ter sido recebidas no mês seguinte ou excluídas da escrituração.
                     A classificação de regime é automática pelo CFOP do fornecedor —
                     <strong> valide na aba Reconciliação antes de incluir no cálculo oficial</strong>.
                   </AlertDescription>
@@ -977,8 +975,8 @@ function NotasTabBlocos({
                   <TabelaNotasXml rows={rowsXml} />
                 )}
               </div>
-            </CollapsibleContent>
-          </Collapsible>
+            )}
+          </div>
         </>
       )}
     </div>

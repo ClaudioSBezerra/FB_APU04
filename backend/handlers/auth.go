@@ -208,17 +208,15 @@ func GetMeHandler(db *sql.DB) http.HandlerFunc {
 
 func AuthMiddleware(next http.HandlerFunc, requiredRole string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
+		// Token via header (normal) ou via ?token= (download direto, window.open).
 		tokenString := ""
+		authHeader := r.Header.Get("Authorization")
 		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
 			tokenString = authHeader[7:]
+		} else if qt := r.URL.Query().Get("token"); qt != "" {
+			tokenString = qt
 		} else {
-			http.Error(w, "Invalid authorization header format", http.StatusUnauthorized)
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
 			return
 		}
 
