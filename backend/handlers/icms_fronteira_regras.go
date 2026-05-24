@@ -397,6 +397,93 @@ func IcmsFronteiraRegraUpdateHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// normalizeHeader baixa caixa, remove acentos e mantém só [a-z0-9 %], para
+// casar cabeçalhos de planilha de forma tolerante a variações.
+func normalizeHeader(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	repl := strings.NewReplacer(
+		"á", "a", "à", "a", "â", "a", "ã", "a",
+		"é", "e", "ê", "e",
+		"í", "i",
+		"ó", "o", "ô", "o", "õ", "o",
+		"ú", "u",
+		"ç", "c",
+	)
+	s = repl.Replace(s)
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == ' ' || r == '%' {
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// detectFronteiraRegrasColumns mapeia nomes de coluna → índice a partir do
+// cabeçalho. Suporta o formato "Base de Regras Unificada" (UF, Segmento, NCM,
+// CEST, Descrição, Alíq Int, MVA Orig, MVA 4%, MVA 7%, MVA 12%) e o legado
+// (ncm, descricao, regime, aliquota, mva, reducao). Se nenhum cabeçalho casar,
+// retorna mapa vazio (caller usa fallback posicional legado).
+func detectFronteiraRegrasColumns(header []string) map[string]int {
+	idx := map[string]int{}
+	set := func(k string, i int) {
+		if _, ok := idx[k]; !ok {
+			idx[k] = i
+		}
+	}
+	for i, h := range header {
+		n := normalizeHeader(h)
+		switch {
+		case strings.Contains(n, "mva 4") || strings.Contains(n, "mva4"):
+			set("mva4", i)
+		case strings.Contains(n, "mva 7") || strings.Contains(n, "mva7"):
+			set("mva7", i)
+		case strings.Contains(n, "mva 12") || strings.Contains(n, "mva12"):
+			set("mva12", i)
+		case strings.Contains(n, "mva orig") || strings.Contains(n, "mva original") || n == "mva":
+			set("mva_orig", i)
+		case strings.HasPrefix(n, "ncm"):
+			set("ncm", i)
+		case strings.HasPrefix(n, "cest"):
+			set("cest", i)
+		case strings.HasPrefix(n, "descri"):
+			set("descricao", i)
+		case strings.HasPrefix(n, "segmento") || strings.HasPrefix(n, "grupo"):
+			set("segmento", i)
+		case n == "uf" || strings.HasPrefix(n, "uf "):
+			set("uf", i)
+		case strings.HasPrefix(n, "regime"):
+			set("regime", i)
+		case strings.Contains(n, "aliq"):
+			set("aliq", i)
+		case strings.Contains(n, "reduc"):
+			set("reducao", i)
+		}
+	}
+	return idx
+}
+
+// parsePctOrNull converte string de percentual ("112,04", "85.10", "-", "")
+// em *float64; retorna nil para vazio/traço/zero.
+func parsePctOrNull(s string) interface{} {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "-" || s == "—" {
+		return nil
+	}
+	if v, err := strconv.ParseFloat(strings.Replace(s, ",", ".", 1), 64); err == nil && v != 0 {
+		return v
+	}
+	return nil
+}
+
+// nullIfEmpty retorna nil (SQL NULL) para string vazia, senão a própria string.
+func nullIfEmpty(s string) interface{} {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
+}
+
 // ---------------------------------------------------------------------------
 // IcmsFronteiraRegrasImportarHandler — POST /api/icms-fronteira/regras/importar
 // ---------------------------------------------------------------------------
@@ -507,88 +594,121 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 		validRegimes := map[string]bool{
 			"ST": true, "ANTECIPACAO": true, "DIFAL": true, "ISENTO": true, "NORMAL": true,
 		}
+		validUF := map[string]bool{"PE": true, "BA": true, "CE": true}
+
+		if len(records) == 0 {
+			json.NewEncoder(w).Encode(importResult{Errors: []string{}})
+			return
+		}
+
+		// Detecta layout pelo cabeçalho. Se não casar NCM por nome, usa fallback
+		// posicional legado (ncm=0, descricao=1, regime=2, aliq=3, mva=4, reducao=5).
+		col := detectFronteiraRegrasColumns(records[0])
+		legacy := false
+		if _, ok := col["ncm"]; !ok {
+			legacy = true
+			col = map[string]int{"ncm": 0, "descricao": 1, "regime": 2, "aliq": 3, "mva_orig": 4, "reducao": 5}
+		}
+
+		// get retorna a célula da coluna mapeada por chave (ou "" se ausente).
+		get := func(rec []string, key string) string {
+			i, ok := col[key]
+			if !ok || i < 0 || i >= len(rec) {
+				return ""
+			}
+			return strings.TrimSpace(rec[i])
+		}
+		parseFloatDefault := func(s string, def float64) float64 {
+			s = strings.TrimSpace(s)
+			if s == "" || s == "-" {
+				return def
+			}
+			if v, err := strconv.ParseFloat(strings.Replace(s, ",", ".", 1), 64); err == nil {
+				return v
+			}
+			return def
+		}
 
 		res := importResult{Errors: []string{}}
-		// skip header row (index 0)
 		for i, rec := range records {
 			if i == 0 {
-				continue
+				continue // header
 			}
 			if len(rec) < 1 {
 				res.Skipped++
 				continue
 			}
 
-			ncmPrefixo := strings.TrimSpace(rec[0])
+			ncmPrefixo := get(rec, "ncm")
+			// remove pontuação comum de NCM ("2710.19.31" → "27101931")
+			ncmPrefixo = strings.NewReplacer(".", "", " ", "", "-", "").Replace(ncmPrefixo)
 			if ncmPrefixo == "" {
 				res.Skipped++
 				continue
 			}
 			if len([]rune(ncmPrefixo)) > 8 {
 				if len(res.Errors) < 100 {
-					res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": ncm_prefixo não pode ter mais de 8 caracteres (valor: "+ncmPrefixo+")")
+					res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": NCM não pode ter mais de 8 caracteres (valor: "+ncmPrefixo+")")
 				}
 				res.Skipped++
 				continue
 			}
 
-			descricao := ""
-			if len(rec) > 1 {
-				descricao = strings.TrimSpace(rec[1])
-			}
+			descricao := get(rec, "descricao")
+			cest := get(rec, "cest")
+			segmento := get(rec, "segmento")
 
-			regime := "ST"
-			if len(rec) > 2 {
-				r2 := strings.TrimSpace(strings.ToUpper(rec[2]))
-				if validRegimes[r2] {
-					regime = r2
-				} else if r2 != "" {
+			// MVA ajustado pré-calculado (formato unificado) e MVA original
+			mva4 := parsePctOrNull(get(rec, "mva4"))
+			mva7 := parsePctOrNull(get(rec, "mva7"))
+			mva12 := parsePctOrNull(get(rec, "mva12"))
+			mvaOrig := parsePctOrNull(get(rec, "mva_orig"))
+
+			// Regime: usa coluna se presente/válida; senão infere (qualquer MVA → ST, senão NORMAL)
+			regime := ""
+			if r2 := strings.ToUpper(get(rec, "regime")); validRegimes[r2] {
+				regime = r2
+			}
+			if regime == "" {
+				if mvaOrig != nil || mva4 != nil || mva7 != nil || mva12 != nil {
 					regime = "ST"
+				} else {
+					regime = "NORMAL"
 				}
 			}
 
-			aliquotaInterna := 20.5
-			if len(rec) > 3 {
-				s := strings.TrimSpace(rec[3])
-				if s != "" {
-					if v, err2 := strconv.ParseFloat(strings.Replace(s, ",", ".", 1), 64); err2 == nil {
-						aliquotaInterna = v
-					}
-				}
-			}
+			aliquotaInterna := parseFloatDefault(get(rec, "aliq"), 20.5)
+			reducaoBCPct := parseFloatDefault(get(rec, "reducao"), 0.0)
 
-			var mvaArg interface{}
-			if len(rec) > 4 {
-				s := strings.TrimSpace(rec[4])
-				if s != "" {
-					if v, err2 := strconv.ParseFloat(strings.Replace(s, ",", ".", 1), 64); err2 == nil && v != 0 {
-						mvaArg = v
-					}
-				}
-			}
-
-			reducaoBCPct := 0.0
-			if len(rec) > 5 {
-				s := strings.TrimSpace(rec[5])
-				if s != "" {
-					if v, err2 := strconv.ParseFloat(strings.Replace(s, ",", ".", 1), 64); err2 == nil {
-						reducaoBCPct = v
-					}
-				}
+			// UF por linha (formato unificado) sobrepõe o uf_estado do formulário
+			rowUF := strings.ToUpper(get(rec, "uf"))
+			if !validUF[rowUF] {
+				rowUF = ufEstado
 			}
 
 			_, err2 := db.Exec(`
 				INSERT INTO icms_fronteira_regras_ncm
-					(company_id, ncm_prefixo, descricao, regime, aliquota_interna, mva_original, reducao_bc_pct, uf_estado)
+					(company_id, ncm_prefixo, descricao, regime, aliquota_interna,
+					 mva_original, reducao_bc_pct, uf_estado,
+					 mva_ajustado_4pct, mva_ajustado_7pct, mva_ajustado_12pct,
+					 cest, segmento)
 				VALUES
-					($1, $2, $3, $4, $5, $6, $7, $8)
+					($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 				ON CONFLICT (company_id, ncm_prefixo, uf_estado) DO UPDATE
 					SET descricao = EXCLUDED.descricao,
 					    regime = EXCLUDED.regime,
 					    aliquota_interna = EXCLUDED.aliquota_interna,
 					    mva_original = EXCLUDED.mva_original,
-					    reducao_bc_pct = EXCLUDED.reducao_bc_pct
-			`, companyID, ncmPrefixo, descricao, regime, aliquotaInterna, mvaArg, reducaoBCPct, ufEstado)
+					    reducao_bc_pct = EXCLUDED.reducao_bc_pct,
+					    mva_ajustado_4pct = EXCLUDED.mva_ajustado_4pct,
+					    mva_ajustado_7pct = EXCLUDED.mva_ajustado_7pct,
+					    mva_ajustado_12pct = EXCLUDED.mva_ajustado_12pct,
+					    cest = EXCLUDED.cest,
+					    segmento = EXCLUDED.segmento
+			`, companyID, ncmPrefixo, descricao, regime, aliquotaInterna,
+				mvaOrig, reducaoBCPct, rowUF,
+				mva4, mva7, mva12,
+				nullIfEmpty(cest), nullIfEmpty(segmento))
 			if err2 != nil {
 				log.Printf("IcmsFronteiraRegrasImportar upsert error row %d: %v", i+1, err2)
 				if len(res.Errors) < 100 {
@@ -599,6 +719,7 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 			}
 			res.Imported++
 		}
+		_ = legacy
 
 		json.NewEncoder(w).Encode(res)
 	}

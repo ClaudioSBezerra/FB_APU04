@@ -142,10 +142,34 @@ WITH classified AS (
                     ) / 100.0)
             WHEN c190.cfop IN ('2403','2409','2651','2652')
                 THEN CASE
-                    WHEN regra.mva_original IS NOT NULL
+                    -- MVA efetivo: ajustado pré-calc por alíquota interestadual real,
+                    -- fallback Convênio 110/07 a partir do MVA original, fallback MVA original.
+                    WHEN COALESCE(
+                        CASE COALESCE(NULLIF(c190.aliq_icms,0),12.0)
+                            WHEN 4.0  THEN regra.mva_ajustado_4pct
+                            WHEN 7.0  THEN regra.mva_ajustado_7pct
+                            WHEN 12.0 THEN regra.mva_ajustado_12pct
+                        END,
+                        CASE WHEN regra.mva_original IS NOT NULL AND COALESCE(regra.aliquota_interna,20.5) < 100 THEN
+                            ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(c190.aliq_icms,0),12.0)/100.0)
+                             / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0) - 1.0) * 100.0
+                        END,
+                        regra.mva_original
+                    ) IS NOT NULL
                         THEN GREATEST(0,
                             COALESCE(c190.vl_opr, 0)
-                            * (1.0 + regra.mva_original/100.0)
+                            * (1.0 + COALESCE(
+                                CASE COALESCE(NULLIF(c190.aliq_icms,0),12.0)
+                                    WHEN 4.0  THEN regra.mva_ajustado_4pct
+                                    WHEN 7.0  THEN regra.mva_ajustado_7pct
+                                    WHEN 12.0 THEN regra.mva_ajustado_12pct
+                                END,
+                                CASE WHEN regra.mva_original IS NOT NULL AND COALESCE(regra.aliquota_interna,20.5) < 100 THEN
+                                    ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(c190.aliq_icms,0),12.0)/100.0)
+                                     / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0) - 1.0) * 100.0
+                                END,
+                                regra.mva_original
+                            )/100.0)
                             * COALESCE(regra.aliquota_interna, 20.5)/100.0
                             - COALESCE(c190.vl_icms, 0))
                     ELSE COALESCE(c190.vl_icms_st, 0)
@@ -170,7 +194,8 @@ WITH classified AS (
         LIMIT 1
     ) top_item ON true
     LEFT JOIN LATERAL (
-        SELECT r.aliquota_interna, r.mva_original
+        SELECT r.aliquota_interna, r.mva_original,
+               r.mva_ajustado_4pct, r.mva_ajustado_7pct, r.mva_ajustado_12pct
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
           AND r.uf_estado = COALESCE(ne.dest_uf, 'PE')
