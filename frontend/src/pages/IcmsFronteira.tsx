@@ -17,6 +17,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -129,7 +130,15 @@ interface FronteiraXmlNaoSpedRow {
   forn_nome: string
   forn_uf: string
   cfop_saida: string
+  ncm: string
+  v_prod: number
+  v_frete: number
+  v_outro: number
   v_opr: number
+  v_icms_nf: number
+  aliq_inter: number
+  aliq_interna: number
+  mva: number
   icms_devido_est: number
   regime: string
   class_status: string // 'auto' | 'manual'
@@ -736,6 +745,12 @@ function TabelaNotasSped({
 }
 
 function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
+  const totalVProd  = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
+  const totalVFrete = rows.reduce((acc, r) => acc + (r.v_frete || 0), 0)
+  const totalVOpr   = rows.reduce((acc, r) => acc + (r.v_opr || 0), 0)
+  const totalVIcms  = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
+  const totalIcms   = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
+  const isST = rows.some(r => r.regime === 'ST')
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
@@ -745,8 +760,17 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
             <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
-            <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP Saída</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">NCM</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Frete</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Opr.</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq.Inter</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq.Interna</TableHead>
+            {isST && (
+              <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA</TableHead>
+            )}
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Est.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Classif.</TableHead>
           </TableRow>
@@ -764,7 +788,16 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
               </TableCell>
               <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
               <TableCell className="text-xs font-mono">{row.cfop_saida || '—'}</TableCell>
+              <TableCell className="text-xs font-mono">{row.ncm || '—'}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_frete)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_opr)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{(row.aliq_inter || 0).toFixed(2)}%</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{(row.aliq_interna || 0).toFixed(2)}%</TableCell>
+              {isST && (
+                <TableCell className="text-xs text-right tabular-nums">{(row.mva || 0).toFixed(2)}%</TableCell>
+              )}
               <TableCell className="text-xs text-right tabular-nums font-semibold">
                 {fmtBRL(row.icms_devido_est)}
               </TableCell>
@@ -778,6 +811,20 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
             </TableRow>
           ))}
         </TableBody>
+        {rows.length > 0 && (
+          <TableFooter>
+            <TableRow className="bg-muted/60 hover:bg-muted/60">
+              <TableCell colSpan={6} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVFrete)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
+              <TableCell colSpan={isST ? 3 : 2} />
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
+              <TableCell />
+            </TableRow>
+          </TableFooter>
+        )}
       </Table>
     </div>
   )

@@ -21,7 +21,15 @@ type FronteiraXmlNaoSpedRow struct {
 	FornNome      string  `json:"forn_nome"`
 	FornUF        string  `json:"forn_uf"`
 	CfopSaida     string  `json:"cfop_saida"`
+	NCM           string  `json:"ncm"`
+	VProd         float64 `json:"v_prod"`
+	VFrete        float64 `json:"v_frete"`
+	VOutro        float64 `json:"v_outro"`
 	VOpr          float64 `json:"v_opr"`
+	VIcmsNF       float64 `json:"v_icms_nf"`        // ICMS destacado na NF (<vICMS>)
+	AliqInter     float64 `json:"aliq_inter"`        // alíquota interestadual efetiva = vIcms/vProd × 100
+	AliqInterna   float64 `json:"aliq_interna"`      // alíquota interna usada (regra ou fallback)
+	MVA           float64 `json:"mva"`               // MVA original (só usado em ST)
 	IcmsDevidoEst float64 `json:"icms_devido_est"`
 	Regime        string  `json:"regime"`
 	ClassStatus   string  `json:"class_status"` // "auto" | "manual"
@@ -77,6 +85,7 @@ SELECT
     m.numero_nfe,
     m.forn_cnpj, m.forn_nome, COALESCE(m.forn_uf,'') AS forn_uf,
     m.cfop_saida,
+    COALESCE(m.ncm,'') AS ncm,
     COALESCE(cm.regime,
         CASE
             WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
@@ -86,7 +95,14 @@ SELECT
         END
     ) AS regime,
     COALESCE(cm.status, 'auto') AS class_status,
+    m.v_prod,
+    m.v_frete,
+    m.v_outro,
     (m.v_prod + m.v_frete + m.v_outro) AS v_opr,
+    m.v_icms AS v_icms_nf,
+    CASE WHEN m.v_prod > 0 THEN ROUND((m.v_icms / m.v_prod * 100.0)::numeric, 2) ELSE 0 END AS aliq_inter,
+    COALESCE(regra.aliquota_interna, 20.5) AS aliq_interna,
+    COALESCE(regra.mva_original, regra.mva_ajustado_12pct, 0) AS mva,
     -- Mesma lógica do Bloco B (fronteiraBaseQuery):
     --   ANTECIPACAO/DIFAL: v_opr × aliq_interna% − v_icms_pago
     --   ST: usa MVA com fallback igual ao Bloco B
@@ -145,9 +161,11 @@ func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime string) ([]Fronteir
 		if err := rows.Scan(
 			&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
-			&row.CfopSaida,
+			&row.CfopSaida, &row.NCM,
 			&row.Regime, &row.ClassStatus,
-			&row.VOpr, &row.IcmsDevidoEst,
+			&row.VProd, &row.VFrete, &row.VOutro, &row.VOpr,
+			&row.VIcmsNF, &row.AliqInter, &row.AliqInterna, &row.MVA,
+			&row.IcmsDevidoEst,
 		); err != nil {
 			continue
 		}
@@ -213,9 +231,11 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 			if err := rows.Scan(
 				&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 				&row.FornCNPJ, &row.FornNome, &row.FornUF,
-				&row.CfopSaida,
+				&row.CfopSaida, &row.NCM,
 				&row.Regime, &row.ClassStatus,
-				&row.VOpr, &row.IcmsDevidoEst,
+				&row.VProd, &row.VFrete, &row.VOutro, &row.VOpr,
+				&row.VIcmsNF, &row.AliqInter, &row.AliqInterna, &row.MVA,
+				&row.IcmsDevidoEst,
 			); err != nil {
 				log.Printf("IcmsFronteiraXmlNaoSped[%s] scan error: %v", regime, err)
 				continue
