@@ -178,7 +178,7 @@ func fetchFreteLinks(
 			                        $2 = ''
 			                        OR ce.mes_ano = $2
 			                    )
-			                    AND ABS(EXTRACT(EPOCH FROM (c100.dt_doc - ce.data_emissao))) <= 86400 * 10
+			                    AND ABS(c100.dt_doc - ce.data_emissao) <= 10
 			WHERE c100.chv_nfe = ANY($3::varchar[])
 			  AND c100.cod_sit NOT IN ('02','03','04','05')
 			  AND COALESCE(p.cnpj, '') != ''
