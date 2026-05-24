@@ -50,13 +50,25 @@ type infCte struct {
 }
 
 type ideCTe struct {
-	Mod   string `xml:"mod"`    // sempre "57"
-	Serie string `xml:"serie"`
-	NCT   string `xml:"nCT"`   // número do CT-e
-	DhEmi string `xml:"dhEmi"` // ISO8601 → data_emissao + mes_ano
-	NatOp string `xml:"natOp"`
-	CFOP  string `xml:"CFOP"`
-	Modal string `xml:"modal"` // 01=Rodoviário 02=Aéreo 03=Aquaviário 04=Ferroviário
+	Mod   string    `xml:"mod"`    // sempre "57"
+	Serie string    `xml:"serie"`
+	NCT   string    `xml:"nCT"`   // número do CT-e
+	DhEmi string    `xml:"dhEmi"` // ISO8601 → data_emissao + mes_ano
+	NatOp string    `xml:"natOp"`
+	CFOP  string    `xml:"CFOP"`
+	Modal string    `xml:"modal"` // 01=Rodoviário 02=Aéreo 03=Aquaviário 04=Ferroviário
+	Toma3 toma3CTe  `xml:"toma3"` // padrão (0=Remetente,1=Expedidor,2=Recebedor,3=Destinatário)
+	Toma4 toma4CTe  `xml:"toma4"` // outros — CNPJ explícito
+}
+
+type toma3CTe struct {
+	Toma string `xml:"toma"`
+}
+
+type toma4CTe struct {
+	Toma string `xml:"toma"` // sempre "4"
+	CNPJ string `xml:"CNPJ"`
+	CPF  string `xml:"CPF"`
 }
 
 type emitCTe struct {
@@ -377,6 +389,17 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 			ib := inf.Imp.IBSCBSTot
 			modInt, _ := strconv.Atoi(mod)
 
+			// Tomador do serviço
+			toma := strings.TrimSpace(inf.Ide.Toma3.Toma)
+			toma4CNPJ := ""
+			if t4 := strings.TrimSpace(inf.Ide.Toma4.Toma); t4 != "" {
+				toma = t4
+				toma4CNPJ = strings.TrimSpace(inf.Ide.Toma4.CNPJ)
+				if toma4CNPJ == "" {
+					toma4CNPJ = strings.TrimSpace(inf.Ide.Toma4.CPF)
+				}
+			}
+
 			var cteID string
 			err = db.QueryRow(`
 				INSERT INTO cte_entradas (
@@ -387,7 +410,8 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					dest_cnpj_cpf, dest_nome, dest_uf,
 					v_prest, v_rec, v_carga,
 					v_bc_icms, v_icms,
-					v_bc_ibs_cbs, v_ibs, v_cbs
+					v_bc_ibs_cbs, v_ibs, v_cbs,
+					toma, toma4_cnpj
 				) VALUES (
 					$1,$2,$3,$4,$5,
 					$6,$7,$8,$9,$10,
@@ -396,10 +420,12 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					$17,$18,$19,
 					$20,$21,$22,
 					$23,$24,
-					$25,$26,$27
+					$25,$26,$27,
+					$28,$29
 				)
 				ON CONFLICT ON CONSTRAINT uq_cte_entradas_company_chave DO UPDATE
-					SET mes_ano = EXCLUDED.mes_ano
+					SET mes_ano = EXCLUDED.mes_ano,
+					    toma = EXCLUDED.toma, toma4_cnpj = EXCLUDED.toma4_cnpj
 				RETURNING id`,
 				companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NCT,
 				dataEmissao, mesAno, inf.Ide.NatOp, inf.Ide.CFOP, inf.Ide.Modal,
@@ -410,6 +436,7 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 				toDecimal(inf.InfCTeNorm.InfCarga.VCarga),
 				vBC, vICMS,
 				toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GCBS.VCBS),
+				toma, toma4CNPJ,
 			).Scan(&cteID)
 			if err != nil {
 				log.Printf("CteEntradas INSERT error [%s]: %v", chave, err)

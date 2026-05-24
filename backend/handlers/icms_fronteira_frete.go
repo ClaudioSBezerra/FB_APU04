@@ -22,6 +22,7 @@ type FreteLink struct {
 	VIcmsCTe    float64 // ICMS pago pela transportadora
 	IcmsFronteira float64 // ICMS fronteira calculado sobre o frete
 	Fonte       string  // "D162", "XML-CTE", "D100-DOC"
+	Toma        string  // tomador: "3" Destinatário, "0"/"1"/"2" outros, "" desconhecido
 }
 
 // calcICMSFrete calcula o ICMS fronteira devido sobre o frete,
@@ -110,6 +111,10 @@ func fetchFreteLinks(
 	// Filtra pelas chaves de NF-e que já estão em nfParams (NFs de fronteira do
 	// período). Não filtra por mes_ano do CT-e: um CT-e de maio pode transportar
 	// NFs de abril, o que importa é a NF-e, não a emissão do CT-e.
+	//
+	// Filtro fiscal: só considera o frete quando o tomador é o destinatário
+	// (toma='3'). Quando toma='4' (Outros), aceita se toma4_cnpj coincide com
+	// o CNPJ da empresa do destinatário (verificação na linha — dest_cnpj_cpf).
 	nfKeys := make([]string, 0, len(nfParams))
 	for k := range nfParams {
 		nfKeys = append(nfKeys, k)
@@ -123,11 +128,18 @@ func fetchFreteLinks(
 			COALESCE(ce.emit_nome, '')           AS emit_nome,
 			COALESCE(ce.emit_cnpj, '')           AS emit_cnpj,
 			COALESCE(ce.v_prest, 0)              AS v_prest,
-			COALESCE(ce.v_icms, 0)               AS v_icms_cte
+			COALESCE(ce.v_icms, 0)               AS v_icms_cte,
+			COALESCE(ce.toma, '')                AS toma
 		FROM cte_entradas_nfe_refs ref
 		JOIN cte_entradas ce ON ce.id = ref.cte_id
 		WHERE ref.company_id = $1
 		  AND ref.chave_nfe = ANY($2::varchar[])
+		  AND (
+		      ce.toma = '3'                                                  -- Destinatário paga
+		      OR (ce.toma = '4' AND ce.toma4_cnpj = ce.dest_cnpj_cpf)         -- "Outros" = destinatário
+		      OR ce.toma IS NULL                                              -- CT-e antigo sem o campo
+		      OR ce.toma = ''
+		  )
 	`
 	rows2, err := db.Query(qXML, companyID, nfKeys)
 	if err != nil {
@@ -137,7 +149,7 @@ func fetchFreteLinks(
 		for rows2.Next() {
 			var fl FreteLink
 			if err := rows2.Scan(&fl.ChaveNFe, &fl.ChaveCTe, &fl.NumeroCTe,
-				&fl.EmitNome, &fl.EmitCNPJ, &fl.VPrest, &fl.VIcmsCTe); err != nil {
+				&fl.EmitNome, &fl.EmitCNPJ, &fl.VPrest, &fl.VIcmsCTe, &fl.Toma); err != nil {
 				continue
 			}
 			fl.Fonte = "XML-CTE"
@@ -251,6 +263,7 @@ type FreteHTTPRow struct {
 	VIcmsCTe      float64 `json:"v_icms_cte"`
 	IcmsFronteira float64 `json:"icms_fronteira"`
 	Fonte         string  `json:"fonte"`
+	Toma          string  `json:"toma"`
 }
 
 type FretesResponse struct {
@@ -352,6 +365,7 @@ func IcmsFronteiraFretesHandler(db *sql.DB) http.HandlerFunc {
 					VIcmsCTe:      fl.VIcmsCTe,
 					IcmsFronteira: fl.IcmsFronteira,
 					Fonte:         fl.Fonte,
+					Toma:          fl.Toma,
 				})
 				totalVPrest += fl.VPrest
 				totalIcmsFronteira += fl.IcmsFronteira

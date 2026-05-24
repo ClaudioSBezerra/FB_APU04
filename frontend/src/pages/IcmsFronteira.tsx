@@ -239,6 +239,7 @@ interface FreteRow {
   v_icms_cte: number
   icms_fronteira: number
   fonte: string
+  toma: string
 }
 
 interface FretesResponse {
@@ -316,6 +317,22 @@ function monthToPeriodo(m: string): string {
 
 // Célula compacta de chave de 44 dígitos: mostra os últimos 9 dígitos
 // (cNF + DV) com tooltip da chave completa e clique para copiar.
+function TomadorBadge({ toma }: { toma: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    '0': { label: 'Remetente',    cls: 'bg-amber-100 text-amber-800 border-amber-200' },
+    '1': { label: 'Expedidor',    cls: 'bg-amber-100 text-amber-800 border-amber-200' },
+    '2': { label: 'Recebedor',    cls: 'bg-amber-100 text-amber-800 border-amber-200' },
+    '3': { label: 'Destinatário', cls: 'bg-green-100 text-green-800 border-green-200' },
+    '4': { label: 'Outros',       cls: 'bg-slate-100 text-slate-700 border-slate-200' },
+  }
+  const m = map[toma] ?? { label: 'n/d', cls: 'bg-gray-100 text-gray-500 border-gray-200' }
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${m.cls}`}>
+      {m.label}
+    </span>
+  )
+}
+
 function ChaveCell({ chave, label }: { chave: string; label?: string }) {
   if (!chave) return <span className="text-muted-foreground">—</span>
   const short = chave.length === 44 ? chave.slice(-9) : chave
@@ -1210,6 +1227,7 @@ function FretesTab({ token }: { token: string | null }) {
                   <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Frete</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS CT-e</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Fronteira</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Tomador</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wide">Fonte</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1236,6 +1254,7 @@ function FretesTab({ token }: { token: string | null }) {
                     <TableCell className="text-xs text-right tabular-nums font-semibold">
                       {fmtBRL(row.icms_fronteira)}
                     </TableCell>
+                    <TableCell><TomadorBadge toma={row.toma || ''} /></TableCell>
                     <TableCell><FonteBadge fonte={row.fonte} /></TableCell>
                   </TableRow>
                 ))}
@@ -1251,7 +1270,7 @@ function FretesTab({ token }: { token: string | null }) {
                       {fmtBRL(data.rows.reduce((a, r) => a + (r.v_icms_cte || 0), 0))}
                     </TableCell>
                     <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(data.total_icms_fronteira)}</TableCell>
-                    <TableCell />
+                    <TableCell colSpan={2} />
                   </TableRow>
                 </TableFooter>
               )}
@@ -1261,10 +1280,13 @@ function FretesTab({ token }: { token: string | null }) {
           <Alert className="border-blue-200 bg-blue-50">
             <Info className="h-4 w-4 text-blue-600" />
             <AlertDescription className="text-xs text-blue-800">
+              <strong>Tomador:</strong> só são considerados CT-es cujo tomador é o
+              destinatário (= empresa do cliente) — pois apenas nesses casos o frete é por conta
+              dela. CT-es de fornecedores com frete FOB (tomador = Remetente) são ignorados.
+              <br />
               O ICMS fronteira sobre o frete usa o mesmo regime da NF de mercadoria correspondente.
               Fontes: <strong>D162</strong> = vínculo direto no SPED (mais confiável);{' '}
-              <strong>XML-CTE</strong> = CT-e importado com referência à NF;{' '}
-              <strong>CTE-REM</strong> = correspondência por CNPJ remetente + data (fallback).
+              <strong>XML-CTE</strong> = CT-e importado com referência à NF.
             </AlertDescription>
           </Alert>
         </>
