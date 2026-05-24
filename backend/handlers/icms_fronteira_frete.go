@@ -240,6 +240,52 @@ type nfFreteParams struct {
 	AliqInterna float64
 }
 
+// fetchCTesPorChaveNFe retorna os CT-es vinculados a cada chave NF-e,
+// aplicando o filtro fiscal (tomador = destinatário). Diferente do
+// fetchFreteLinks, NÃO calcula icms_fronteira — só lista os CT-es para
+// exibição (XLSX Bloco C). É um superset reduzido da Layer 2.
+func fetchCTesPorChaveNFe(db *sql.DB, companyID string, chaves []string) map[string][]FreteLink {
+	out := make(map[string][]FreteLink)
+	if len(chaves) == 0 {
+		return out
+	}
+	const q = `
+		SELECT
+			ref.chave_nfe,
+			ce.chave_cte,
+			COALESCE(ce.numero_cte, '') AS numero_cte,
+			COALESCE(ce.emit_nome, '')   AS emit_nome,
+			COALESCE(ce.emit_cnpj, '')   AS emit_cnpj,
+			COALESCE(ce.v_prest, 0)      AS v_prest,
+			COALESCE(ce.v_icms, 0)       AS v_icms,
+			COALESCE(ce.toma, '')        AS toma
+		FROM cte_entradas_nfe_refs ref
+		JOIN cte_entradas ce ON ce.id = ref.cte_id
+		WHERE ref.company_id = $1
+		  AND ref.chave_nfe = ANY($2::varchar[])
+		  AND (
+		      ce.toma = '3'
+		      OR (ce.toma = '4' AND ce.toma4_cnpj = ce.dest_cnpj_cpf)
+		  )
+	`
+	rows, err := db.Query(q, companyID, chaves)
+	if err != nil {
+		log.Printf("fetchCTesPorChaveNFe error: %v", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fl FreteLink
+		if err := rows.Scan(&fl.ChaveNFe, &fl.ChaveCTe, &fl.NumeroCTe,
+			&fl.EmitNome, &fl.EmitCNPJ, &fl.VPrest, &fl.VIcmsCTe, &fl.Toma); err != nil {
+			continue
+		}
+		fl.Fonte = "XML-CTE"
+		out[fl.ChaveNFe] = append(out[fl.ChaveNFe], fl)
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // FreteHTTPRow — linha da resposta JSON do endpoint /fretes
 // ---------------------------------------------------------------------------

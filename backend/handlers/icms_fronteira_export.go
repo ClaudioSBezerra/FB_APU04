@@ -392,10 +392,17 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			if err != nil {
 				log.Printf("IcmsFronteiraExportXLSX nao-sped error: %v", err)
 			} else {
+				// Pré-carrega CT-es (toma=destinatário) para todas as NFs do Bloco C.
+				chaves := make([]string, 0, len(cRows))
+				for _, r := range cRows {
+					chaves = append(chaves, r.ChaveNFe)
+				}
+				ctesPorNFe := fetchCTesPorChaveNFe(db, companyID, chaves)
+
 				cSheet := "C - Não no SPED (XML)"
 				f.NewSheet(cSheet)
-				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "ICMS Est.", "Classificação", "Chave NF-e"}
-				cCols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"}
+				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "ICMS Est.", "Classificação", "Chave NF-e", "Chave CT-e"}
+				cCols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"}
 				for i, h := range cHeaders {
 					cell := fmt.Sprintf("%s1", cCols[i])
 					f.SetCellValue(cSheet, cell, h)
@@ -404,9 +411,14 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				slateStyle, _ := f.NewStyle(&excelize.Style{
 					Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}},
 				})
+				cteRowStyle, _ := f.NewStyle(&excelize.Style{
+					Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}},
+					Font: &excelize.Font{Italic: true},
+				})
 				var totalIcmsC float64
-				for rowIdx, row := range cRows {
-					er := rowIdx + 2
+				er := 2
+				for _, row := range cRows {
+					// ── linha da NF ─────────────────────────────────────────────
 					f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), row.DataEmissao)
 					f.SetCellValue(cSheet, fmt.Sprintf("B%d", er), row.NumeroNFe)
 					f.SetCellValue(cSheet, fmt.Sprintf("C%d", er), row.FornNome)
@@ -423,11 +435,33 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 						f.SetCellStyle(cSheet, cell, cell, slateStyle)
 					}
 					totalIcmsC += row.IcmsDevidoEst
+					er++
+
+					// ── linhas filhas: CT-es vinculados (verde) ────────────────
+					for _, cte := range ctesPorNFe[row.ChaveNFe] {
+						label := fmt.Sprintf("CT-e %s", cte.NumeroCTe)
+						f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), row.DataEmissao)
+						f.SetCellValue(cSheet, fmt.Sprintf("B%d", er), label)
+						f.SetCellValue(cSheet, fmt.Sprintf("C%d", er), cte.EmitNome)
+						f.SetCellValue(cSheet, fmt.Sprintf("D%d", er), cte.EmitCNPJ)
+						f.SetCellValue(cSheet, fmt.Sprintf("E%d", er), "")
+						f.SetCellValue(cSheet, fmt.Sprintf("F%d", er), "CTE")
+						f.SetCellValue(cSheet, fmt.Sprintf("G%d", er), row.Regime)
+						f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), cte.VPrest)
+						f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), cte.VIcmsCTe)
+						f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), "")
+						f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ChaveNFe)
+						f.SetCellValue(cSheet, fmt.Sprintf("L%d", er), cte.ChaveCTe)
+						for _, c := range cCols {
+							cell := fmt.Sprintf("%s%d", c, er)
+							f.SetCellStyle(cSheet, cell, cell, cteRowStyle)
+						}
+						er++
+					}
 				}
-				tr := len(cRows) + 2
-				f.SetCellValue(cSheet, fmt.Sprintf("A%d", tr), "TOTAL")
-				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", tr), fmt.Sprintf("K%d", tr), boldStyle)
-				f.SetCellValue(cSheet, fmt.Sprintf("I%d", tr), totalIcmsC)
+				f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), "TOTAL")
+				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", er), fmt.Sprintf("L%d", er), boldStyle)
+				f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), totalIcmsC)
 			}
 		}
 
