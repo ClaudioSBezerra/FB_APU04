@@ -64,8 +64,8 @@ func TestRowToCSVRecord_FieldCount(t *testing.T) {
 		AliqInter: 12, AliqInterna: 20.5, IcmsDevidoEst: 85,
 	}
 	rec := rowToCSVRecord(row)
-	if len(rec) != 14 {
-		t.Errorf("expected 14 CSV fields, got %d", len(rec))
+	if len(rec) != 15 {
+		t.Errorf("expected 15 CSV fields, got %d", len(rec))
 	}
 }
 
@@ -78,8 +78,8 @@ func TestRowToCSVRecord_Values(t *testing.T) {
 		AliqInter: 7, AliqInterna: 20.5, IcmsDevidoEst: 67.5,
 	}
 	rec := rowToCSVRecord(row)
-	if rec[6] != "DIFAL" {
-		t.Errorf("expected regime 'DIFAL' at index 6, got %q", rec[6])
+	if rec[7] != "DIFAL" {
+		t.Errorf("expected regime 'DIFAL' at index 7, got %q", rec[7])
 	}
 }
 
