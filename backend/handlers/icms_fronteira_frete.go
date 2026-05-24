@@ -2,8 +2,13 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"log"
 	"math"
+	"net/http"
+	"sort"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // FreteLink representa um CT-e vinculado a uma NF-e no cálculo de fronteira.
@@ -213,4 +218,153 @@ type nfFreteParams struct {
 	Regime      string
 	AliqInter   float64
 	AliqInterna float64
+}
+
+// ---------------------------------------------------------------------------
+// FreteHTTPRow — linha da resposta JSON do endpoint /fretes
+// ---------------------------------------------------------------------------
+
+type FreteHTTPRow struct {
+	// NF-e de mercadoria vinculada
+	ChaveNFe    string `json:"chave_nfe"`
+	NumeroNFe   string `json:"numero_nfe"`
+	DataEmissao string `json:"data_emissao"`
+	FornNome    string `json:"forn_nome"`
+	FornCNPJ    string `json:"forn_cnpj"`
+	FornUF      string `json:"forn_uf"`
+	Regime      string `json:"regime"`
+	// CT-e (transportadora)
+	ChaveCTe      string  `json:"chave_cte"`
+	NumeroCTe     string  `json:"numero_cte"`
+	EmitNome      string  `json:"emit_nome"`
+	EmitCNPJ      string  `json:"emit_cnpj"`
+	VPrest        float64 `json:"v_prest"`
+	VIcmsCTe      float64 `json:"v_icms_cte"`
+	IcmsFronteira float64 `json:"icms_fronteira"`
+	Fonte         string  `json:"fonte"`
+}
+
+type FretesResponse struct {
+	Rows               []FreteHTTPRow `json:"rows"`
+	Count              int            `json:"count"`
+	TotalVPrest        float64        `json:"total_v_prest"`
+	TotalIcmsFronteira float64        `json:"total_icms_fronteira"`
+}
+
+// ---------------------------------------------------------------------------
+// IcmsFronteiraFretesHandler — GET /api/icms-fronteira/fretes?periodo=MM/YYYY
+// ---------------------------------------------------------------------------
+
+func IcmsFronteiraFretesHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa: "+err.Error())
+			return
+		}
+
+		periodo := r.URL.Query().Get("periodo")
+
+		exportRows, err := fetchExportRows(db, companyID, "todos", periodo)
+		if err != nil {
+			log.Printf("IcmsFronteiraFretes fetchExportRows error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar notas")
+			return
+		}
+
+		type nfMeta struct {
+			NumeroNFe   string
+			DataEmissao string
+			FornNome    string
+			FornCNPJ    string
+			FornUF      string
+			Regime      string
+		}
+
+		nfParams := make(map[string]nfFreteParams)
+		nfMetaMap := make(map[string]nfMeta)
+
+		for _, row := range exportRows {
+			if row.ChaveNFe == "" || row.Regime == "" {
+				continue
+			}
+			if _, exists := nfParams[row.ChaveNFe]; !exists {
+				nfParams[row.ChaveNFe] = nfFreteParams{
+					Regime:      row.Regime,
+					AliqInter:   row.AliqInter,
+					AliqInterna: row.AliqInterna,
+				}
+				nfMetaMap[row.ChaveNFe] = nfMeta{
+					NumeroNFe:   row.NumeroNFe,
+					DataEmissao: row.DataEmissao,
+					FornNome:    row.FornNome,
+					FornCNPJ:    row.FornCNPJ,
+					FornUF:      row.FornUF,
+					Regime:      row.Regime,
+				}
+			}
+		}
+
+		freteLinks := fetchFreteLinks(db, companyID, periodo, nfParams)
+
+		var rows []FreteHTTPRow
+		var totalVPrest, totalIcmsFronteira float64
+
+		for chaveNFe, links := range freteLinks {
+			meta := nfMetaMap[chaveNFe]
+			for _, fl := range links {
+				rows = append(rows, FreteHTTPRow{
+					ChaveNFe:      chaveNFe,
+					NumeroNFe:     meta.NumeroNFe,
+					DataEmissao:   meta.DataEmissao,
+					FornNome:      meta.FornNome,
+					FornCNPJ:      meta.FornCNPJ,
+					FornUF:        meta.FornUF,
+					Regime:        meta.Regime,
+					ChaveCTe:      fl.ChaveCTe,
+					NumeroCTe:     fl.NumeroCTe,
+					EmitNome:      fl.EmitNome,
+					EmitCNPJ:      fl.EmitCNPJ,
+					VPrest:        fl.VPrest,
+					VIcmsCTe:      fl.VIcmsCTe,
+					IcmsFronteira: fl.IcmsFronteira,
+					Fonte:         fl.Fonte,
+				})
+				totalVPrest += fl.VPrest
+				totalIcmsFronteira += fl.IcmsFronteira
+			}
+		}
+
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].DataEmissao != rows[j].DataEmissao {
+				return rows[i].DataEmissao > rows[j].DataEmissao
+			}
+			return rows[i].ChaveNFe < rows[j].ChaveNFe
+		})
+
+		resp := FretesResponse{
+			Rows:               rows,
+			Count:              len(rows),
+			TotalVPrest:        totalVPrest,
+			TotalIcmsFronteira: totalIcmsFronteira,
+		}
+		if resp.Rows == nil {
+			resp.Rows = []FreteHTTPRow{}
+		}
+		json.NewEncoder(w).Encode(resp)
+	}
 }

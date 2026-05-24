@@ -61,6 +61,7 @@ import {
   Clock,
   FileQuestion,
   CheckCircle2,
+  Truck,
 } from 'lucide-react'
 import {
   BarChart,
@@ -211,6 +212,31 @@ interface FronteiraItensResponse {
   rows: FronteiraItemRow[]
   total: number
   count: number
+}
+
+interface FreteRow {
+  chave_nfe: string
+  numero_nfe: string
+  data_emissao: string
+  forn_nome: string
+  forn_cnpj: string
+  forn_uf: string
+  regime: string
+  chave_cte: string
+  numero_cte: string
+  emit_nome: string
+  emit_cnpj: string
+  v_prest: number
+  v_icms_cte: number
+  icms_fronteira: number
+  fonte: string
+}
+
+interface FretesResponse {
+  rows: FreteRow[]
+  count: number
+  total_v_prest: number
+  total_icms_fronteira: number
 }
 
 interface DivergenciaRow {
@@ -981,6 +1007,157 @@ function NotasTabBlocos({
               </div>
             )}
           </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Fretes tab — CT-e vinculados às NFs de mercadoria
+// ---------------------------------------------------------------------------
+
+function FonteBadge({ fonte }: { fonte: string }) {
+  const map: Record<string, string> = {
+    'D162':     'bg-green-100 text-green-800 border-green-200',
+    'XML-CTE':  'bg-blue-100 text-blue-800 border-blue-200',
+    'D100-DOC': 'bg-amber-100 text-amber-800 border-amber-200',
+  }
+  const cls = map[fonte] ?? 'bg-gray-100 text-gray-600 border-gray-200'
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${cls}`}>
+      {fonte}
+    </span>
+  )
+}
+
+function FretesTab({ token }: { token: string | null }) {
+  const [monthInput, setMonthInput] = useState('')
+  const periodo = monthToPeriodo(monthInput)
+
+  const { data, isLoading, isError } = useQuery<FretesResponse>({
+    queryKey: ['icms-fronteira/fretes', periodo],
+    queryFn: async () => {
+      const url = periodo
+        ? `/api/icms-fronteira/fretes?periodo=${encodeURIComponent(periodo)}`
+        : '/api/icms-fronteira/fretes'
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap justify-between">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="fretes-periodo" className="text-xs whitespace-nowrap">Período:</Label>
+          <Input
+            id="fretes-periodo"
+            type="text"
+            placeholder="MM/AAAA"
+            maxLength={7}
+            className="w-36 text-xs h-8"
+            value={monthInput}
+            onChange={(e) => setMonthInput(e.target.value)}
+          />
+          {periodo && <span className="text-xs text-muted-foreground">{periodo}</span>}
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+        </div>
+      )}
+
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar fretes.</AlertDescription>
+        </Alert>
+      )}
+
+      {!isLoading && !isError && data && data.count === 0 && (
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <Truck className="h-8 w-8 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">Nenhum CT-e vinculado encontrado para o período.</p>
+          <p className="text-xs text-muted-foreground max-w-md">
+            Os fretes são identificados via SPED (reg_d162), XML de CT-e importados ou
+            correspondência documental D100. Importe os arquivos correspondentes para visualizar.
+          </p>
+        </div>
+      )}
+
+      {data && data.count > 0 && (
+        <>
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs text-muted-foreground">
+              {data.count} CT-e vinculado{data.count !== 1 ? 's' : ''}
+            </span>
+            <div className="text-right text-xs">
+              <span className="text-muted-foreground">Frete total: </span>
+              <span className="font-semibold tabular-nums">{fmtBRL(data.total_v_prest)}</span>
+              <span className="text-muted-foreground ml-3">ICMS fronteira s/ frete: </span>
+              <span className="font-bold tabular-nums text-foreground">{fmtBRL(data.total_icms_fronteira)}</span>
+            </div>
+          </div>
+
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30 hover:bg-transparent">
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Data NF</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Regime</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">CT-e</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Transportadora</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Frete</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS CT-e</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Fronteira</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Fonte</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.rows.map((row, idx) => (
+                  <TableRow key={`${row.chave_nfe}-${row.chave_cte}-${idx}`}>
+                    <TableCell className="text-xs font-mono whitespace-nowrap">
+                      {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+                    <TableCell className="text-xs max-w-[160px]">
+                      <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
+                      <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
+                    </TableCell>
+                    <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
+                    <TableCell><RegimeBadge regime={row.regime} /></TableCell>
+                    <TableCell className="text-xs font-mono">{row.numero_cte || '—'}</TableCell>
+                    <TableCell className="text-xs max-w-[160px]">
+                      <div className="truncate" title={row.emit_nome}>{row.emit_nome || '—'}</div>
+                      <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.emit_cnpj)}</div>
+                    </TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prest)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_cte)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">
+                      {fmtBRL(row.icms_fronteira)}
+                    </TableCell>
+                    <TableCell><FonteBadge fonte={row.fonte} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <Alert className="border-blue-200 bg-blue-50">
+            <Info className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-xs text-blue-800">
+              O ICMS fronteira sobre o frete usa o mesmo regime da NF de mercadoria correspondente.
+              Fontes: <strong>D162</strong> = vínculo direto no SPED (mais confiável);{' '}
+              <strong>XML-CTE</strong> = CT-e importado com referência à NF;{' '}
+              <strong>D100-DOC</strong> = correspondência por fornecedor e data (fallback).
+            </AlertDescription>
+          </Alert>
         </>
       )}
     </div>
@@ -3543,6 +3720,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="st">Subst. Tributária</TabsTrigger>
           <TabsTrigger value="difal">DIFAL</TabsTrigger>
           <TabsTrigger value="planilha">Planilha</TabsTrigger>
+          <TabsTrigger value="fretes">Fretes</TabsTrigger>
           <TabsTrigger value="divergencias">Divergências</TabsTrigger>
           <TabsTrigger value="reconciliacao">Reconciliação</TabsTrigger>
           <TabsTrigger value="legislacao">Legislação</TabsTrigger>
@@ -3618,6 +3796,24 @@ export default function IcmsFronteira() {
                 <RecalcularButton />
               </div>
               <NotasTabBlocos endpointSped="/api/icms-fronteira/difal" regime="difal" token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="fretes" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Truck className="h-4 w-4 text-slate-600" />
+                Fretes — CT-e vinculados às NFs de mercadoria
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                CT-e de entrada vinculados às NFs de mercadoria interestadual. O ICMS fronteira
+                sobre o frete é calculado com o mesmo regime da NF correspondente.
+              </p>
+              <FretesTab token={token} />
             </CardContent>
           </Card>
         </TabsContent>

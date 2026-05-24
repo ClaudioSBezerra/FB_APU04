@@ -685,6 +685,13 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraDIFALHandler(database), "")(w, r)
 	})
 
+	// ── ICMS Fronteira — Fretes (CT-e vinculados às NFs) ────────────────────
+	http.HandleFunc("/api/icms-fronteira/fretes", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraFretesHandler(database), "")(w, r)
+	})
+
 	// ── ICMS Fronteira — Planilha (item-level) ───────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/itens", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
