@@ -146,6 +146,7 @@ export default function AdminUsers() {
 
   // State for Promote/Edit
   const [newRole, setNewRole] = useState<string>("user");
+  const [newFullName, setNewFullName] = useState<string>("");
   const [extendDays, setExtendDays] = useState<number>(0);
   const [isOfficial, setIsOfficial] = useState<boolean>(false);
   const [showReassign, setShowReassign] = useState(false);
@@ -223,15 +224,18 @@ export default function AdminUsers() {
   });
 
   const promoteMutation = useMutation({
-    mutationFn: async (data: { userId: string, role: string, extendDays: number, isOfficial: boolean }) => {
+    mutationFn: async (data: { userId: string, role: string, extendDays: number, isOfficial: boolean, fullName: string }) => {
       const response = await fetch(`/api/admin/users/promote?id=${data.userId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ role: data.role, extend_days: data.extendDays, is_official: data.isOfficial })
+        body: JSON.stringify({ role: data.role, extend_days: data.extendDays, is_official: data.isOfficial, full_name: data.fullName })
       });
-      if (!response.ok) throw new Error('Failed to update user');
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Failed to update user');
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -292,6 +296,7 @@ export default function AdminUsers() {
   const handleOpenPromote = (user: User) => {
     setSelectedUser(user);
     setNewRole(user.role);
+    setNewFullName(user.full_name || "");
     setExtendDays(0);
     setIsOfficial(false);
     setShowReassign(false);
@@ -312,11 +317,14 @@ export default function AdminUsers() {
         company_id: reassignCompanyId,
       });
     }
+    const trimmedName = newFullName.trim();
     promoteMutation.mutate({
       userId: selectedUser.id,
       role: newRole,
       extendDays: extendDays,
-      isOfficial: isOfficial
+      isOfficial: isOfficial,
+      // só envia full_name se mudou — backend ignora string vazia
+      fullName: trimmedName !== (selectedUser.full_name || "").trim() ? trimmedName : "",
     });
   };
 
@@ -498,6 +506,16 @@ export default function AdminUsers() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editFullName" className="text-right">Nome</Label>
+              <Input
+                id="editFullName"
+                value={newFullName}
+                onChange={(e) => setNewFullName(e.target.value)}
+                placeholder="Nome do usuário"
+                className="col-span-3"
+              />
+            </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="role" className="text-right">Role</Label>
               <Select value={newRole} onValueChange={setNewRole}>

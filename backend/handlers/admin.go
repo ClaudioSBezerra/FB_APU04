@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -655,6 +656,7 @@ type PromoteUserRequest struct {
 	Role       string `json:"role"`        // 'admin' or 'user'
 	ExtendDays int    `json:"extend_days"` // Days to add to trial
 	IsOfficial bool   `json:"is_official"` // If true, sets trial to 2099
+	FullName   string `json:"full_name"`   // optional — rename user
 }
 
 // PromoteUserHandler updates user role or trial (Admin only)
@@ -670,6 +672,19 @@ func PromoteUserHandler(db *sql.DB) http.HandlerFunc {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid request", http.StatusBadRequest)
 			return
+		}
+
+		// Update full_name when provided (trim + min length guard)
+		if trimmed := strings.TrimSpace(req.FullName); trimmed != "" {
+			if len(trimmed) < 2 {
+				http.Error(w, "Nome deve ter pelo menos 2 caracteres", http.StatusBadRequest)
+				return
+			}
+			_, err := db.Exec("UPDATE users SET full_name = $1 WHERE id = $2", trimmed, userID)
+			if err != nil {
+				http.Error(w, "Failed to update name", http.StatusInternalServerError)
+				return
+			}
 		}
 
 		// Update logic
