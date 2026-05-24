@@ -24,7 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
-import { Check, Trash2, UserCheck, Building2, ArrowRightLeft } from "lucide-react";
+import { Check, Trash2, UserCheck, Building2, ArrowRightLeft, Stethoscope } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface User {
@@ -46,6 +46,24 @@ interface User {
 interface HierarchyItem {
   id: string;
   name: string;
+}
+
+interface CompanyData {
+  company_id: string;
+  company_name: string;
+  nfe_entradas: number;
+  nfe_saidas: number;
+  reg_c100: number;
+  cte_entradas: number;
+}
+
+interface DiagnosticResponse {
+  user_id: string;
+  effective_company_id: string;
+  effective_company_error?: string;
+  x_company_header: string;
+  counts_for_company: Record<string, number>;
+  other_companies_data: CompanyData[] | null;
 }
 
 function HierarchyCascadeSelects({
@@ -143,6 +161,11 @@ export default function AdminUsers() {
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+  // Diagnóstico de dados (investiga "relatórios vazios")
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagData, setDiagData] = useState<DiagnosticResponse | null>(null);
 
   // State for Promote/Edit
   const [newRole, setNewRole] = useState<string>("user");
@@ -334,15 +357,38 @@ export default function AdminUsers() {
     }
   };
 
+  const handleDiagnostic = async () => {
+    setDiagOpen(true);
+    setDiagLoading(true);
+    setDiagData(null);
+    try {
+      const res = await fetch('/api/admin/diagnostic');
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Erro ${res.status}`);
+      }
+      setDiagData(await res.json());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao carregar diagnóstico');
+    } finally {
+      setDiagLoading(false);
+    }
+  };
+
   if (isLoading) return <div>Carregando usuários...</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold tracking-tight">Gestão de Usuários</h2>
-        <Button onClick={() => setCreateDialogOpen(true)}>
-          <Check className="mr-2 h-4 w-4" /> Novo Usuário
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleDiagnostic}>
+            <Stethoscope className="mr-2 h-4 w-4" /> Diagnóstico de Dados
+          </Button>
+          <Button onClick={() => setCreateDialogOpen(true)}>
+            <Check className="mr-2 h-4 w-4" /> Novo Usuário
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-md border overflow-x-auto">
@@ -589,6 +635,96 @@ export default function AdminUsers() {
             <Button onClick={handleSave} disabled={promoteMutation.isPending || reassignMutation.isPending || (showReassign && !reassignEnvId)}>
               {(promoteMutation.isPending || reassignMutation.isPending) ? "Salvando..." : "Salvar Alterações"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diagnóstico de Dados Dialog */}
+      <Dialog open={diagOpen} onOpenChange={setDiagOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Diagnóstico de Dados</DialogTitle>
+            <DialogDescription>
+              Mostra qual empresa está ativa para você e onde os dados importados realmente estão.
+            </DialogDescription>
+          </DialogHeader>
+
+          {diagLoading && <div className="py-8 text-center text-muted-foreground">Carregando diagnóstico...</div>}
+
+          {!diagLoading && diagData && (
+            <div className="space-y-4 text-sm">
+              <div className="rounded-md border p-3 bg-muted/30 space-y-1">
+                <div><span className="text-muted-foreground">Empresa ativa (effective):</span> <strong>{diagData.effective_company_id || "—"}</strong></div>
+                {diagData.effective_company_error && (
+                  <div className="text-red-600">Erro: {diagData.effective_company_error}</div>
+                )}
+                <div><span className="text-muted-foreground">Header X-Company-ID:</span> {diagData.x_company_header || <span className="italic">não enviado</span>}</div>
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold mb-2 block">Registros na empresa ativa</Label>
+                <div className="rounded-md border overflow-hidden">
+                  <Table>
+                    <TableBody>
+                      {Object.entries(diagData.counts_for_company || {}).map(([tabela, n]) => (
+                        <TableRow key={tabela}>
+                          <TableCell className="font-mono text-xs">{tabela}</TableCell>
+                          <TableCell className={`text-right font-medium ${n > 0 ? 'text-green-700' : n < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            {n < 0 ? 'erro' : n.toLocaleString('pt-BR')}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold mb-2 block">
+                  Outras empresas com dados {diagData.other_companies_data?.length ? `(${diagData.other_companies_data.length})` : ''}
+                </Label>
+                {diagData.other_companies_data && diagData.other_companies_data.length > 0 ? (
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Empresa</TableHead>
+                          <TableHead className="text-right">NF-e Ent.</TableHead>
+                          <TableHead className="text-right">NF-e Saí.</TableHead>
+                          <TableHead className="text-right">SPED C100</TableHead>
+                          <TableHead className="text-right">CT-e</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {diagData.other_companies_data.map((c) => (
+                          <TableRow key={c.company_id} className={c.company_id === diagData.effective_company_id ? 'bg-green-50' : ''}>
+                            <TableCell className="text-xs">
+                              {c.company_name}
+                              {c.company_id === diagData.effective_company_id && <Badge variant="outline" className="ml-2 text-[10px]">ativa</Badge>}
+                            </TableCell>
+                            <TableCell className="text-right">{c.nfe_entradas.toLocaleString('pt-BR')}</TableCell>
+                            <TableCell className="text-right">{c.nfe_saidas.toLocaleString('pt-BR')}</TableCell>
+                            <TableCell className="text-right">{c.reg_c100.toLocaleString('pt-BR')}</TableCell>
+                            <TableCell className="text-right">{c.cte_entradas.toLocaleString('pt-BR')}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="text-muted-foreground italic text-xs">Nenhuma empresa com dados importados.</div>
+                )}
+              </div>
+
+              <div className="text-xs text-muted-foreground border-t pt-3">
+                <strong>Como ler:</strong> se a empresa ativa tem zero registros mas outra empresa tem dados,
+                seus uploads foram feitos em outra empresa — use "Alterar Hierarquia" para vincular o usuário à empresa correta.
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiagOpen(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
