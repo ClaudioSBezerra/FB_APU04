@@ -70,6 +70,8 @@ var CompanyGroups = map[string][]CompanyDeleteOp{
 		{Table: "icms_fronteira_regras_ncm", ResultKey: "icms_fronteira_regras_ncm"},
 		{Table: "icms_fronteira_extrato_sefaz", ResultKey: "icms_fronteira_extrato_sefaz"},
 		{Table: "icms_fronteira_contestacoes", ResultKey: "icms_fronteira_contestacoes"},
+		{Table: "icms_fronteira_classificacao_manual", ResultKey: "icms_fronteira_classificacao_manual"},
+		{Table: "legislacao_fronteira", ResultKey: "legislacao_fronteira"},
 	},
 }
 

@@ -25,20 +25,21 @@ import (
 // ---------------------------------------------------------------------------
 
 type ReconNota struct {
-	ChaveNFe       string  `json:"chave_nfe"`
-	DataEmissao    string  `json:"data_emissao"`
-	DataEntrada    string  `json:"data_entrada"`
-	NumeroNFe      string  `json:"numero_nfe"`
-	FornCNPJ       string  `json:"forn_cnpj"`
-	FornNome       string  `json:"forn_nome"`
-	FornUF         string  `json:"forn_uf"`
-	CFOP           string  `json:"cfop"`
-	CFOPEntrada    string  `json:"cfop_entrada"` // bloco 3: CFOP entrada derivado
-	Regime         string  `json:"regime"`
-	VOpr           float64 `json:"v_opr"`
-	IcmsDevidoEst  float64 `json:"icms_devido_est"`
-	Origem         string  `json:"origem"` // "sped" | "xml"
-	Alerta         string  `json:"alerta,omitempty"`
+	ChaveNFe      string  `json:"chave_nfe"`
+	DataEmissao   string  `json:"data_emissao"`
+	DataEntrada   string  `json:"data_entrada"`
+	NumeroNFe     string  `json:"numero_nfe"`
+	FornCNPJ      string  `json:"forn_cnpj"`
+	FornNome      string  `json:"forn_nome"`
+	FornUF        string  `json:"forn_uf"`
+	CFOP          string  `json:"cfop"`
+	CFOPEntrada   string  `json:"cfop_entrada"`   // bloco 3: CFOP entrada derivado
+	Regime        string  `json:"regime"`
+	ClassStatus   string  `json:"class_status,omitempty"` // auto | manual | excluded (só bloco 3)
+	VOpr          float64 `json:"v_opr"`
+	IcmsDevidoEst float64 `json:"icms_devido_est"`
+	Origem        string  `json:"origem"` // "sped" | "xml"
+	Alerta        string  `json:"alerta,omitempty"`
 }
 
 type ReconBlock struct {
@@ -184,12 +185,17 @@ SELECT
     m.numero_nfe,
     m.forn_cnpj, m.forn_nome, COALESCE(m.forn_uf,'') AS forn_uf,
     m.cfop_saida, m.cfop_entrada,
-    CASE
-        WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
-        WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN 'ST'
-        WHEN m.cfop_entrada IN ('2101','2102','2152') THEN 'ANTECIPACAO'
-        ELSE 'NAO_FRONTEIRA'
-    END AS regime,
+    -- Regime final: manual sobrescreve a sugestão automática (cfop_entrada).
+    COALESCE(cm.regime,
+        CASE
+            WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
+            WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN 'ST'
+            WHEN m.cfop_entrada IN ('2101','2102','2152') THEN 'ANTECIPACAO'
+            ELSE 'NAO_FRONTEIRA'
+        END
+    ) AS regime,
+    -- class_status: 'auto' (sugestão), 'manual' (validada/editada), 'excluded' (fora do cálculo)
+    COALESCE(cm.status, 'auto') AS class_status,
     (m.v_prod + m.v_frete + m.v_outro) AS v_opr,
     -- Estimativa (XML-only não traz ICMS interestadual do SPED): usa alíquota
     -- interestadual presumida pela UF do fornecedor (7% Sul/Sudeste, senão 12%).
@@ -223,7 +229,11 @@ LEFT JOIN LATERAL (
       AND LEFT(m.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
     ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC LIMIT 1
 ) regra ON true
+LEFT JOIN icms_fronteira_classificacao_manual cm
+    ON cm.company_id = $1 AND cm.chave_nfe = m.chave_nfe
 WHERE m.cfop_entrada IN ('2101','2102','2152','2403','2409','2651','2652','2551','2556')
+  -- Notas marcadas como 'excluded' não aparecem no bloco
+  AND COALESCE(cm.status, 'auto') <> 'excluded'
 ORDER BY m.data_emissao, m.chave_nfe
 `
 
@@ -300,12 +310,18 @@ func IcmsFronteiraReconciliacaoHandler(db *sql.DB) http.HandlerFunc {
 			var n ReconNota
 			if err := rows2.Scan(&n.ChaveNFe, &n.DataEmissao, &n.NumeroNFe,
 				&n.FornCNPJ, &n.FornNome, &n.FornUF, &n.CFOP, &n.CFOPEntrada,
-				&n.Regime, &n.VOpr, &n.IcmsDevidoEst); err != nil {
+				&n.Regime, &n.ClassStatus, &n.VOpr, &n.IcmsDevidoEst); err != nil {
 				log.Printf("Reconciliacao XML scan: %v", err)
 				continue
 			}
 			n.Origem = "xml"
-			n.Alerta = "Não localizada no SPED — classificação por CFOP do fornecedor; validar antes de incluir no cálculo."
+			// Mensagem do alerta varia conforme status da classificação
+			switch n.ClassStatus {
+			case "manual":
+				n.Alerta = "Classificação validada manualmente."
+			default:
+				n.Alerta = "Não localizada no SPED — classificação por CFOP do fornecedor; validar antes de incluir no cálculo."
+			}
 			resp.NaoLocalizadaSped.Rows = append(resp.NaoLocalizadaSped.Rows, n)
 			resp.NaoLocalizadaSped.Total += n.IcmsDevidoEst
 		}

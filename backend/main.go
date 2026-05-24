@@ -706,6 +706,42 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraReconciliacaoHandler(database), "")(w, r)
 	})
 
+	// Classificação manual da reconciliação (validar/sobrescrever/excluir nota do bloco "Faltando")
+	http.HandleFunc("/api/icms-fronteira/reconciliacao/classificacao", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraClassificacaoHandler(database), "")(w, r)
+	})
+
+	// Sugestão IA de classificação para a reconciliação (Etapa 3)
+	http.HandleFunc("/api/icms-fronteira/reconciliacao/sugerir-ia", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraSugerirIAHandler(database), "")(w, r)
+	})
+
+	// Legislação tributária com IA (Etapa 5)
+	http.HandleFunc("/api/icms-fronteira/legislacao/upload", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraLegislacaoUploadHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/legislacao", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		// GET lista (sem id) vs detalhe/PUT/DELETE (com id)
+		if r.URL.Query().Get("id") == "" && r.Method == http.MethodGet {
+			handlers.AuthMiddleware(handlers.IcmsFronteiraLegislacaoListHandler(database), "")(w, r)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraLegislacaoDetailHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/legislacao/aplicar", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraLegislacaoAplicarHandler(database), "")(w, r)
+	})
+
 	// ── ICMS Fronteira — Divergências (calculado × SEFAZ) ────────────────────
 	http.HandleFunc("/api/icms-fronteira/divergencias/exportar/csv", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()

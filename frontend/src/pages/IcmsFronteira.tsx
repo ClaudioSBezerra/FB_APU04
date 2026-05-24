@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Table,
   TableBody,
@@ -53,6 +54,7 @@ import {
   Plus,
   Upload,
   BarChart2,
+  Sparkles,
 } from 'lucide-react'
 import {
   BarChart,
@@ -636,10 +638,19 @@ interface ReconNota {
   cfop: string
   cfop_entrada: string
   regime: string
+  class_status?: string  // 'auto' | 'manual' | 'excluded'
   v_opr: number
   icms_devido_est: number
   origem: string
   alerta?: string
+}
+
+interface IASuggestion {
+  regime_sugerido: string
+  confianca: string
+  justificativa: string
+  contexto_usado?: Record<string, unknown>
+  historico_fornecedor?: Array<{ regime: string; cfop: string; qtd: number }>
 }
 interface ReconBlock { rows: ReconNota[]; total: number; count: number }
 interface ReconResponse {
@@ -691,9 +702,556 @@ function ReconBlockTable({ block, showCfopMap }: { block: ReconBlock; showCfopMa
   )
 }
 
+// Tabela do bloco "Faltando" — com edição, validação e botão IA por linha.
+function FaltandoBlockTable({
+  block, token, periodo, queryClient,
+}: {
+  block: ReconBlock
+  token: string | null
+  periodo: string
+  queryClient: ReturnType<typeof useQueryClient>
+}) {
+  const [iaModal, setIaModal] = useState<{ chave: string; sugestao: IASuggestion | null; loading: boolean } | null>(null)
+
+  async function saveManual(chave: string, regime: string, status: 'manual' | 'excluded') {
+    try {
+      const res = await fetch('/api/icms-fronteira/reconciliacao/classificacao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ chave_nfe: chave, regime, status }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast.success(status === 'excluded' ? 'Nota excluída do cálculo' : 'Classificação validada')
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/reconciliacao', periodo] })
+    } catch (e) {
+      toast.error('Falha ao salvar: ' + (e instanceof Error ? e.message : ''))
+    }
+  }
+
+  async function resetManual(chave: string) {
+    try {
+      const res = await fetch(`/api/icms-fronteira/reconciliacao/classificacao?chave=${encodeURIComponent(chave)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast.success('Voltou à classificação automática')
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/reconciliacao', periodo] })
+    } catch (e) {
+      toast.error('Falha: ' + (e instanceof Error ? e.message : ''))
+    }
+  }
+
+  async function sugerirIA(chave: string) {
+    setIaModal({ chave, sugestao: null, loading: true })
+    try {
+      const res = await fetch('/api/icms-fronteira/reconciliacao/sugerir-ia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ chave_nfe: chave }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error || 'IA indisponível')
+      const d = await res.json()
+      setIaModal({ chave, sugestao: d, loading: false })
+    } catch (e) {
+      toast.error('IA: ' + (e instanceof Error ? e.message : ''))
+      setIaModal(null)
+    }
+  }
+
+  if (!block.rows.length) {
+    return <p className="text-xs text-muted-foreground py-4">Nenhuma nota neste bloco.</p>
+  }
+
+  return (
+    <>
+      <div className="rounded-md border overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs">Emissão</TableHead>
+              <TableHead className="text-xs">NF</TableHead>
+              <TableHead className="text-xs">Fornecedor</TableHead>
+              <TableHead className="text-xs">UF</TableHead>
+              <TableHead className="text-xs">CFOP saída→entrada</TableHead>
+              <TableHead className="text-xs">Regime (editável)</TableHead>
+              <TableHead className="text-xs">Status</TableHead>
+              <TableHead className="text-xs text-right">V. Operação</TableHead>
+              <TableHead className="text-xs text-right">ICMS estimado</TableHead>
+              <TableHead className="text-xs text-right">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {block.rows.map((r, i) => (
+              <TableRow key={`${r.chave_nfe}-${i}`}>
+                <TableCell className="text-xs">{r.data_emissao ? r.data_emissao.slice(0, 10) : '—'}</TableCell>
+                <TableCell className="text-xs">{r.numero_nfe || '—'}</TableCell>
+                <TableCell className="text-xs">{r.forn_nome || formatCNPJ(r.forn_cnpj)}</TableCell>
+                <TableCell className="text-xs">{r.forn_uf || '—'}</TableCell>
+                <TableCell className="text-xs tabular-nums">{r.cfop} → {r.cfop_entrada}</TableCell>
+                <TableCell className="text-xs">
+                  <Select
+                    value={r.regime}
+                    onValueChange={v => saveManual(r.chave_nfe, v, 'manual')}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ANTECIPACAO">Antecipação</SelectItem>
+                      <SelectItem value="ST">ST</SelectItem>
+                      <SelectItem value="DIFAL">DIFAL</SelectItem>
+                      <SelectItem value="NAO_FRONTEIRA">Não Fronteira</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+                <TableCell className="text-xs">
+                  {r.class_status === 'manual'
+                    ? <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">manual</Badge>
+                    : <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px]">auto</Badge>}
+                </TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(r.v_opr)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(r.icms_devido_est)}</TableCell>
+                <TableCell className="text-xs text-right whitespace-nowrap">
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                    title="Sugerir com IA" onClick={() => sugerirIA(r.chave_nfe)}>
+                    <Sparkles className="h-3 w-3 mr-1" />IA
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                    title="Validar (mantém o regime atual)" onClick={() => saveManual(r.chave_nfe, r.regime, 'manual')}>
+                    ✓
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px] text-red-600"
+                    title="Excluir do cálculo" onClick={() => saveManual(r.chave_nfe, r.regime, 'excluded')}>
+                    ×
+                  </Button>
+                  {r.class_status === 'manual' && (
+                    <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px] text-slate-500"
+                      title="Voltar à classificação automática" onClick={() => resetManual(r.chave_nfe)}>
+                      ↺
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Modal de sugestão IA */}
+      <Dialog open={!!iaModal} onOpenChange={o => !o && setIaModal(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Sugestão da IA</DialogTitle>
+            <DialogDescription className="text-xs">
+              Chave NF: ...{iaModal?.chave.slice(-12)}
+            </DialogDescription>
+          </DialogHeader>
+          {iaModal?.loading && <p className="text-sm py-6 text-center text-muted-foreground">Consultando IA...</p>}
+          {iaModal?.sugestao && (
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Regime sugerido:</span>
+                <RegimeBadge regime={iaModal.sugestao.regime_sugerido} />
+                <Badge variant="outline" className="text-[10px]">conf: {iaModal.sugestao.confianca}</Badge>
+              </div>
+              <div className="rounded-md border bg-muted/30 p-3 text-xs">{iaModal.sugestao.justificativa}</div>
+              {iaModal.sugestao.historico_fornecedor && iaModal.sugestao.historico_fornecedor.length > 0 && (
+                <div className="text-xs">
+                  <span className="text-muted-foreground">Histórico: </span>
+                  {iaModal.sugestao.historico_fornecedor.map(h => `${h.qtd}× ${h.regime}`).join(', ')}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setIaModal(null)}>Descartar</Button>
+            <Button
+              size="sm"
+              disabled={!iaModal?.sugestao}
+              onClick={async () => {
+                if (!iaModal?.sugestao) return
+                await saveManual(iaModal.chave, iaModal.sugestao.regime_sugerido, 'manual')
+                setIaModal(null)
+              }}
+            >Aplicar sugestão</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Aba Legislação — upload de decreto + interpretação IA + aplicar regras
+// ---------------------------------------------------------------------------
+interface LegislacaoRegraItem {
+  ncm: string
+  regime: string
+  descricao?: string
+  justificativa?: string
+  aliquota_interna?: number
+  mva_original?: number
+  mva_4pct?: number
+  mva_7pct?: number
+  mva_12pct?: number
+  confirmado: boolean
+}
+
+interface LegislacaoInterp {
+  resumo: string
+  regras: LegislacaoRegraItem[]
+}
+
+interface LegislacaoListRow {
+  id: string
+  uf_estado: string
+  titulo: string
+  status: string
+  created_at: string
+  applied_at?: string | null
+}
+
+interface LegislacaoDetail extends LegislacaoListRow {
+  conteudo_texto: string
+  interpretacao: LegislacaoInterp
+}
+
+function LegislacaoTab({ token }: { token: string | null }) {
+  const queryClient = useQueryClient()
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uf, setUf] = useState('BA')
+  const [titulo, setTitulo] = useState('')
+  const [texto, setTexto] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [detail, setDetail] = useState<LegislacaoDetail | null>(null)
+  const [editedRegras, setEditedRegras] = useState<LegislacaoRegraItem[]>([])
+
+  const { data: lista, isLoading } = useQuery<LegislacaoListRow[]>({
+    queryKey: ['icms-fronteira/legislacao'],
+    queryFn: async () => {
+      const res = await fetch('/api/icms-fronteira/legislacao', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('falha ao listar')
+      return res.json()
+    },
+    enabled: !!token,
+  })
+
+  async function uploadDecreto() {
+    if (!titulo.trim() || !texto.trim()) {
+      toast.error('Informe título e cole o texto do decreto')
+      return
+    }
+    if (texto.trim().length < 50) {
+      toast.error('Texto muito curto — cole o conteúdo do decreto')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/icms-fronteira/legislacao/upload?uf_estado=${uf}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ titulo, conteudo_texto: texto }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error || 'falha')
+      toast.success('Legislação importada e interpretada pela IA')
+      setUploadOpen(false)
+      setTitulo(''); setTexto('')
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/legislacao'] })
+    } catch (e) {
+      toast.error('Upload falhou: ' + (e instanceof Error ? e.message : ''))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function loadDetail(id: string) {
+    setOpenId(id)
+    setDetail(null)
+    try {
+      const res = await fetch(`/api/icms-fronteira/legislacao?id=${encodeURIComponent(id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('falha')
+      const d: LegislacaoDetail = await res.json()
+      setDetail(d)
+      setEditedRegras(d.interpretacao?.regras ?? [])
+    } catch (e) {
+      toast.error('Falha ao abrir: ' + (e instanceof Error ? e.message : ''))
+      setOpenId(null)
+    }
+  }
+
+  async function salvarRevisao() {
+    if (!detail) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/icms-fronteira/legislacao?id=${encodeURIComponent(detail.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          interpretacao: { resumo: detail.interpretacao.resumo, regras: editedRegras },
+          status: 'reviewed',
+        }),
+      })
+      if (!res.ok) throw new Error('falha')
+      toast.success('Revisão salva')
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/legislacao'] })
+    } catch (e) {
+      toast.error('Falha: ' + (e instanceof Error ? e.message : ''))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function aplicarRegras() {
+    if (!detail) return
+    const confirmadas = editedRegras.filter(r => r.confirmado).length
+    if (confirmadas === 0) {
+      toast.error('Confirme pelo menos uma regra antes de aplicar')
+      return
+    }
+    if (!confirm(`Aplicar ${confirmadas} regra(s) confirmada(s) nas Regras NCM da empresa?`)) return
+    setBusy(true)
+    try {
+      // 1) salva edição
+      await fetch(`/api/icms-fronteira/legislacao?id=${encodeURIComponent(detail.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          interpretacao: { resumo: detail.interpretacao.resumo, regras: editedRegras },
+          status: 'reviewed',
+        }),
+      })
+      // 2) aplica
+      const res = await fetch(`/api/icms-fronteira/legislacao/aplicar?id=${encodeURIComponent(detail.id)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const r = await res.json()
+      if (!res.ok) throw new Error(r.error || 'falha')
+      toast.success(`Aplicadas ${r.applied} regra(s); ${r.skipped} ignoradas`)
+      setOpenId(null)
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/legislacao'] })
+    } catch (e) {
+      toast.error('Falha: ' + (e instanceof Error ? e.message : ''))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function descartar(id: string) {
+    if (!confirm('Descartar esta legislação?')) return
+    try {
+      await fetch(`/api/icms-fronteira/legislacao?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      toast.success('Removida')
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/legislacao'] })
+    } catch {
+      toast.error('Falha ao remover')
+    }
+  }
+
+  function setRegra(i: number, patch: Partial<LegislacaoRegraItem>) {
+    setEditedRegras(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r))
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-indigo-600" />
+          Legislação — Importação com IA
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs text-muted-foreground mb-4">
+          Importe um decreto/RICMS (cole o texto). A IA extrai automaticamente os NCMs sujeitos a ST,
+          alíquotas e MVAs. Você revisa item a item, confirma o que está correto e aplica nas Regras NCM.
+        </p>
+        <div className="flex justify-end mb-3">
+          <Button size="sm" onClick={() => setUploadOpen(true)}>
+            <Upload className="h-3.5 w-3.5 mr-1.5" /> Importar legislação
+          </Button>
+        </div>
+
+        {isLoading && <p className="text-sm text-muted-foreground py-6">Carregando...</p>}
+        {!isLoading && (lista?.length ?? 0) === 0 && (
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            Nenhuma legislação importada ainda.
+          </p>
+        )}
+        {!isLoading && (lista?.length ?? 0) > 0 && (
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Título</TableHead>
+                  <TableHead className="text-xs">UF</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                  <TableHead className="text-xs">Criado</TableHead>
+                  <TableHead className="text-xs text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {lista!.map(r => (
+                  <TableRow key={r.id}>
+                    <TableCell className="text-xs">{r.titulo}</TableCell>
+                    <TableCell className="text-xs">{r.uf_estado}</TableCell>
+                    <TableCell className="text-xs">
+                      <Badge variant="outline" className="text-[10px]">{r.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">{r.created_at?.slice(0, 10)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => loadDetail(r.id)}>
+                        Revisar
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px] text-red-600" onClick={() => descartar(r.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* Modal upload */}
+        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Importar legislação</DialogTitle>
+              <DialogDescription className="text-xs">
+                Cole o texto do decreto/RICMS. A IA vai extrair os NCMs sujeitos a ST.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-4 gap-3">
+              <div className="col-span-1">
+                <Label className="text-xs">UF</Label>
+                <Select value={uf} onValueChange={setUf}>
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PE">PE</SelectItem>
+                    <SelectItem value="BA">BA</SelectItem>
+                    <SelectItem value="CE">CE</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-3">
+                <Label className="text-xs">Título</Label>
+                <Input className="text-xs" value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ex: Decreto BA 13.870/2012 — Lista ST" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Texto do decreto</Label>
+              <Textarea className="text-xs h-64 font-mono" value={texto} onChange={e => setTexto(e.target.value)} placeholder="Cole o conteúdo aqui (ou o trecho que contém a lista de NCMs sujeitos a ST)..." />
+              <p className="text-[10px] text-muted-foreground mt-1">Limite ~200k caracteres. PDF: converta para texto antes de colar.</p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={() => setUploadOpen(false)}>Cancelar</Button>
+              <Button size="sm" disabled={busy} onClick={uploadDecreto}>
+                {busy ? 'Processando...' : 'Importar e interpretar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal revisão */}
+        <Dialog open={!!openId} onOpenChange={o => { if (!o) { setOpenId(null); setDetail(null) } }}>
+          <DialogContent className="max-w-5xl">
+            <DialogHeader>
+              <DialogTitle>{detail?.titulo ?? 'Carregando...'}</DialogTitle>
+              <DialogDescription className="text-xs">
+                Revise cada regra extraída pela IA. Confirme as corretas e clique em "Aplicar".
+              </DialogDescription>
+            </DialogHeader>
+            {!detail && <p className="text-sm py-6 text-center text-muted-foreground">Carregando...</p>}
+            {detail && (
+              <div className="space-y-4">
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    <strong>Resumo da IA:</strong> {detail.interpretacao?.resumo || '—'}
+                  </AlertDescription>
+                </Alert>
+                <div className="rounded-md border overflow-x-auto max-h-96">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs w-10">Confirmar</TableHead>
+                        <TableHead className="text-xs">NCM</TableHead>
+                        <TableHead className="text-xs">Descrição</TableHead>
+                        <TableHead className="text-xs">Regime</TableHead>
+                        <TableHead className="text-xs text-right">Alíq Int</TableHead>
+                        <TableHead className="text-xs text-right">MVA orig</TableHead>
+                        <TableHead className="text-xs text-right">MVA 4%</TableHead>
+                        <TableHead className="text-xs text-right">MVA 7%</TableHead>
+                        <TableHead className="text-xs text-right">MVA 12%</TableHead>
+                        <TableHead className="text-xs">Justificativa</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {editedRegras.map((rg, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-xs">
+                            <Checkbox checked={rg.confirmado} onCheckedChange={v => setRegra(i, { confirmado: !!v })} />
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <Input className="text-xs h-7 w-20" value={rg.ncm} onChange={e => setRegra(i, { ncm: e.target.value })} />
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <Input className="text-xs h-7" value={rg.descricao ?? ''} onChange={e => setRegra(i, { descricao: e.target.value })} />
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <Select value={rg.regime} onValueChange={v => setRegra(i, { regime: v })}>
+                              <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="ANTECIPACAO">Antecipação</SelectItem>
+                                <SelectItem value="ST">ST</SelectItem>
+                                <SelectItem value="DIFAL">DIFAL</SelectItem>
+                                <SelectItem value="NORMAL">Normal</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          {(['aliquota_interna','mva_original','mva_4pct','mva_7pct','mva_12pct'] as const).map(k => (
+                            <TableCell key={k} className="text-xs text-right">
+                              <Input className="text-xs h-7 w-20 text-right" type="number" step="0.01"
+                                value={rg[k] ?? ''}
+                                onChange={e => setRegra(i, { [k]: e.target.value === '' ? undefined : Number(e.target.value) } as Partial<LegislacaoRegraItem>)} />
+                            </TableCell>
+                          ))}
+                          <TableCell className="text-xs">
+                            <span className="text-[10px] text-muted-foreground">{rg.justificativa}</span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+            <DialogFooter className="gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setOpenId(null); setDetail(null) }}>Fechar</Button>
+              <Button variant="outline" size="sm" disabled={busy || !detail} onClick={salvarRevisao}>Salvar revisão</Button>
+              <Button size="sm" disabled={busy || !detail} onClick={aplicarRegras}>
+                Aplicar nas Regras NCM
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
+  )
+}
+
 function ReconciliacaoTab({ token }: { token: string | null }) {
   const [monthInput, setMonthInput] = useState('')
   const periodo = monthToPeriodo(monthInput)
+  const queryClient = useQueryClient()
 
   const { data, isLoading, error } = useQuery<ReconResponse>({
     queryKey: ['icms-fronteira/reconciliacao', periodo],
@@ -795,7 +1353,12 @@ function ReconciliacaoTab({ token }: { token: string | null }) {
                   <strong> estimado</strong> — validar a classificação com o contador antes de incluir no cálculo oficial.
                 </AlertDescription>
               </Alert>
-              <ReconBlockTable block={data.nao_localizada_sped} showCfopMap />
+              <FaltandoBlockTable
+                block={data.nao_localizada_sped}
+                token={token}
+                periodo={periodo}
+                queryClient={queryClient}
+              />
             </div>
           </div>
         )}
@@ -2457,6 +3020,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/planilha':     'planilha',
     '/icms-fronteira/divergencias': 'divergencias',
     '/icms-fronteira/reconciliacao': 'reconciliacao',
+    '/icms-fronteira/legislacao':    'legislacao',
     '/icms-fronteira/regras':       'regras',
     '/icms-fronteira/extrato':      'extrato',
     '/icms-fronteira/contestacoes': 'contestacoes',
@@ -2470,6 +3034,7 @@ export default function IcmsFronteira() {
     planilha:      '/icms-fronteira/planilha',
     divergencias:  '/icms-fronteira/divergencias',
     reconciliacao: '/icms-fronteira/reconciliacao',
+    legislacao:    '/icms-fronteira/legislacao',
     regras:        '/icms-fronteira/regras',
     extrato:       '/icms-fronteira/extrato',
     contestacoes:  '/icms-fronteira/contestacoes',
@@ -2529,6 +3094,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="planilha">Planilha</TabsTrigger>
           <TabsTrigger value="divergencias">Divergências</TabsTrigger>
           <TabsTrigger value="reconciliacao">Reconciliação</TabsTrigger>
+          <TabsTrigger value="legislacao">Legislação</TabsTrigger>
           <TabsTrigger value="apuracao">Apuração Mensal</TabsTrigger>
           <TabsTrigger value="regras">Regras NCM</TabsTrigger>
           <TabsTrigger value="extrato">Extrato SEFAZ</TabsTrigger>
@@ -2643,6 +3209,10 @@ export default function IcmsFronteira() {
 
         <TabsContent value="reconciliacao" className="mt-6">
           <ReconciliacaoTab token={token} />
+        </TabsContent>
+
+        <TabsContent value="legislacao" className="mt-6">
+          <LegislacaoTab token={token} />
         </TabsContent>
 
         <TabsContent value="apuracao" className="mt-6">

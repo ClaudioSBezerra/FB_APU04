@@ -67,6 +67,7 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Planilha de Itens',    path: '/icms-fronteira/planilha' },
       { label: 'Divergências',         path: '/icms-fronteira/divergencias' },
       { label: 'Reconciliação',        path: '/icms-fronteira/reconciliacao' },
+      { label: 'Legislação',           path: '/icms-fronteira/legislacao' },
       { label: 'Apuração Mensal',      path: '/icms-fronteira/apuracao' },
       { label: 'Extrato SEFAZ',        path: '/icms-fronteira/extrato' },
       { label: 'Contestações',         path: '/icms-fronteira/contestacoes' },

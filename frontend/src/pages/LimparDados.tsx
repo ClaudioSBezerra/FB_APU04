@@ -39,8 +39,8 @@ const GROUPS: { id: string; label: string; description: string; tables: string[]
   {
     id: 'fronteira',
     label: 'ICMS Fronteira',
-    description: 'Regras NCM/MVA importadas, extrato SEFAZ e contestações desta empresa (as regras globais PE/BA/CE são preservadas)',
-    tables: ['icms_fronteira_regras_ncm', 'icms_fronteira_extrato_sefaz', 'icms_fronteira_contestacoes'],
+    description: 'Regras NCM/MVA da empresa, extrato SEFAZ, contestações, classificação manual da Reconciliação e legislação importada (regras globais PE/BA/CE preservadas)',
+    tables: ['icms_fronteira_regras_ncm', 'icms_fronteira_extrato_sefaz', 'icms_fronteira_contestacoes', 'icms_fronteira_classificacao_manual', 'legislacao_fronteira'],
   },
 ];
 
