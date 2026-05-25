@@ -129,8 +129,8 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string, r *http.Requ
 
 var exportCSVHeaders = []string{
 	"Bloco", "Data Emissão", "Número NF-e", "Fornecedor", "CNPJ", "UF", "CFOP", "Regime",
-	"V.Prod", "ICMS Atual", "V.BC ST", "V.ST", "Alíq.Inter.%", "Alíq.Interna.%", "ICMS Devido Est.",
-	"Chave NF-e", "Chave CT-e", "V.IPI",
+	"V.Prod", "V.IPI", "ICMS Atual", "V.BC ST", "V.ST", "Alíq.Inter.%", "Alíq.Interna.%", "ICMS Devido Est.",
+	"Chave NF-e", "Chave CT-e",
 }
 
 func blocoLabel(bloco string) string {
@@ -151,6 +151,7 @@ func rowToCSVRecord(row fronteiraExportRow) []string {
 		row.CFOP,
 		row.Regime,
 		fmt.Sprintf("%.2f", row.VProd),
+		fmt.Sprintf("%.2f", row.VIPI),
 		fmt.Sprintf("%.2f", row.VIcms),
 		fmt.Sprintf("%.2f", row.VBcST),
 		fmt.Sprintf("%.2f", row.VST),
@@ -159,7 +160,6 @@ func rowToCSVRecord(row fronteiraExportRow) []string {
 		fmt.Sprintf("%.2f", row.IcmsDevidoEst),
 		row.ChaveNFe,
 		"",
-		fmt.Sprintf("%.2f", row.VIPI),
 	}
 }
 
@@ -347,15 +347,15 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellValue(sheetName, fmt.Sprintf("F%d", excelRow), row.CFOP)
 				f.SetCellValue(sheetName, fmt.Sprintf("G%d", excelRow), row.Regime)
 				f.SetCellValue(sheetName, fmt.Sprintf("H%d", excelRow), row.VProd)
-				f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), row.VIcms)
-				f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), row.VBcST)
-				f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), row.VST)
-				f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
-				f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
-				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.IcmsDevidoEst)
-				f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.ChaveNFe)
-				f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), "")
-				f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), row.VIPI)
+				f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), row.VIPI)
+				f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), row.VIcms)
+				f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), row.VBcST)
+				f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.VST)
+				f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInter)
+				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.AliqInterna)
+				f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.IcmsDevidoEst)
+				f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), row.ChaveNFe)
+				f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), "")
 				// Aplica estilos por tipo de coluna
 				textStyle := 0
 				mStyle := moneyStyle
@@ -366,14 +366,14 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					nStyle = numWarnStyle
 				}
 				if textStyle > 0 {
-					for _, c := range []string{"A","B","C","D","E","F","G","O","P"} {
+					for _, c := range []string{"A","B","C","D","E","F","G","P","Q"} {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), textStyle)
 					}
 				}
-				for _, c := range []string{"H","I","J","K","N","Q"} {
+				for _, c := range []string{"H","I","J","K","L","O"} {
 					f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), mStyle)
 				}
-				for _, c := range []string{"L","M"} {
+				for _, c := range []string{"M","N"} {
 					f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), nStyle)
 				}
 				totalVProd += row.VProd
@@ -399,22 +399,22 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(sheetName, fmt.Sprintf("F%d", excelRow), "CTE")
 					f.SetCellValue(sheetName, fmt.Sprintf("G%d", excelRow), row.Regime)
 					f.SetCellValue(sheetName, fmt.Sprintf("H%d", excelRow), cte.VPrest)
-					f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), cte.VIcmsCTe)
-					f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), 0) // V.BC ST (n/a)
-					f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), 0) // V.ST (n/a)
-					f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
-					f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
-					f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), cte.IcmsFronteira)
-					f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.ChaveNFe)
-					f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), cte.ChaveCTe)
-					f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), 0) // CT-e não tem IPI
-					for _, c := range []string{"A","B","C","D","E","F","G","O","P"} {
+					f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), 0) // CT-e não tem IPI
+					f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), cte.VIcmsCTe)
+					f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), 0) // V.BC ST (n/a)
+					f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), 0) // V.ST (n/a)
+					f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInter)
+					f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.AliqInterna)
+					f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), cte.IcmsFronteira)
+					f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), row.ChaveNFe)
+					f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), cte.ChaveCTe)
+					for _, c := range []string{"A","B","C","D","E","F","G","P","Q"} {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), cteStyle)
 					}
-					for _, c := range []string{"H","I","J","K","N","Q"} {
+					for _, c := range []string{"H","I","J","K","L","O"} {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), moneyCteStyle)
 					}
-					for _, c := range []string{"L","M"} {
+					for _, c := range []string{"M","N"} {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), numCteStyle)
 					}
 					totalVProd += cte.VPrest
@@ -427,15 +427,15 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			f.SetCellValue(sheetName, fmt.Sprintf("A%d", totalRow), "TOTAL")
 			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("Q%d", totalRow), boldStyle)
 			f.SetCellValue(sheetName, fmt.Sprintf("H%d", totalRow), totalVProd)
-			f.SetCellValue(sheetName, fmt.Sprintf("I%d", totalRow), totalVIcms)
+			f.SetCellValue(sheetName, fmt.Sprintf("I%d", totalRow), totalVIPI)
+			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVIcms)
 			// Aplica formato monetário nas células TOTAL (mantém bold)
-			for _, c := range []string{"H","I","J","K","N","Q"} {
+			for _, c := range []string{"H","I","J","K","L","O"} {
 				f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, totalRow), fmt.Sprintf("%s%d", c, totalRow), moneyBoldStyle)
 			}
-			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVBcST)
-			f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVST)
-			f.SetCellValue(sheetName, fmt.Sprintf("N%d", totalRow), totalIcmsDevido)
-			f.SetCellValue(sheetName, fmt.Sprintf("Q%d", totalRow), totalVIPI)
+			f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVBcST)
+			f.SetCellValue(sheetName, fmt.Sprintf("L%d", totalRow), totalVST)
+			f.SetCellValue(sheetName, fmt.Sprintf("O%d", totalRow), totalIcmsDevido)
 		}
 
 		// ── Sheet C — XML não lançadas no SPED ───────────────────────────────
@@ -454,7 +454,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 
 				cSheet := "C - Não no SPED (XML)"
 				f.NewSheet(cSheet)
-				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "ICMS Est.", "Classificação", "Chave NF-e", "Chave CT-e", "V.IPI"}
+				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "V.IPI", "ICMS Est.", "Classificação", "Chave NF-e", "Chave CT-e"}
 				cCols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"}
 				for i, h := range cHeaders {
 					cell := fmt.Sprintf("%s1", cCols[i])
@@ -477,14 +477,14 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(cSheet, fmt.Sprintf("F%d", er), row.CfopSaida)
 					f.SetCellValue(cSheet, fmt.Sprintf("G%d", er), row.Regime)
 					f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), row.VOpr)
-					f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), row.IcmsDevidoEst)
-					f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), row.ClassStatus)
-					f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ChaveNFe)
-					f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), row.VIPI)
-					for _, c := range []string{"A","B","C","D","E","F","G","J","K","L"} {
+					f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), row.VIPI)
+					f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), row.IcmsDevidoEst)
+					f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ClassStatus)
+					f.SetCellValue(cSheet, fmt.Sprintf("L%d", er), row.ChaveNFe)
+					for _, c := range []string{"A","B","C","D","E","F","G","K","L","M"} {
 						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), slateStyle)
 					}
-					for _, c := range []string{"H","I","M"} {
+					for _, c := range []string{"H","I","J"} {
 						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneySlateStyle)
 					}
 					totalIcmsC += row.IcmsDevidoEst
@@ -502,15 +502,15 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 						f.SetCellValue(cSheet, fmt.Sprintf("F%d", er), "CTE")
 						f.SetCellValue(cSheet, fmt.Sprintf("G%d", er), row.Regime)
 						f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), cte.VPrest)
-						f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), cte.VIcmsCTe)
-						f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), "")
-						f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ChaveNFe)
-						f.SetCellValue(cSheet, fmt.Sprintf("L%d", er), cte.ChaveCTe)
-						f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), 0) // CT-e não tem IPI
-						for _, c := range []string{"A","B","C","D","E","F","G","J","K","L"} {
+						f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), 0) // CT-e não tem IPI
+						f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), cte.VIcmsCTe)
+						f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), "")
+						f.SetCellValue(cSheet, fmt.Sprintf("L%d", er), row.ChaveNFe)
+						f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), cte.ChaveCTe)
+						for _, c := range []string{"A","B","C","D","E","F","G","K","L","M"} {
 							f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), cteRowStyle)
 						}
-						for _, c := range []string{"H","I","M"} {
+						for _, c := range []string{"H","I","J"} {
 							f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneyCteRowStyle)
 						}
 						er++
@@ -518,10 +518,10 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				}
 				f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), "TOTAL")
 				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", er), fmt.Sprintf("M%d", er), boldStyle)
-				f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), totalIcmsC)
-				f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), totalIpiC)
-				// Aplica moeda+bold nas colunas H, I e M do TOTAL
-				for _, c := range []string{"H","I","M"} {
+				f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), totalIpiC)
+				f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), totalIcmsC)
+				// Aplica moeda+bold nas colunas H, I e J do TOTAL
+				for _, c := range []string{"H","I","J"} {
 					f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneyBoldStyle)
 				}
 			}

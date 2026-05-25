@@ -119,7 +119,11 @@ SELECT
     m.v_frete,
     COALESCE(cte.v_frete_cte, 0) AS v_frete_cte,
     m.v_outro,
-    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte, 0) + m.v_outro) AS v_opr,
+    -- V.Operação EXIBIDO = total da própria NF (produto + IPI + frete próprio +
+    -- outras). Reconcilia com o "V. Total da Nota" do DANFE. O frete do CT-e NÃO
+    -- entra aqui (aparece na linha do CT-e); ele só entra na BASE do cálculo
+    -- abaixo, para não exibir o frete em dobro.
+    (m.v_prod + m.v_ipi + m.v_frete + m.v_outro) AS v_opr,
     m.v_icms AS v_icms_nf,
     COALESCE(cte.v_icms_cte, 0) AS v_icms_cte,
     CASE WHEN m.v_prod > 0 THEN ROUND((m.v_icms / m.v_prod * 100.0)::numeric, 2) ELSE 0 END AS aliq_inter,
