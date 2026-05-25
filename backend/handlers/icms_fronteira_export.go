@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"database/sql"
+	"encoding/base64"
 	"encoding/csv"
 	"fmt"
 	"log"
@@ -542,8 +543,113 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 }
 
 // ---------------------------------------------------------------------------
+// helpers para o relatório HTML
+// ---------------------------------------------------------------------------
+
+// brl formata um float64 como moeda brasileira: R$ 1.234,56
+func brl(v float64) string {
+	prefix := "R$ "
+	if v < 0 {
+		v = -v
+		prefix = "-R$ "
+	}
+	cents := int64(v*100 + 0.5)
+	whole := cents / 100
+	dec := cents % 100
+	s := fmt.Sprintf("%d", whole)
+	if len(s) > 3 {
+		r := len(s) % 3
+		var buf strings.Builder
+		if r > 0 {
+			buf.WriteString(s[:r])
+		}
+		for i := r; i < len(s); i += 3 {
+			if buf.Len() > 0 {
+				buf.WriteByte('.')
+			}
+			buf.WriteString(s[i : i+3])
+		}
+		return prefix + buf.String() + fmt.Sprintf(",%02d", dec)
+	}
+	return prefix + s + fmt.Sprintf(",%02d", dec)
+}
+
+// fetchTopNcmByChave busca o NCM principal de cada chave_nfe em lote.
+func fetchTopNcmByChave(db *sql.DB, companyID string, chaves []string) map[string]string {
+	result := make(map[string]string)
+	if len(chaves) == 0 {
+		return result
+	}
+	ph := make([]string, len(chaves))
+	args := make([]interface{}, len(chaves))
+	for i, c := range chaves {
+		ph[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = c
+	}
+	args = append(args, companyID)
+	q := fmt.Sprintf(`
+		SELECT ne.chave_nfe, sub.ncm
+		FROM nfe_entradas ne
+		JOIN (
+			SELECT DISTINCT ON (nfe_id) nfe_id, ncm
+			FROM nfe_entradas_itens
+			WHERE ncm IS NOT NULL AND ncm != ''
+			ORDER BY nfe_id, ncm
+		) sub ON sub.nfe_id = ne.id
+		WHERE ne.chave_nfe IN (%s)
+		  AND ne.company_id = $%d::uuid
+	`, strings.Join(ph, ","), len(chaves)+1)
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		log.Printf("fetchTopNcmByChave error: %v", err)
+		return result
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var chave, ncm string
+		if err := rows.Scan(&chave, &ncm); err == nil {
+			if _, exists := result[chave]; !exists {
+				result[chave] = ncm
+			}
+		}
+	}
+	return result
+}
+
+const antecipacaoReportCSS = `<style>
+* { box-sizing: border-box; }
+body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; color: #222; }
+.rpt-header { border-bottom: 2px solid #4472C4; padding-bottom: 8px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.rpt-head-txt { flex: 1; }
+.rpt-logo   { max-height: 56px; max-width: 200px; object-fit: contain; }
+.rpt-title  { font-size: 15px; font-weight: bold; color: #1a3a6e; }
+.rpt-sub    { font-size: 12px; color: #4472C4; margin-top: 2px; }
+.rpt-meta   { font-size: 10px; color: #666; margin-top: 4px; }
+.nf-card    { margin-bottom: 18px; border: 1px solid #c9d4ec; border-radius: 4px; overflow: hidden; page-break-inside: avoid; }
+.nf-hdr     { background: #4472C4; color: #fff; padding: 6px 10px; display: flex; justify-content: space-between; }
+.nf-num     { font-weight: bold; font-size: 12px; }
+.nf-total   { font-weight: bold; font-size: 12px; }
+.nf-forn    { background: #eef2fb; padding: 4px 10px; font-size: 10px; border-bottom: 1px solid #c9d4ec; }
+.nf-chave   { background: #f7f9fe; padding: 3px 10px; font-size: 9px; color: #555; border-bottom: 1px solid #c9d4ec; font-family: monospace; letter-spacing: .5px; }
+.nf-tbl     { width: 100%; border-collapse: collapse; }
+.nf-tbl th  { background: #6889c8; color: #fff; padding: 4px 6px; font-size: 9px; text-align: right; white-space: nowrap; }
+.nf-tbl th:nth-child(-n+3) { text-align: left; }
+.nf-tbl td  { border-top: 1px solid #e4e9f5; padding: 3px 6px; font-size: 10px; text-align: right; }
+.nf-tbl td:nth-child(-n+3) { text-align: left; }
+.nf-tbl tr:nth-child(even) td { background: #f4f7fd; }
+.tot-row td { font-weight: bold; background: #dce6f8 !important; }
+.grand      { margin-top: 16px; padding: 10px 14px; background: #1a3a6e; color: #fff; border-radius: 4px; font-size: 12px; font-weight: bold; }
+.empty      { text-align: center; color: #888; font-style: italic; padding: 30px; }
+@media print {
+  @page { size: landscape; margin: 8mm; }
+  body  { margin: 0; }
+  .nf-card { page-break-inside: avoid; }
+}
+</style>`
+
+// ---------------------------------------------------------------------------
 // IcmsFronteiraExportHTMLHandler — GET /api/icms-fronteira/exportar/pdf
-// Returns printable HTML (browser triggers window.print())
+// Returns printable HTML with per-NF cards (browser triggers window.print())
 // ---------------------------------------------------------------------------
 
 func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
@@ -568,15 +674,21 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 
 		regime := strings.ToLower(r.URL.Query().Get("regime"))
 		if regime == "" {
-			regime = "todos"
+			regime = "antecipacao"
 		}
 		periodo := r.URL.Query().Get("periodo")
 
-		// Fetch company name
 		var companyName string
-		err = db.QueryRow(`SELECT COALESCE(nome_fantasia, razao_social, '') FROM companies WHERE id = $1::uuid`, companyID).Scan(&companyName)
-		if err != nil {
-			companyName = companyID
+		var logoData []byte
+		var logoMime string
+		if err := db.QueryRow(`SELECT COALESCE(NULLIF(trade_name,''), name, ''), logo_data, COALESCE(logo_mime,'image/png')
+			FROM companies WHERE id = $1::uuid`, companyID).Scan(&companyName, &logoData, &logoMime); err != nil {
+			log.Printf("IcmsFronteiraExportHTML: company lookup failed for %s: %v", companyID, err)
+		}
+		logoTag := ""
+		if len(logoData) > 0 {
+			logoTag = fmt.Sprintf(`<img class="rpt-logo" src="data:%s;base64,%s" alt="logo">`,
+				logoMime, base64.StdEncoding.EncodeToString(logoData))
 		}
 
 		dataRows, err := fetchExportRows(db, companyID, regime, periodo, r)
@@ -586,90 +698,127 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Agrupar linhas por chave_nfe mantendo ordem de aparição
+		type nfGroup struct {
+			rows []fronteiraExportRow
+		}
+		var nfOrder []string
+		nfMap := make(map[string]*nfGroup)
+		for _, row := range dataRows {
+			if _, exists := nfMap[row.ChaveNFe]; !exists {
+				nfOrder = append(nfOrder, row.ChaveNFe)
+				nfMap[row.ChaveNFe] = &nfGroup{}
+			}
+			nfMap[row.ChaveNFe].rows = append(nfMap[row.ChaveNFe].rows, row)
+		}
+
+		ncmByChave := fetchTopNcmByChave(db, companyID, nfOrder)
+
 		regimeLabel := strings.ToUpper(regime)
 		if regimeLabel == "TODOS" {
 			regimeLabel = "Todos os Regimes"
 		}
 		today := time.Now().Format("02/01/2006")
-		title := fmt.Sprintf("ICMS Fronteira — %s — %s", regimeLabel, today)
 
 		var sb strings.Builder
 		sb.WriteString(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">`)
-		sb.WriteString(fmt.Sprintf(`<title>%s</title>`, title))
-		sb.WriteString(`<style>
-body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; }
-h1 { font-size: 14px; margin-bottom: 4px; }
-h2 { font-size: 12px; color: #555; margin-bottom: 12px; }
-table { border-collapse: collapse; width: 100%; }
-th { background: #4472C4; color: #fff; padding: 4px 6px; text-align: left; font-size: 10px; }
-td { border: 1px solid #ccc; padding: 3px 6px; }
-tr:nth-child(even) td { background: #f0f4ff; }
-.total-row td { font-weight: bold; background: #d9e1f2; }
-@media print {
-  @page { size: landscape; margin: 10mm; }
-  body { margin: 0; }
-}
-</style></head><body>`)
+		sb.WriteString(fmt.Sprintf(`<title>Relatório ICMS %s — %s</title>`, regimeLabel, htmlEscape(periodo)))
+		sb.WriteString(antecipacaoReportCSS)
+		sb.WriteString(`</head><body>`)
 
-		sb.WriteString(fmt.Sprintf(`<h1>%s</h1>`, title))
-		sb.WriteString(fmt.Sprintf(`<h2>Empresa: %s</h2>`, companyName))
+		// Cabeçalho do relatório
+		sb.WriteString(`<div class="rpt-header">`)
+		sb.WriteString(`<div class="rpt-head-txt">`)
+		sb.WriteString(`<div class="rpt-title">Relatório de Cálculo - ICMS Fronteira</div>`)
+		sb.WriteString(fmt.Sprintf(`<div class="rpt-sub">Relatório de Cálculo - %s</div>`, regimeLabel))
+		sb.WriteString(fmt.Sprintf(`<div class="rpt-meta">Período: %s &nbsp;|&nbsp; Empresa: %s &nbsp;|&nbsp; Emissão: %s</div>`,
+			htmlEscape(periodo), htmlEscape(companyName), today))
+		sb.WriteString(`</div>`)
+		sb.WriteString(logoTag)
+		sb.WriteString(`</div>`)
 
-		// Separar por bloco
-		blocos := []struct{ key, label, color string }{
-			{"mes_anterior", "Bloco A — NFs de Meses Anteriores no SPED", "#fff3cd"},
-			{"mes_atual", "Bloco B — NFs do Mês Presentes no SPED", "#d4edda"},
+		if len(nfOrder) == 0 {
+			sb.WriteString(`<div class="empty">Nenhuma nota encontrada para este período e regime.</div>`)
 		}
-		headers := exportCSVHeaders[1:] // sem coluna "Bloco" no HTML (já separado em seções)
 
-		var totalVProdGeral, totalIcmsDevidoGeral float64
-		for _, bloco := range blocos {
-			var blocoRows []fronteiraExportRow
-			for _, row := range dataRows {
-				if row.Bloco == bloco.key || (bloco.key == "mes_atual" && row.Bloco == "") {
-					blocoRows = append(blocoRows, row)
-				}
+		var grandVOpr, grandBase, grandIcmsDest, grandST, grandDevido float64
+
+		for _, chave := range nfOrder {
+			grp := nfMap[chave]
+			first := grp.rows[0]
+			ncm := ncmByChave[chave]
+			if ncm == "" {
+				ncm = "-"
 			}
-			sb.WriteString(fmt.Sprintf(`<h3 style="margin-top:18px;padding:6px 8px;background:%s;border-radius:4px;font-size:12px;">%s <span style="font-weight:normal;color:#555;">(%d nota(s))</span></h3>`,
-				bloco.color, bloco.label, len(blocoRows)))
-			if bloco.key == "mes_anterior" {
-				sb.WriteString(`<p style="font-size:10px;color:#856404;margin:0 0 6px;">⚠ O imposto pode já ter sido recolhido no mês de emissão. Verifique antes de incluir no cálculo.</p>`)
+
+			var nfVOpr, nfBase, nfIcmsDest, nfST, nfDevido float64
+			for _, row := range grp.rows {
+				nfVOpr += row.VProd
+				nfBase += row.VProd
+				nfIcmsDest += row.VIcms
+				nfST += row.VST
+				nfDevido += row.IcmsDevidoEst
 			}
-			sb.WriteString(`<table><thead><tr>`)
-			for _, h := range headers {
+
+			sb.WriteString(`<div class="nf-card">`)
+
+			// Cabeçalho da NF
+			sb.WriteString(fmt.Sprintf(
+				`<div class="nf-hdr"><span class="nf-num">NF: %s</span><span class="nf-total">Total Devido: %s</span></div>`,
+				htmlEscape(first.NumeroNFe), brl(nfDevido)))
+			sb.WriteString(fmt.Sprintf(
+				`<div class="nf-forn">Fornecedor: %s &nbsp;&ndash;&nbsp; Regime: Normal</div>`,
+				htmlEscape(first.FornNome)))
+			sb.WriteString(fmt.Sprintf(`<div class="nf-chave">Chave: %s</div>`, htmlEscape(chave)))
+
+			// Tabela de itens
+			sb.WriteString(`<table class="nf-tbl"><thead><tr>`)
+			for _, h := range []string{"Cód.", "NCM", "Identificação", "V. Operação", "MVA", "Alíq. I/I", "Base Cálc.", "ICMS Dest.", "ICMS-ST Ret", "V. Devido"} {
 				sb.WriteString(fmt.Sprintf(`<th>%s</th>`, h))
 			}
 			sb.WriteString(`</tr></thead><tbody>`)
-			var totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido float64
-			for _, row := range blocoRows {
-				sb.WriteString(`<tr>`)
-				sb.WriteString(fmt.Sprintf(`<td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>`,
-					row.DataEmissao, row.NumeroNFe, htmlEscape(row.FornNome), row.FornCNPJ, row.FornUF, row.CFOP, row.Regime))
-				sb.WriteString(fmt.Sprintf(`<td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td>`,
-					row.VProd, row.VIcms, row.VBcST, row.VST, row.AliqInter, row.AliqInterna, row.IcmsDevidoEst))
-				sb.WriteString(`</tr>`)
-				totalVProd += row.VProd
-				totalVIcms += row.VIcms
-				totalVBcST += row.VBcST
-				totalVST += row.VST
-				totalIcmsDevido += row.IcmsDevidoEst
+
+			for i, row := range grp.rows {
+				vstDisp := "-"
+				if row.VST > 0.001 {
+					vstDisp = brl(row.VST)
+				}
+				aliqII := fmt.Sprintf("%.1f%% / %.1f%%", row.AliqInter, row.AliqInterna)
+				sb.WriteString(fmt.Sprintf(
+					`<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+					i+1, ncm, htmlEscape(row.Regime),
+					brl(row.VProd), aliqII, brl(row.VProd),
+					brl(row.VIcms), vstDisp, brl(row.IcmsDevidoEst)))
 			}
-			if len(blocoRows) > 0 {
-				sb.WriteString(`<tr class="total-row"><td colspan="7"><strong>Subtotal</strong></td>`)
-				sb.WriteString(fmt.Sprintf(`<td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td></td><td></td><td>%.2f</td>`,
-					totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido))
-				sb.WriteString(`</tr>`)
-			} else {
-				sb.WriteString(`<tr><td colspan="14" style="text-align:center;color:#888;font-style:italic;">Nenhuma nota neste bloco.</td></tr>`)
+
+			// Linha TOTAIS da NF
+			stTotDisp := "-"
+			if nfST > 0.001 {
+				stTotDisp = brl(nfST)
 			}
-			sb.WriteString(`</tbody></table>`)
-			if bloco.key == "mes_atual" {
-				totalVProdGeral += totalVProd
-				totalIcmsDevidoGeral += totalIcmsDevido
-			}
+			sb.WriteString(fmt.Sprintf(
+				`<tr class="tot-row"><td colspan="3">TOTAIS</td><td>%s</td><td>-</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+				brl(nfVOpr), brl(nfBase), brl(nfIcmsDest), stTotDisp, brl(nfDevido)))
+
+			sb.WriteString(`</tbody></table></div>`)
+
+			grandVOpr += nfVOpr
+			grandBase += nfBase
+			grandIcmsDest += nfIcmsDest
+			grandST += nfST
+			grandDevido += nfDevido
 		}
-		sb.WriteString(fmt.Sprintf(`<p style="margin-top:12px;font-size:12px;">Bloco C (XML não lançadas no SPED) não consta neste relatório — consulte a aba Reconciliação para validar.</p>`))
-		sb.WriteString(fmt.Sprintf(`<p style="font-weight:bold;font-size:13px;">Total do Mês (Bloco B): V.Prod = %.2f | ICMS Devido Est. = %.2f</p>`,
-			totalVProdGeral, totalIcmsDevidoGeral))
+
+		// Total geral
+		if len(nfOrder) > 0 {
+			stGrandDisp := "-"
+			if grandST > 0.001 {
+				stGrandDisp = brl(grandST)
+			}
+			sb.WriteString(fmt.Sprintf(
+				`<div class="grand">TOTAL GERAL &nbsp;&mdash;&nbsp; %d nota(s) &nbsp;|&nbsp; V. Operação: %s &nbsp;|&nbsp; Base Cálc.: %s &nbsp;|&nbsp; ICMS Dest.: %s &nbsp;|&nbsp; ST Ret.: %s &nbsp;|&nbsp; V. Devido: %s</div>`,
+				len(nfOrder), brl(grandVOpr), brl(grandBase), brl(grandIcmsDest), stGrandDisp, brl(grandDevido)))
+		}
 
 		sb.WriteString(`<script>window.onload=function(){window.print()}</script>`)
 		sb.WriteString(`</body></html>`)
