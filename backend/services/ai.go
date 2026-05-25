@@ -26,9 +26,22 @@ type AIClient struct {
 
 // OpenAI-compatible request/response types (used by Z.AI)
 type chatRequest struct {
-	Model     string        `json:"model"`
-	MaxTokens int           `json:"max_tokens"`
-	Messages  []chatMessage `json:"messages"`
+	Model          string          `json:"model"`
+	MaxTokens      int             `json:"max_tokens"`
+	Messages       []chatMessage   `json:"messages"`
+	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+	Thinking       *thinkingCfg    `json:"thinking,omitempty"`
+}
+
+type responseFormat struct {
+	Type string `json:"type"` // "json_object" força JSON válido
+}
+
+// Z.AI GLM 4.5+/4.7 expõem um modo "deep thinking" que cospe raciocínio
+// em chain-of-thought no content. Para extração estruturada precisamos
+// desligar — ex.: {"thinking": {"type":"disabled"}}.
+type thinkingCfg struct {
+	Type string `json:"type"`
 }
 
 type chatMessage struct {
@@ -74,6 +87,56 @@ func NewAIClient() *AIClient {
 		},
 		baseURL: "https://api.z.ai/api/paas/v4/chat/completions",
 	}
+}
+
+// GenerateJSON é dedicada à extração estruturada (legislação → regras NCM).
+// Desliga o modo "deep thinking" do GLM (que cospe raciocínio em chain-of-
+// thought no content e estoura max_tokens antes de chegar ao JSON) e força
+// response_format=json_object para o modelo produzir só JSON válido.
+//
+// timeoutSec controla o deadline HTTP da chamada (0 = 150s). Para micro-chunks
+// (poucas linhas), um timeout menor faz falhar rápido num free-tier engasgado
+// em vez de gastar 150s por chunk.
+//
+// Fallback no rate-limit: tenta glm-4.5-flash uma vez antes de devolver erro.
+// Retorna o conteúdo cru (sem extração de markdown) — caller faz o parse.
+func (c *AIClient) GenerateJSON(system, userPrompt, model string, maxTokens, timeoutSec int) (*AIResponse, error) {
+	if c == nil {
+		return nil, fmt.Errorf("AI client not configured")
+	}
+	if model == "" {
+		model = ModelFlash
+	}
+	if maxTokens == 0 {
+		maxTokens = 8192
+	}
+	if timeoutSec <= 0 {
+		timeoutSec = 150
+	}
+	fastClient := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
+	origClient := c.httpClient
+	c.httpClient = fastClient
+	defer func() { c.httpClient = origClient }()
+
+	messages := []chatMessage{{Role: "user", Content: userPrompt}}
+	if system != "" {
+		messages = append([]chatMessage{{Role: "system", Content: system}}, messages...)
+	}
+	reqBody := chatRequest{
+		Model:          model,
+		MaxTokens:      maxTokens,
+		Messages:       messages,
+		ResponseFormat: &responseFormat{Type: "json_object"},
+		Thinking:       &thinkingCfg{Type: "disabled"},
+	}
+
+	resp, err := c.doRequestRaw(reqBody)
+	if err != nil && strings.Contains(err.Error(), "429") && reqBody.Model == ModelFlash {
+		fmt.Printf("[AI JSON] Rate limited on %s, trying %s\n", ModelFlash, ModelFlashFallback)
+		reqBody.Model = ModelFlashFallback
+		resp, err = c.doRequestRaw(reqBody)
+	}
+	return resp, err
 }
 
 // GenerateFastRaw is like GenerateFast but returns the raw AI text without

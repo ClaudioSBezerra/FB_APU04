@@ -65,6 +65,7 @@ import {
   Truck,
   Calculator,
   Play,
+  Loader2,
 } from 'lucide-react'
 import {
   BarChart,
@@ -1817,6 +1818,10 @@ interface LegislacaoListRow {
   status: string
   created_at: string
   applied_at?: string | null
+  proc_status?: string          // 'processing' | 'done' | 'error'
+  proc_done_chunks?: number
+  proc_total_chunks?: number
+  proc_error?: string | null
 }
 
 interface LegislacaoDetail extends LegislacaoListRow {
@@ -1847,6 +1852,12 @@ function LegislacaoTab({ token }: { token: string | null }) {
       return res.json()
     },
     enabled: !!token,
+    // Enquanto algum decreto estiver sendo processado pela IA em background,
+    // refaz a consulta a cada 4s para atualizar o progresso (N/M chunks).
+    refetchInterval: (query) => {
+      const rows = query.state.data as LegislacaoListRow[] | undefined
+      return rows?.some(r => r.proc_status === 'processing') ? 4000 : false
+    },
   })
 
   async function uploadDecreto() {
@@ -1880,7 +1891,13 @@ function LegislacaoTab({ token }: { token: string | null }) {
         })
       }
       if (!res.ok) throw new Error((await res.json()).error || 'falha')
-      toast.success('Legislação importada e interpretada pela IA')
+      const r = await res.json()
+      const nChunks = r.total_chunks ?? 1
+      toast.success(
+        `Decreto enviado. A IA está extraindo as regras em background` +
+        (nChunks > 1 ? ` (${nChunks} partes)` : '') +
+        `. O progresso aparece na lista.`
+      )
       setUploadOpen(false)
       setTitulo(''); setTexto(''); setUploadFile(null)
       queryClient.invalidateQueries({ queryKey: ['icms-fronteira/legislacao'] })
@@ -2022,16 +2039,37 @@ function LegislacaoTab({ token }: { token: string | null }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {lista!.map(r => (
+                {lista!.map(r => {
+                  const processing = r.proc_status === 'processing'
+                  const procError = r.proc_status === 'error'
+                  return (
                   <TableRow key={r.id}>
                     <TableCell className="text-xs">{r.titulo}</TableCell>
                     <TableCell className="text-xs">{r.uf_estado}</TableCell>
                     <TableCell className="text-xs">
-                      <Badge variant="outline" className="text-[10px]">{r.status}</Badge>
+                      {processing ? (
+                        <Badge variant="outline" className="text-[10px] gap-1 border-blue-300 text-blue-700">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          processando{(r.proc_total_chunks ?? 0) > 1 ? ` ${r.proc_done_chunks ?? 0}/${r.proc_total_chunks}` : ''}
+                        </Badge>
+                      ) : procError ? (
+                        <Badge variant="outline" className="text-[10px] border-red-300 text-red-700" title={r.proc_error ?? ''}>
+                          erro
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px]">{r.status}</Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs">{r.created_at?.slice(0, 10)}</TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => loadDetail(r.id)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-[11px]"
+                        disabled={processing}
+                        title={processing ? 'Aguarde a IA terminar de extrair as regras' : undefined}
+                        onClick={() => loadDetail(r.id)}
+                      >
                         Revisar
                       </Button>
                       <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px] text-red-600" onClick={() => descartar(r.id)}>
@@ -2039,7 +2077,8 @@ function LegislacaoTab({ token }: { token: string | null }) {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           </div>
