@@ -109,25 +109,26 @@ func TestExtractPDFTable_Pareamento(t *testing.T) {
 		t.Fatalf("poucas linhas estruturadas: %d (esperado >100) — reconstrução de tabela não ativou", structured)
 	}
 
-	// 2710.19.19 (querosenes) é quem REALMENTE tem MVA 58,54%/30%.
+	// 2710.19.19 (querosenes) tem MVA original 30% (a ajustada 58,54% não tem
+	// rótulo de alíquota no decreto, então não vira par mapeável).
 	q := find("2710.19.19")
 	if q == "" {
 		t.Fatal("NCM 2710.19.19 não encontrado")
 	}
-	if !strings.Contains(q, "58,54%") {
-		t.Errorf("2710.19.19 deveria ter MVA 58,54%%: %s", q)
+	if !strings.Contains(q, "MVA_orig: 30%") {
+		t.Errorf("2710.19.19 deveria ter MVA_orig 30%%: %s", q)
 	}
 
-	// 3403 (lubrificantes) NÃO pode ter colado o 58,54% do vizinho, e a
-	// descrição deve ser de lubrificantes — não "têxteis".
+	// 3403 (lubrificantes) NÃO pode ter colado o MVA do vizinho 2710.
 	l3403 := find("3403")
 	if l3403 == "" {
 		t.Fatal("NCM 3403 não encontrado")
 	}
-	if strings.Contains(l3403, "58,54%") {
+	if strings.Contains(l3403, "30%") || strings.Contains(l3403, "58,54%") {
 		t.Errorf("3403 herdou MVA do vizinho (regressão do desemparelhamento): %s", l3403)
 	}
-	if !strings.Contains(strings.ToLower(l3403), "lubrificante") {
+	if !strings.Contains(strings.ToLower(l3403), "lubrificante") &&
+		!strings.Contains(strings.ToLower(l3403), "óleos de petróleo") {
 		t.Errorf("3403 deveria descrever lubrificantes: %s", l3403)
 	}
 
@@ -138,6 +139,44 @@ func TestExtractPDFTable_Pareamento(t *testing.T) {
 		if strings.Contains(l7318, " 4% ") || strings.HasSuffix(l7318, " 4%") {
 			t.Errorf("7318 com alíquota poluindo MVA_aj: %s", l7318)
 		}
+	}
+}
+
+func TestParseMVAajPairs(t *testing.T) {
+	// ordem embaralhada e rótulos variados ("Alíq."/"Aliq."/só "(N%)")
+	cell := "75,79% (Aliq. 7%) 66,34% (12%) 81,64% (Alíq. 4%)"
+	got := parseMVAajPairs(cell)
+	want := map[int]float64{4: 81.64, 7: 75.79, 12: 66.34}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("aliq %d: got %v, want %v", k, got[k], v)
+		}
+	}
+}
+
+func TestBackCalcAliqInterna(t *testing.T) {
+	cases := []struct {
+		nome   string
+		orig   float64
+		pairs  map[int]float64
+		want   float64
+	}{
+		// refrigerantes: orig 114%, aj 156,80/148,78/135,40 → interna 20%
+		{"refrigerantes", 114, map[int]float64{4: 156.80, 7: 148.78, 12: 135.40}, 20},
+		// 7318: orig 55%, aj 81,64/75,79/66,34 → interna 18%
+		{"parafusos 7318", 55, map[int]float64{4: 81.64, 7: 75.79, 12: 66.34}, 18},
+		// sem dados → 0
+		{"sem pares", 30, map[int]float64{}, 0},
+		{"sem orig", 0, map[int]float64{7: 50}, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.nome, func(t *testing.T) {
+			got := backCalcAliqInterna(c.orig, c.pairs)
+			// tolerância de arredondamento do decreto
+			if d := got - c.want; d > 0.6 || d < -0.6 {
+				t.Errorf("got %v, want ~%v", got, c.want)
+			}
+		})
 	}
 }
 

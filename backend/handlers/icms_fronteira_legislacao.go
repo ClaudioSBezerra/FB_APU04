@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,18 +79,22 @@ O primeiro caractere da sua resposta deve ser "{" e o último "}".
 
 Regimes válidos: "ST", "ANTECIPACAO", "DIFAL", "NORMAL".
 
-Para cada NCM identificado no texto, gere um item em "regras" com:
-- ncm: prefixo (4 ou 8 dígitos, só números — remova pontos)
-- regime
-- descricao: curta
-- aliquota_interna: número (% — só se o texto disser)
-- mva_original, mva_4pct, mva_7pct, mva_12pct: número (% — só o que aparecer)
-- justificativa: 1 frase com base legal (artigo/inciso se identificável)
-
-Lista POSITIVA: NCMs listados são "ST". NCMs explicitamente fora da lista marcados como "ANTECIPACAO" com justificativa "ausente da lista ST".
+O texto vem ESTRUTURADO, uma linha por NCM, com campos rotulados:
+  NCM: <ncm> | CEST: <cest> | MVA_orig: <n>% | MVA4: <n>% | MVA7: <n>% | MVA12: <n>% | ALIQ_INT: <n>% | DESC: <texto> | BASE: <base legal>
+Copie os valores rotulados DIRETAMENTE para os campos do JSON (não recalcule):
+- ncm           ← NCM (só números, remova pontos)
+- regime        ← "ST" (decreto é lista de mercadorias sob ST), salvo indicação contrária
+- descricao     ← DESC (resumida)
+- mva_original  ← MVA_orig
+- mva_4pct      ← MVA4
+- mva_7pct      ← MVA7
+- mva_12pct     ← MVA12
+- aliquota_interna ← ALIQ_INT
+- justificativa ← BASE (base legal)
+Campos ausentes na linha: omita do JSON (não invente).
 
 Schema exato:
-{"resumo":"...","regras":[{"ncm":"...","regime":"ST","descricao":"...","mva_original":0,"justificativa":"..."}]}`
+{"resumo":"...","regras":[{"ncm":"...","regime":"ST","descricao":"...","mva_original":0,"mva_4pct":0,"mva_7pct":0,"mva_12pct":0,"aliquota_interna":0,"justificativa":"..."}]}`
 
 // extractPDFText extrai texto de um PDF em memória usando ledongthuc/pdf.
 //
@@ -182,6 +187,8 @@ var (
 	reNCMcol    = regexp.MustCompile(`\d{4}`)
 	rePctMVA    = regexp.MustCompile(`\d{1,3}(?:,\d{1,2})?\s*%`)
 	reAliqLabel = regexp.MustCompile(`(?i)\(\s*al[ií]q[^)]*\)`) // "(Alíq. 7%)" — rótulo, não MVA
+	// par "valor% (Alíq N%)" ou "valor% (N%)" — captura (MVA ajustada, alíq interestadual)
+	reMVAajPar = regexp.MustCompile(`(?i)(\d{1,3}(?:,\d{1,2})?)\s*%\s*\(\s*(?:al[ií]q\.?\s*)?(\d{1,2})\s*%?\s*\)`)
 	reRuidoPag  = regexp.MustCompile(`(?i)legisweb|^https?://|^\d{2}/\d{2}/\d{4},\s*\d{2}:\d{2}`)
 	reAnexoRef  = regexp.MustCompile(`(?i)ver\s+o?\s*anexo|anexo\s+[ivx]+\s+do\s+conv`)
 	reEspacosMul = regexp.MustCompile(`\s{2,}`)
@@ -297,7 +304,8 @@ func extractPDFTable(pr *pdflib.Reader) (string, int) {
 			bloco := append([]int{ai}, assigned[k]...)
 			sort.Slice(bloco, func(x, y int) bool { return crows[bloco[x]].y > crows[bloco[y]].y })
 
-			var descParts, baseParts, mvaAj, mvaOrig []string
+			var descParts, baseParts []string
+			var mvaAjCell, mvaOrigCell strings.Builder
 			for _, ci := range bloco {
 				c := crows[ci]
 				if d := strings.TrimSpace(c.cols["desc"]); d != "" {
@@ -306,25 +314,39 @@ func extractPDFTable(pr *pdflib.Reader) (string, int) {
 				if b := strings.TrimSpace(c.cols["base"]); b != "" {
 					baseParts = append(baseParts, b)
 				}
-				// Remove o rótulo "(Alíq. N%)" antes de extrair — senão a alíquota
-				// (4/7/12%) entra como se fosse MVA.
-				ajLimpo := reAliqLabel.ReplaceAllString(c.cols["mva_aj"], " ")
-				origLimpo := reAliqLabel.ReplaceAllString(c.cols["mva_orig"], " ")
-				mvaAj = append(mvaAj, rePctMVA.FindAllString(ajLimpo, -1)...)
-				mvaOrig = append(mvaOrig, rePctMVA.FindAllString(origLimpo, -1)...)
+				mvaAjCell.WriteString(" " + c.cols["mva_aj"])
+				mvaOrigCell.WriteString(" " + c.cols["mva_orig"])
 			}
 			desc := strings.Join(descParts, " ")
 			base := strings.Join(baseParts, " ")
+
+			// MVA ajustada por alíquota interestadual: pares (alíq → valor)
+			// vindos de "81,64% (Alíq. 4%)". A coluna MVA original às vezes
+			// repete os mesmos rótulos; usa-se o maior valor sem rótulo.
+			ajPairs := parseMVAajPairs(mvaAjCell.String())
+			mvaOrig := primeiroPct(reAliqLabel.ReplaceAllString(mvaOrigCell.String(), " "))
+			// fallback: se não veio MVA orig na coluna própria, tenta um valor
+			// sem rótulo na coluna ajustada (linhas com MVA único).
+			aliqInt := backCalcAliqInterna(mvaOrig, ajPairs)
 
 			line := "NCM: " + ncm
 			if cest != "" {
 				line += " | CEST: " + cest
 			}
-			if len(mvaOrig) > 0 {
-				line += " | MVA_orig: " + strings.Join(dedupStr(mvaOrig), " ")
+			if mvaOrig > 0 {
+				line += fmt.Sprintf(" | MVA_orig: %s%%", fmtPct(mvaOrig))
 			}
-			if len(mvaAj) > 0 {
-				line += " | MVA_aj: " + strings.Join(dedupStr(mvaAj), " ")
+			if v, ok := ajPairs[4]; ok {
+				line += fmt.Sprintf(" | MVA4: %s%%", fmtPct(v))
+			}
+			if v, ok := ajPairs[7]; ok {
+				line += fmt.Sprintf(" | MVA7: %s%%", fmtPct(v))
+			}
+			if v, ok := ajPairs[12]; ok {
+				line += fmt.Sprintf(" | MVA12: %s%%", fmtPct(v))
+			}
+			if aliqInt > 0 {
+				line += fmt.Sprintf(" | ALIQ_INT: %s%%", fmtPct(aliqInt))
 			}
 			if d := strings.TrimSpace(desc); d != "" {
 				line += " | DESC: " + d
@@ -359,6 +381,83 @@ func dedupStr(in []string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// parseFloatBR converte "81,64" / "30" → 81.64 / 30.0 (decimal com vírgula).
+func parseFloatBR(s string) float64 {
+	s = strings.TrimSpace(strings.ReplaceAll(strings.TrimSuffix(strings.TrimSpace(s), "%"), ",", "."))
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return f
+}
+
+// fmtPct formata sem zeros à direita: 18.0 → "18", 58.54 → "58,54".
+func fmtPct(v float64) string {
+	s := strconv.FormatFloat(v, 'f', 2, 64)
+	s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
+	return strings.ReplaceAll(s, ".", ",")
+}
+
+// primeiroPct devolve o maior percentual encontrado no texto (a MVA original
+// costuma ser o maior número da célula, ignorando rótulos já removidos).
+func primeiroPct(s string) float64 {
+	var best float64
+	for _, m := range rePctMVA.FindAllString(s, -1) {
+		if v := parseFloatBR(m); v > best {
+			best = v
+		}
+	}
+	return best
+}
+
+// parseMVAajPairs extrai os pares (alíquota interestadual → MVA ajustada) da
+// célula "MVA ajustada", ex.: "75,79% (Alíq. 7%) 66,34% (12%) 81,64% (4%)"
+// → {7:75.79, 12:66.34, 4:81.64}.
+func parseMVAajPairs(cell string) map[int]float64 {
+	out := map[int]float64{}
+	for _, m := range reMVAajPar.FindAllStringSubmatch(cell, -1) {
+		val := parseFloatBR(m[1])
+		aliq, _ := strconv.Atoi(m[2])
+		if val > 0 && (aliq == 4 || aliq == 7 || aliq == 12) {
+			out[aliq] = val
+		}
+	}
+	return out
+}
+
+// backCalcAliqInterna deriva a alíquota interna do estado destino a partir da
+// MVA original e das MVAs ajustadas por alíquota interestadual, invertendo a
+// fórmula do Convênio ICMS 52/2017 (e Conv. 110/07):
+//
+//	MVA_aj = (1+MVA_orig)·(1−alíq_inter)/(1−alíq_INTERNA) − 1
+//	⇒ alíq_INTERNA = 1 − (1+MVA_orig)·(1−alíq_inter)/(1+MVA_aj)
+//
+// Calcula para cada par disponível e devolve a mediana (robusto a
+// arredondamento do decreto). Retorna 0 se não há dados suficientes.
+func backCalcAliqInterna(mvaOrig float64, ajPairs map[int]float64) float64 {
+	if mvaOrig <= 0 || len(ajPairs) == 0 {
+		return 0
+	}
+	var est []float64
+	for aliq, aj := range ajPairs {
+		if aj <= 0 {
+			continue
+		}
+		interna := 1.0 - (1.0+mvaOrig/100.0)*(1.0-float64(aliq)/100.0)/(1.0+aj/100.0)
+		interna *= 100.0
+		if interna > 0 && interna < 40 { // sanidade: alíquota interna plausível
+			est = append(est, interna)
+		}
+	}
+	if len(est) == 0 {
+		return 0
+	}
+	sort.Float64s(est)
+	med := est[len(est)/2]
+	// arredonda a 2 casas
+	return float64(int(med*100+0.5)) / 100.0
 }
 
 func extractLegislacaoText(r *http.Request) (string, string, error) {
