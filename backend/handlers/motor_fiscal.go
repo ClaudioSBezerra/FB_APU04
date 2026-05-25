@@ -154,8 +154,14 @@ func MotorFiscalCalcularHandler(db *sql.DB) http.HandlerFunc {
 			    -- O frete não vem no C170 — vem só no XML do header da NF.
 			    -- Fallback de NCM: quando reg_0200 está vazio, usa NCM do XML
 			    -- (nfe_entradas_itens) por chave + n_item.
+			    -- IPI: o XML do item é a fonte preferencial (valor real do
+			    -- fornecedor); o SPED C170 de entradas costuma vir SEM IPI (o
+			    -- comprador não credita). Usa XML e, se ausente, cai no C170.
+			    -- A base ST inclui o IPI do produto.
 			    SELECT it.item_id, it.n_item, it.cod_item, it.cfop, it.cst_icms,
-			        it.v_item, it.v_ipi, it.v_icms_item,
+			        it.v_item,
+			        COALESCE(NULLIF(nii.v_ipi,0), it.v_ipi, 0) AS v_ipi,
+			        it.v_icms_item,
 			        it.nfe_c100_id, it.chave_nfe, it.numero_nfe, it.data_emissao, it.dest_uf,
 			        COALESCE(NULLIF(it.ncm,''), COALESCE(nii.ncm,'')) AS ncm,
 			        COALESCE(ne.v_frete, 0) AS nf_v_frete,

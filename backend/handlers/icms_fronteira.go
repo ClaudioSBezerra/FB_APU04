@@ -123,6 +123,7 @@ WITH classified AS (
         COALESCE(ne.forn_uf, '')                            AS forn_uf,
         c190.cfop                                           AS cfop,
         COALESCE(c190.vl_opr, 0)                            AS v_prod,
+        COALESCE(ipi_calc.v, 0)                             AS v_ipi,
         COALESCE(c190.vl_icms, 0)                           AS v_icms,
         COALESCE(c190.vl_bc_icms_st, 0)                     AS v_bc_st,
         COALESCE(c190.vl_icms_st, 0)                        AS v_st,
@@ -148,7 +149,7 @@ WITH classified AS (
         CASE
             WHEN c190.cfop IN ('2551','2556')
                 THEN GREATEST(0,
-                    COALESCE(c190.vl_opr, 0) * (
+                    (COALESCE(c190.vl_opr, 0) + COALESCE(ipi_calc.v, 0)) * (
                         COALESCE(regra.aliquota_interna, 20.5)
                         - COALESCE(NULLIF(c190.aliq_icms, 0), 12.0)
                     ) / 100.0)
@@ -169,7 +170,7 @@ WITH classified AS (
                         regra.mva_original
                     ) IS NOT NULL
                         THEN GREATEST(0,
-                            COALESCE(c190.vl_opr, 0)
+                            (COALESCE(c190.vl_opr, 0) + COALESCE(ipi_calc.v, 0))
                             * (1.0 + COALESCE(
                                 CASE COALESCE(NULLIF(c190.aliq_icms,0),12.0)
                                     WHEN 4.0  THEN regra.mva_ajustado_4pct
@@ -188,7 +189,7 @@ WITH classified AS (
                 END
             WHEN c190.cfop IN ('2101','2102','2152')
                 THEN GREATEST(0,
-                    COALESCE(c190.vl_opr, 0) * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                    (COALESCE(c190.vl_opr, 0) + COALESCE(ipi_calc.v, 0)) * COALESCE(regra.aliquota_interna, 20.5)/100.0
                     - COALESCE(c190.vl_icms, 0))
             ELSE 0
         END                                                 AS icms_devido_est
@@ -198,6 +199,26 @@ WITH classified AS (
     LEFT JOIN participants part
         ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
     LEFT JOIN nfe_entradas ne ON ne.chave_nfe = c100.chv_nfe
+    -- IPI por linha c190: o XML do item é a fonte preferencial (o SPED de
+    -- entradas costuma vir sem IPI). Como o c190 é agregado por CFOP e o XML
+    -- é por item, prorateia o IPI total da nota (XML) pela participação desta
+    -- linha no valor de operação da nota — correto mesmo em notas multi-CFOP.
+    -- Sem XML, cai no c190.vl_ipi do SPED.
+    LEFT JOIN LATERAL (
+        SELECT CASE
+            WHEN x.nota_ipi_xml > 0 AND o.nota_opr > 0
+                THEN x.nota_ipi_xml * COALESCE(c190.vl_opr, 0) / o.nota_opr
+            ELSE COALESCE(c190.vl_ipi, 0)
+        END AS v
+        FROM (
+            SELECT COALESCE(SUM(nii.v_ipi), 0) AS nota_ipi_xml
+            FROM nfe_entradas_itens nii WHERE nii.nfe_id = ne.id
+        ) x
+        CROSS JOIN (
+            SELECT COALESCE(SUM(c190b.vl_opr), 0) AS nota_opr
+            FROM reg_c190 c190b WHERE c190b.id_pai_c100 = c100.id
+        ) o
+    ) ipi_calc ON true
     LEFT JOIN LATERAL (
         SELECT nii.ncm AS ncm
         FROM nfe_entradas_itens nii
