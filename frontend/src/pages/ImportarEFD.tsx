@@ -199,10 +199,13 @@ const fileInputRef = useRef<HTMLInputElement>(null);
       let totalLinesScanned = 0;
 
       // Relevant Registers
+      // ATENÇÃO: sincronizar com backend/worker/worker.go (cases do switch).
+      // - 0200: cadastro de itens (NCM por cod_item) — usado pelo Motor Fiscal
+      // - D162: NF-e referenciada pelo CT-e (Layer 1 do frete fronteira)
       const RELEVANT_REGISTERS = new Set([
-        '0000', '0140', '0150', 
-        'C010', 'C100', 'C170', 'C190', 'C500', 'C600', 
-        'D010', 'D100', 'D500', 'D590',
+        '0000', '0140', '0150', '0200',
+        'C010', 'C100', 'C170', 'C190', 'C500', 'C600',
+        'D010', 'D100', 'D162', 'D500', 'D590',
         '9999' // Trailer
       ]);
 
