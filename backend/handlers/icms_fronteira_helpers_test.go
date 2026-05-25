@@ -121,6 +121,17 @@ func TestBuildExportQuery_Antecipacao(t *testing.T) {
 	}
 }
 
+func TestBuildExportQuery_TodosComFiltro(t *testing.T) {
+	// regime "todos" + filtro → cláusula WHERE 1=1 com o filtro anexado
+	q, args := buildExportQuery("todos", "", " AND forn_uf = $3", []interface{}{"BA"})
+	if !strings.Contains(q, "WHERE 1=1") {
+		t.Errorf("todos com filtro: esperava 'WHERE 1=1' na query")
+	}
+	if len(args) != 1 {
+		t.Errorf("todos com filtro: esperava 1 arg, obteve %d", len(args))
+	}
+}
+
 func TestBuildExportQuery_ComFiltro(t *testing.T) {
 	// filtro de fornecedor entra como $4 quando há regime específico
 	q, args := buildExportQuery("ST", "", " AND (forn_cnpj ILIKE $4 OR forn_nome ILIKE $4)", []interface{}{"%ACME%"})

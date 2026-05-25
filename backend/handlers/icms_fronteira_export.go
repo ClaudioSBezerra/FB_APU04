@@ -618,35 +618,58 @@ func fetchTopNcmByChave(db *sql.DB, companyID string, chaves []string) map[strin
 
 const antecipacaoReportCSS = `<style>
 * { box-sizing: border-box; }
-body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; color: #222; }
-.rpt-header { border-bottom: 2px solid #4472C4; padding-bottom: 8px; margin-bottom: 16px; display: flex; align-items: center; gap: 16px; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; line-height: 1.4; margin: 24px; color: #1f2937; }
+
+/* Paleta discreta: tons slate (azul-acinzentado), pouca saturação */
+/* ── Cabeçalho do relatório ─────────────────────────────────────────── */
+.rpt-header { border-bottom: 2px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 18px; display: flex; align-items: center; gap: 18px; }
 .rpt-head-txt { flex: 1; }
-.rpt-logo   { max-height: 56px; max-width: 200px; object-fit: contain; }
-.rpt-grupo  { font-size: 16px; font-weight: bold; color: #1a3a6e; margin-bottom: 2px; }
-.rpt-title  { font-size: 15px; font-weight: bold; color: #1a3a6e; }
-.rpt-sub    { font-size: 12px; color: #4472C4; margin-top: 2px; }
-.rpt-meta   { font-size: 10px; color: #666; margin-top: 4px; }
-.nf-card    { margin-bottom: 18px; border: 1px solid #c9d4ec; border-radius: 4px; overflow: hidden; page-break-inside: avoid; }
-.nf-hdr     { background: #4472C4; color: #fff; padding: 6px 10px; display: flex; justify-content: space-between; }
-.nf-num     { font-weight: bold; font-size: 12px; }
-.nf-total   { font-weight: bold; font-size: 12px; }
-.nf-forn    { background: #eef2fb; padding: 4px 10px; font-size: 10px; border-bottom: 1px solid #c9d4ec; }
-.nf-chave   { background: #f7f9fe; padding: 3px 10px; font-size: 9px; color: #555; border-bottom: 1px solid #c9d4ec; font-family: monospace; letter-spacing: .5px; }
+.rpt-logo   { max-height: 60px; max-width: 220px; object-fit: contain; }
+.rpt-grupo  { font-size: 17px; font-weight: 700; color: #334155; letter-spacing: .2px; }
+.rpt-title  { font-size: 14px; font-weight: 600; color: #475569; margin-top: 1px; }
+.rpt-sub    { font-size: 12px; font-weight: 600; color: #64748b; margin-top: 2px; }
+.rpt-meta   { font-size: 10px; color: #94a3b8; margin-top: 5px; }
+
+/* ── Quebra de seção (modelo do regime) ─────────────────────────────── */
+.rpt-section { margin: 6px 0 14px; padding: 8px 14px; background: #f1f5f9; border-left: 3px solid #94a3b8; border-radius: 3px; font-size: 13px; font-weight: 700; color: #334155; }
+.rpt-section-cnt { font-weight: 400; color: #64748b; font-size: 11px; }
+
+/* ── Card por nota ──────────────────────────────────────────────────── */
+.nf-card    { margin-bottom: 16px; border: 1px solid #e2e8f0; border-radius: 5px; overflow: hidden; page-break-inside: avoid; }
+.nf-hdr     { background: #475569; color: #fff; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; }
+.nf-num     { font-weight: 700; font-size: 12px; }
+.nf-total   { font-weight: 700; font-size: 12px; }
+.nf-forn    { background: #f1f5f9; padding: 5px 12px; font-size: 10px; color: #475569; border-bottom: 1px solid #e2e8f0; }
+.nf-chave   { background: #f8fafc; padding: 4px 12px; font-size: 9px; color: #94a3b8; border-bottom: 1px solid #e2e8f0; font-family: "Courier New", monospace; letter-spacing: .5px; }
 .nf-tbl     { width: 100%; border-collapse: collapse; }
-.nf-tbl th  { background: #6889c8; color: #fff; padding: 4px 6px; font-size: 9px; text-align: right; white-space: nowrap; }
+.nf-tbl th  { background: #64748b; color: #fff; padding: 5px 7px; font-size: 9px; text-transform: uppercase; letter-spacing: .3px; text-align: right; white-space: nowrap; }
 .nf-tbl th:nth-child(-n+2) { text-align: left; }
-.nf-tbl td  { border-top: 1px solid #e4e9f5; padding: 3px 6px; font-size: 10px; text-align: right; }
+.nf-tbl td  { border-top: 1px solid #eef2f6; padding: 4px 7px; font-size: 10px; text-align: right; font-variant-numeric: tabular-nums; }
 .nf-tbl td:nth-child(-n+2) { text-align: left; }
-.nf-tbl tr:nth-child(even) td { background: #f4f7fd; }
-.tot-row td { font-weight: bold; background: #dce6f8 !important; }
-.rpt-section { margin: 4px 0 12px; padding: 6px 12px; background: #eef2fb; border-left: 4px solid #4472C4; border-radius: 3px; font-size: 13px; font-weight: bold; color: #1a3a6e; }
-.rpt-section-cnt { font-weight: normal; color: #4472C4; font-size: 11px; }
-.grand      { margin-top: 16px; padding: 10px 14px; background: #1a3a6e; color: #fff; border-radius: 4px; font-size: 12px; font-weight: bold; }
-.empty      { text-align: center; color: #888; font-style: italic; padding: 30px; }
+.nf-tbl tr:nth-child(even) td { background: #f8fafc; }
+.tot-row td { font-weight: 700; background: #e2e8f0 !important; border-top: 2px solid #cbd5e1; color: #334155; }
+
+/* ── Página de Totalização (uma linha por valor, fontes grandes) ────── */
+.totpage       { page-break-before: always; padding-top: 10px; }
+.totpage-title { font-size: 24px; font-weight: 700; color: #334155; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; }
+.totpage-sub   { font-size: 13px; color: #94a3b8; margin: 6px 0 22px; }
+.totlist       { max-width: 640px; }
+.totrow        { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 18px; font-size: 18px; border-bottom: 1px solid #e2e8f0; }
+.totrow:nth-child(even) { background: #f8fafc; }
+.totlabel      { color: #475569; }
+.totval        { font-weight: 700; color: #334155; font-variant-numeric: tabular-nums; }
+.totrow.totrow-grand { margin-top: 16px; padding: 20px 24px; background: #475569; border-radius: 6px; border-bottom: none; font-size: 24px; }
+.totrow-grand .totlabel { color: #fff; font-weight: 600; }
+.totrow-grand .totval   { color: #fff; font-size: 28px; }
+
+.empty { text-align: center; color: #9ca3af; font-style: italic; padding: 40px; }
+
 @media print {
-  @page { size: landscape; margin: 8mm; }
+  @page { size: landscape; margin: 10mm; }
   body  { margin: 0; }
   .nf-card { page-break-inside: avoid; }
+  .totpage { page-break-before: always; }
 }
 </style>`
 
@@ -832,15 +855,27 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			grandDevido += nfDevido
 		}
 
-		// Total geral
+		// Página de Totalização — um valor por linha, fontes grandes
 		if len(nfOrder) > 0 {
-			stGrandDisp := "-"
-			if grandST > 0.001 {
-				stGrandDisp = brl(grandST)
-			}
+			sb.WriteString(`<div class="totpage">`)
+			sb.WriteString(`<div class="totpage-title">Totalização</div>`)
 			sb.WriteString(fmt.Sprintf(
-				`<div class="grand">TOTAL GERAL &nbsp;&mdash;&nbsp; %d nota(s) &nbsp;|&nbsp; V. Operação: %s &nbsp;|&nbsp; Base Cálc.: %s &nbsp;|&nbsp; ICMS Dest.: %s &nbsp;|&nbsp; ST Ret.: %s &nbsp;|&nbsp; V. Devido: %s</div>`,
-				len(nfOrder), brl(grandVOpr), brl(grandBase), brl(grandIcmsDest), stGrandDisp, brl(grandDevido)))
+				`<div class="totpage-sub">Modelo: %s &nbsp;&bull;&nbsp; Período: %s &nbsp;&bull;&nbsp; Empresa: %s</div>`,
+				htmlEscape(regimeNome), htmlEscape(periodo), htmlEscape(companyName)))
+			sb.WriteString(`<div class="totlist">`)
+			totRow := func(label, val string) {
+				sb.WriteString(fmt.Sprintf(
+					`<div class="totrow"><span class="totlabel">%s</span><span class="totval">%s</span></div>`, label, val))
+			}
+			totRow("Quantidade de Notas", fmt.Sprintf("%d", len(nfOrder)))
+			totRow("Valor da Operação", brl(grandVOpr))
+			totRow("Base de Cálculo", brl(grandBase))
+			totRow("ICMS Destacado", brl(grandIcmsDest))
+			totRow("ICMS-ST Retido", brl(grandST))
+			sb.WriteString(fmt.Sprintf(
+				`<div class="totrow totrow-grand"><span class="totlabel">Valor Total Devido</span><span class="totval">%s</span></div>`,
+				brl(grandDevido)))
+			sb.WriteString(`</div></div>`)
 		}
 
 		sb.WriteString(`<script>window.onload=function(){window.print()}</script>`)
