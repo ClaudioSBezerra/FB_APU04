@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"fb_apu04/handlers"
+
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/transform"
 )
@@ -259,6 +261,13 @@ func processNextJob(db *sql.DB, workerID int) {
 				fmt.Printf("Worker #%d: Triggering AI report generation for company %s, period %s\n", workerID, companyID, mesAno)
 				if err := TriggerAIReportGeneration(db, companyID, mesAno, id); err != nil {
 					fmt.Printf("Worker #%d: AI report generation warning: %v\n", workerID, err)
+				}
+				// Auto-feed da Base de Conhecimento CEST→NCM com o que o SPED
+				// trouxe (reg_0200). Idempotente; roda uma vez no fim do batch.
+				if n, err := handlers.RefreshCestNcmKB(db, companyID); err != nil {
+					fmt.Printf("Worker #%d: CEST→NCM KB refresh warning: %v\n", workerID, err)
+				} else {
+					fmt.Printf("Worker #%d: CEST→NCM KB atualizada (%d pares) para company %s\n", workerID, n, companyID)
 				}
 			} else if err != nil {
 				fmt.Printf("Worker #%d: Could not get job metadata for AI report: %v\n", workerID, err)

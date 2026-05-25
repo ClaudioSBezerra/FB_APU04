@@ -806,6 +806,12 @@ func main() {
 		if database == nil { jsonServiceUnavailable(w); return }
 		handlers.AuthMiddleware(handlers.IcmsFronteiraRegrasImportarHandler(database), "")(w, r)
 	})
+	// Base de Conhecimento CEST→NCM (GET consulta por segmento/cest; POST reprocessa)
+	http.HandleFunc("/api/cest-ncm/kb", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.CestNcmKBHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/regras/", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil { jsonServiceUnavailable(w); return }

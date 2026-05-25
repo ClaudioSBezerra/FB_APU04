@@ -229,6 +229,12 @@ func processXMLBatch(db *sql.DB, batchID string, companyID string, tipo string, 
 				}
 			}
 		}()
+		// Auto-feed da Base de Conhecimento CEST→NCM com os itens do XML.
+		if n, err := RefreshCestNcmKB(db, companyID); err != nil {
+			log.Printf("[XMLUpload] CEST→NCM KB refresh warning: %v", err)
+		} else {
+			log.Printf("[XMLUpload] CEST→NCM KB atualizada (%d pares) company=%s", n, companyID)
+		}
 	}
 }
 
