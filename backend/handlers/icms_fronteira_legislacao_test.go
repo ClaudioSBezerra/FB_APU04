@@ -142,6 +142,35 @@ func TestExtractPDFTable_Pareamento(t *testing.T) {
 	}
 }
 
+// TestExtractPDFTable_AnexoPendente: segmentos que remetem a anexo externo
+// (sem NCM inline) devem virar linhas ANEXO_PENDENTE visíveis, não sumir.
+func TestExtractPDFTable_AnexoPendente(t *testing.T) {
+	path := "/tmp/Decreto Nº 18800 DE 20_12_2018 - Estadual - Bahia - LegisWeb.pdf"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("PDF de teste ausente: %v", err)
+	}
+	txt, err := extractPDFText(data)
+	if err != nil {
+		t.Fatalf("extractPDFText: %v", err)
+	}
+	var pend []string
+	for _, l := range strings.Split(txt, "\n") {
+		if strings.HasPrefix(l, "ANEXO_PENDENTE:") {
+			pend = append(pend, l)
+		}
+	}
+	if len(pend) == 0 {
+		t.Fatal("nenhum ANEXO_PENDENTE capturado — segmentos de anexo estão sendo perdidos")
+	}
+	// a citação do Conv 52/2017 deve aparecer ao menos uma vez
+	all := strings.Join(pend, "\n")
+	if !strings.Contains(all, "Conv. ICMS 52") {
+		t.Errorf("citação do Conv 52/2017 não reconhecida nas pendências: %v", pend)
+	}
+	t.Logf("OK: %d segmento(s) ANEXO_PENDENTE", len(pend))
+}
+
 func TestParseMVAajPairs(t *testing.T) {
 	// ordem embaralhada e rótulos variados ("Alíq."/"Aliq."/só "(N%)")
 	cell := "75,79% (Aliq. 7%) 66,34% (12%) 81,64% (Alíq. 4%)"

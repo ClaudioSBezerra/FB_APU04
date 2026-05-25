@@ -190,7 +190,8 @@ var (
 	// par "valor% (Alíq N%)" ou "valor% (N%)" — captura (MVA ajustada, alíq interestadual)
 	reMVAajPar = regexp.MustCompile(`(?i)(\d{1,3}(?:,\d{1,2})?)\s*%\s*\(\s*(?:al[ií]q\.?\s*)?(\d{1,2})\s*%?\s*\)`)
 	reRuidoPag  = regexp.MustCompile(`(?i)legisweb|^https?://|^\d{2}/\d{2}/\d{4},\s*\d{2}:\d{2}`)
-	reAnexoRef  = regexp.MustCompile(`(?i)ver\s+o?\s*anexo|anexo\s+[ivx]+\s+do\s+conv`)
+	reAnexoRef     = regexp.MustCompile(`(?i)ver\s+o?\s*anexo|anexo\s+[ivxlcdm]+\s+do\s+conv`)
+	reAnexoCitacao = regexp.MustCompile(`(?i)anexo\s+[ivxlcdm]+\s+do\s+conv\.?\s*icms\s*n?º?\s*\d+/\d+`)
 	reEspacosMul = regexp.MustCompile(`\s{2,}`)
 )
 
@@ -357,11 +358,42 @@ func extractPDFTable(pr *pdflib.Reader) (string, int) {
 			out.WriteString(line)
 			out.WriteByte('\n')
 			total++
+		}
 
-			// linha extra sinalizando referência a anexo externo (passo 2 futuro).
-			if reAnexoRef.MatchString(desc) || reAnexoRef.MatchString(base) {
-				out.WriteString("ANEXO_REF: NCM " + ncm + " remete a anexo externo — expandir CEST→NCM\n")
+		// 5) Captura segmentos que remetem a ANEXO externo (sem NCM inline) —
+		// não são âncoras, então se perderiam. Emite como ANEXO_PENDENTE para
+		// ficarem visíveis na revisão (expansão CEST→NCM é backlog).
+		emitidos := map[string]bool{}
+		for i, cr := range crows {
+			joined := cr.cols["item"] + " " + cr.cols["cest"] + " " + cr.cols["desc"] + " " + cr.cols["base"]
+			if !reAnexoRef.MatchString(joined) {
+				continue
 			}
+			// Junta TODAS as colunas desta linha + vizinhas imediatas (o título do
+			// segmento costuma estar logo acima/abaixo). A linha órfã não tem
+			// colunas confiáveis, então usamos o contexto inteiro.
+			var ctx []string
+			for j := i - 2; j <= i+2; j++ {
+				if j >= 0 && j < len(crows) {
+					c := crows[j]
+					ctx = append(ctx, c.cols["item"], c.cols["cest"], c.cols["desc"], c.cols["base"])
+				}
+			}
+			seg := strings.TrimSpace(reEspacosMul.ReplaceAllString(strings.Join(ctx, " "), " "))
+			// citação do anexo, se reconhecível ("Anexo II do Conv. ICMS 52/2017")
+			ref := strings.TrimSpace(reAnexoCitacao.FindString(seg))
+			if ref == "" {
+				ref = "anexo externo (ver decreto)"
+			}
+			if len(seg) > 180 {
+				seg = seg[:180]
+			}
+			key := ref + "|" + seg
+			if emitidos[key] {
+				continue
+			}
+			emitidos[key] = true
+			out.WriteString("ANEXO_PENDENTE: ref=" + ref + " | CONTEXTO=" + seg + "\n")
 		}
 	}
 
@@ -658,10 +690,24 @@ func processLegislacaoAsync(db *sql.DB, client *services.AIClient,
 	// Reinício de worker: limpa staging residual deste decreto antes de começar.
 	_, _ = db.Exec(`DELETE FROM legislacao_regras_staging WHERE legislacao_id::text=$1`, id)
 
-	chunks := splitLinhasEmChunks(textoIA, legislacaoLinhasPorChunk)
+	// Separa as linhas de pendência (segmentos que remetem a anexo externo, sem
+	// NCM) — não vão para a IA; viram aviso no resumo.
+	var ncmLines, pendentes []string
+	for _, l := range strings.Split(textoIA, "\n") {
+		if strings.HasPrefix(l, "ANEXO_PENDENTE:") {
+			pendentes = append(pendentes, strings.TrimSpace(strings.TrimPrefix(l, "ANEXO_PENDENTE:")))
+		} else if strings.TrimSpace(l) != "" {
+			ncmLines = append(ncmLines, l)
+		}
+	}
+	pendentes = dedupStr(pendentes)
+
+	chunks := splitLinhasEmChunks(strings.Join(ncmLines, "\n"), legislacaoLinhasPorChunk)
 	if len(chunks) == 0 {
 		chunks = []string{textoIA}
 	}
+	// Ajusta o total real de chunks (excluímos as linhas de pendência).
+	_, _ = db.Exec(`UPDATE legislacao_fronteira SET proc_total_chunks=$2 WHERE id::text=$1`, id, len(chunks))
 
 	var modelUsado string
 	okChunks, totalRegras := 0, 0
@@ -721,6 +767,10 @@ func processLegislacaoAsync(db *sql.DB, client *services.AIClient,
 
 	resumo := fmt.Sprintf("%d regras extraídas de %s via %d micro-chunks (%d ok). Revise antes de aplicar.",
 		len(merged), ufEstado, len(chunks), okChunks)
+	if len(pendentes) > 0 {
+		resumo += fmt.Sprintf(" ⚠️ %d segmento(s) remetem a anexo externo e NÃO foram expandidos — cadastre os NCMs manualmente: %s",
+			len(pendentes), strings.Join(pendentes, " ; "))
+	}
 	interpJSON, _ := json.Marshal(LegislacaoInterpretacao{Resumo: resumo, Regras: merged})
 	_, _ = db.Exec(`UPDATE legislacao_fronteira
 	                 SET interpretacao=$2::jsonb, proc_status='done', updated_at=now()
