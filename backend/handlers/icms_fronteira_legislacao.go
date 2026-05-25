@@ -767,9 +767,24 @@ func processLegislacaoAsync(db *sql.DB, client *services.AIClient,
 
 	resumo := fmt.Sprintf("%d regras extraídas de %s via %d micro-chunks (%d ok). Revise antes de aplicar.",
 		len(merged), ufEstado, len(chunks), okChunks)
+
+	// Passo 2 — expande os segmentos que remetem a anexo externo usando a Base
+	// de Conhecimento CEST→NCM (NCMs que o cliente realmente movimenta). Gera
+	// regras PROPOSTAS (regime ST, sem MVA) marcadas como expandidas — o usuário
+	// revisa e define a MVA. Dedup contra os NCMs inline (que têm precedência).
 	if len(pendentes) > 0 {
-		resumo += fmt.Sprintf(" ⚠️ %d segmento(s) remetem a anexo externo e NÃO foram expandidos — cadastre os NCMs manualmente: %s",
-			len(pendentes), strings.Join(pendentes, " ; "))
+		jaTem := make(map[string]bool, len(merged))
+		for _, rg := range merged {
+			jaTem[strings.TrimSpace(rg.NCM)] = true
+		}
+		expandidas, notas := expandirPendentes(db, companyID, pendentes, jaTem)
+		if len(expandidas) > 0 {
+			merged = append(merged, expandidas...)
+			resumo += fmt.Sprintf(" ➕ %d NCM(s) expandidos de anexo via base CEST→NCM (revisar MVA). %s",
+				len(expandidas), notas)
+		} else {
+			resumo += fmt.Sprintf(" ⚠️ Segmentos de anexo sem expansão: %s", notas)
+		}
 	}
 	interpJSON, _ := json.Marshal(LegislacaoInterpretacao{Resumo: resumo, Regras: merged})
 	_, _ = db.Exec(`UPDATE legislacao_fronteira
