@@ -30,6 +30,14 @@ var anexoSegmentoOverride = map[int]string{
 	26: "28", // porta a porta
 }
 
+// segmentoMVADefault fornece MVA sugerida (Conv ICMS 199/2017 — "demais casos")
+// para segmentos que remetem a anexo externo. Pré-preenche a etapa de revisão;
+// o contador confirma ou corrige antes de aplicar.
+// Formato: [MVA_orig%, MVA_aj@4%, MVA_aj@7%, MVA_aj@12%].
+var segmentoMVADefault = map[string][4]float64{
+	"01": {71.78, 81.64, 75.79, 66.34}, // autopeças — Conv 199/2017 "demais casos"
+}
+
 // reAnexoRomano extrai o numeral romano do anexo de uma referência como
 // "Anexo II do Conv. ICMS 52/2017" → "II".
 var reAnexoRomano = regexp.MustCompile(`(?i)anexo\s+([ivxlcdm]+)\b`)
@@ -100,7 +108,15 @@ func expandirSegmentoViaKB(db *sql.DB, companyID, segmento, refAnexo string, exi
 			continue // inline tem precedência
 		}
 		existentes[ncm] = true
-		just := fmt.Sprintf("Expandida do segmento %s (%s) via base CEST→NCM — definir MVA e revisar", segmento, strings.TrimSpace(refAnexo))
+
+		var mvaOrig, mva4, mva7, mva12 *float64
+		mvaNote := "definir MVA e revisar"
+		if mva, ok := segmentoMVADefault[segmento]; ok {
+			o, m4, m7, m12 := mva[0], mva[1], mva[2], mva[3]
+			mvaOrig, mva4, mva7, mva12 = &o, &m4, &m7, &m12
+			mvaNote = fmt.Sprintf("MVA sugerida Conv 199/2017 demais casos: orig=%.2f%% 4%%=%.2f%% 7%%=%.2f%% 12%%=%.2f%% — revisar antes de aplicar", mva[0], mva[1], mva[2], mva[3])
+		}
+		just := fmt.Sprintf("Expandida do segmento %s (%s) via base CEST→NCM — %s", segmento, strings.TrimSpace(refAnexo), mvaNote)
 		if cest != "" {
 			just = "CEST " + cest + " — " + just
 		}
@@ -108,6 +124,10 @@ func expandirSegmentoViaKB(db *sql.DB, companyID, segmento, refAnexo string, exi
 			NCM:           ncm,
 			Regime:        "ST",
 			Descricao:     descr,
+			MvaOriginal:   mvaOrig,
+			Mva4pct:       mva4,
+			Mva7pct:       mva7,
+			Mva12pct:      mva12,
 			Justificativa: just,
 		})
 	}
