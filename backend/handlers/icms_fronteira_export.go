@@ -454,8 +454,8 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 
 				cSheet := "C - Não no SPED (XML)"
 				f.NewSheet(cSheet)
-				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "ICMS Est.", "Classificação", "Chave NF-e", "Chave CT-e"}
-				cCols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"}
+				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "ICMS Est.", "Classificação", "Chave NF-e", "Chave CT-e", "V.IPI"}
+				cCols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"}
 				for i, h := range cHeaders {
 					cell := fmt.Sprintf("%s1", cCols[i])
 					f.SetCellValue(cSheet, cell, h)
@@ -465,7 +465,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				moneySlateStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}}, CustomNumFmt: &moneyFmt})
 				cteRowStyle, _     := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}})
 				moneyCteRowStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}, CustomNumFmt: &moneyFmt})
-				var totalIcmsC float64
+				var totalIcmsC, totalIpiC float64
 				er := 2
 				for _, row := range cRows {
 					// ── linha da NF ─────────────────────────────────────────────
@@ -480,13 +480,15 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), row.IcmsDevidoEst)
 					f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), row.ClassStatus)
 					f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ChaveNFe)
+					f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), row.VIPI)
 					for _, c := range []string{"A","B","C","D","E","F","G","J","K","L"} {
 						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), slateStyle)
 					}
-					for _, c := range []string{"H","I"} {
+					for _, c := range []string{"H","I","M"} {
 						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneySlateStyle)
 					}
 					totalIcmsC += row.IcmsDevidoEst
+					totalIpiC += row.VIPI
 					er++
 
 					// ── linhas filhas: CT-es vinculados (verde) ────────────────
@@ -504,20 +506,22 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 						f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), "")
 						f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ChaveNFe)
 						f.SetCellValue(cSheet, fmt.Sprintf("L%d", er), cte.ChaveCTe)
+						f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), 0) // CT-e não tem IPI
 						for _, c := range []string{"A","B","C","D","E","F","G","J","K","L"} {
 							f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), cteRowStyle)
 						}
-						for _, c := range []string{"H","I"} {
+						for _, c := range []string{"H","I","M"} {
 							f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneyCteRowStyle)
 						}
 						er++
 					}
 				}
 				f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), "TOTAL")
-				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", er), fmt.Sprintf("L%d", er), boldStyle)
+				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", er), fmt.Sprintf("M%d", er), boldStyle)
 				f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), totalIcmsC)
-				// Aplica moeda+bold nas colunas H e I do TOTAL
-				for _, c := range []string{"H","I"} {
+				f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), totalIpiC)
+				// Aplica moeda+bold nas colunas H, I e M do TOTAL
+				for _, c := range []string{"H","I","M"} {
 					f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneyBoldStyle)
 				}
 			}

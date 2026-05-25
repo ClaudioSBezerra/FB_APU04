@@ -23,6 +23,7 @@ type FronteiraXmlNaoSpedRow struct {
 	CfopSaida     string  `json:"cfop_saida"`
 	NCM           string  `json:"ncm"`
 	VProd         float64 `json:"v_prod"`
+	VIPI          float64 `json:"v_ipi"`             // IPI do XML (<vIPI> do header)
 	VFrete        float64 `json:"v_frete"`
 	VFreteCTe     float64 `json:"v_frete_cte"`       // soma dos CT-es onde tomador=destinatário
 	VOutro        float64 `json:"v_outro"`
@@ -54,6 +55,7 @@ WITH xml_falt AS (
         ne.forn_uf, ne.dest_uf, COALESCE(ne.numero_nfe,'') AS numero_nfe,
         COALESCE(ne.v_prod,0) AS v_prod, COALESCE(ne.v_frete,0) AS v_frete,
         COALESCE(ne.v_outro,0) AS v_outro,
+        COALESCE(ne.v_ipi,0) AS v_ipi,    -- IPI total do XML (<vIPI> do header)
         COALESCE(ne.v_icms,0) AS v_icms   -- ICMS interestadual pago pelo fornecedor (<vICMS>)
     FROM nfe_entradas ne
     WHERE ne.company_id = $1
@@ -67,7 +69,7 @@ WITH xml_falt AS (
     SELECT DISTINCT ON (xf.id)
         xf.id, xf.chave_nfe, xf.data_emissao, xf.forn_cnpj, xf.forn_nome,
         xf.forn_uf, xf.dest_uf, xf.numero_nfe,
-        xf.v_prod, xf.v_frete, xf.v_outro, xf.v_icms,
+        xf.v_prod, xf.v_frete, xf.v_outro, xf.v_ipi, xf.v_icms,
         COALESCE(nii.cfop,'') AS cfop_saida, COALESCE(nii.ncm,'') AS ncm
     FROM xml_falt xf
     JOIN nfe_entradas_itens nii ON nii.nfe_id = xf.id
@@ -113,10 +115,11 @@ SELECT
     ) AS regime,
     COALESCE(cm.status, 'auto') AS class_status,
     m.v_prod,
+    m.v_ipi,
     m.v_frete,
     COALESCE(cte.v_frete_cte, 0) AS v_frete_cte,
     m.v_outro,
-    (m.v_prod + m.v_frete + COALESCE(cte.v_frete_cte, 0) + m.v_outro) AS v_opr,
+    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte, 0) + m.v_outro) AS v_opr,
     m.v_icms AS v_icms_nf,
     COALESCE(cte.v_icms_cte, 0) AS v_icms_cte,
     CASE WHEN m.v_prod > 0 THEN ROUND((m.v_icms / m.v_prod * 100.0)::numeric, 2) ELSE 0 END AS aliq_inter,
@@ -127,18 +130,18 @@ SELECT
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN
             GREATEST(0,
-                (m.v_prod + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                 * COALESCE(regra.aliquota_interna,20.5)/100.0
                 - m.v_icms - COALESCE(cte.v_icms_cte,0))
         WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
             GREATEST(0,
-                (m.v_prod + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                 * COALESCE(regra.aliquota_interna,20.5)/100.0
                 - m.v_icms - COALESCE(cte.v_icms_cte,0))
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
             CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
                 THEN GREATEST(0,
-                     (m.v_prod + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                     (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                      * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
                      * COALESCE(regra.aliquota_interna,20.5)/100.0
                      - m.v_icms - COALESCE(cte.v_icms_cte,0))
@@ -184,7 +187,7 @@ func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime string) ([]Fronteir
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
 			&row.CfopSaida, &row.NCM,
 			&row.Regime, &row.ClassStatus,
-			&row.VProd, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
+			&row.VProd, &row.VIPI, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
 			&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
 			&row.IcmsDevidoEst,
 		); err != nil {
@@ -254,7 +257,7 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 				&row.FornCNPJ, &row.FornNome, &row.FornUF,
 				&row.CfopSaida, &row.NCM,
 				&row.Regime, &row.ClassStatus,
-				&row.VProd, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
+				&row.VProd, &row.VIPI, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
 				&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
 				&row.IcmsDevidoEst,
 			); err != nil {

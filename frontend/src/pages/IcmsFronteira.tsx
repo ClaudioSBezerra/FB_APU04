@@ -137,6 +137,7 @@ interface FronteiraXmlNaoSpedRow {
   cfop_saida: string
   ncm: string
   v_prod: number
+  v_ipi: number
   v_frete: number
   v_frete_cte: number
   v_outro: number
@@ -844,6 +845,7 @@ function TabelaNotasSped({
 
 function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
   const totalVProd = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
+  const totalVIpi  = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
   const totalVOpr  = rows.reduce((acc, r) => acc + (r.v_opr || 0), 0)
   const totalVIcms = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
   const totalIcms  = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
@@ -861,6 +863,7 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">NCM</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Opr.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq.Interna</TableHead>
@@ -887,6 +890,7 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
               <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
               <TableCell className="text-xs font-mono">{row.ncm || '—'}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_opr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{(row.aliq_interna || 0).toFixed(2)}%</TableCell>
@@ -911,6 +915,7 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
             <TableRow className="bg-muted/60 hover:bg-muted/60">
               <TableCell colSpan={7} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIpi)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
               <TableCell colSpan={isST ? 2 : 1} />
