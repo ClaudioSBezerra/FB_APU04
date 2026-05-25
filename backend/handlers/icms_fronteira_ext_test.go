@@ -384,3 +384,12 @@ func TestIcmsFronteiraContestacaoDeleteHandler_NoAuth(t *testing.T) {
 	h(rr, req)
 	if rr.Code != http.StatusUnauthorized { t.Errorf("want 401, got %d", rr.Code) }
 }
+
+func TestColLetter(t *testing.T) {
+	cases := map[int]string{0: "A", 1: "B", 25: "Z", 26: "AA", 27: "AB", 51: "AZ", 52: "BA"}
+	for i, want := range cases {
+		if got := colLetter(i); got != want {
+			t.Errorf("colLetter(%d) = %q, want %q", i, got, want)
+		}
+	}
+}

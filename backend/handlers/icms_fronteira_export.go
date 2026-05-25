@@ -619,9 +619,10 @@ func fetchTopNcmByChave(db *sql.DB, companyID string, chaves []string) map[strin
 const antecipacaoReportCSS = `<style>
 * { box-sizing: border-box; }
 body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; color: #222; }
-.rpt-header { border-bottom: 2px solid #4472C4; padding-bottom: 8px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.rpt-header { border-bottom: 2px solid #4472C4; padding-bottom: 8px; margin-bottom: 16px; display: flex; align-items: center; gap: 16px; }
 .rpt-head-txt { flex: 1; }
 .rpt-logo   { max-height: 56px; max-width: 200px; object-fit: contain; }
+.rpt-grupo  { font-size: 16px; font-weight: bold; color: #1a3a6e; margin-bottom: 2px; }
 .rpt-title  { font-size: 15px; font-weight: bold; color: #1a3a6e; }
 .rpt-sub    { font-size: 12px; color: #4472C4; margin-top: 2px; }
 .rpt-meta   { font-size: 10px; color: #666; margin-top: 4px; }
@@ -633,11 +634,13 @@ body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; color: #22
 .nf-chave   { background: #f7f9fe; padding: 3px 10px; font-size: 9px; color: #555; border-bottom: 1px solid #c9d4ec; font-family: monospace; letter-spacing: .5px; }
 .nf-tbl     { width: 100%; border-collapse: collapse; }
 .nf-tbl th  { background: #6889c8; color: #fff; padding: 4px 6px; font-size: 9px; text-align: right; white-space: nowrap; }
-.nf-tbl th:nth-child(-n+3) { text-align: left; }
+.nf-tbl th:nth-child(-n+2) { text-align: left; }
 .nf-tbl td  { border-top: 1px solid #e4e9f5; padding: 3px 6px; font-size: 10px; text-align: right; }
-.nf-tbl td:nth-child(-n+3) { text-align: left; }
+.nf-tbl td:nth-child(-n+2) { text-align: left; }
 .nf-tbl tr:nth-child(even) td { background: #f4f7fd; }
 .tot-row td { font-weight: bold; background: #dce6f8 !important; }
+.rpt-section { margin: 4px 0 12px; padding: 6px 12px; background: #eef2fb; border-left: 4px solid #4472C4; border-radius: 3px; font-size: 13px; font-weight: bold; color: #1a3a6e; }
+.rpt-section-cnt { font-weight: normal; color: #4472C4; font-size: 11px; }
 .grand      { margin-top: 16px; padding: 10px 14px; background: #1a3a6e; color: #fff; border-radius: 4px; font-size: 12px; font-weight: bold; }
 .empty      { text-align: center; color: #888; font-style: italic; padding: 30px; }
 @media print {
@@ -678,11 +681,14 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 		}
 		periodo := r.URL.Query().Get("periodo")
 
-		var companyName string
+		var companyName, groupName string
 		var logoData []byte
 		var logoMime string
-		if err := db.QueryRow(`SELECT COALESCE(NULLIF(trade_name,''), name, ''), logo_data, COALESCE(logo_mime,'image/png')
-			FROM companies WHERE id = $1::uuid`, companyID).Scan(&companyName, &logoData, &logoMime); err != nil {
+		if err := db.QueryRow(`SELECT COALESCE(NULLIF(c.trade_name,''), c.name, ''), COALESCE(eg.name,''),
+			c.logo_data, COALESCE(c.logo_mime,'image/png')
+			FROM companies c
+			LEFT JOIN enterprise_groups eg ON c.group_id = eg.id
+			WHERE c.id = $1::uuid`, companyID).Scan(&companyName, &groupName, &logoData, &logoMime); err != nil {
 			log.Printf("IcmsFronteiraExportHTML: company lookup failed for %s: %v", companyID, err)
 		}
 		logoTag := ""
@@ -718,6 +724,15 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 		if regimeLabel == "TODOS" {
 			regimeLabel = "Todos os Regimes"
 		}
+		regimeNome := map[string]string{
+			"antecipacao": "Antecipação",
+			"st":          "Substituição Tributária (ST)",
+			"difal":       "DIFAL",
+			"todos":       "Todos os Regimes",
+		}[regime]
+		if regimeNome == "" {
+			regimeNome = regimeLabel
+		}
 		today := time.Now().Format("02/01/2006")
 
 		var sb strings.Builder
@@ -726,19 +741,27 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 		sb.WriteString(antecipacaoReportCSS)
 		sb.WriteString(`</head><body>`)
 
-		// Cabeçalho do relatório
+		// Cabeçalho do relatório — logo à esquerda, nome do grupo ao lado dela
 		sb.WriteString(`<div class="rpt-header">`)
+		sb.WriteString(logoTag)
 		sb.WriteString(`<div class="rpt-head-txt">`)
+		if groupName != "" {
+			sb.WriteString(fmt.Sprintf(`<div class="rpt-grupo">%s</div>`, htmlEscape(groupName)))
+		}
 		sb.WriteString(`<div class="rpt-title">Relatório de Cálculo - ICMS Fronteira</div>`)
-		sb.WriteString(fmt.Sprintf(`<div class="rpt-sub">Relatório de Cálculo - %s</div>`, regimeLabel))
+		sb.WriteString(fmt.Sprintf(`<div class="rpt-sub">Relatório de Cálculo - %s</div>`, regimeNome))
 		sb.WriteString(fmt.Sprintf(`<div class="rpt-meta">Período: %s &nbsp;|&nbsp; Empresa: %s &nbsp;|&nbsp; Emissão: %s</div>`,
 			htmlEscape(periodo), htmlEscape(companyName), today))
 		sb.WriteString(`</div>`)
-		sb.WriteString(logoTag)
 		sb.WriteString(`</div>`)
 
 		if len(nfOrder) == 0 {
 			sb.WriteString(`<div class="empty">Nenhuma nota encontrada para este período e regime.</div>`)
+		} else {
+			// Quebra única pelo modelo do regime — não repetido em cada nota
+			sb.WriteString(fmt.Sprintf(
+				`<div class="rpt-section">Modelo: %s <span class="rpt-section-cnt">(%d nota(s))</span></div>`,
+				htmlEscape(regimeNome), len(nfOrder)))
 		}
 
 		var grandVOpr, grandBase, grandIcmsDest, grandST, grandDevido float64
@@ -767,13 +790,13 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				`<div class="nf-hdr"><span class="nf-num">NF: %s</span><span class="nf-total">Total Devido: %s</span></div>`,
 				htmlEscape(first.NumeroNFe), brl(nfDevido)))
 			sb.WriteString(fmt.Sprintf(
-				`<div class="nf-forn">Fornecedor: %s &nbsp;&ndash;&nbsp; Regime: Normal</div>`,
+				`<div class="nf-forn">Fornecedor: %s</div>`,
 				htmlEscape(first.FornNome)))
 			sb.WriteString(fmt.Sprintf(`<div class="nf-chave">Chave: %s</div>`, htmlEscape(chave)))
 
 			// Tabela de itens
 			sb.WriteString(`<table class="nf-tbl"><thead><tr>`)
-			for _, h := range []string{"Cód.", "NCM", "Identificação", "V. Operação", "MVA", "Alíq. I/I", "Base Cálc.", "ICMS Dest.", "ICMS-ST Ret", "V. Devido"} {
+			for _, h := range []string{"Cód.", "NCM", "V. Operação", "MVA", "Alíq. I/I", "Base Cálc.", "ICMS Dest.", "ICMS-ST Ret", "V. Devido"} {
 				sb.WriteString(fmt.Sprintf(`<th>%s</th>`, h))
 			}
 			sb.WriteString(`</tr></thead><tbody>`)
@@ -785,8 +808,8 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				}
 				aliqII := fmt.Sprintf("%.1f%% / %.1f%%", row.AliqInter, row.AliqInterna)
 				sb.WriteString(fmt.Sprintf(
-					`<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-					i+1, ncm, htmlEscape(row.Regime),
+					`<tr><td>%d</td><td>%s</td><td>%s</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+					i+1, ncm,
 					brl(row.VProd), aliqII, brl(row.VProd),
 					brl(row.VIcms), vstDisp, brl(row.IcmsDevidoEst)))
 			}
@@ -797,7 +820,7 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				stTotDisp = brl(nfST)
 			}
 			sb.WriteString(fmt.Sprintf(
-				`<tr class="tot-row"><td colspan="3">TOTAIS</td><td>%s</td><td>-</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+				`<tr class="tot-row"><td colspan="2">TOTAIS</td><td>%s</td><td>-</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
 				brl(nfVOpr), brl(nfBase), brl(nfIcmsDest), stTotDisp, brl(nfDevido)))
 
 			sb.WriteString(`</tbody></table></div>`)

@@ -131,3 +131,44 @@ func TestBuildExportQuery_ComFiltro(t *testing.T) {
 		t.Errorf("com filtro: expected forn filter in query")
 	}
 }
+
+// ── brl (formatação de moeda brasileira) ─────────────────────────────────────
+
+func TestBRL(t *testing.T) {
+	cases := []struct {
+		name string
+		in   float64
+		want string
+	}{
+		{"zero", 0, "R$ 0,00"},
+		{"centavos", 0.5, "R$ 0,50"},
+		{"abaixo_de_mil", 123.45, "R$ 123,45"},
+		{"exatamente_mil", 1000, "R$ 1.000,00"},
+		{"milhares", 1234.56, "R$ 1.234,56"},
+		{"dezenas_de_milhar", 12345.67, "R$ 12.345,67"},
+		{"milhoes", 1234567.89, "R$ 1.234.567,89"},
+		{"negativo", -1234.56, "-R$ 1.234,56"},
+		{"arredondamento", 9.999, "R$ 10,00"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := brl(c.in); got != c.want {
+				t.Errorf("brl(%v) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// ── blocoLabel ───────────────────────────────────────────────────────────────
+
+func TestBlocoLabel(t *testing.T) {
+	if got := blocoLabel("mes_anterior"); got != "A - Mês Anterior" {
+		t.Errorf("mes_anterior: got %q", got)
+	}
+	if got := blocoLabel("mes_atual"); got != "B - Mês Atual" {
+		t.Errorf("mes_atual: got %q", got)
+	}
+	if got := blocoLabel(""); got != "B - Mês Atual" {
+		t.Errorf("default: got %q", got)
+	}
+}
