@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,7 +32,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Trash2, Building, Layers, Factory, Pencil } from "lucide-react";
+import { FileText, ImageUp, Plus, Trash2, Building, Layers, Factory, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -118,8 +118,16 @@ export default function GestaoAmbiente() {
   const [editSegmento, setEditSegmento] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [userHierarchy, setUserHierarchy] = useState<UserHierarchy | null>(null);
+
+  // Logo e template da empresa em edição
+  const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
+  const [editTemNome, setEditTemNome] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingTemplate, setUploadingTemplate] = useState(false);
+  const editLogoInputRef = useRef<HTMLInputElement>(null);
+  const editTemplateInputRef = useRef<HTMLInputElement>(null);
 
   // Initial Load
   useEffect(() => {
@@ -336,6 +344,48 @@ export default function GestaoAmbiente() {
     } catch (error) {
       toast.error("Erro ao criar empresa");
     }
+  };
+
+  const loadEmpresaAssets = async (companyId: string) => {
+    if (!token) return;
+    setEditLogoPreview(null);
+    setEditTemNome(null);
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId };
+    // metadados
+    const meta = await fetch('/api/config/empresa/parametros', { headers }).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (meta?.tem_logo) {
+      const r = await fetch('/api/config/empresa/logo', { headers });
+      if (r.ok) { const blob = await r.blob(); setEditLogoPreview(URL.createObjectURL(blob)); }
+    }
+    if (meta?.tem_template_antecip) setEditTemNome(meta.template_antecip_nome ?? 'template.pdf');
+  };
+
+  const uploadEmpresaLogo = async (companyId: string, file: File) => {
+    if (!token) return;
+    setUploadingLogo(true);
+    const form = new FormData(); form.append('logo', file);
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId };
+    try {
+      const res = await fetch('/api/config/empresa/logo', { method: 'POST', headers, body: form });
+      if (!res.ok) throw new Error();
+      toast.success('Logo salva');
+      await loadEmpresaAssets(companyId);
+    } catch { toast.error('Erro ao salvar logo'); }
+    finally { setUploadingLogo(false); }
+  };
+
+  const uploadEmpresaTemplate = async (companyId: string, file: File) => {
+    if (!token) return;
+    setUploadingTemplate(true);
+    const form = new FormData(); form.append('template', file);
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId };
+    try {
+      const res = await fetch('/api/config/empresa/template-antecipacao', { method: 'POST', headers, body: form });
+      if (!res.ok) throw new Error();
+      toast.success('Relatório modelo salvo');
+      setEditTemNome(file.name);
+    } catch { toast.error('Erro ao salvar relatório'); }
+    finally { setUploadingTemplate(false); }
   };
 
   const handleUpdateGroup = async () => {
@@ -852,6 +902,7 @@ export default function GestaoAmbiente() {
                         setEditCNAE(company.cnae_principal || '');
                         setEditMunicipio(company.municipio || '');
                         setEditSegmento(company.segmento_economico || '');
+                        loadEmpresaAssets(company.id);
                       }}
                     >
                       <Pencil className="w-3 h-3" />
@@ -937,7 +988,35 @@ export default function GestaoAmbiente() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="flex gap-2 mt-2">
+                    {/* Logo */}
+                    <div className="mt-3 pt-3 border-t border-blue-200">
+                      <p className="text-[10px] text-blue-700 mb-1 font-medium flex items-center gap-1"><ImageUp className="w-3 h-3"/>Logo da Empresa</p>
+                      {editLogoPreview && (
+                        <img src={editLogoPreview} alt="Logo" className="h-10 max-w-[120px] object-contain rounded border bg-white p-0.5 mb-1" />
+                      )}
+                      <input ref={editLogoInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f && editingCompany) uploadEmpresaLogo(editingCompany.id, f); }} />
+                      <Button size="sm" variant="outline" className="h-6 text-[10px]" disabled={uploadingLogo}
+                        onClick={() => editLogoInputRef.current?.click()}>
+                        {editLogoPreview ? 'Substituir logo' : 'Enviar logo'}
+                      </Button>
+                    </div>
+
+                    {/* Relatório modelo de antecipação */}
+                    <div className="mt-2">
+                      <p className="text-[10px] text-blue-700 mb-1 font-medium flex items-center gap-1"><FileText className="w-3 h-3"/>Relatório Modelo — Antecipação</p>
+                      {editTemNome && (
+                        <p className="text-[10px] text-blue-600 truncate mb-1">✓ {editTemNome}</p>
+                      )}
+                      <input ref={editTemplateInputRef} type="file" accept="application/pdf" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f && editingCompany) uploadEmpresaTemplate(editingCompany.id, f); }} />
+                      <Button size="sm" variant="outline" className="h-6 text-[10px]" disabled={uploadingTemplate}
+                        onClick={() => editTemplateInputRef.current?.click()}>
+                        {editTemNome ? 'Substituir PDF' : 'Enviar PDF modelo'}
+                      </Button>
+                    </div>
+
+                    <div className="flex gap-2 mt-3">
                       <Button size="sm" className="h-7 text-xs flex-1" onClick={handleUpdateCompany}>
                         Salvar
                       </Button>

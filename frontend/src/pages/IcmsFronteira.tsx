@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -66,6 +66,7 @@ import {
   Calculator,
   Play,
   Loader2,
+  FileDown,
 } from 'lucide-react'
 import {
   BarChart,
@@ -4124,6 +4125,26 @@ export default function IcmsFronteira() {
   const navigate = useNavigate()
   const { token } = useAuth()
 
+  // Relatório modelo de antecipação cadastrado pela empresa
+  const [relatorioModeloNome, setRelatorioModeloNome] = useState<string | null>(null)
+  useEffect(() => {
+    if (!token) return
+    fetch('/api/config/empresa/parametros', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => setRelatorioModeloNome(d?.tem_template_antecip ? (d.template_antecip_nome ?? 'relatorio-antecipacao.pdf') : null))
+      .catch(() => null)
+  }, [token])
+
+  const baixarRelatorioModelo = async () => {
+    if (!token) return
+    const res = await fetch('/api/config/empresa/template-antecipacao', { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) { toast.error('Relatório modelo não encontrado'); return }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = relatorioModeloNome ?? 'relatorio-antecipacao.pdf'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const pathToTab: Record<string, string> = {
     '/icms-fronteira':              'resumo',
     '/icms-fronteira/antecipacao':  'antecipacao',
@@ -4237,7 +4258,13 @@ export default function IcmsFronteira() {
                 V.Prod × (alíq. interna − alíq. interestadual). Três blocos: meses anteriores
                 no SPED, mês atual no SPED, e XML não lançadas no SPED.
               </p>
-              <div className="flex justify-end mb-2">
+              <div className="flex justify-between items-center mb-2">
+                {relatorioModeloNome ? (
+                  <Button size="sm" variant="outline" onClick={baixarRelatorioModelo} className="gap-1.5 text-xs">
+                    <FileDown className="h-3.5 w-3.5" />
+                    Baixar Relatório Modelo
+                  </Button>
+                ) : <span />}
                 <RecalcularButton />
               </div>
               <NotasTabBlocos endpointSped="/api/icms-fronteira/antecipacao" regime="antecipacao" token={token} />
