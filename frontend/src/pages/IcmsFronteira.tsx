@@ -86,6 +86,7 @@ interface FronteiraResumoRow {
   regime: string
   qtd_notas: number
   v_prod_total: number
+  v_ipi_total: number
   v_st_retido: number
   icms_devido_est: number
 }
@@ -105,6 +106,7 @@ interface FronteiraNotaRow {
   forn_uf: string
   cfop: string
   v_prod: number
+  v_ipi: number
   v_icms: number
   v_bc_st: number
   v_st: number
@@ -401,14 +403,34 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Filtros de notas (fornecedor / número da nota / intervalo de data)
+// ---------------------------------------------------------------------------
+interface FronteiraFiltros {
+  forn?: string
+  num_nota?: string
+  data_ini?: string
+  data_fim?: string
+}
+
+// aplicaFiltros adiciona os filtros não-vazios a um URLSearchParams.
+function aplicaFiltros(params: URLSearchParams, f?: FronteiraFiltros) {
+  if (!f) return
+  if (f.forn?.trim()) params.set('forn', f.forn.trim())
+  if (f.num_nota?.trim()) params.set('num_nota', f.num_nota.trim())
+  if (f.data_ini) params.set('data_ini', f.data_ini)
+  if (f.data_fim) params.set('data_fim', f.data_fim)
+}
+
+// ---------------------------------------------------------------------------
 // Export buttons (shared by tabs)
 // ---------------------------------------------------------------------------
-function ExportButtons({ regime, token, periodo }: { regime: string; token: string | null; periodo?: string }) {
+function ExportButtons({ regime, token, periodo, filtros }: { regime: string; token: string | null; periodo?: string; filtros?: FronteiraFiltros }) {
   async function downloadFile(format: 'csv' | 'xlsx') {
     try {
       const params = new URLSearchParams({ regime })
       if (periodo) params.set('periodo', periodo)
       if (token) params.set('token', token)
+      aplicaFiltros(params, filtros)
       const res = await fetch(`/api/icms-fronteira/exportar/${format}?${params}`)
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       const blob = await res.blob()
@@ -428,6 +450,7 @@ function ExportButtons({ regime, token, periodo }: { regime: string; token: stri
     const params = new URLSearchParams({ regime })
     if (periodo) params.set('periodo', periodo)
     if (token) params.set('token', token)
+    aplicaFiltros(params, filtros)
     window.open(`/api/icms-fronteira/exportar/pdf?${params}`, '_blank')
   }
 
@@ -595,6 +618,7 @@ function ResumoTab({ token }: { token: string | null }) {
               <TableHead className="text-xs font-semibold uppercase tracking-wide">Regime</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Notas</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Produtos</TableHead>
+              <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. ST Retido</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Devido Est.</TableHead>
             </TableRow>
@@ -605,6 +629,7 @@ function ResumoTab({ token }: { token: string | null }) {
                 <TableCell><RegimeBadge regime={row.regime} /></TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{row.qtd_notas}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod_total)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi_total)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_st_retido)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(row.icms_devido_est)}</TableCell>
               </TableRow>
@@ -689,6 +714,7 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
               <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
+              <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Inter.</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Int.</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Devido Est.</TableHead>
@@ -708,6 +734,7 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
                 <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
                 <TableCell className="text-xs font-mono">{row.cfop || '—'}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums font-semibold">
@@ -743,6 +770,7 @@ function TabelaNotasSped({
   showAliq: boolean
 }) {
   const totalVProd = rows.reduce((a, r) => a + (r.v_prod || 0), 0)
+  const totalVIpi  = rows.reduce((a, r) => a + (r.v_ipi || 0), 0)
   const totalVIcms = rows.reduce((a, r) => a + (r.v_icms || 0), 0)
   const totalIcms  = rows.reduce((a, r) => a + (r.icms_devido_est || 0), 0)
   return (
@@ -757,6 +785,7 @@ function TabelaNotasSped({
             <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
             {showAliq && (
               <>
@@ -782,6 +811,7 @@ function TabelaNotasSped({
               <TableCell className="text-xs font-mono">{row.cfop || '—'}</TableCell>
               <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms)}</TableCell>
               {showAliq && (
                 <>
@@ -800,6 +830,7 @@ function TabelaNotasSped({
             <TableRow className="bg-muted/60 hover:bg-muted/60">
               <TableCell colSpan={6} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIpi)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
               {showAliq && <TableCell colSpan={2} />}
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
@@ -940,6 +971,15 @@ function NotasTabBlocos({
   const [monthInput, setMonthInput] = useState('')
   const periodo = monthToPeriodo(monthInput)
 
+  // Filtros opcionais (fornecedor / número da nota / intervalo de data).
+  const [forn, setForn] = useState('')
+  const [numNota, setNumNota] = useState('')
+  const [dataIni, setDataIni] = useState('')
+  const [dataFim, setDataFim] = useState('')
+  const filtros: FronteiraFiltros = { forn, num_nota: numNota, data_ini: dataIni, data_fim: dataFim }
+  // chave de cache estável dos filtros (só dispara refetch quando mudam)
+  const filtrosKey = `${forn}|${numNota}|${dataIni}|${dataFim}`
+
   const [openA, setOpenA] = useState(true)
   const [openB, setOpenB] = useState(true)
   const [openC, setOpenC] = useState(true)
@@ -949,11 +989,13 @@ function NotasTabBlocos({
 
   // Bloco A + B — SPED
   const spedQuery = useQuery<FronteiraNotasResponse>({
-    queryKey: ['icms-fronteira', regime, periodo, 'sped'],
+    queryKey: ['icms-fronteira', regime, periodo, 'sped', filtrosKey],
     queryFn: async () => {
-      const url = periodo
-        ? `${endpointSped}?periodo=${encodeURIComponent(periodo)}`
-        : endpointSped
+      const params = new URLSearchParams()
+      if (periodo) params.set('periodo', periodo)
+      aplicaFiltros(params, filtros)
+      const qs = params.toString()
+      const url = qs ? `${endpointSped}?${qs}` : endpointSped
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       return res.json()
@@ -1002,8 +1044,52 @@ function NotasTabBlocos({
             <span className="text-xs text-muted-foreground">{periodo}</span>
           )}
         </div>
-        {periodo && <ExportButtons regime={regime} token={token} periodo={periodo} />}
+        {periodo && <ExportButtons regime={regime} token={token} periodo={periodo} filtros={filtros} />}
       </div>
+
+      {/* Filtros: fornecedor / número da nota / intervalo de data */}
+      {periodo && (
+        <div className="flex items-end gap-2 flex-wrap rounded-md border bg-muted/20 p-2">
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase text-muted-foreground">Fornecedor (nome/CNPJ)</Label>
+            <Input
+              type="text"
+              placeholder="Buscar fornecedor..."
+              className="w-52 text-xs h-8"
+              value={forn}
+              onChange={(e) => setForn(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase text-muted-foreground">Nº Nota</Label>
+            <Input
+              type="text"
+              placeholder="Número"
+              className="w-28 text-xs h-8"
+              value={numNota}
+              onChange={(e) => setNumNota(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase text-muted-foreground">Data de</Label>
+            <Input type="date" className="w-36 text-xs h-8" value={dataIni} onChange={(e) => setDataIni(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase text-muted-foreground">Data até</Label>
+            <Input type="date" className="w-36 text-xs h-8" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+          </div>
+          {(forn || numNota || dataIni || dataFim) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-xs"
+              onClick={() => { setForn(''); setNumNota(''); setDataIni(''); setDataFim('') }}
+            >
+              Limpar filtros
+            </Button>
+          )}
+        </div>
+      )}
 
       {!periodo && (
         <Alert>

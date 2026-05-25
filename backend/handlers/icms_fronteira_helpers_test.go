@@ -61,11 +61,14 @@ func TestRowToCSVRecord_FieldCount(t *testing.T) {
 		FornNome: "Fornecedor X", FornCNPJ: "12345678000199",
 		FornUF: "SP", CFOP: "2102", Regime: "ANTECIPACAO",
 		VProd: 1000, VIcms: 120, VBcST: 0, VST: 0,
-		AliqInter: 12, AliqInterna: 20.5, IcmsDevidoEst: 85,
+		AliqInter: 12, AliqInterna: 20.5, IcmsDevidoEst: 85, VIPI: 50,
 	}
 	rec := rowToCSVRecord(row)
-	if len(rec) != 17 {
-		t.Errorf("expected 17 CSV fields, got %d", len(rec))
+	if len(rec) != len(exportCSVHeaders) {
+		t.Errorf("CSV fields (%d) devem casar com headers (%d)", len(rec), len(exportCSVHeaders))
+	}
+	if len(rec) != 18 {
+		t.Errorf("expected 18 CSV fields (com V.IPI), got %d", len(rec))
 	}
 }
 
@@ -86,17 +89,20 @@ func TestRowToCSVRecord_Values(t *testing.T) {
 // ── buildExportQuery ─────────────────────────────────────────────────────────
 
 func TestBuildExportQuery_Todos(t *testing.T) {
-	q, args := buildExportQuery("todos", "")
+	q, args := buildExportQuery("todos", "", "", nil)
 	if len(args) != 0 {
 		t.Errorf("todos: expected 0 extra args, got %d", len(args))
 	}
 	if !strings.Contains(q, "FROM classified") {
 		t.Errorf("todos: expected 'FROM classified' in query")
 	}
+	if !strings.Contains(q, "v_ipi") {
+		t.Errorf("todos: expected 'v_ipi' column in query")
+	}
 }
 
 func TestBuildExportQuery_Regime(t *testing.T) {
-	q, args := buildExportQuery("ST", "")
+	q, args := buildExportQuery("ST", "", "", nil)
 	if len(args) != 1 {
 		t.Errorf("ST: expected 1 extra arg, got %d", len(args))
 	}
@@ -109,8 +115,19 @@ func TestBuildExportQuery_Regime(t *testing.T) {
 }
 
 func TestBuildExportQuery_Antecipacao(t *testing.T) {
-	_, args := buildExportQuery("antecipacao", "")
+	_, args := buildExportQuery("antecipacao", "", "", nil)
 	if len(args) != 1 {
 		t.Errorf("antecipacao: expected 1 extra arg, got %d", len(args))
+	}
+}
+
+func TestBuildExportQuery_ComFiltro(t *testing.T) {
+	// filtro de fornecedor entra como $4 quando há regime específico
+	q, args := buildExportQuery("ST", "", " AND (forn_cnpj ILIKE $4 OR forn_nome ILIKE $4)", []interface{}{"%ACME%"})
+	if len(args) != 2 {
+		t.Errorf("com filtro: expected 2 args (regime+forn), got %d", len(args))
+	}
+	if !strings.Contains(q, "forn_cnpj ILIKE $4") {
+		t.Errorf("com filtro: expected forn filter in query")
 	}
 }

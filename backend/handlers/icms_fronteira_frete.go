@@ -346,7 +346,7 @@ func IcmsFronteiraFretesHandler(db *sql.DB) http.HandlerFunc {
 
 		periodo := r.URL.Query().Get("periodo")
 
-		exportRows, err := fetchExportRows(db, companyID, "todos", periodo)
+		exportRows, err := fetchExportRows(db, companyID, "todos", periodo, r)
 		if err != nil {
 			log.Printf("IcmsFronteiraFretes fetchExportRows error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar notas")

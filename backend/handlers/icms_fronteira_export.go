@@ -36,17 +36,25 @@ SELECT
     v_st,
     aliq_inter,
     aliq_interna,
-    icms_devido_est
+    icms_devido_est,
+    v_ipi
 FROM classified
 `
 
-func buildExportQuery(regime, periodo string) (string, []interface{}) {
+// buildExportQuery monta a query do export. filtroSQL/filtroArgs vêm de
+// fronteiraFiltros (fornecedor/num_nota/data) — os placeholders já devem estar
+// numerados a partir do índice correto pelo chamador.
+func buildExportQuery(regime, periodo, filtroSQL string, filtroArgs []interface{}) (string, []interface{}) {
 	if regime == "todos" || regime == "" {
-		q := fronteiraBaseQuery + fronteiraExportSelectCols + `ORDER BY regime, bloco, data_emissao DESC LIMIT 2000`
-		return q, nil
+		where := ""
+		if filtroSQL != "" {
+			where = " WHERE 1=1" + filtroSQL
+		}
+		q := fronteiraBaseQuery + fronteiraExportSelectCols + where + ` ORDER BY regime, bloco, data_emissao DESC LIMIT 2000`
+		return q, filtroArgs
 	}
-	q := fronteiraBaseQuery + fronteiraExportSelectCols + `WHERE regime = $3 ORDER BY bloco, data_emissao DESC LIMIT 2000`
-	return q, []interface{}{strings.ToUpper(regime)}
+	q := fronteiraBaseQuery + fronteiraExportSelectCols + `WHERE regime = $3` + filtroSQL + ` ORDER BY bloco, data_emissao DESC LIMIT 2000`
+	return q, append([]interface{}{strings.ToUpper(regime)}, filtroArgs...)
 }
 
 type fronteiraExportRow struct {
@@ -66,10 +74,18 @@ type fronteiraExportRow struct {
 	AliqInter     float64
 	AliqInterna   float64
 	IcmsDevidoEst float64
+	VIPI          float64
 }
 
-func fetchExportRows(db *sql.DB, companyID, regime, periodo string) ([]fronteiraExportRow, error) {
-	baseQuery, extraArgs := buildExportQuery(regime, periodo)
+func fetchExportRows(db *sql.DB, companyID, regime, periodo string, r *http.Request) ([]fronteiraExportRow, error) {
+	// Filtros começam após company_id($1), periodo($2) e, quando há regime
+	// específico, o regime($3). Para "todos" não há $3.
+	startIdx := 3
+	if !(regime == "todos" || regime == "") {
+		startIdx = 4
+	}
+	filtroSQL, filtroArgs := fronteiraFiltros(r, startIdx)
+	baseQuery, extraArgs := buildExportQuery(regime, periodo, filtroSQL, filtroArgs)
 
 	var args []interface{}
 	args = append(args, companyID, periodo)
@@ -101,6 +117,7 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string) ([]fronteira
 			&row.AliqInter,
 			&row.AliqInterna,
 			&row.IcmsDevidoEst,
+			&row.VIPI,
 		); err != nil {
 			log.Printf("fronteiraExport scan error: %v", err)
 			continue
@@ -113,7 +130,7 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string) ([]fronteira
 var exportCSVHeaders = []string{
 	"Bloco", "Data Emissão", "Número NF-e", "Fornecedor", "CNPJ", "UF", "CFOP", "Regime",
 	"V.Prod", "ICMS Atual", "V.BC ST", "V.ST", "Alíq.Inter.%", "Alíq.Interna.%", "ICMS Devido Est.",
-	"Chave NF-e", "Chave CT-e",
+	"Chave NF-e", "Chave CT-e", "V.IPI",
 }
 
 func blocoLabel(bloco string) string {
@@ -142,6 +159,7 @@ func rowToCSVRecord(row fronteiraExportRow) []string {
 		fmt.Sprintf("%.2f", row.IcmsDevidoEst),
 		row.ChaveNFe,
 		"",
+		fmt.Sprintf("%.2f", row.VIPI),
 	}
 }
 
@@ -175,7 +193,7 @@ func IcmsFronteiraExportCSVHandler(db *sql.DB) http.HandlerFunc {
 		}
 		periodo := r.URL.Query().Get("periodo")
 
-		rows, err := fetchExportRows(db, companyID, regime, periodo)
+		rows, err := fetchExportRows(db, companyID, regime, periodo, r)
 		if err != nil {
 			log.Printf("IcmsFronteiraExportCSV error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")
@@ -237,7 +255,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		}
 		periodo := r.URL.Query().Get("periodo")
 
-		dataRows, err := fetchExportRows(db, companyID, regime, periodo)
+		dataRows, err := fetchExportRows(db, companyID, regime, periodo, r)
 		if err != nil {
 			log.Printf("IcmsFronteiraExportXLSX error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")
@@ -270,7 +288,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 
 		// exportCSVHeaders[0] = "Bloco", drop it (already separated by sheet)
 		sheetHeaders := exportCSVHeaders[1:]
-		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"}
+		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q"}
 
 		// Monta mapa de parâmetros das NFs para cálculo do frete
 		nfParams := make(map[string]nfFreteParams)
@@ -317,7 +335,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellStyle(sheetName, cell, cell, headerStyle)
 			}
 
-			var totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido float64
+			var totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido, totalVIPI float64
 			excelRow := 2
 			for _, row := range sheetRows {
 				// ── linha da NF ──────────────────────────────────────────────
@@ -337,6 +355,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.IcmsDevidoEst)
 				f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.ChaveNFe)
 				f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), "")
+				f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), row.VIPI)
 				// Aplica estilos por tipo de coluna
 				textStyle := 0
 				mStyle := moneyStyle
@@ -351,7 +370,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), textStyle)
 					}
 				}
-				for _, c := range []string{"H","I","J","K","N"} {
+				for _, c := range []string{"H","I","J","K","N","Q"} {
 					f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), mStyle)
 				}
 				for _, c := range []string{"L","M"} {
@@ -362,6 +381,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				totalVBcST += row.VBcST
 				totalVST += row.VST
 				totalIcmsDevido += row.IcmsDevidoEst
+				totalVIPI += row.VIPI
 				excelRow++
 
 				// ── linhas de CT-e abaixo da NF ─────────────────────────────
@@ -387,10 +407,11 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), cte.IcmsFronteira)
 					f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.ChaveNFe)
 					f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), cte.ChaveCTe)
+					f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), 0) // CT-e não tem IPI
 					for _, c := range []string{"A","B","C","D","E","F","G","O","P"} {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), cteStyle)
 					}
-					for _, c := range []string{"H","I","J","K","N"} {
+					for _, c := range []string{"H","I","J","K","N","Q"} {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), moneyCteStyle)
 					}
 					for _, c := range []string{"L","M"} {
@@ -404,16 +425,17 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			}
 			totalRow := excelRow
 			f.SetCellValue(sheetName, fmt.Sprintf("A%d", totalRow), "TOTAL")
-			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("N%d", totalRow), boldStyle)
+			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("Q%d", totalRow), boldStyle)
 			f.SetCellValue(sheetName, fmt.Sprintf("H%d", totalRow), totalVProd)
 			f.SetCellValue(sheetName, fmt.Sprintf("I%d", totalRow), totalVIcms)
 			// Aplica formato monetário nas células TOTAL (mantém bold)
-			for _, c := range []string{"H","I","J","K","N"} {
+			for _, c := range []string{"H","I","J","K","N","Q"} {
 				f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, totalRow), fmt.Sprintf("%s%d", c, totalRow), moneyBoldStyle)
 			}
 			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVBcST)
 			f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVST)
 			f.SetCellValue(sheetName, fmt.Sprintf("N%d", totalRow), totalIcmsDevido)
+			f.SetCellValue(sheetName, fmt.Sprintf("Q%d", totalRow), totalVIPI)
 		}
 
 		// ── Sheet C — XML não lançadas no SPED ───────────────────────────────
@@ -553,7 +575,7 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			companyName = companyID
 		}
 
-		dataRows, err := fetchExportRows(db, companyID, regime, periodo)
+		dataRows, err := fetchExportRows(db, companyID, regime, periodo, r)
 		if err != nil {
 			log.Printf("IcmsFronteiraExportHTML error: %v", err)
 			http.Error(w, "Erro ao consultar dados", http.StatusInternalServerError)

@@ -3,12 +3,46 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// fronteiraFiltros monta o WHERE adicional (fornecedor, número da nota, intervalo
+// de data) a partir dos query params, com placeholders posicionais a partir de
+// startIdx. Retorna o fragmento SQL (começando com " AND ...") e os argumentos.
+// As colunas referenciadas (forn_cnpj/forn_nome/numero_nfe/data_emissao) existem
+// no CTE classified do fronteiraBaseQuery.
+func fronteiraFiltros(r *http.Request, startIdx int) (string, []interface{}) {
+	var sb strings.Builder
+	var args []interface{}
+	idx := startIdx
+
+	if forn := strings.TrimSpace(r.URL.Query().Get("forn")); forn != "" {
+		sb.WriteString(fmt.Sprintf(" AND (forn_cnpj ILIKE $%d OR forn_nome ILIKE $%d)", idx, idx))
+		args = append(args, "%"+forn+"%")
+		idx++
+	}
+	if num := strings.TrimSpace(r.URL.Query().Get("num_nota")); num != "" {
+		sb.WriteString(fmt.Sprintf(" AND numero_nfe ILIKE $%d", idx))
+		args = append(args, "%"+num+"%")
+		idx++
+	}
+	if di := strings.TrimSpace(r.URL.Query().Get("data_ini")); di != "" {
+		sb.WriteString(fmt.Sprintf(" AND data_emissao::date >= $%d::date", idx))
+		args = append(args, di)
+		idx++
+	}
+	if df := strings.TrimSpace(r.URL.Query().Get("data_fim")); df != "" {
+		sb.WriteString(fmt.Sprintf(" AND data_emissao::date <= $%d::date", idx))
+		args = append(args, df)
+		idx++
+	}
+	return sb.String(), args
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -57,6 +91,7 @@ type FronteiraResumoRow struct {
 	Regime         string  `json:"regime"`
 	QtdNotas       int     `json:"qtd_notas"`
 	VProdTotal     float64 `json:"v_prod_total"`
+	VIpiTotal      float64 `json:"v_ipi_total"`
 	VStRetido      float64 `json:"v_st_retido"`
 	IcmsDevidoEst  float64 `json:"icms_devido_est"`
 }
@@ -80,6 +115,7 @@ type FronteiraNotaRow struct {
 	FornUF        string  `json:"forn_uf"`
 	CFOP          string  `json:"cfop"`
 	VProd         float64 `json:"v_prod"`
+	VIPI          float64 `json:"v_ipi"`
 	VIcms         float64 `json:"v_icms"`
 	VBcST         float64 `json:"v_bc_st"`
 	VST           float64 `json:"v_st"`
@@ -276,20 +312,23 @@ func IcmsFronteiraResumoHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		periodo := r.URL.Query().Get("periodo")
+		filtroSQL, filtroArgs := fronteiraFiltros(r, 3)
 
 		query := fronteiraBaseQuery + `
 SELECT
     regime,
     COUNT(DISTINCT chave_nfe) AS qtd_notas,
     SUM(v_prod)         AS v_prod_total,
+    SUM(v_ipi)          AS v_ipi_total,
     SUM(v_st)           AS v_st_retido,
     SUM(icms_devido_est) AS icms_devido_est
 FROM classified
-WHERE regime IS NOT NULL
+WHERE regime IS NOT NULL` + filtroSQL + `
 GROUP BY regime
 ORDER BY regime
 `
-		rows, err := db.Query(query, companyID, periodo)
+		args := append([]interface{}{companyID, periodo}, filtroArgs...)
+		rows, err := db.Query(query, args...)
 		if err != nil {
 			log.Printf("IcmsFronteiraResumo error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar resumo ICMS Fronteira")
@@ -303,7 +342,7 @@ ORDER BY regime
 		for rows.Next() {
 			var row FronteiraResumoRow
 			if err := rows.Scan(
-				&row.Regime, &row.QtdNotas, &row.VProdTotal, &row.VStRetido, &row.IcmsDevidoEst,
+				&row.Regime, &row.QtdNotas, &row.VProdTotal, &row.VIpiTotal, &row.VStRetido, &row.IcmsDevidoEst,
 			); err != nil {
 				log.Printf("IcmsFronteiraResumo scan error: %v", err)
 				continue
@@ -341,6 +380,7 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 	}
 
 	periodo := r.URL.Query().Get("periodo")
+	filtroSQL, filtroArgs := fronteiraFiltros(r, 4)
 
 	// G14: window functions retornam totais do conjunto completo (sem LIMIT),
 	// resolvendo o bug onde totais exibidos só refletiam as primeiras 500 notas.
@@ -348,16 +388,17 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 	query := fronteiraBaseQuery + `
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
-    cfop, v_prod, v_icms, v_bc_st, v_st,
+    cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st,
     aliq_inter, aliq_interna, icms_devido_est, regime, bloco,
     COUNT(*)            OVER () AS total_count,
     SUM(icms_devido_est) OVER () AS total_full
 FROM classified
-WHERE regime = $3
+WHERE regime = $3` + filtroSQL + `
 ORDER BY bloco, data_emissao DESC, chave_nfe
 LIMIT 500
 `
-	rows, err := db.Query(query, companyID, periodo, regime)
+	args := append([]interface{}{companyID, periodo, regime}, filtroArgs...)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		log.Printf("IcmsFronteiraNotas[%s] error: %v", regime, err)
 		jsonErr(w, http.StatusInternalServerError, "Erro ao consultar notas ICMS Fronteira")
@@ -378,7 +419,7 @@ LIMIT 500
 		if err := rows.Scan(
 			&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
-			&row.CFOP, &row.VProd, &row.VIcms, &row.VBcST, &row.VST,
+			&row.CFOP, &row.VProd, &row.VIPI, &row.VIcms, &row.VBcST, &row.VST,
 			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.Regime,
 			&row.Bloco,
 			&rowTotalCount, &rowTotalFull,
