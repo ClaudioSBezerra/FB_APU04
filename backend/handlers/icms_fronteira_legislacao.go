@@ -97,38 +97,66 @@ raciocínio. Formato exato:
 }`
 
 // extractPDFText extrai texto de um PDF em memória usando ledongthuc/pdf.
+//
+// Estratégia: primeiro tenta GetPlainText (interpreta os operadores Tj/TJ/T*
+// do stream PDF, sem fabricar espaços entre caracteres). Se isso falhar ou
+// produzir texto curto demais (PDF baseado em imagem ou estrutura incomum),
+// cai para GetTextByRow agrupando por coordenada Y e inferindo espaços por
+// gaps em X.
+//
+// A versão antiga usava page.Content().Text inserindo espaço após cada
+// elemento — para PDFs do LegisWeb cada caractere vinha como um elemento
+// separado, produzindo "D E C R E T O" em vez de "DECRETO" e quebrando
+// todo o regex de filtragem downstream.
 func extractPDFText(data []byte) (string, error) {
 	r := bytes.NewReader(data)
 	pr, err := pdflib.NewReader(r, int64(len(data)))
 	if err != nil {
 		return "", fmt.Errorf("falha ao abrir PDF: %w", err)
 	}
+
+	// Tentativa 1 — GetPlainText (rápido e correto para a maioria dos PDFs textuais)
+	if reader, perr := pr.GetPlainText(); perr == nil {
+		var buf bytes.Buffer
+		if _, cerr := io.Copy(&buf, reader); cerr == nil {
+			text := buf.String()
+			if len(strings.TrimSpace(text)) > 500 {
+				return text, nil
+			}
+		}
+	}
+
+	// Tentativa 2 — GetTextByRow: agrupa por Y, ordena por X, insere espaço
+	// quando há gap geométrico entre fragments. Bom para PDFs com layout
+	// em colunas ou tabelas (decretos com lista NCM × MVA).
 	var sb strings.Builder
 	for i := 1; i <= pr.NumPage(); i++ {
 		page := pr.Page(i)
 		if page.V.IsNull() {
 			continue
 		}
-		content := page.Content()
-		prevY := -1.0
-		for _, t := range content.Text {
-			if prevY >= 0 && abs64(t.Y-prevY) > 2 {
+		rows, rerr := page.GetTextByRow()
+		if rerr != nil {
+			continue
+		}
+		for _, row := range rows {
+			var line strings.Builder
+			prevX := -9999.0
+			for _, t := range row.Content {
+				if prevX > -9000 && (t.X-prevX) > 1.5 {
+					line.WriteByte(' ')
+				}
+				line.WriteString(t.S)
+				prevX = t.X + float64(len(t.S))
+			}
+			if s := strings.TrimRight(line.String(), " "); s != "" {
+				sb.WriteString(s)
 				sb.WriteByte('\n')
 			}
-			sb.WriteString(t.S)
-			sb.WriteByte(' ')
-			prevY = t.Y
 		}
 		sb.WriteByte('\n')
 	}
 	return sb.String(), nil
-}
-
-func abs64(v float64) float64 {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
 
 func extractLegislacaoText(r *http.Request) (string, string, error) {
@@ -230,36 +258,23 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 			titulo = "Legislação importada"
 		}
 
-		// Para decretos grandes (>30k chars), extrair apenas linhas relevantes
-		// (NCMs, MVAs, percentuais) para caber no contexto da IA.
-		// Se o resultado filtrado for curto demais, usa o texto bruto como fallback
-		// (acontece com PDFs de texto escasso ou formatação incomum do LegisWeb).
+		// Filtragem: mantém apenas linhas com NCM/MVA/%, descartando ementa
+		// e considerandos. Para textos curtos (~até 30k), envia tudo direto.
 		textoIA := texto
 		if len(texto) > 30_000 {
 			filtrado := extrairLinhasRelevantes(texto)
-			log.Printf("Legislacao: texto reduzido de %d para %d chars para IA", len(texto), len(filtrado))
-
-			// DEBUG TEMP: contar linhas, ver amostras do texto bruto
-			lines := strings.Split(texto, "\n")
-			log.Printf("Legislacao DEBUG: texto bruto tem %d linhas após split('\\n')", len(lines))
-			for i, l := range lines {
-				if i >= 5 { break }
-				preview := l
-				if len(preview) > 200 { preview = preview[:200] }
-				log.Printf("Legislacao DEBUG: linha[%d] len=%d: %q", i, len(l), preview)
-			}
-
+			log.Printf("Legislacao: texto bruto=%d chars, filtrado=%d chars", len(texto), len(filtrado))
 			if len(strings.TrimSpace(filtrado)) >= 200 {
 				textoIA = filtrado
 			} else {
-				// Fallback: primeiros 80k chars do texto bruto
+				// Filtro veio vazio (PDF mal extraído ou decreto com prosa
+				// pura sem NCMs). Cai para texto bruto truncado em 80k.
 				log.Printf("Legislacao: filtro produziu texto curto (%d chars) — usando texto bruto truncado", len(filtrado))
 				if len(texto) > 80_000 {
 					textoIA = texto[:80_000]
 				}
 			}
 		}
-		log.Printf("Legislacao DEBUG: enviando %d chars para IA, primeiros 300: %q", len(textoIA), textoIA[:min(300, len(textoIA))])
 		if len(strings.TrimSpace(textoIA)) < 100 {
 			jsonErr(w, http.StatusUnprocessableEntity,
 				"Não foi possível extrair texto legível do arquivo. "+
@@ -268,35 +283,51 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Chama IA
+		// Chama IA — chunking automático se texto > chunkLimit chars.
+		// O glm-4.7-flash aceita ~128k tokens de contexto, mas para extração
+		// estruturada confiável de listas longas, processar em blocos menores
+		// e mesclar os resultados produz JSON mais completo e parseável.
 		client := services.NewAIClient()
 		if client == nil {
 			jsonErr(w, http.StatusServiceUnavailable, "IA não configurada (ZAI_API_KEY ausente)")
 			return
 		}
-		userPrompt := "UF: " + ufEstado + "\nTÍTULO: " + titulo + "\n---\n" + textoIA
-		aiResp, err := client.GenerateFastRaw(legislacaoSystemPrompt, userPrompt, "", 8192)
+		interp, rawResponses, modelUsado, chunks, err := chamarIALegislacao(
+			client, ufEstado, titulo, textoIA)
 		if err != nil {
 			log.Printf("Legislacao IA error: %v", err)
 			jsonErr(w, http.StatusBadGateway, "Falha na IA: "+err.Error())
 			return
 		}
-		interp := parseLegislacaoJSON(aiResp.Text)
 		if interp.Resumo == "" && len(interp.Regras) == 0 {
-			log.Printf("Legislacao IA: resposta não parseável — primeiros 500 chars: %.500s", aiResp.Text)
-			jsonErr(w, http.StatusUnprocessableEntity, "IA não extraiu regras do texto. Verifique se o conteúdo contém NCMs e MVAs legíveis.")
+			log.Printf("Legislacao IA: resposta vazia após %d chunk(s) — primeiros 500 chars: %.500s",
+				chunks, rawResponses)
+			// Mesmo assim persiste o que recebeu para diagnóstico offline.
+			interpJSON, _ := json.Marshal(interp)
+			_, _ = db.Exec(`
+				INSERT INTO legislacao_fronteira
+					(company_id, uf_estado, titulo, conteudo_texto, interpretacao,
+					 texto_ia, resposta_ia_raw, ia_model, chunks_count, status, uploaded_by)
+				VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 'discarded', $10)`,
+				companyID, ufEstado, titulo, texto, string(interpJSON),
+				textoIA, rawResponses, modelUsado, chunks, userID)
+			jsonErr(w, http.StatusUnprocessableEntity,
+				"IA não extraiu regras do texto. Resposta crua e texto enviado "+
+					"foram salvos para diagnóstico — consulte a tabela legislacao_fronteira.")
 			return
 		}
 
-		// Persiste
+		// Persiste com diagnóstico completo
 		interpJSON, _ := json.Marshal(interp)
 		var id string
 		err = db.QueryRow(`
 			INSERT INTO legislacao_fronteira
-				(company_id, uf_estado, titulo, conteudo_texto, interpretacao, uploaded_by)
-			VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+				(company_id, uf_estado, titulo, conteudo_texto, interpretacao,
+				 texto_ia, resposta_ia_raw, ia_model, chunks_count, uploaded_by)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)
 			RETURNING id::text
-		`, companyID, ufEstado, titulo, texto, string(interpJSON), userID).Scan(&id)
+		`, companyID, ufEstado, titulo, texto, string(interpJSON),
+			textoIA, rawResponses, modelUsado, chunks, userID).Scan(&id)
 		if err != nil {
 			log.Printf("Legislacao insert error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao gravar legislação")
@@ -306,8 +337,96 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":            id,
 			"interpretacao": interp,
+			"chunks":        chunks,
+			"model":         modelUsado,
 		})
 	}
+}
+
+// chamarIALegislacao chama a IA uma ou mais vezes (chunking) e mescla os
+// resultados. Para textos > chunkLimit, divide nas fronteiras de linha mais
+// próximas para não cortar regras no meio. Deduplica regras por NCM (primeira
+// ocorrência vence — assim a ordem do decreto é respeitada). Concatena os
+// resumos retornados separados por " | ".
+//
+// Retorna: interpretação mesclada, respostas cruas concatenadas (para
+// auditoria), modelo efetivamente usado na 1ª chamada, e número de chunks.
+func chamarIALegislacao(client *services.AIClient, ufEstado, titulo, textoIA string) (
+	LegislacaoInterpretacao, string, string, int, error,
+) {
+	const chunkLimit = 25_000 // chars por chamada; balanceia qualidade da extração com nº de chamadas
+
+	chunks := splitTextoEmChunks(textoIA, chunkLimit)
+	if len(chunks) == 0 {
+		chunks = []string{textoIA}
+	}
+
+	var merged LegislacaoInterpretacao
+	var rawAll strings.Builder
+	vistos := make(map[string]bool) // NCM já incluído
+	var modelUsado string
+	var resumos []string
+
+	for idx, chunk := range chunks {
+		prefix := "UF: " + ufEstado + "\nTÍTULO: " + titulo
+		if len(chunks) > 1 {
+			prefix += fmt.Sprintf("\n[parte %d de %d]", idx+1, len(chunks))
+		}
+		userPrompt := prefix + "\n---\n" + chunk
+		aiResp, err := client.GenerateFastRaw(legislacaoSystemPrompt, userPrompt, "", 8192)
+		if err != nil {
+			// Falhou um chunk — continua com os outros se houver, mas registra
+			log.Printf("Legislacao IA chunk %d/%d falhou: %v", idx+1, len(chunks), err)
+			rawAll.WriteString(fmt.Sprintf("\n--- chunk %d ERROR: %v ---\n", idx+1, err))
+			if idx == 0 && len(chunks) == 1 {
+				return merged, rawAll.String(), modelUsado, len(chunks), err
+			}
+			continue
+		}
+		if idx == 0 {
+			modelUsado = aiResp.Model
+		}
+		rawAll.WriteString(fmt.Sprintf("\n--- chunk %d (model=%s, in=%d out=%d) ---\n",
+			idx+1, aiResp.Model, aiResp.InputTokens, aiResp.OutputTokens))
+		rawAll.WriteString(aiResp.Text)
+
+		parsed := parseLegislacaoJSON(aiResp.Text)
+		if parsed.Resumo != "" {
+			resumos = append(resumos, parsed.Resumo)
+		}
+		for _, rg := range parsed.Regras {
+			key := strings.TrimSpace(rg.NCM)
+			if key == "" || vistos[key] {
+				continue
+			}
+			vistos[key] = true
+			merged.Regras = append(merged.Regras, rg)
+		}
+	}
+	merged.Resumo = strings.Join(resumos, " | ")
+	return merged, rawAll.String(), modelUsado, len(chunks), nil
+}
+
+// splitTextoEmChunks divide o texto em blocos de no máximo `limit` chars,
+// preferindo cortar em fronteira de linha (\n) para não quebrar uma regra
+// no meio. Se uma linha sozinha exceder o limit, ela vai inteira em um chunk.
+func splitTextoEmChunks(texto string, limit int) []string {
+	if len(texto) <= limit {
+		return []string{texto}
+	}
+	var chunks []string
+	var cur strings.Builder
+	for _, line := range strings.SplitAfter(texto, "\n") {
+		if cur.Len()+len(line) > limit && cur.Len() > 0 {
+			chunks = append(chunks, cur.String())
+			cur.Reset()
+		}
+		cur.WriteString(line)
+	}
+	if cur.Len() > 0 {
+		chunks = append(chunks, cur.String())
+	}
+	return chunks
 }
 
 // extrairLinhasRelevantes filtra linhas de um decreto que contenham NCMs (4+ dígitos
