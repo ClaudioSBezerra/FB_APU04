@@ -526,6 +526,30 @@ func main() {
 		}
 	}, ""))
 
+	// ── Parâmetros de Empresa — logo e template de relatório ──
+	http.HandleFunc("/api/config/empresa/parametros",
+		withAuth(handlers.GetEmpresaParametrosHandler, ""))
+	http.HandleFunc("/api/config/empresa/logo",
+		withAuth(func(db *sql.DB) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					handlers.AuthMiddleware(handlers.UploadEmpresaLogoHandler(db), "admin")(w, r)
+				} else {
+					handlers.ServeEmpresaLogoHandler(db)(w, r)
+				}
+			}
+		}, ""))
+	http.HandleFunc("/api/config/empresa/template-antecipacao",
+		withAuth(func(db *sql.DB) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					handlers.AuthMiddleware(handlers.UploadTemplateAntecipHandler(db), "admin")(w, r)
+				} else {
+					handlers.ServeTemplateAntecipHandler(db)(w, r)
+				}
+			}
+		}, ""))
+
 	// ── Reforma Tributária — Parâmetros (RFMA-05) ──
 	http.HandleFunc("/api/reforma/parametros", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()

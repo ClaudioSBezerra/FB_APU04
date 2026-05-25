@@ -29,6 +29,7 @@ import ERPBridgeCredenciais from './pages/ERPBridgeCredenciais'
 import AdminUsers from './pages/AdminUsers'
 import LimparDados from './pages/LimparDados'
 import ReformaParametros from './pages/ReformaParametros'
+import EmpresaParametros from './pages/EmpresaParametros'
 import Reforma11CreditosBloqueados from './pages/Reforma11CreditosBloqueados'
 import Reforma12Reprecificacao from './pages/Reforma12Reprecificacao'
 import Reforma13RankingFornecedores from './pages/Reforma13RankingFornecedores'
@@ -183,6 +184,7 @@ function AppLayout() {
               {/* Análise Reforma Tributária */}
               <Route path="/reforma/parametros"         element={<ReformaParametros />} />
               <Route path="/config/reforma-parametros"  element={<ReformaParametros />} />
+              <Route path="/config/empresa"             element={<EmpresaParametros />} />
               <Route path="/reforma/creditos"           element={<Reforma11CreditosBloqueados />} />
               <Route path="/reforma/reprecificacao"     element={<Reforma12Reprecificacao />} />
               <Route path="/reforma/ranking"            element={<Reforma13RankingFornecedores />} />

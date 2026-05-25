@@ -55,7 +55,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { CompanySwitcher } from "@/components/CompanySwitcher"
 import { FilialSelector } from "@/components/FilialSelector"
 import { cn } from "@/lib/utils"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { toast } from "sonner"
 
 // ---------------------------------------------------------------------------
@@ -157,6 +157,7 @@ const sections: NavSection[] = [
       { title: "Apelidos de Filiais",    url: "/config/apelidos-filiais",  icon: Tag },
       { title: "Gestores de Relatórios", url: "/config/gestores",          icon: Users },
       { title: "Gestão de Ambiente",     url: "/config/ambiente",          icon: Building },
+      { title: "Parâmetros de Empresa",  url: "/config/empresa",           icon: Building },
       { title: "Credenciais ERP Bridge", url: "/config/erp-bridge",        icon: KeyRound, adminOnly: true },
       { title: "Gestão de Usuários",     url: "/config/usuarios",          icon: Users,    adminOnly: true },
       { title: "Limpar Dados",           url: "/config/limpar-dados",      icon: ShieldAlert, adminOnly: true, danger: true },
@@ -171,6 +172,24 @@ export function AppSidebar() {
   const location = useLocation()
   const { user, company, logout, token } = useAuth()
   const isAdmin = user?.role === "admin"
+
+  // Logo da empresa — buscada ao trocar de empresa/token
+  const [empresaLogoUrl, setEmpresaLogoUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let revoke: string | null = null
+    if (!token) { setEmpresaLogoUrl(null); return }
+    const companyId = (user as { company_id?: string } | null)?.company_id
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
+    if (companyId) headers['X-Company-ID'] = companyId
+    fetch('/api/config/empresa/logo', { headers })
+      .then(r => r.ok ? r.blob() : null)
+      .then(blob => {
+        if (blob) { revoke = URL.createObjectURL(blob); setEmpresaLogoUrl(revoke) }
+        else setEmpresaLogoUrl(null)
+      })
+      .catch(() => setEmpresaLogoUrl(null))
+    return () => { if (revoke) URL.revokeObjectURL(revoke) }
+  }, [token, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(
     () => Object.fromEntries(sections.map((s) => [s.id, false]))
@@ -229,9 +248,9 @@ export function AppSidebar() {
       <SidebarHeader className="border-b pb-2">
         <div className="flex items-center gap-2.5 px-3 py-2">
           <img
-            src="/favicon-fc.png"
-            alt="Ferreira Costa"
-            className="size-8 rounded-lg shrink-0 object-cover"
+            src={empresaLogoUrl ?? "/favicon-fc.png"}
+            alt={empresaLogoUrl ? (company ?? "Empresa") : "FBTax"}
+            className="size-8 rounded-lg shrink-0 object-contain bg-white"
           />
           <div className="grid flex-1 text-left leading-tight">
             <span className="font-bold text-sm truncate">FBTax Cloud</span>
@@ -327,9 +346,14 @@ export function AppSidebar() {
         {user && (
           <div className="p-2">
             <div className="flex flex-col gap-1 px-2 py-2 bg-sidebar-accent rounded-lg">
-              <p className="text-[10px] italic truncate text-sidebar-foreground/60 leading-tight">
-                {company || "Empresa não identificada"}
-              </p>
+              <div className="flex items-center gap-2">
+                {empresaLogoUrl && (
+                  <img src={empresaLogoUrl} alt="Logo" className="h-5 max-w-[60px] object-contain rounded" />
+                )}
+                <p className="text-[10px] italic truncate text-sidebar-foreground/60 leading-tight">
+                  {company || "Empresa não identificada"}
+                </p>
+              </div>
               <p className="text-xs font-medium truncate leading-tight text-sidebar-foreground">{user.full_name}</p>
               <div className="flex items-center gap-1.5">
                 <span className="bg-yellow-100 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded text-[9px] font-medium">
