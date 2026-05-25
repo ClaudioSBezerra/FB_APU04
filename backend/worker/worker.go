@@ -411,7 +411,7 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 	}
 
 	var (
-		count0000, count0150, countC100, countC190, countC500, countC600, countD100, countD500, countD162 int
+		count0000, count0150, count0200, countC100, countC170, countC190, countC500, countC600, countD100, countD500, countD162 int
 		countC190IpiNonZero                                                                    int
 		totalC190IPI                                                                           float64
 		company, filialCNPJ, dtIni, dtFin, currentC100ID, currentD100ID                       string
@@ -453,7 +453,7 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 	// 5000 balances throughput (fewer Prepare cycles) vs responsiveness
 	const BatchSize = 5000
 	var tx *sql.Tx
-	var stmtPart, stmtC100, stmtC190, stmtC500, stmtC600, stmtD100, stmtD500, stmtD162 *sql.Stmt
+	var stmtPart, stmt0200, stmtC100, stmtC170, stmtC190, stmtC500, stmtC600, stmtD100, stmtD500, stmtD162 *sql.Stmt
 
 	// Initial dummy participants (outside batch loop for simplicity, or inside first batch)
 	// We'll do it quickly in a separate mini-tx to ensure they exist
@@ -468,7 +468,9 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 		for i := 0; i < 5; i++ {
 			// Reset statements to nil before attempt
 			stmtPart = nil
+			stmt0200 = nil
 			stmtC100 = nil
+			stmtC170 = nil
 			stmtC190 = nil
 			stmtC500 = nil
 			stmtC600 = nil
@@ -495,6 +497,26 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 				stmtC190, err = tx.Prepare(`INSERT INTO reg_c190 (job_id, id_pai_c100, cfop, vl_opr, vl_bc_icms, vl_icms, vl_bc_icms_st, vl_icms_st, vl_red_bc, vl_ipi, cod_obs, cst_icms, aliq_icms) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`)
 				if err != nil {
 					return fmt.Errorf("prepare stmtC190: %w", err)
+				}
+
+				stmt0200, err = tx.Prepare(`
+					INSERT INTO reg_0200 (job_id, cod_item, descr_item, unid_inv, tipo_item, cod_ncm, ex_ipi, cod_gen, cod_lst, aliq_icms, cest)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+					ON CONFLICT ON CONSTRAINT uq_reg_0200_job_cod_item DO UPDATE SET
+						descr_item=EXCLUDED.descr_item, cod_ncm=EXCLUDED.cod_ncm,
+						aliq_icms=EXCLUDED.aliq_icms, cest=EXCLUDED.cest`)
+				if err != nil {
+					return fmt.Errorf("prepare stmt0200: %w", err)
+				}
+
+				stmtC170, err = tx.Prepare(`
+					INSERT INTO reg_c170 (job_id, c100_id, num_item, cod_item, descr_compl, qtd, unid,
+						vl_item, vl_desc, ind_mov, cst_icms, cfop, cod_nat,
+						vl_bc_icms, aliq_icms, vl_icms, vl_bc_icms_st, aliq_st, vl_icms_st,
+						cst_ipi, vl_bc_ipi, aliq_ipi, vl_ipi)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`)
+				if err != nil {
+					return fmt.Errorf("prepare stmtC170: %w", err)
 				}
 
 				stmtC500, err = tx.Prepare(`INSERT INTO reg_c500 (job_id, filial_cnpj, cod_part, cod_mod, ser, num_doc, dt_doc, dt_e_s, vl_doc, vl_icms, vl_pis, vl_cofins, vl_piscofins, vl_icms_projetado, vl_ibs_projetado, vl_cbs_projetado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`)
@@ -538,6 +560,12 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 			}
 			if stmtC190 != nil {
 				stmtC190.Close()
+			}
+			if stmt0200 != nil {
+				stmt0200.Close()
+			}
+			if stmtC170 != nil {
+				stmtC170.Close()
 			}
 			if stmtC500 != nil {
 				stmtC500.Close()
@@ -586,6 +614,12 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 		}
 		if stmtC190 != nil {
 			stmtC190.Close()
+		}
+		if stmt0200 != nil {
+			stmt0200.Close()
+		}
+		if stmtC170 != nil {
+			stmtC170.Close()
 		}
 		if stmtC500 != nil {
 			stmtC500.Close()
@@ -711,6 +745,12 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 				filialCNPJ = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(parts[7], ".", ""), "/", ""), "-", "")
 				count0000++
 
+				// UF do destinatário (campo 9 do 0000 — pode estar vazio)
+				uf := ""
+				if len(parts) >= 10 {
+					uf = strings.TrimSpace(parts[9])
+				}
+
 				// Extract mes_ano (periodo) from dt_ini (format: DDMMYYYY -> MM/YYYY)
 				var mesAno string
 				if len(dtIni) == 8 {
@@ -718,7 +758,7 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 				}
 
 				// Update job metadata immediately (outside tx for visibility)
-				db.Exec("UPDATE import_jobs SET company_name=$1, cnpj=$2, dt_ini=$3, dt_fin=$4, mes_ano=$5 WHERE id=$6", company, filialCNPJ, parseDate(dtIni), parseDate(dtFin), mesAno, jobID)
+				db.Exec("UPDATE import_jobs SET company_name=$1, cnpj=$2, dt_ini=$3, dt_fin=$4, mes_ano=$5, uf=$6 WHERE id=$7", company, filialCNPJ, parseDate(dtIni), parseDate(dtFin), mesAno, uf, jobID)
 
 				if len(dtIni) == 8 {
 					year, _ := strconv.Atoi(dtIni[4:8])
@@ -733,6 +773,28 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 				count0150++
 				stmtPart.Exec(jobID, parts[2], parts[3], parts[4], parts[5], parts[6], parts[7], parts[8], parts[9], parts[10], parts[11], parts[12], parts[13])
 			}
+		case "0200":
+			// Layout: |0200|COD_ITEM|DESCR_ITEM|COD_BARRA|COD_ANT_ITEM|UNID_INV
+			//          |TIPO_ITEM|COD_NCM|EX_IPI|COD_GEN|COD_LST|ALIQ_ICMS|CEST|
+			parts := strings.Split(line, "|")
+			if len(parts) >= 13 && stmt0200 != nil {
+				count0200++
+				codNCM := strings.TrimSpace(parts[7])
+				if len(codNCM) > 8 {
+					codNCM = codNCM[:8]
+				}
+				cest := ""
+				if len(parts) >= 13 {
+					cest = strings.TrimSpace(parts[12])
+					if len(cest) > 7 {
+						cest = cest[:7]
+					}
+				}
+				stmt0200.Exec(jobID,
+					parts[2], parts[3], parts[5], parts[6],
+					codNCM, parts[8], parts[9], parts[10],
+					parseDecimal(parts[11]), cest)
+			}
 		case "C100":
 			parts := strings.Split(line, "|")
 			if len(parts) >= 29 {
@@ -746,6 +808,24 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 				vlCbsProj := vlDoc * (rates.PercCBS / 100.0)
 
 				stmtC100.QueryRow(jobID, filialCNPJ, parts[2], parts[3], parts[4], parts[5], parts[6], parts[7], parts[8], strings.TrimSpace(parts[9]), parseDate(parts[10]), parseDate(parts[11]), vlDoc, vlIcms, vlPis, vlCofins, vlPis+vlCofins, vlIcmsProj, vlIbsProj, vlCbsProj).Scan(&currentC100ID)
+			}
+		case "C170":
+			// Layout C170 (entradas, itens da NF):
+			//   |C170|NUM_ITEM|COD_ITEM|DESCR_COMPL|QTD|UNID|VL_ITEM|VL_DESC|IND_MOV
+			//   |CST_ICMS|CFOP|COD_NAT|VL_BC_ICMS|ALIQ_ICMS|VL_ICMS|VL_BC_ICMS_ST|ALIQ_ST|VL_ICMS_ST
+			//   |IND_APUR|CST_IPI|COD_ENQ|VL_BC_IPI|ALIQ_IPI|VL_IPI|...
+			parts := strings.Split(line, "|")
+			if len(parts) >= 25 && stmtC170 != nil && currentC100ID != "" {
+				countC170++
+				numItem := 0
+				fmt.Sscanf(parts[2], "%d", &numItem)
+				stmtC170.Exec(jobID, currentC100ID, numItem,
+					parts[3], parts[4], parseDecimal(parts[5]), parts[6],
+					parseDecimal(parts[7]), parseDecimal(parts[8]), parts[9],
+					parts[10], parts[11], parts[12],
+					parseDecimal(parts[13]), parseDecimal(parts[14]), parseDecimal(parts[15]),
+					parseDecimal(parts[16]), parseDecimal(parts[17]), parseDecimal(parts[18]),
+					parts[20], parseDecimal(parts[22]), parseDecimal(parts[23]), parseDecimal(parts[24]))
 			}
 		case "C190":
 			parts := strings.Split(line, "|")
@@ -950,8 +1030,8 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 	db.QueryRow("SELECT COUNT(*) FROM reg_d500 WHERE job_id=$1", jobID).Scan(&dbCountD500)
 
 	fmt.Printf("Worker: C190 IPI summary — registros com IPI>0: %d / %d | total IPI: %.2f\n", countC190IpiNonZero, countC190, totalC190IPI)
-	return fmt.Sprintf("Imported: 0000=%d, 0150=%d, C100=%d(DB:%d), C190=%d(IPI_nz=%d,IPI_total=%.2f), C500=%d(DB:%d), C600=%d, D100=%d(DB:%d), D162=%d, D500=%d(DB:%d)%s",
-		count0000, count0150, countC100, dbCountC100, countC190, countC190IpiNonZero, totalC190IPI, countC500, dbCountC500, countC600, countD100, dbCountD100, countD162, countD500, dbCountD500, debugLog.String()), nil
+	return fmt.Sprintf("Imported: 0000=%d, 0150=%d, 0200=%d, C100=%d(DB:%d), C170=%d, C190=%d(IPI_nz=%d,IPI_total=%.2f), C500=%d(DB:%d), C600=%d, D100=%d(DB:%d), D162=%d, D500=%d(DB:%d)%s",
+		count0000, count0150, count0200, countC100, dbCountC100, countC170, countC190, countC190IpiNonZero, totalC190IPI, countC500, dbCountC500, countC600, countD100, dbCountD100, countD162, countD500, dbCountD500, debugLog.String()), nil
 }
 
 func runAggregations(tx *sql.Tx, jobID string, rates TaxRates) error {

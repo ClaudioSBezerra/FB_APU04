@@ -4187,11 +4187,12 @@ export default function IcmsFronteira() {
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground mb-4">
-                Calcula item a item o ICMS-ST para entradas de mercadoria com CFOP 2403 e UF de destino
-                <strong> BA</strong>. Cruza NCM × alíquota interestadual × MVA em
+                Processa <strong>itens C170 do SPED</strong> (entradas, CFOP 2403) para empresas
+                com <strong>UF = BA</strong>. NCM via cruzamento <code className="text-[10px] bg-muted px-1 rounded">reg_c170.cod_item → reg_0200.cod_ncm</code>.
+                MVA cruzada por NCM × alíquota interestadual × UF em
                 <code className="text-[10px] bg-muted px-1 rounded">icms_fronteira_regras_ncm</code>.
-                Aplica rateio de frete da NF e de CT-e (tomador=destinatário).
-                Persiste cada cálculo em <code className="text-[10px] bg-muted px-1 rounded">fiscal_calculations</code> para auditoria.
+                Frete (NF + CT-e tomador=destinatário) rateado proporcional ao item.
+                Persistência em <code className="text-[10px] bg-muted px-1 rounded">fiscal_calculations</code> (auditoria item-a-item).
               </p>
               <MotorFiscalTab token={token} />
             </CardContent>
