@@ -238,6 +238,17 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 		if len(texto) > 30_000 {
 			filtrado := extrairLinhasRelevantes(texto)
 			log.Printf("Legislacao: texto reduzido de %d para %d chars para IA", len(texto), len(filtrado))
+
+			// DEBUG TEMP: contar linhas, ver amostras do texto bruto
+			lines := strings.Split(texto, "\n")
+			log.Printf("Legislacao DEBUG: texto bruto tem %d linhas após split('\\n')", len(lines))
+			for i, l := range lines {
+				if i >= 5 { break }
+				preview := l
+				if len(preview) > 200 { preview = preview[:200] }
+				log.Printf("Legislacao DEBUG: linha[%d] len=%d: %q", i, len(l), preview)
+			}
+
 			if len(strings.TrimSpace(filtrado)) >= 200 {
 				textoIA = filtrado
 			} else {
@@ -248,6 +259,7 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 				}
 			}
 		}
+		log.Printf("Legislacao DEBUG: enviando %d chars para IA, primeiros 300: %q", len(textoIA), textoIA[:min(300, len(textoIA))])
 		if len(strings.TrimSpace(textoIA)) < 100 {
 			jsonErr(w, http.StatusUnprocessableEntity,
 				"Não foi possível extrair texto legível do arquivo. "+

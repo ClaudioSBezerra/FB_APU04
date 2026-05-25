@@ -113,10 +113,8 @@ func MotorFiscalCalcularHandler(db *sql.DB) http.HandlerFunc {
 		// Limpa cálculos anteriores deste período/fase (idempotente)
 		_, _ = db.Exec(`
 			DELETE FROM fiscal_calculations
-			WHERE company_id=$1 AND fase=$2
-			  AND EXTRACT(MONTH FROM data_emissao)::int = $3::int
-			  AND EXTRACT(YEAR  FROM data_emissao)::int = $4::int`,
-			companyID, fasaST_BA, parts[0], parts[1])
+			WHERE company_id=$1 AND fase=$2 AND periodo=$3`,
+			companyID, fasaST_BA, periodo)
 
 		// ─── Pipeline em SQL ──────────────────────────────────────────────────
 		// Fonte: SPED Fiscal (reg_c170 + reg_c100 + reg_0200 + import_jobs).
@@ -154,7 +152,12 @@ func MotorFiscalCalcularHandler(db *sql.DB) http.HandlerFunc {
 			itens_com_xml AS (
 			    -- Casa com nfe_entradas para obter v_frete (header) e UF fornecedor.
 			    -- O frete não vem no C170 — vem só no XML do header da NF.
-			    SELECT it.*,
+			    -- Fallback de NCM: quando reg_0200 está vazio, usa NCM do XML
+			    -- (nfe_entradas_itens) por chave + n_item.
+			    SELECT it.item_id, it.n_item, it.cod_item, it.cfop, it.cst_icms,
+			        it.v_item, it.v_ipi, it.v_icms_item,
+			        it.nfe_c100_id, it.chave_nfe, it.numero_nfe, it.data_emissao, it.dest_uf,
+			        COALESCE(NULLIF(it.ncm,''), COALESCE(nii.ncm,'')) AS ncm,
 			        COALESCE(ne.v_frete, 0) AS nf_v_frete,
 			        COALESCE(ne.v_outro, 0) AS nf_v_outro,
 			        ne.forn_uf              AS forn_uf,
@@ -162,6 +165,8 @@ func MotorFiscalCalcularHandler(db *sql.DB) http.HandlerFunc {
 			    FROM itens_alvo it
 			    LEFT JOIN nfe_entradas ne
 			           ON ne.company_id = $1 AND ne.chave_nfe = it.chave_nfe
+			    LEFT JOIN nfe_entradas_itens nii
+			           ON nii.nfe_id = ne.id AND nii.n_item = it.n_item
 			),
 			soma_c100 AS (
 			    -- Soma vl_item por C100 para ratear frete e outras despesas
@@ -233,22 +238,25 @@ func MotorFiscalCalcularHandler(db *sql.DB) http.HandlerFunc {
 			            ELSE 'indisponivel'
 			        END AS mva_tipo
 			    FROM com_regra cr
-			    WHERE cr.nfe_id_xml IS NOT NULL  -- só itens com NF-e no XML (FK obrigatório)
+			    -- Aceita itens SPED-only (sem XML). Frete da NF fica 0, mas
+			    -- IPI/V.Item/ICMS do C170 alimentam a base ST.
 			)
 			INSERT INTO fiscal_calculations (
-			    company_id, nfe_id, item_id, chave_nfe, numero_nfe, data_emissao,
+			    company_id, nfe_id, item_id, sped_c170_id, sped_c100_id,
+			    chave_nfe, numero_nfe, data_emissao,
 			    n_item, cfop, ncm, cst_icms, dest_uf, forn_uf,
 			    v_item, v_ipi, v_frete_proporcional, v_frete_cte_rateado, v_outras_desp,
 			    v_icms_item, ncm_regra_id, ncm_prefixo_aplicado,
 			    mva_aplicada, mva_tipo, aliq_inter, aliq_interna,
-			    base_st, icms_st_estimado, fase
+			    base_st, icms_st_estimado, fase, periodo
 			)
 			SELECT
-			    $1, c.nfe_id_xml,
-			    -- item_id aponta para nfe_entradas_itens (preserva FK).
-			    -- Casamento por chave_nfe + n_item.
+			    $1,
+			    c.nfe_id_xml,
 			    (SELECT nii.id FROM nfe_entradas_itens nii
 			      WHERE nii.nfe_id = c.nfe_id_xml AND nii.n_item = c.n_item LIMIT 1),
+			    c.item_id,
+			    c.nfe_c100_id,
 			    c.chave_nfe, c.numero_nfe, c.data_emissao,
 			    c.n_item, c.cfop, c.ncm, c.cst_icms, c.dest_uf, c.forn_uf,
 			    c.v_item, c.v_ipi, c.frete_prop, c.frete_cte_rateado, c.outro_prop,
@@ -264,25 +272,10 @@ func MotorFiscalCalcularHandler(db *sql.DB) http.HandlerFunc {
 			        * COALESCE(c.aliquota_interna, 18.0)/100.0
 			        - c.v_icms_item
 			    ),
-			    $4
+			    $4, $5
 			FROM calc c
-			WHERE EXISTS (
-			    SELECT 1 FROM nfe_entradas_itens nii
-			    WHERE nii.nfe_id = c.nfe_id_xml AND nii.n_item = c.n_item
-			)
-			ON CONFLICT ON CONSTRAINT uq_fiscal_calc_item_fase DO UPDATE SET
-			    v_item = EXCLUDED.v_item,
-			    v_ipi = EXCLUDED.v_ipi,
-			    v_frete_proporcional = EXCLUDED.v_frete_proporcional,
-			    v_frete_cte_rateado = EXCLUDED.v_frete_cte_rateado,
-			    v_outras_desp = EXCLUDED.v_outras_desp,
-			    mva_aplicada = EXCLUDED.mva_aplicada,
-			    mva_tipo = EXCLUDED.mva_tipo,
-			    base_st = EXCLUDED.base_st,
-			    icms_st_estimado = EXCLUDED.icms_st_estimado,
-			    updated_at = now()
 		`
-		res, err := db.Exec(q, companyID, parts[0], parts[1], fasaST_BA)
+		res, err := db.Exec(q, companyID, parts[0], parts[1], fasaST_BA, periodo)
 		if err != nil {
 			log.Printf("MotorFiscalCalcular[%s] exec error: %v", periodo, err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao executar cálculo: "+err.Error())
@@ -359,12 +352,8 @@ func loadFiscalCalcRows(db *sql.DB, companyID, periodo string) (FiscalCalcRespon
 		WHERE company_id=$1 AND fase=$2`
 	args := []interface{}{companyID, fasaST_BA}
 	if periodo != "" {
-		parts := strings.SplitN(periodo, "/", 2)
-		if len(parts) == 2 {
-			q += ` AND EXTRACT(MONTH FROM data_emissao)::int = $3::int
-				   AND EXTRACT(YEAR  FROM data_emissao)::int = $4::int`
-			args = append(args, parts[0], parts[1])
-		}
+		q += ` AND periodo = $3`
+		args = append(args, periodo)
 	}
 	q += ` ORDER BY data_emissao DESC, chave_nfe, n_item LIMIT 2000`
 

@@ -776,24 +776,39 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 		case "0200":
 			// Layout: |0200|COD_ITEM|DESCR_ITEM|COD_BARRA|COD_ANT_ITEM|UNID_INV
 			//          |TIPO_ITEM|COD_NCM|EX_IPI|COD_GEN|COD_LST|ALIQ_ICMS|CEST|
+			// Índices após strings.Split por "|":
+			//   parts[0]=""  parts[1]="0200"  parts[2]=COD_ITEM  parts[3]=DESCR
+			//   parts[4]=COD_BARRA  parts[5]=COD_ANT  parts[6]=UNID_INV  parts[7]=TIPO
+			//   parts[8]=COD_NCM  parts[9]=EX_IPI  parts[10]=COD_GEN  parts[11]=COD_LST
+			//   parts[12]=ALIQ_ICMS  parts[13]=CEST  parts[14]=""
 			parts := strings.Split(line, "|")
-			if len(parts) >= 13 && stmt0200 != nil {
+			if len(parts) >= 14 && stmt0200 != nil {
 				count0200++
-				codNCM := strings.TrimSpace(parts[7])
+				codNCM := strings.TrimSpace(parts[8])
 				if len(codNCM) > 8 {
 					codNCM = codNCM[:8]
 				}
 				cest := ""
-				if len(parts) >= 13 {
-					cest = strings.TrimSpace(parts[12])
+				if len(parts) >= 14 {
+					cest = strings.TrimSpace(parts[13])
 					if len(cest) > 7 {
 						cest = cest[:7]
 					}
 				}
-				stmt0200.Exec(jobID,
-					parts[2], parts[3], parts[5], parts[6],
-					codNCM, parts[8], parts[9], parts[10],
-					parseDecimal(parts[11]), cest)
+				if _, err := stmt0200.Exec(jobID,
+					parts[2],          // cod_item
+					parts[3],          // descr_item
+					parts[6],          // unid_inv
+					parts[7],          // tipo_item
+					codNCM,            // cod_ncm
+					parts[9],          // ex_ipi
+					parts[10],         // cod_gen
+					parts[11],         // cod_lst
+					parseDecimal(parts[12]), // aliq_icms
+					cest,              // cest
+				); err != nil {
+					fmt.Printf("Worker: 0200 insert error (cod_item=%s): %v\n", parts[2], err)
+				}
 			}
 		case "C100":
 			parts := strings.Split(line, "|")
