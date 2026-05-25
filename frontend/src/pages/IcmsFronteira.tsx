@@ -63,6 +63,8 @@ import {
   FileQuestion,
   CheckCircle2,
   Truck,
+  Calculator,
+  Play,
 } from 'lucide-react'
 import {
   BarChart,
@@ -1283,6 +1285,231 @@ function FretesTab({ token }: { token: string | null }) {
               O ICMS fronteira sobre o frete usa o mesmo regime da NF de mercadoria correspondente.
               Fontes: <strong>D162</strong> = vínculo direto no SPED (mais confiável);{' '}
               <strong>XML-CTE</strong> = CT-e importado com referência à NF.
+            </AlertDescription>
+          </Alert>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Motor de Cálculo Fiscal — Fase 1 (Substituição Tributária BA)
+// ---------------------------------------------------------------------------
+interface MotorFiscalRow {
+  id: string
+  chave_nfe: string
+  numero_nfe: string
+  data_emissao: string
+  n_item: number
+  cfop: string
+  ncm: string
+  cst_icms: string
+  dest_uf: string
+  forn_uf: string
+  v_item: number
+  v_ipi: number
+  v_frete_proporcional: number
+  v_frete_cte_rateado: number
+  v_outras_desp: number
+  v_icms_item: number
+  ncm_prefixo_aplicado: string
+  mva_aplicada: number
+  mva_tipo: string
+  aliq_inter: number
+  aliq_interna: number
+  base_st: number
+  icms_st_estimado: number
+}
+
+interface MotorFiscalResponse {
+  rows: MotorFiscalRow[]
+  count: number
+  total_base_st: number
+  total_icms_st: number
+  periodo: string
+  fase: string
+  mensagem?: string
+}
+
+function MotorFiscalTab({ token }: { token: string | null }) {
+  const [monthInput, setMonthInput] = useState('')
+  const periodo = monthToPeriodo(monthInput)
+  const [calcMsg, setCalcMsg] = useState<string | null>(null)
+  const [calculating, setCalculating] = useState(false)
+  const queryClient = useQueryClient()
+
+  const { data, isLoading, isError } = useQuery<MotorFiscalResponse>({
+    queryKey: ['motor-fiscal/resultados', periodo],
+    queryFn: async () => {
+      const url = periodo
+        ? `/api/icms-fronteira/motor-fiscal/resultados?periodo=${encodeURIComponent(periodo)}`
+        : '/api/icms-fronteira/motor-fiscal/resultados'
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+  })
+
+  async function rodarCalculo() {
+    if (!periodo) { setCalcMsg('Informe o período MM/AAAA antes de calcular.'); return }
+    setCalculating(true)
+    setCalcMsg(null)
+    try {
+      const res = await fetch(`/api/icms-fronteira/motor-fiscal/calcular?periodo=${encodeURIComponent(periodo)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        const txt = await res.text()
+        throw new Error(`HTTP ${res.status}: ${txt.slice(0, 200)}`)
+      }
+      const json: MotorFiscalResponse = await res.json()
+      setCalcMsg(json.mensagem ?? `${json.count} itens processados`)
+      queryClient.invalidateQueries({ queryKey: ['motor-fiscal/resultados'] })
+    } catch (err) {
+      setCalcMsg('Falha: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setCalculating(false)
+    }
+  }
+
+  const rows = data?.rows ?? []
+  const totalBase = data?.total_base_st ?? 0
+  const totalIcms = data?.total_icms_st ?? 0
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap justify-between">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="motor-periodo" className="text-xs whitespace-nowrap">Período:</Label>
+          <Input
+            id="motor-periodo"
+            type="text"
+            placeholder="MM/AAAA"
+            maxLength={7}
+            className="w-36 text-xs h-8"
+            value={monthInput}
+            onChange={(e) => setMonthInput(e.target.value)}
+          />
+          {periodo && <span className="text-xs text-muted-foreground">{periodo}</span>}
+        </div>
+        <Button size="sm" onClick={rodarCalculo} disabled={!periodo || calculating}>
+          <Play className="h-3 w-3 mr-1" />
+          {calculating ? 'Calculando…' : 'Executar Cálculo'}
+        </Button>
+      </div>
+
+      {calcMsg && (
+        <Alert>
+          <AlertDescription className="text-xs">{calcMsg}</AlertDescription>
+        </Alert>
+      )}
+
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+        </div>
+      )}
+
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar resultados.</AlertDescription>
+        </Alert>
+      )}
+
+      {!isLoading && !isError && rows.length === 0 && (
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <Calculator className="h-8 w-8 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">Nenhum cálculo persistido para o período.</p>
+          <p className="text-xs text-muted-foreground max-w-md">
+            Informe o período e clique em <strong>Executar Cálculo</strong>. O motor processa
+            itens com CFOP 2403 e UF de destino BA, aplicando a MVA da regra NCM correspondente.
+          </p>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <>
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs text-muted-foreground">
+              {data!.count} item{data!.count !== 1 ? 's' : ''} calculado{data!.count !== 1 ? 's' : ''}
+            </span>
+            <div className="text-right text-xs">
+              <span className="text-muted-foreground">Base ST total: </span>
+              <span className="font-semibold tabular-nums">{fmtBRL(totalBase)}</span>
+              <span className="text-muted-foreground ml-3">ICMS ST estimado: </span>
+              <span className="font-bold tabular-nums text-foreground">{fmtBRL(totalIcms)}</span>
+            </div>
+          </div>
+
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30 hover:bg-transparent">
+                  <TableHead className="text-xs font-semibold uppercase">Data</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase">NF-e</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase">Item</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase">CFOP</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase">NCM</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase">UF</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-right">V. Item</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-right">IPI</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-right">Frete prop.</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-right">Frete CT-e</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-right">Outras</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-right">MVA%</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-right">Alíq.Int</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-right">Base ST</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-right">ICMS ST</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="text-xs font-mono whitespace-nowrap">
+                      {r.data_emissao ? r.data_emissao.slice(0, 10) : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">{r.numero_nfe || '—'}</TableCell>
+                    <TableCell className="text-xs">{r.n_item}</TableCell>
+                    <TableCell className="text-xs font-mono">{r.cfop}</TableCell>
+                    <TableCell className="text-xs font-mono">{r.ncm || '—'}</TableCell>
+                    <TableCell className="text-xs font-mono font-semibold">{r.dest_uf}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(r.v_item)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(r.v_ipi)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(r.v_frete_proporcional)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(r.v_frete_cte_rateado)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(r.v_outras_desp)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">
+                      {(r.mva_aplicada || 0).toFixed(2)}
+                      <span className="text-[9px] text-muted-foreground ml-1">{r.mva_tipo}</span>
+                    </TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{(r.aliq_interna || 0).toFixed(2)}%</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(r.base_st)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(r.icms_st_estimado)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+              <TableFooter>
+                <TableRow className="bg-muted/60 hover:bg-muted/60">
+                  <TableCell colSpan={13} className="text-xs font-bold uppercase">
+                    Total — {data!.count} ite{data!.count !== 1 ? 'ns' : 'm'}
+                  </TableCell>
+                  <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalBase)}</TableCell>
+                  <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
+                </TableRow>
+              </TableFooter>
+            </Table>
+          </div>
+
+          <Alert className="border-indigo-200 bg-indigo-50">
+            <Info className="h-4 w-4 text-indigo-600" />
+            <AlertDescription className="text-xs text-indigo-900">
+              <strong>Fórmula aplicada:</strong> Base ST = (V.Item + IPI + Frete prop. + Frete CT-e + Outras Desp.) × (1 + MVA%).
+              ICMS ST = Base ST × Alíq.Interna − ICMS destacado no item. Frete CT-e considera apenas
+              CT-es onde o tomador é o destinatário. Cálculo persistido em
+              <code className="text-[10px] bg-white px-1 rounded ml-1">fiscal_calculations</code>
+              (fase F1_ST_BA) para auditoria.
             </AlertDescription>
           </Alert>
         </>
@@ -3774,6 +4001,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/difal':        'difal',
     '/icms-fronteira/planilha':     'planilha',
     '/icms-fronteira/fretes':       'fretes',
+    '/icms-fronteira/motor-fiscal': 'motor-fiscal',
     '/icms-fronteira/divergencias': 'divergencias',
     '/icms-fronteira/reconciliacao': 'reconciliacao',
     '/icms-fronteira/legislacao':    'legislacao',
@@ -3789,6 +4017,7 @@ export default function IcmsFronteira() {
     difal:         '/icms-fronteira/difal',
     planilha:      '/icms-fronteira/planilha',
     fretes:        '/icms-fronteira/fretes',
+    'motor-fiscal':'/icms-fronteira/motor-fiscal',
     divergencias:  '/icms-fronteira/divergencias',
     reconciliacao: '/icms-fronteira/reconciliacao',
     legislacao:    '/icms-fronteira/legislacao',
@@ -3850,6 +4079,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="difal">DIFAL</TabsTrigger>
           <TabsTrigger value="planilha">Planilha</TabsTrigger>
           <TabsTrigger value="fretes">Fretes</TabsTrigger>
+          <TabsTrigger value="motor-fiscal">Motor Fiscal</TabsTrigger>
           <TabsTrigger value="divergencias">Divergências</TabsTrigger>
           <TabsTrigger value="reconciliacao">Reconciliação</TabsTrigger>
           <TabsTrigger value="legislacao">Legislação</TabsTrigger>
@@ -3943,6 +4173,27 @@ export default function IcmsFronteira() {
                 sobre o frete é calculado com o mesmo regime da NF correspondente.
               </p>
               <FretesTab token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="motor-fiscal" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Calculator className="h-4 w-4 text-indigo-600" />
+                Motor de Cálculo Fiscal — Fase 1 (Substituição Tributária BA)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                Calcula item a item o ICMS-ST para entradas de mercadoria com CFOP 2403 e UF de destino
+                <strong> BA</strong>. Cruza NCM × alíquota interestadual × MVA em
+                <code className="text-[10px] bg-muted px-1 rounded">icms_fronteira_regras_ncm</code>.
+                Aplica rateio de frete da NF e de CT-e (tomador=destinatário).
+                Persiste cada cálculo em <code className="text-[10px] bg-muted px-1 rounded">fiscal_calculations</code> para auditoria.
+              </p>
+              <MotorFiscalTab token={token} />
             </CardContent>
           </Card>
         </TabsContent>

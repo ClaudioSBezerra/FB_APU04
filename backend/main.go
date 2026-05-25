@@ -692,6 +692,18 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraFretesHandler(database), "")(w, r)
 	})
 
+	// ── ICMS Fronteira — Motor de Cálculo Fiscal Fase 1 (ST BA) ─────────────
+	http.HandleFunc("/api/icms-fronteira/motor-fiscal/calcular", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.MotorFiscalCalcularHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/motor-fiscal/resultados", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.MotorFiscalResultadosHandler(database), "")(w, r)
+	})
+
 	// ── ICMS Fronteira — Planilha (item-level) ───────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/itens", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
