@@ -258,6 +258,38 @@ func CreateGroupHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+func UpdateGroupHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id parameter", http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		_, err := db.Exec(
+			"UPDATE enterprise_groups SET name=$1, description=$2 WHERE id=$3",
+			body.Name, body.Description, id,
+		)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func DeleteGroupHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")

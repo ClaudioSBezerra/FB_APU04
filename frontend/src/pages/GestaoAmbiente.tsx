@@ -105,6 +105,10 @@ export default function GestaoAmbiente() {
   const [newCompanyMunicipio, setNewCompanyMunicipio] = useState("");
   const [newCompanySegmento, setNewCompanySegmento] = useState("");
 
+  const [editingGroup, setEditingGroup] = useState<EnterpriseGroup | null>(null);
+  const [editGroupName, setEditGroupName] = useState("");
+  const [editGroupDesc, setEditGroupDesc] = useState("");
+
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [editRegime, setEditRegime] = useState("lucro_real");
   const [editCNPJ, setEditCNPJ] = useState("");
@@ -331,6 +335,24 @@ export default function GestaoAmbiente() {
       fetchCompanies(selectedGroup.id);
     } catch (error) {
       toast.error("Erro ao criar empresa");
+    }
+  };
+
+  const handleUpdateGroup = async () => {
+    if (!editingGroup) return;
+    if (!editGroupName.trim()) { toast.error("Nome do grupo é obrigatório"); return; }
+    try {
+      const res = await fetch(`/api/config/groups?id=${editingGroup.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editGroupName.trim(), description: editGroupDesc }),
+      });
+      if (!res.ok) throw new Error("Falha ao atualizar");
+      toast.success("Grupo atualizado");
+      setEditingGroup(null);
+      if (selectedEnv) fetchGroups(selectedEnv.id);
+    } catch {
+      toast.error("Erro ao atualizar grupo");
     }
   };
 
@@ -624,8 +646,8 @@ export default function GestaoAmbiente() {
               </div>
             ) : (
               groups.map((group) => (
+                <div key={group.id}>
                 <div
-                  key={group.id}
                   className={`flex items-center justify-between p-3 rounded-md border cursor-pointer transition-all ${
                     selectedGroup?.id === group.id
                       ? "bg-white border-primary shadow-sm ring-1 ring-primary"
@@ -638,17 +660,71 @@ export default function GestaoAmbiente() {
                     <p className="text-[10px] text-gray-400 font-mono truncate" title={group.id}>ID: {group.id}</p>
                     {group.description && <p className="text-xs text-gray-500 truncate">{group.description}</p>}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-gray-400 hover:text-red-500"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteGroup(group.id);
-                    }}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-gray-400 hover:text-blue-500"
+                      title="Renomear grupo"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingGroup(group);
+                        setEditGroupName(group.name);
+                        setEditGroupDesc(group.description ?? "");
+                      }}
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-gray-400 hover:text-red-500"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteGroup(group.id);
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Painel inline de edição do grupo */}
+                {editingGroup?.id === group.id && (
+                  <div className="mt-2 p-3 border border-blue-200 rounded-md bg-blue-50">
+                    <p className="text-xs font-medium text-blue-800 mb-2">Renomear Grupo</p>
+                    <div className="space-y-2 mb-2">
+                      <div>
+                        <p className="text-[10px] text-blue-700 mb-0.5">Nome</p>
+                        <Input
+                          value={editGroupName}
+                          onChange={(e) => setEditGroupName(e.target.value)}
+                          placeholder="Nome do grupo"
+                          className="h-7 text-xs"
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateGroup(); if (e.key === 'Escape') setEditingGroup(null); }}
+                          autoFocus
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-blue-700 mb-0.5">Descrição (opcional)</p>
+                        <Input
+                          value={editGroupDesc}
+                          onChange={(e) => setEditGroupDesc(e.target.value)}
+                          placeholder="Opcional"
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" className="h-7 text-xs flex-1" onClick={handleUpdateGroup}>
+                        Salvar
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditingGroup(null)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 </div>
               ))
             )}

@@ -501,6 +501,8 @@ func main() {
 				handlers.GetGroupsHandler(db)(w, r)
 			case http.MethodPost:
 				handlers.CreateGroupHandler(db)(w, r)
+			case http.MethodPut, http.MethodPatch:
+				handlers.UpdateGroupHandler(db)(w, r)
 			case http.MethodDelete:
 				handlers.DeleteGroupHandler(db)(w, r)
 			default:
