@@ -787,7 +787,7 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				htmlEscape(regimeNome), len(nfOrder)))
 		}
 
-		var grandVOpr, grandBase, grandIcmsDest, grandST, grandDevido float64
+		var grandVOpr, grandIPI, grandBase, grandIcmsDest, grandST, grandDevido float64
 
 		for _, chave := range nfOrder {
 			grp := nfMap[chave]
@@ -797,9 +797,10 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				ncm = "-"
 			}
 
-			var nfVOpr, nfBase, nfIcmsDest, nfST, nfDevido float64
+			var nfVOpr, nfIPI, nfBase, nfIcmsDest, nfST, nfDevido float64
 			for _, row := range grp.rows {
 				nfVOpr += row.VProd
+				nfIPI += row.VIPI
 				nfBase += row.VProd
 				nfIcmsDest += row.VIcms
 				nfST += row.VST
@@ -819,7 +820,7 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 
 			// Tabela de itens
 			sb.WriteString(`<table class="nf-tbl"><thead><tr>`)
-			for _, h := range []string{"Cód.", "NCM", "V. Operação", "MVA", "Alíq. I/I", "Base Cálc.", "ICMS Dest.", "ICMS-ST Ret", "V. Devido"} {
+			for _, h := range []string{"Cód.", "NCM", "V. Operação", "IPI", "MVA", "Alíq. I/I", "Base Cálc.", "ICMS Dest.", "ICMS-ST Ret", "V. Devido"} {
 				sb.WriteString(fmt.Sprintf(`<th>%s</th>`, h))
 			}
 			sb.WriteString(`</tr></thead><tbody>`)
@@ -829,11 +830,15 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				if row.VST > 0.001 {
 					vstDisp = brl(row.VST)
 				}
+				ipiDisp := "-"
+				if row.VIPI > 0.001 {
+					ipiDisp = brl(row.VIPI)
+				}
 				aliqII := fmt.Sprintf("%.1f%% / %.1f%%", row.AliqInter, row.AliqInterna)
 				sb.WriteString(fmt.Sprintf(
-					`<tr><td>%d</td><td>%s</td><td>%s</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+					`<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
 					i+1, ncm,
-					brl(row.VProd), aliqII, brl(row.VProd),
+					brl(row.VProd), ipiDisp, aliqII, brl(row.VProd),
 					brl(row.VIcms), vstDisp, brl(row.IcmsDevidoEst)))
 			}
 
@@ -842,13 +847,18 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			if nfST > 0.001 {
 				stTotDisp = brl(nfST)
 			}
+			ipiTotDisp := "-"
+			if nfIPI > 0.001 {
+				ipiTotDisp = brl(nfIPI)
+			}
 			sb.WriteString(fmt.Sprintf(
-				`<tr class="tot-row"><td colspan="2">TOTAIS</td><td>%s</td><td>-</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-				brl(nfVOpr), brl(nfBase), brl(nfIcmsDest), stTotDisp, brl(nfDevido)))
+				`<tr class="tot-row"><td colspan="2">TOTAIS</td><td>%s</td><td>%s</td><td>-</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+				brl(nfVOpr), ipiTotDisp, brl(nfBase), brl(nfIcmsDest), stTotDisp, brl(nfDevido)))
 
 			sb.WriteString(`</tbody></table></div>`)
 
 			grandVOpr += nfVOpr
+			grandIPI += nfIPI
 			grandBase += nfBase
 			grandIcmsDest += nfIcmsDest
 			grandST += nfST
@@ -869,6 +879,7 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			}
 			totRow("Quantidade de Notas", fmt.Sprintf("%d", len(nfOrder)))
 			totRow("Valor da Operação", brl(grandVOpr))
+			totRow("IPI", brl(grandIPI))
 			totRow("Base de Cálculo", brl(grandBase))
 			totRow("ICMS Destacado", brl(grandIcmsDest))
 			totRow("ICMS-ST Retido", brl(grandST))

@@ -252,3 +252,12 @@ func TestSplitTextoEmChunks(t *testing.T) {
 		})
 	}
 }
+
+func TestFmtPct(t *testing.T) {
+	cases := map[float64]string{20.5: "20,5", 12.0: "12", 4.25: "4,25", 0: "0", 7.0: "7"}
+	for in, want := range cases {
+		if got := fmtPct(in); got != want {
+			t.Errorf("fmtPct(%v) = %q, want %q", in, got, want)
+		}
+	}
+}
