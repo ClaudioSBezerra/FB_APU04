@@ -235,16 +235,18 @@ WITH classified AS (
     LEFT JOIN participants part
         ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
     LEFT JOIN nfe_entradas ne ON ne.chave_nfe = c100.chv_nfe
-    -- IPI por linha c190: o XML do item é a fonte preferencial (o SPED de
-    -- entradas costuma vir sem IPI). Como o c190 é agregado por CFOP e o XML
-    -- é por item, prorateia o IPI total da nota (XML) pela participação desta
-    -- linha no valor de operação da nota — correto mesmo em notas multi-CFOP.
-    -- Sem XML, cai no c190.vl_ipi do SPED.
+    -- IPI por linha c190: SÓ considera IPI quando há XML. O XML é por item e o
+    -- c190 é agregado por CFOP, então o IPI total da nota (somado do XML) é
+    -- prorateado pela participação desta linha no valor de operação da nota
+    -- (correto mesmo em notas multi-CFOP).
+    -- SEM XML (somente SPED): IPI = 0. No SPED o vl_opr do total da nota já
+    -- embute o IPI; somá-lo de novo causaria dupla contagem. Por isso NÃO se
+    -- usa c190.vl_ipi como fallback aqui.
     LEFT JOIN LATERAL (
         SELECT CASE
             WHEN x.nota_ipi_xml > 0 AND o.nota_opr > 0
                 THEN x.nota_ipi_xml * COALESCE(c190.vl_opr, 0) / o.nota_opr
-            ELSE COALESCE(c190.vl_ipi, 0)
+            ELSE 0
         END AS v
         FROM (
             SELECT COALESCE(SUM(nii.v_ipi), 0) AS nota_ipi_xml
