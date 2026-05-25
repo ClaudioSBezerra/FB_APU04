@@ -148,8 +148,73 @@ type FronteiraNotasResponse struct {
 // CFOP de saída do fornecedor (6xxx). Detalhe de NCM (p/ regra MVA) vem do XML
 // via join por chave. aliq_icms e vl_icms do SPED são os valores reais da
 // operação interestadual (não estimados por CST de origem).
+// Fonte: item-level (reg_c170) + XML (nfe_entradas / nfe_entradas_itens).
+// A base do cálculo é reconstruída por item: V.Item + IPI(XML) + Frete(XML) +
+// Outras(XML). Quando a nota NÃO tem XML, cai no vl_opr do SPED (que já embute
+// IPI/frete) — assim não há regressão. Alíquota interestadual e valores de
+// ICMS/ST vêm da consolidação C190 (que casa item-a-item com o C170 nos dados)
+// para preservar a seleção de MVA ajustada (4/7/12%).
 const fronteiraBaseQuery = `
-WITH classified AS (
+WITH
+c190_consol AS (
+    -- Consolidação SPED por (nota, cfop): alíquota real (seleção de MVA) e
+    -- valores de fallback (vl_opr/icms) quando a nota não tem XML.
+    SELECT id_pai_c100, cfop,
+           MAX(NULLIF(aliq_icms, 0))       AS aliq_icms,
+           SUM(COALESCE(vl_opr, 0))        AS vl_opr_sped,
+           SUM(COALESCE(vl_icms, 0))       AS vl_icms,
+           SUM(COALESCE(vl_bc_icms_st, 0)) AS vl_bc_st,
+           SUM(COALESCE(vl_icms_st, 0))    AS vl_icms_st
+    FROM reg_c190
+    GROUP BY id_pai_c100, cfop
+),
+fonte AS (
+    -- Agrega itens C170 por (nota, cfop) + IPI/frete/outras do XML.
+    SELECT
+        c170.c100_id                       AS c100_id,
+        c170.cfop                          AS cfop,
+        SUM(COALESCE(c170.vl_item, 0))     AS sum_item,
+        SUM(COALESCE(xi.v_ipi, 0))         AS sum_ipi_xml,
+        BOOL_OR(xi.id IS NOT NULL)         AS tem_xml,
+        MAX(COALESCE(ne.v_frete, 0))       AS nf_frete,
+        MAX(COALESCE(ne.v_outro, 0))       AS nf_outro
+    FROM reg_c170 c170
+    JOIN reg_c100 c100b ON c100b.id = c170.c100_id
+    JOIN import_jobs jb ON jb.id = c100b.job_id
+    LEFT JOIN nfe_entradas ne ON ne.company_id = jb.company_id AND ne.chave_nfe = c100b.chv_nfe
+    LEFT JOIN nfe_entradas_itens xi ON xi.nfe_id = ne.id AND xi.n_item = c170.num_item
+    WHERE jb.company_id = $1
+      AND c170.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
+    GROUP BY c170.c100_id, c170.cfop
+),
+linhas AS (
+    SELECT
+        f.c100_id, f.cfop, f.sum_ipi_xml, f.tem_xml,
+        cc.aliq_icms, cc.vl_icms, cc.vl_bc_st, cc.vl_icms_st,
+        -- frete/outras (header XML) rateados pela participação do cfop nos
+        -- produtos da nota (uma nota pode ter múltiplos cfops de fronteira)
+        CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
+             THEN f.nf_frete * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id)
+             ELSE 0 END AS frete_rat,
+        CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
+             THEN f.nf_outro * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id)
+             ELSE 0 END AS outro_rat,
+        -- V.Produtos exibido: produto (XML) ou total SPED (sem XML)
+        CASE WHEN f.tem_xml THEN f.sum_item ELSE COALESCE(cc.vl_opr_sped, f.sum_item) END AS v_prod_disp,
+        -- BASE do cálculo: com XML reconstrói (produto+IPI+frete+outras);
+        -- sem XML usa vl_opr do SPED (já embute IPI/frete) — não regride.
+        CASE WHEN f.tem_xml
+             THEN f.sum_item + f.sum_ipi_xml
+                  + (CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
+                          THEN f.nf_frete * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id) ELSE 0 END)
+                  + (CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
+                          THEN f.nf_outro * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id) ELSE 0 END)
+             ELSE COALESCE(cc.vl_opr_sped, f.sum_item)
+        END AS base_calc
+    FROM fonte f
+    LEFT JOIN c190_consol cc ON cc.id_pai_c100 = f.c100_id AND cc.cfop = f.cfop
+),
+classified AS (
     SELECT
         c100.chv_nfe                                        AS chave_nfe,
         c100.dt_doc::text                                   AS data_emissao,
@@ -157,21 +222,20 @@ WITH classified AS (
         COALESCE(part.cnpj, ne.forn_cnpj, '')               AS forn_cnpj,
         COALESCE(part.nome, ne.forn_nome, '')               AS forn_nome,
         COALESCE(ne.forn_uf, '')                            AS forn_uf,
-        c190.cfop                                           AS cfop,
-        COALESCE(c190.vl_opr, 0)                            AS v_prod,
-        COALESCE(ipi_calc.v, 0)                             AS v_ipi,
-        COALESCE(c190.vl_icms, 0)                           AS v_icms,
-        COALESCE(c190.vl_bc_icms_st, 0)                     AS v_bc_st,
-        COALESCE(c190.vl_icms_st, 0)                        AS v_st,
-        -- Alíquota interestadual: real do SPED (aliq_icms); fallback 12% se ausente.
-        COALESCE(NULLIF(c190.aliq_icms, 0), 12.0)           AS aliq_inter,
+        l.cfop                                              AS cfop,
+        l.v_prod_disp                                       AS v_prod,
+        COALESCE(l.sum_ipi_xml, 0)                          AS v_ipi,
+        COALESCE(l.vl_icms, 0)                              AS v_icms,
+        COALESCE(l.vl_bc_st, 0)                             AS v_bc_st,
+        COALESCE(l.vl_icms_st, 0)                           AS v_st,
+        COALESCE(NULLIF(l.aliq_icms, 0), 12.0)              AS aliq_inter,
         COALESCE(regra.aliquota_interna, 20.5)              AS aliq_interna,
         CASE
-            WHEN c190.cfop IN ('2551','2556')
+            WHEN l.cfop IN ('2551','2556')
                 THEN 'DIFAL'
-            WHEN c190.cfop IN ('2403','2409','2651','2652')
+            WHEN l.cfop IN ('2403','2409','2651','2652')
                 THEN 'ST'
-            WHEN c190.cfop IN ('2101','2102','2152')
+            WHEN l.cfop IN ('2101','2102','2152')
                 THEN 'ANTECIPACAO'
         END                                                 AS regime,
         CASE
@@ -181,82 +245,61 @@ WITH classified AS (
             THEN 'mes_atual'
             ELSE 'mes_anterior'
         END                                                 AS bloco,
-        -- ICMS devido estimado por regime (nota-nível; detalhe item no Bloco 2)
+        -- ICMS devido estimado por regime. Base = l.base_calc (já inclui IPI/
+        -- frete quando há XML, ou vl_opr do SPED quando não há).
         CASE
-            WHEN c190.cfop IN ('2551','2556')
+            WHEN l.cfop IN ('2551','2556')
                 THEN GREATEST(0,
-                    (COALESCE(c190.vl_opr, 0) + COALESCE(ipi_calc.v, 0)) * (
+                    l.base_calc * (
                         COALESCE(regra.aliquota_interna, 20.5)
-                        - COALESCE(NULLIF(c190.aliq_icms, 0), 12.0)
+                        - COALESCE(NULLIF(l.aliq_icms, 0), 12.0)
                     ) / 100.0)
-            WHEN c190.cfop IN ('2403','2409','2651','2652')
+            WHEN l.cfop IN ('2403','2409','2651','2652')
                 THEN CASE
                     -- MVA efetivo: ajustado pré-calc por alíquota interestadual real,
                     -- fallback Convênio 110/07 a partir do MVA original, fallback MVA original.
                     WHEN COALESCE(
-                        CASE COALESCE(NULLIF(c190.aliq_icms,0),12.0)
+                        CASE COALESCE(NULLIF(l.aliq_icms,0),12.0)
                             WHEN 4.0  THEN regra.mva_ajustado_4pct
                             WHEN 7.0  THEN regra.mva_ajustado_7pct
                             WHEN 12.0 THEN regra.mva_ajustado_12pct
                         END,
                         CASE WHEN regra.mva_original IS NOT NULL AND COALESCE(regra.aliquota_interna,20.5) < 100 THEN
-                            ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(c190.aliq_icms,0),12.0)/100.0)
+                            ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(l.aliq_icms,0),12.0)/100.0)
                              / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0) - 1.0) * 100.0
                         END,
                         regra.mva_original
                     ) IS NOT NULL
                         THEN GREATEST(0,
-                            (COALESCE(c190.vl_opr, 0) + COALESCE(ipi_calc.v, 0))
+                            l.base_calc
                             * (1.0 + COALESCE(
-                                CASE COALESCE(NULLIF(c190.aliq_icms,0),12.0)
+                                CASE COALESCE(NULLIF(l.aliq_icms,0),12.0)
                                     WHEN 4.0  THEN regra.mva_ajustado_4pct
                                     WHEN 7.0  THEN regra.mva_ajustado_7pct
                                     WHEN 12.0 THEN regra.mva_ajustado_12pct
                                 END,
                                 CASE WHEN regra.mva_original IS NOT NULL AND COALESCE(regra.aliquota_interna,20.5) < 100 THEN
-                                    ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(c190.aliq_icms,0),12.0)/100.0)
+                                    ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(l.aliq_icms,0),12.0)/100.0)
                                      / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0) - 1.0) * 100.0
                                 END,
                                 regra.mva_original
                             )/100.0)
                             * COALESCE(regra.aliquota_interna, 20.5)/100.0
-                            - COALESCE(c190.vl_icms, 0))
-                    ELSE COALESCE(c190.vl_icms_st, 0)
+                            - COALESCE(l.vl_icms, 0))
+                    ELSE COALESCE(l.vl_icms_st, 0)
                 END
-            WHEN c190.cfop IN ('2101','2102','2152')
+            WHEN l.cfop IN ('2101','2102','2152')
                 THEN GREATEST(0,
-                    (COALESCE(c190.vl_opr, 0) + COALESCE(ipi_calc.v, 0)) * COALESCE(regra.aliquota_interna, 20.5)/100.0
-                    - COALESCE(c190.vl_icms, 0))
+                    l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                    - COALESCE(l.vl_icms, 0))
             ELSE 0
         END                                                 AS icms_devido_est
-    FROM reg_c190 c190
-    JOIN reg_c100 c100 ON c100.id = c190.id_pai_c100
+    FROM linhas l
+    JOIN reg_c100 c100 ON c100.id = l.c100_id
     JOIN import_jobs j ON j.id = c100.job_id
     LEFT JOIN participants part
         ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
-    LEFT JOIN nfe_entradas ne ON ne.chave_nfe = c100.chv_nfe
-    -- IPI por linha c190: SÓ considera IPI quando há XML. O XML é por item e o
-    -- c190 é agregado por CFOP, então o IPI total da nota (somado do XML) é
-    -- prorateado pela participação desta linha no valor de operação da nota
-    -- (correto mesmo em notas multi-CFOP).
-    -- SEM XML (somente SPED): IPI = 0. No SPED o vl_opr do total da nota já
-    -- embute o IPI; somá-lo de novo causaria dupla contagem. Por isso NÃO se
-    -- usa c190.vl_ipi como fallback aqui.
-    LEFT JOIN LATERAL (
-        SELECT CASE
-            WHEN x.nota_ipi_xml > 0 AND o.nota_opr > 0
-                THEN x.nota_ipi_xml * COALESCE(c190.vl_opr, 0) / o.nota_opr
-            ELSE 0
-        END AS v
-        FROM (
-            SELECT COALESCE(SUM(nii.v_ipi), 0) AS nota_ipi_xml
-            FROM nfe_entradas_itens nii WHERE nii.nfe_id = ne.id
-        ) x
-        CROSS JOIN (
-            SELECT COALESCE(SUM(c190b.vl_opr), 0) AS nota_opr
-            FROM reg_c190 c190b WHERE c190b.id_pai_c100 = c100.id
-        ) o
-    ) ipi_calc ON true
+    LEFT JOIN nfe_entradas ne ON ne.company_id = j.company_id AND ne.chave_nfe = c100.chv_nfe
     LEFT JOIN LATERAL (
         SELECT nii.ncm AS ncm
         FROM nfe_entradas_itens nii
@@ -277,7 +320,6 @@ WITH classified AS (
     ) regra ON true
     WHERE j.company_id = $1
       AND c100.cod_sit NOT IN ('02','03','04','05')
-      AND c190.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
       AND ($2::text = '' OR j.mes_ano = $2
           OR (j.mes_ano IS NULL AND (
               EXTRACT(MONTH FROM j.dt_ini)::int = SPLIT_PART($2::text,'/',1)::int
