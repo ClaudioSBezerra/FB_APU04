@@ -175,11 +175,13 @@ c190_consol AS (
     GROUP BY id_pai_c100, cfop
 ),
 fonte AS (
-    -- Agrega itens C170 por (nota, cfop) + IPI/frete/outras do XML.
+    -- Agrega itens C170 por (nota, cfop). IPI vem do próprio SPED (c170.vl_ipi)
+    -- com fallback no XML; frete/outras do header do XML quando disponível.
     SELECT
         c170.c100_id                       AS c100_id,
         c170.cfop                          AS cfop,
         SUM(COALESCE(c170.vl_item, 0))     AS sum_item,
+        SUM(COALESCE(c170.vl_ipi, 0))      AS sum_ipi_sped,
         SUM(COALESCE(xi.v_ipi, 0))         AS sum_ipi_xml,
         BOOL_OR(xi.id IS NOT NULL)         AS tem_xml,
         MAX(COALESCE(ne.v_frete, 0))       AS nf_frete,
@@ -195,9 +197,12 @@ fonte AS (
 ),
 linhas AS (
     SELECT
-        f.c100_id, f.cfop, f.sum_ipi_xml, f.tem_xml,
+        f.c100_id, f.cfop,
+        -- IPI efetivo: prioriza o SPED (c170.vl_ipi), cai no XML como fallback.
+        -- Garante que o Bloco A (meses anteriores, sem XML) também exiba o IPI.
+        COALESCE(NULLIF(f.sum_ipi_sped, 0), f.sum_ipi_xml, 0) AS ipi_eff,
         cc.aliq_icms, cc.vl_icms, cc.vl_bc_st, cc.vl_icms_st,
-        -- frete/outras (header XML) rateados pela participação do cfop nos
+        -- frete/outras (header NF) rateados pela participação do cfop nos
         -- produtos da nota (uma nota pode ter múltiplos cfops de fronteira)
         CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
              THEN f.nf_frete * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id)
@@ -205,18 +210,19 @@ linhas AS (
         CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
              THEN f.nf_outro * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id)
              ELSE 0 END AS outro_rat,
-        -- V.Produtos exibido: produto (XML) ou total SPED (sem XML)
-        CASE WHEN f.tem_xml THEN f.sum_item ELSE COALESCE(cc.vl_opr_sped, f.sum_item) END AS v_prod_disp,
-        -- BASE do cálculo: com XML reconstrói (produto+IPI+frete+outras);
-        -- sem XML usa vl_opr do SPED (já embute IPI/frete) — não regride.
-        CASE WHEN f.tem_xml
-             THEN f.sum_item + f.sum_ipi_xml
-                  + (CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
-                          THEN f.nf_frete * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id) ELSE 0 END)
-                  + (CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
-                          THEN f.nf_outro * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id) ELSE 0 END)
-             ELSE COALESCE(cc.vl_opr_sped, f.sum_item)
-        END AS base_calc
+        -- V.Produtos exibido = produto puro (reg C170), sem IPI/frete. O IPI vai
+        -- na coluna própria; V.Operação (front) = produto + IPI.
+        f.sum_item AS v_prod_disp,
+        -- BASE do cálculo = produto + IPI + frete(NF) + outras — MESMA regra para
+        -- Bloco A e B (consistência de preenchimento). Frete de CT-e fica fora
+        -- (tratado só na aba Fretes).
+        f.sum_item
+            + COALESCE(NULLIF(f.sum_ipi_sped, 0), f.sum_ipi_xml, 0)
+            + (CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
+                    THEN f.nf_frete * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id) ELSE 0 END)
+            + (CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
+                    THEN f.nf_outro * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id) ELSE 0 END)
+            AS base_calc
     FROM fonte f
     LEFT JOIN c190_consol cc ON cc.id_pai_c100 = f.c100_id AND cc.cfop = f.cfop
 ),
@@ -234,7 +240,7 @@ classified AS (
         COALESCE(NULLIF(ne.forn_uf, ''), NULLIF(m_part.uf, ''), '') AS forn_uf,
         l.cfop                                              AS cfop,
         l.v_prod_disp                                       AS v_prod,
-        COALESCE(l.sum_ipi_xml, 0)                          AS v_ipi,
+        COALESCE(l.ipi_eff, 0)                              AS v_ipi,
         COALESCE(l.vl_icms, 0)                              AS v_icms,
         COALESCE(l.vl_bc_st, 0)                             AS v_bc_st,
         COALESCE(l.vl_icms_st, 0)                           AS v_st,
