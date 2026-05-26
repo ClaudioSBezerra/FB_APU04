@@ -79,6 +79,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { useAuth } from '@/contexts/AuthContext'
+import { AdministrativoTab } from './AdministrativoFronteira'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -4218,6 +4219,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/extrato':      'extrato',
     '/icms-fronteira/contestacoes': 'contestacoes',
     '/icms-fronteira/apuracao':     'apuracao',
+    '/icms-fronteira/administrativo': 'administrativo',
   }
   const tabToPath: Record<string, string> = {
     resumo:        '/icms-fronteira',
@@ -4234,6 +4236,7 @@ export default function IcmsFronteira() {
     extrato:       '/icms-fronteira/extrato',
     contestacoes:  '/icms-fronteira/contestacoes',
     apuracao:      '/icms-fronteira/apuracao',
+    administrativo:'/icms-fronteira/administrativo',
   }
 
   const tab = pathToTab[location.pathname] ?? 'resumo'
@@ -4329,6 +4332,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="regras">Regras NCM</TabsTrigger>
           <TabsTrigger value="extrato">Extrato SEFAZ</TabsTrigger>
           <TabsTrigger value="contestacoes">Contestações</TabsTrigger>
+          <TabsTrigger value="administrativo">Administrativo</TabsTrigger>
         </TabsList>
 
         <TabsContent value="resumo" className="mt-6">
@@ -4546,6 +4550,23 @@ export default function IcmsFronteira() {
                 Gerencie contestações de cobranças indevidas de ICMS Fronteira junto à SEFAZ-PE.
               </p>
               <ContestacoesTab token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="administrativo" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">
+                Administrativo
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                Filiais importadas, parâmetros por UF (benefícios) e edição dos dados da empresa em foco.
+                Substitui a antiga aba "Filiais" e "UFs" da Gestão de Ambiente.
+              </p>
+              <AdministrativoTab />
             </CardContent>
           </Card>
         </TabsContent>
