@@ -4275,25 +4275,36 @@ export default function IcmsFronteira() {
         <p className="text-sm text-muted-foreground ml-1">
           Apuração de ICMS na entrada interestadual de mercadorias
         </p>
+      </div>
 
-        {/* Seletor de UF (eixo do módulo) */}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">UF de trabalho:</span>
+      {/* Seletor de UF (eixo obrigatório do módulo) — faixa central, destaque
+          visual em vermelho para deixar claro que TODO o módulo opera sobre a
+          UF selecionada. Sem UF informada, nenhuma apuração é exibida. */}
+      <div className="flex justify-center">
+        <div className="inline-flex items-center gap-4 rounded-lg border-2 border-red-500 bg-red-50 px-6 py-3 shadow-sm">
+          <span className="text-base font-bold uppercase tracking-wide text-red-700">
+            UF de trabalho:
+          </span>
           <Select value={uf} onValueChange={setUf} disabled={ufs.length === 0}>
-            <SelectTrigger className="h-8 w-24 text-sm font-semibold">
+            <SelectTrigger className="h-12 w-32 border-2 border-red-500 bg-white text-2xl font-extrabold text-red-700 focus:ring-red-500">
               <SelectValue placeholder={ufs.length === 0 ? '—' : 'UF'} />
             </SelectTrigger>
             <SelectContent>
               {ufs.map((u) => (
-                <SelectItem key={u} value={u}>{u}</SelectItem>
+                <SelectItem key={u} value={u} className="text-lg font-bold">
+                  {u}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          <span className="text-xs font-medium text-red-700">
+            * obrigatório — toda apuração é feita sobre as filiais desta UF
+          </span>
         </div>
       </div>
 
       {ufs.length > 1 && (
-        <p className="text-xs text-muted-foreground -mt-2">
+        <p className="text-center text-xs text-muted-foreground">
           Apurando as filiais da UF <strong>{uf}</strong>. Troque a UF acima para ver as demais.
         </p>
       )}
