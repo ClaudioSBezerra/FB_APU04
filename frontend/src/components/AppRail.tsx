@@ -27,7 +27,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/contexts/AuthContext'
 import { getActiveModule } from '@/lib/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 const mainItems = [
@@ -43,6 +43,24 @@ export function AppRail() {
   const navigate = useNavigate()
   const { user, company, logout, token } = useAuth()
   const active = getActiveModule(location.pathname)
+
+  // Logo da empresa — exibida no topo do rail; fallback para o ícone do sistema
+  const [empresaLogoUrl, setEmpresaLogoUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let revoke: string | null = null
+    if (!token) { setEmpresaLogoUrl(null); return }
+    const companyId = (user as { company_id?: string } | null)?.company_id
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
+    if (companyId) headers['X-Company-ID'] = companyId
+    fetch('/api/config/empresa/logo', { headers })
+      .then(r => r.ok ? r.blob() : null)
+      .then(blob => {
+        if (blob) { revoke = URL.createObjectURL(blob); setEmpresaLogoUrl(revoke) }
+        else setEmpresaLogoUrl(null)
+      })
+      .catch(() => setEmpresaLogoUrl(null))
+    return () => { if (revoke) URL.revokeObjectURL(revoke) }
+  }, [token, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [pwDialog,  setPwDialog]  = useState(false)
   const [pwCurrent, setPwCurrent] = useState('')
@@ -88,9 +106,13 @@ export function AppRail() {
       {/* ── Rail ── */}
       <div className="flex flex-col w-14 shrink-0 border-r bg-white h-screen z-20">
 
-        {/* Logo */}
+        {/* Logo da empresa (fallback: ícone do sistema) */}
         <div className="flex items-center justify-center h-14 border-b shrink-0">
-          <img src="/favicon-fc.png" alt="FC" className="size-8 rounded-lg object-cover" />
+          <img
+            src={empresaLogoUrl ?? "/favicon-fc.png"}
+            alt={empresaLogoUrl ? (company ?? "Empresa") : "FC"}
+            className="size-8 rounded-lg object-contain"
+          />
         </div>
 
         {/* Nav principal */}
