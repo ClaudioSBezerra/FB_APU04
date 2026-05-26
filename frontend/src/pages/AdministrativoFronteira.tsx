@@ -91,11 +91,14 @@ interface UserHierarchy {
 // ---------------------------------------------------------------------------
 // FiliaisTab — tabela read-only das filiais (reg 0000 + JOIN IBGE).
 // ---------------------------------------------------------------------------
-export function FiliaisTab({ branches }: { branches: Branch[] }) {
+export function FiliaisTab({ branches, uf }: { branches: Branch[]; uf?: string }) {
+  const filtered = uf ? branches.filter(b => b.uf === uf) : branches;
   return (
     <div className="border rounded-md p-4 bg-white">
-      {branches.length === 0 ? (
-        <p className="text-muted-foreground">Nenhuma filial identificada nas importações.</p>
+      {filtered.length === 0 ? (
+        <p className="text-muted-foreground">
+          {uf ? `Nenhuma filial da empresa nesta UF (${uf}).` : 'Nenhuma filial identificada nas importações.'}
+        </p>
       ) : (
         <Table>
           <TableHeader>
@@ -109,7 +112,7 @@ export function FiliaisTab({ branches }: { branches: Branch[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {branches.map((branch, idx) => (
+            {filtered.map((branch, idx) => (
               <TableRow key={idx}>
                 <TableCell className="font-mono">{branch.cnpj}</TableCell>
                 <TableCell>{branch.company_name}</TableCell>
@@ -127,6 +130,7 @@ export function FiliaisTab({ branches }: { branches: Branch[] }) {
         </Table>
       )}
       <p className="text-[11px] text-muted-foreground mt-3">
+        {uf ? `Exibindo ${filtered.length} de ${branches.length} filial(is) filtradas por UF ${uf}. ` : ''}
         Filiais e dados (UF, IE, município) são extraídos do registro 0000 do SPED a cada importação.
         Imports anteriores podem ter campos vazios — reimporte o SPED para preencher.
       </p>
@@ -137,11 +141,11 @@ export function FiliaisTab({ branches }: { branches: Branch[] }) {
 // ---------------------------------------------------------------------------
 // UFsHubTab — hub híbrido por UF (legislação IA + benefícios manuais).
 // ---------------------------------------------------------------------------
-export function UFsHubTab() {
+export function UFsHubTab({ uf: ufProp }: { uf?: string }) {
   const { token } = useAuth();
   const [items, setItems] = useState<UFHubItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedUF, setSelectedUF] = useState<string>("");
+  const [selectedUF, setSelectedUF] = useState<string>(ufProp ?? "");
   const [edits, setEdits] = useState<Record<string, UFBeneficios>>({});
   const [saving, setSaving] = useState(false);
 
@@ -153,7 +157,11 @@ export function UFsHubTab() {
       const data = await res.json();
       const ufs: UFHubItem[] = data.ufs || [];
       setItems(ufs);
-      if (ufs.length > 0 && !selectedUF) setSelectedUF(ufs[0].uf);
+      // Usa ufProp se disponível e presente na lista; senão seleciona a primeira.
+      setSelectedUF(prev => {
+        if (prev && ufs.some(u => u.uf === prev)) return prev;
+        return ufs[0]?.uf ?? "";
+      });
       const e: Record<string, UFBeneficios> = {};
       ufs.forEach(u => { e[u.uf] = { ...u.beneficios }; });
       setEdits(e);
@@ -861,7 +869,9 @@ export function AdministrativoTab({ uf }: { uf: string }) {
     );
   }
 
-  const branchesCount = data.branches?.length ?? 0;
+  const allBranches = data.branches ?? [];
+  const branchesFiltered = uf ? allBranches.filter(b => b.uf === uf) : allBranches;
+  const branchesCount = branchesFiltered.length;
 
   return (
     <Tabs defaultValue="filiais" className="space-y-4">
@@ -886,11 +896,11 @@ export function AdministrativoTab({ uf }: { uf: string }) {
       </TabsList>
 
       <TabsContent value="filiais">
-        <FiliaisTab branches={data.branches ?? []} />
+        <FiliaisTab branches={allBranches} uf={uf} />
       </TabsContent>
 
       <TabsContent value="ufs">
-        <UFsHubTab />
+        <UFsHubTab uf={uf} />
       </TabsContent>
 
       <TabsContent value="segmentos">
