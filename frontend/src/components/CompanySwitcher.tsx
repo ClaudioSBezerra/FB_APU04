@@ -63,11 +63,11 @@ export function CompanySwitcher({ compact = false }: { compact?: boolean }) {
             size="sm"
             role="combobox"
             aria-expanded={open}
-            className="w-full justify-start h-7 px-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            className="w-full justify-start h-8 px-2 gap-1.5 text-sm text-muted-foreground hover:text-foreground"
           >
-            <Building2 className="h-3 w-3 shrink-0" />
+            <Building2 className="h-4 w-4 shrink-0" />
             <span>Trocar Empresa</span>
-            <ChevronsUpDown className="ml-auto h-3 w-3 shrink-0 opacity-40" />
+            <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-40" />
           </Button>
         ) : (
           <Button

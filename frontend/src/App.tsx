@@ -138,7 +138,8 @@ function AppHeader() {
         {moduleCfg?.label ?? 'FBTax Cloud'}
       </span>
       <div className="flex items-center gap-2">
-        <FilialSelector />
+        {/* Seletor de filiais só faz sentido no Simulador da Reforma Tributária. */}
+        {moduleId === 'simulador' && <FilialSelector />}
         <CompanySwitcher compact />
       </div>
     </header>

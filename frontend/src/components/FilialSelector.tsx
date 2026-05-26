@@ -48,19 +48,19 @@ export function FilialSelector() {
           size="sm"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-start h-7 px-1 gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+          className="w-full justify-start h-8 px-2 gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
-          <GitBranch className="h-3 w-3 shrink-0" />
+          <GitBranch className="h-4 w-4 shrink-0" />
           <span className="truncate flex-1 text-left">{triggerLabel}</span>
           {selectedFiliais.length > 0 && (
             <Badge
               variant="secondary"
-              className="ml-auto text-[9px] px-1 py-0 h-4 shrink-0"
+              className="ml-auto text-xs px-1.5 py-0 h-5 shrink-0"
             >
               {selectedFiliais.length}
             </Badge>
           )}
-          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-40" />
+          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-40" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[280px] p-0" side="right" align="end">
