@@ -633,6 +633,7 @@ function ResumoTab({ token }: { token: string | null }) {
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Notas</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Produtos</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
+              <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Operação</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. ST Retido</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Devido Est.</TableHead>
             </TableRow>
@@ -644,6 +645,7 @@ function ResumoTab({ token }: { token: string | null }) {
                 <TableCell className="text-xs text-right tabular-nums">{row.qtd_notas}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod_total)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi_total)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL((row.v_prod_total || 0) + (row.v_ipi_total || 0))}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_st_retido)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(row.icms_devido_est)}</TableCell>
               </TableRow>
@@ -729,6 +731,7 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
               <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
+              <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Operação</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Inter.</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Int.</TableHead>
               <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Devido Est.</TableHead>
@@ -749,6 +752,7 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
                 <TableCell className="text-xs font-mono">{row.cfop || '—'}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL((row.v_prod || 0) + (row.v_ipi || 0))}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums font-semibold">
@@ -785,6 +789,7 @@ function TabelaNotasSped({
 }) {
   const totalVProd = rows.reduce((a, r) => a + (r.v_prod || 0), 0)
   const totalVIpi  = rows.reduce((a, r) => a + (r.v_ipi || 0), 0)
+  const totalVOpr  = totalVProd + totalVIpi
   const totalVIcms = rows.reduce((a, r) => a + (r.v_icms || 0), 0)
   const totalIcms  = rows.reduce((a, r) => a + (r.icms_devido_est || 0), 0)
   return (
@@ -800,6 +805,7 @@ function TabelaNotasSped({
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Operação</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
             {showAliq && (
               <>
@@ -826,6 +832,7 @@ function TabelaNotasSped({
               <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL((row.v_prod || 0) + (row.v_ipi || 0))}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms)}</TableCell>
               {showAliq && (
                 <>
@@ -845,6 +852,7 @@ function TabelaNotasSped({
               <TableCell colSpan={6} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIpi)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
               {showAliq && <TableCell colSpan={2} />}
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
@@ -876,8 +884,8 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">NCM</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
-            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Opr.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right" title="Valor da operação informado pelo emissor no XML (inclui frete/outras despesas, não apenas Prod+IPI)">V. Opr.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq.Interna</TableHead>
             {isST && (
@@ -903,8 +911,8 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
               <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
               <TableCell className="text-xs font-mono">{row.ncm || '—'}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_opr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL(row.v_opr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{(row.aliq_interna || 0).toFixed(2)}%</TableCell>
               {isST && (
@@ -928,8 +936,8 @@ function TabelaNotasXml({ rows }: { rows: FronteiraXmlNaoSpedRow[] }) {
             <TableRow className="bg-muted/60 hover:bg-muted/60">
               <TableCell colSpan={7} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIpi)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
               <TableCell colSpan={isST ? 2 : 1} />
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
