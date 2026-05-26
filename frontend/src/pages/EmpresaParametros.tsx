@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Building2, FileText, ImageUp, Loader2, Trash2 } from 'lucide-react'
+import { Building2, ImageUp, Loader2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,8 +9,6 @@ interface EmpresaParametrosInfo {
   tem_logo: boolean
   logo_mime?: string
   logo_nome?: string
-  tem_template_antecip: boolean
-  template_antecip_nome?: string
 }
 
 async function fetchParametros(token: string, companyId?: string): Promise<EmpresaParametrosInfo> {
@@ -29,10 +27,8 @@ export default function EmpresaParametros() {
   const [loading, setLoading] = useState(true)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
-  const [uploadingTemplate, setUploadingTemplate] = useState(false)
 
   const logoInputRef = useRef<HTMLInputElement>(null)
-  const templateInputRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
     if (!token) return
@@ -77,39 +73,6 @@ export default function EmpresaParametros() {
     } finally {
       setUploadingLogo(false)
     }
-  }
-
-  const uploadTemplate = async (file: File) => {
-    if (!token) return
-    setUploadingTemplate(true)
-    const form = new FormData()
-    form.append('template', file)
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
-    if (companyId) headers['X-Company-ID'] = companyId
-    try {
-      const res = await fetch('/api/config/empresa/template-antecipacao', { method: 'POST', headers, body: form })
-      if (!res.ok) throw new Error((await res.json()).error ?? 'Erro')
-      toast.success('Template salvo com sucesso')
-      await load()
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao salvar template')
-    } finally {
-      setUploadingTemplate(false)
-    }
-  }
-
-  const downloadTemplate = async () => {
-    if (!token) return
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
-    if (companyId) headers['X-Company-ID'] = companyId
-    const res = await fetch('/api/config/empresa/template-antecipacao', { headers })
-    if (!res.ok) { toast.error('Template não encontrado'); return }
-    const blob = await res.blob()
-    const nome = info?.template_antecip_nome ?? 'template-antecipacao.pdf'
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = nome; a.click()
-    URL.revokeObjectURL(url)
   }
 
   if (loading) {
@@ -182,52 +145,6 @@ export default function EmpresaParametros() {
         </CardContent>
       </Card>
 
-      {/* ── Template de Antecipação ───────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            Modelo de Relatório — Antecipação
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {info?.tem_template_antecip ? (
-            <div className="flex items-center gap-3">
-              <FileText className="w-8 h-8 text-red-500 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{info.template_antecip_nome}</p>
-                <p className="text-xs text-muted-foreground">Template PDF de antecipação cadastrado</p>
-              </div>
-              <Button size="sm" variant="outline" onClick={downloadTemplate}>
-                Baixar
-              </Button>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Nenhum template cadastrado.</p>
-          )}
-
-          {isAdmin && (
-            <>
-              <input
-                ref={templateInputRef}
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) uploadTemplate(f) }}
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => templateInputRef.current?.click()}
-                disabled={uploadingTemplate}
-              >
-                {uploadingTemplate ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <FileText className="w-4 h-4 mr-1" />}
-                {info?.tem_template_antecip ? 'Substituir template' : 'Enviar template PDF'}
-              </Button>
-            </>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }

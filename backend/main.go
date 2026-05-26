@@ -541,17 +541,6 @@ func main() {
 				}
 			}
 		}, ""))
-	http.HandleFunc("/api/config/empresa/template-antecipacao",
-		withAuth(func(db *sql.DB) http.HandlerFunc {
-			return func(w http.ResponseWriter, r *http.Request) {
-				if r.Method == http.MethodPost {
-					handlers.AuthMiddleware(handlers.UploadTemplateAntecipHandler(db), "admin")(w, r)
-				} else {
-					handlers.ServeTemplateAntecipHandler(db)(w, r)
-				}
-			}
-		}, ""))
-
 	// ── Reforma Tributária — Parâmetros (RFMA-05) ──
 	http.HandleFunc("/api/reforma/parametros", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
