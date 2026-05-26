@@ -46,14 +46,9 @@ func IcmsFronteiraSegmentosHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		userID, _ := claims["user_id"].(string)
-		role, _ := claims["role"].(string)
 
-		// --- POST: criar novo segmento (admin) ---
+		// --- POST: criar novo segmento ---
 		if r.Method == http.MethodPost {
-			if role != "admin" {
-				jsonErr(w, http.StatusForbidden, "Apenas administradores podem cadastrar segmentos")
-				return
-			}
 			var body struct {
 				Codigo    int    `json:"codigo"`
 				UF        string `json:"uf"`
@@ -245,14 +240,8 @@ func IcmsFronteiraSegmentoItemHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
-		if !ok {
+		if _, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims); !ok {
 			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
-			return
-		}
-		role, _ := claims["role"].(string)
-		if role != "admin" {
-			jsonErr(w, http.StatusForbidden, "Apenas administradores podem alterar segmentos")
 			return
 		}
 

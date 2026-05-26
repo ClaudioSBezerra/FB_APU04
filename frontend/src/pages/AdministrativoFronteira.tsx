@@ -845,18 +845,14 @@ export function SegmentosTab({ uf }: { uf: string }) {
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            {isAdmin && (
-              <>
-                <Button size="sm" variant="outline" onClick={() => { setShowAdd(v => !v); setShowImport(false); }}>
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  Novo
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => { setShowImport(v => !v); setShowAdd(false); }}>
-                  <Upload className="h-3.5 w-3.5 mr-1" />
-                  Importar CSV
-                </Button>
-              </>
-            )}
+            <Button size="sm" variant="outline" onClick={() => { setShowAdd(v => !v); setShowImport(false); }}>
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Novo
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowImport(v => !v); setShowAdd(false); }}>
+              <Upload className="h-3.5 w-3.5 mr-1" />
+              Importar CSV
+            </Button>
             <Button size="sm" onClick={handleSave} disabled={saving || loading || (isAdmin && !targetCompanyId)}>
               <Save className="h-3.5 w-3.5 mr-1" />
               {saving ? "Salvando..." : "Salvar seleção"}
@@ -865,7 +861,7 @@ export function SegmentosTab({ uf }: { uf: string }) {
         </div>
 
         {/* Formulário de novo segmento */}
-        {isAdmin && showAdd && (
+        {showAdd && (
           <div className="flex gap-2 mb-3 p-3 border rounded bg-slate-50 items-end">
             <div className="space-y-1 w-24">
               <Label className="text-xs">Código</Label>
@@ -881,7 +877,7 @@ export function SegmentosTab({ uf }: { uf: string }) {
         )}
 
         {/* Painel de importação CSV */}
-        {isAdmin && showImport && (
+        {showImport && (
           <div className="mb-3 p-4 border rounded bg-slate-50 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-700">Importar segmentos via CSV</p>
@@ -957,7 +953,7 @@ export function SegmentosTab({ uf }: { uf: string }) {
                 <TableHead className="w-10">Ativo</TableHead>
                 <TableHead className="w-16">Cód.</TableHead>
                 <TableHead>Descrição do Segmento</TableHead>
-                {isAdmin && <TableHead className="w-20 text-right">Ações</TableHead>}
+                <TableHead className="w-20 text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -969,27 +965,25 @@ export function SegmentosTab({ uf }: { uf: string }) {
                   <TableCell className="font-mono text-sm font-semibold">{String(seg.codigo).padStart(2, '0')}</TableCell>
                   <TableCell className="text-sm">
                     {editingCodigo === seg.codigo ? (
-                      <Input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="h-7 text-sm" autoFocus />
+                      <Input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="h-7 text-sm" autoFocus onKeyDown={e => e.key === 'Enter' && handleEdit(seg)} />
                     ) : seg.descricao}
                   </TableCell>
-                  {isAdmin && (
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost" className="h-7 w-7" title={editingCodigo === seg.codigo ? "Salvar" : "Editar"} onClick={() => handleEdit(seg)}>
-                          {editingCodigo === seg.codigo ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Pencil className="h-3.5 w-3.5" />}
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button size="icon" variant="ghost" className="h-7 w-7" title={editingCodigo === seg.codigo ? "Salvar" : "Editar"} onClick={() => handleEdit(seg)}>
+                        {editingCodigo === seg.codigo ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Pencil className="h-3.5 w-3.5" />}
+                      </Button>
+                      {editingCodigo === seg.codigo ? (
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingCodigo(null)}>
+                          <X className="h-3.5 w-3.5" />
                         </Button>
-                        {editingCodigo === seg.codigo ? (
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingCodigo(null)}>
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        ) : (
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700" onClick={() => handleDelete(seg)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  )}
+                      ) : (
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700" onClick={() => handleDelete(seg)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
