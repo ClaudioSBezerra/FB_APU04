@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, FileText, Factory, MapPin, Building, ImageUp, Tag, Save } from "lucide-react";
+import { Check, FileText, Factory, MapPin, Building, ImageUp, Tag, Save, Pencil, Trash2, Plus, X } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Tipos compartilhados (mesmos shapes que o backend devolve).
@@ -573,11 +573,18 @@ interface SegmentoUF {
 }
 
 export function SegmentosTab({ uf }: { uf: string }) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [segmentos, setSegmentos] = useState<SegmentoUF[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ativos, setAtivos] = useState<Set<number>>(new Set());
+  // CRUD state
+  const [editingCodigo, setEditingCodigo] = useState<number | null>(null);
+  const [editDesc, setEditDesc] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const [newCodigo, setNewCodigo] = useState('');
+  const [newDesc, setNewDesc] = useState('');
 
   const load = async () => {
     if (!uf) return;
@@ -599,6 +606,54 @@ export function SegmentosTab({ uf }: { uf: string }) {
   };
 
   useEffect(() => { load(); }, [uf, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleEdit = async (seg: SegmentoUF) => {
+    if (editingCodigo === seg.codigo) {
+      try {
+        const res = await fetch('/api/icms-fronteira/segmentos/item', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ codigo: seg.codigo, uf, descricao: editDesc }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        toast.success('Segmento atualizado');
+        setEditingCodigo(null);
+        load();
+      } catch { toast.error('Erro ao atualizar segmento'); }
+    } else {
+      setEditingCodigo(seg.codigo);
+      setEditDesc(seg.descricao);
+    }
+  };
+
+  const handleDelete = async (seg: SegmentoUF) => {
+    if (!confirm(`Excluir segmento ${seg.codigo} — ${seg.descricao}?`)) return;
+    try {
+      const res = await fetch(`/api/icms-fronteira/segmentos/item?codigo=${seg.codigo}&uf=${uf}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success('Segmento excluído');
+      load();
+    } catch { toast.error('Erro ao excluir segmento'); }
+  };
+
+  const handleAdd = async () => {
+    const codigo = parseInt(newCodigo);
+    if (!codigo || !newDesc.trim()) { toast.error('Código e descrição obrigatórios'); return; }
+    try {
+      const res = await fetch('/api/icms-fronteira/segmentos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ codigo, uf, descricao: newDesc.trim() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success('Segmento criado');
+      setShowAdd(false); setNewCodigo(''); setNewDesc('');
+      load();
+    } catch { toast.error('Erro ao criar segmento'); }
+  };
 
   const toggle = (codigo: number) => {
     setAtivos(prev => {
@@ -641,22 +696,42 @@ export function SegmentosTab({ uf }: { uf: string }) {
           <div>
             <p className="text-sm font-semibold">Segmentos sujeitos à ST — {uf}</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Marque os segmentos em que a empresa opera. O cálculo só aplica ST para NCMs
-              cujo segmento esteja marcado aqui; os demais são tratados como antecipação.
+              Marque os segmentos em que a empresa opera. O cálculo só aplica ST para NCMs cujo segmento esteja marcado; os demais são antecipação.
             </p>
           </div>
-          <Button size="sm" onClick={handleSave} disabled={saving || loading}>
-            <Save className="h-3.5 w-3.5 mr-1" />
-            {saving ? "Salvando..." : "Salvar"}
-          </Button>
+          <div className="flex gap-2">
+            {isAdmin && (
+              <Button size="sm" variant="outline" onClick={() => setShowAdd(v => !v)}>
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Novo
+              </Button>
+            )}
+            <Button size="sm" onClick={handleSave} disabled={saving || loading}>
+              <Save className="h-3.5 w-3.5 mr-1" />
+              {saving ? "Salvando..." : "Salvar seleção"}
+            </Button>
+          </div>
         </div>
+
+        {isAdmin && showAdd && (
+          <div className="flex gap-2 mb-3 p-3 border rounded bg-slate-50 items-end">
+            <div className="space-y-1 w-24">
+              <Label className="text-xs">Código</Label>
+              <Input value={newCodigo} onChange={e => setNewCodigo(e.target.value)} placeholder="Ex: 22" type="number" min={1} className="h-8" />
+            </div>
+            <div className="space-y-1 flex-1">
+              <Label className="text-xs">Descrição</Label>
+              <Input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Descrição do segmento" className="h-8" />
+            </div>
+            <Button size="sm" onClick={handleAdd} className="h-8">Criar</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)} className="h-8"><X className="h-4 w-4" /></Button>
+          </div>
+        )}
 
         {loading ? (
           <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : segmentos.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nenhum segmento cadastrado para {uf}. A tabela de segmentos é alimentada pela migration de seed.
-          </p>
+          <p className="text-sm text-muted-foreground">Nenhum segmento cadastrado para {uf}.</p>
         ) : (
           <Table>
             <TableHeader>
@@ -664,25 +739,39 @@ export function SegmentosTab({ uf }: { uf: string }) {
                 <TableHead className="w-10">Ativo</TableHead>
                 <TableHead className="w-16">Cód.</TableHead>
                 <TableHead>Descrição do Segmento</TableHead>
+                {isAdmin && <TableHead className="w-20 text-right">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {segmentos.map(seg => (
-                <TableRow
-                  key={seg.codigo}
-                  className={ativos.has(seg.codigo) ? "bg-blue-50" : ""}
-                  onClick={() => toggle(seg.codigo)}
-                  style={{ cursor: "pointer" }}
-                >
+                <TableRow key={seg.codigo} className={ativos.has(seg.codigo) ? "bg-blue-50" : ""}>
                   <TableCell>
-                    <Checkbox
-                      checked={ativos.has(seg.codigo)}
-                      onCheckedChange={() => toggle(seg.codigo)}
-                      onClick={e => e.stopPropagation()}
-                    />
+                    <Checkbox checked={ativos.has(seg.codigo)} onCheckedChange={() => toggle(seg.codigo)} />
                   </TableCell>
                   <TableCell className="font-mono text-sm font-semibold">{String(seg.codigo).padStart(2, '0')}</TableCell>
-                  <TableCell className="text-sm">{seg.descricao}</TableCell>
+                  <TableCell className="text-sm">
+                    {editingCodigo === seg.codigo ? (
+                      <Input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="h-7 text-sm" autoFocus />
+                    ) : seg.descricao}
+                  </TableCell>
+                  {isAdmin && (
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" className="h-7 w-7" title={editingCodigo === seg.codigo ? "Salvar" : "Editar"} onClick={() => handleEdit(seg)}>
+                          {editingCodigo === seg.codigo ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Pencil className="h-3.5 w-3.5" />}
+                        </Button>
+                        {editingCodigo === seg.codigo ? (
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingCodigo(null)}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        ) : (
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700" onClick={() => handleDelete(seg)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -691,8 +780,6 @@ export function SegmentosTab({ uf }: { uf: string }) {
 
         <p className="text-[11px] text-muted-foreground mt-3">
           <strong>{ativos.size}</strong> de {segmentos.length} segmentos ativos para {uf}.
-          As regras NCM importadas precisam ter o código do segmento preenchido para que o
-          motor diferencie ST de antecipação.
         </p>
       </div>
     </div>

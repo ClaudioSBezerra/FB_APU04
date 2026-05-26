@@ -66,12 +66,16 @@ var CompanyGroups = map[string][]CompanyDeleteOp{
 	// company_id = $1 nunca casa NULL, então só remove as regras importadas
 	// pela própria empresa. Inaplicabilidades são config global (sem company_id),
 	// por isso ficam de fora.
+	// Módulo ICMS Fronteira: dados específicos da empresa. As regras GLOBAIS
+	// (company_id IS NULL, seed PE/BA/CE) são preservadas — o DELETE WHERE
+	// company_id = $1 nunca casa NULL, então só remove regras importadas pela empresa.
 	"fronteira": {
-		{Table: "icms_fronteira_regras_ncm", ResultKey: "icms_fronteira_regras_ncm"},
-		{Table: "icms_fronteira_extrato_sefaz", ResultKey: "icms_fronteira_extrato_sefaz"},
-		{Table: "icms_fronteira_contestacoes", ResultKey: "icms_fronteira_contestacoes"},
+		{Table: "icms_fronteira_regras_ncm",          ResultKey: "icms_fronteira_regras_ncm"},
+		{Table: "company_segmentos",                   ResultKey: "company_segmentos"},
+		{Table: "icms_fronteira_extrato_sefaz",        ResultKey: "icms_fronteira_extrato_sefaz"},
+		{Table: "icms_fronteira_contestacoes",         ResultKey: "icms_fronteira_contestacoes"},
 		{Table: "icms_fronteira_classificacao_manual", ResultKey: "icms_fronteira_classificacao_manual"},
-		{Table: "legislacao_fronteira", ResultKey: "legislacao_fronteira"},
+		{Table: "legislacao_fronteira",                ResultKey: "legislacao_fronteira"},
 	},
 }
 
