@@ -277,6 +277,7 @@ func GetEffectiveCompanyID(db *sql.DB, userID, requestedCompanyID string) (strin
 
 	if requestedCompanyID != "" {
 		var exists bool
+		// Admins globais podem acessar qualquer empresa; demais usuários só as suas.
 		err := db.QueryRowContext(ctx, `
 			SELECT EXISTS(
 				SELECT 1
@@ -284,7 +285,11 @@ func GetEffectiveCompanyID(db *sql.DB, userID, requestedCompanyID string) (strin
 				LEFT JOIN enterprise_groups eg ON c.group_id = eg.id
 				LEFT JOIN user_environments ue ON eg.environment_id = ue.environment_id
 				WHERE c.id = $1
-				AND (c.owner_id = $2 OR ue.user_id = $2)
+				AND (
+					c.owner_id = $2
+					OR ue.user_id = $2
+					OR EXISTS(SELECT 1 FROM users WHERE id = $2 AND role = 'admin')
+				)
 			)
 		`, requestedCompanyID, userID).Scan(&exists)
 

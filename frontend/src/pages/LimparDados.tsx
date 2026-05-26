@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertTriangle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { ResetDatabaseDialog } from '@/components/ResetDatabaseDialog';
@@ -44,9 +45,29 @@ const GROUPS: { id: string; label: string; description: string; tables: string[]
   },
 ];
 
+interface CompanyOption {
+  id: string;
+  name: string;
+  cnpj: string;
+}
+
 export default function LimparDados() {
   const { companyId, company, cnpj, user } = useAuth();
   const isAdmin = user?.role === 'admin';
+
+  // --- admin: lista de empresas e empresa selecionada ---
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [adminTargetId, setAdminTargetId] = useState<string>('');
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetch('/api/config/companies')
+      .then((r) => r.json())
+      .then((data: { id: string; name: string; cnpj: string }[]) => {
+        setCompanies(data ?? []);
+      })
+      .catch(() => toast.error('Não foi possível carregar a lista de empresas.'));
+  }, [isAdmin]);
 
   // --- per-company state ---
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -78,9 +99,15 @@ export default function LimparDados() {
     });
   }
 
+  const effectiveCompanyId = isAdmin ? adminTargetId : companyId;
+  const adminTarget = companies.find((c) => c.id === adminTargetId);
+  const companyLabel = isAdmin
+    ? (adminTarget ? `${adminTarget.name}${adminTarget.cnpj ? ` (${adminTarget.cnpj})` : ''}` : 'Selecione uma empresa')
+    : (company ?? cnpj ?? companyId?.substring(0, 8) ?? 'empresa');
+
   async function handleConfirm() {
-    if (!companyId) {
-      toast.error('Empresa não identificada. Tente logar novamente.');
+    if (!effectiveCompanyId) {
+      toast.error(isAdmin ? 'Selecione uma empresa antes de prosseguir.' : 'Empresa não identificada. Tente logar novamente.');
       return;
     }
     if (selected.size === 0) {
@@ -99,7 +126,7 @@ export default function LimparDados() {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          company_id: companyId,
+          company_id: effectiveCompanyId,
           groups: Array.from(selected),
           confirmation: token,
         }),
@@ -164,8 +191,7 @@ export default function LimparDados() {
 
   const allSelected = selected.size === GROUPS.length;
   const tokenOk = token === REQUIRED_TOKEN;
-  const canConfirm = selected.size > 0 && tokenOk && !loading;
-  const companyLabel = company ?? cnpj ?? companyId?.substring(0, 8) ?? 'empresa';
+  const canConfirm = selected.size > 0 && tokenOk && !loading && !!effectiveCompanyId;
 
   return (
     <div className="container mx-auto max-w-3xl p-6 space-y-6">
@@ -183,10 +209,28 @@ export default function LimparDados() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Remove apenas os registros da empresa <strong>{companyLabel}</strong> para os grupos
-            selecionados. As demais empresas não são afetadas.
-          </p>
+          {isAdmin ? (
+            <div className="space-y-1">
+              <Label htmlFor="admin-company-select">Empresa alvo</Label>
+              <Select value={adminTargetId} onValueChange={setAdminTargetId} disabled={loading}>
+                <SelectTrigger id="admin-company-select" className="w-full">
+                  <SelectValue placeholder="Selecione a empresa que deseja limpar..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}{c.cnpj ? ` — ${c.cnpj}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Remove apenas os registros da empresa <strong>{companyLabel}</strong> para os grupos
+              selecionados. As demais empresas não são afetadas.
+            </p>
+          )}
 
           {/* select-all + group checkboxes */}
           <div className="space-y-2">

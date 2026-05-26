@@ -572,9 +572,30 @@ interface SegmentoUF {
   ativo: boolean;
 }
 
+interface CompanyOption { id: string; name: string; cnpj: string; }
+
 export function SegmentosTab({ uf }: { uf: string }) {
   const { token, user } = useAuth();
   const isAdmin = user?.role === 'admin';
+
+  // Admin: seletor de empresa alvo
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [targetCompanyId, setTargetCompanyId] = useState<string>('');
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetch('/api/config/companies', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then((data: CompanyOption[]) => setCompanies(data ?? []))
+      .catch(() => toast.error('Não foi possível carregar empresas'));
+  }, [isAdmin, token]);
+
+  const companyHeader = (extra: Record<string, string> = {}): Record<string, string> => {
+    const h: Record<string, string> = { Authorization: `Bearer ${token}`, ...extra };
+    if (isAdmin && targetCompanyId) h['X-Company-ID'] = targetCompanyId;
+    return h;
+  };
+
   const [segmentos, setSegmentos] = useState<SegmentoUF[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -588,10 +609,11 @@ export function SegmentosTab({ uf }: { uf: string }) {
 
   const load = async () => {
     if (!uf) return;
+    if (isAdmin && !targetCompanyId) { setSegmentos([]); setAtivos(new Set()); setLoading(false); return; }
     setLoading(true);
     try {
       const res = await fetch(`/api/icms-fronteira/segmentos?uf=${uf}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: companyHeader(),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -605,14 +627,14 @@ export function SegmentosTab({ uf }: { uf: string }) {
     }
   };
 
-  useEffect(() => { load(); }, [uf, token]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [uf, token, targetCompanyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEdit = async (seg: SegmentoUF) => {
     if (editingCodigo === seg.codigo) {
       try {
         const res = await fetch('/api/icms-fronteira/segmentos/item', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: companyHeader({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ codigo: seg.codigo, uf, descricao: editDesc }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -631,7 +653,7 @@ export function SegmentosTab({ uf }: { uf: string }) {
     try {
       const res = await fetch(`/api/icms-fronteira/segmentos/item?codigo=${seg.codigo}&uf=${uf}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: companyHeader(),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast.success('Segmento excluído');
@@ -645,7 +667,7 @@ export function SegmentosTab({ uf }: { uf: string }) {
     try {
       const res = await fetch('/api/icms-fronteira/segmentos', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: companyHeader({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ codigo, uf, descricao: newDesc.trim() }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -664,11 +686,12 @@ export function SegmentosTab({ uf }: { uf: string }) {
   };
 
   const handleSave = async () => {
+    if (isAdmin && !targetCompanyId) { toast.error('Selecione uma empresa primeiro'); return; }
     setSaving(true);
     try {
       const res = await fetch("/api/icms-fronteira/company-segmentos", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: companyHeader({ "Content-Type": "application/json" }),
         body: JSON.stringify({ uf, codigos: Array.from(ativos) }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -689,12 +712,36 @@ export function SegmentosTab({ uf }: { uf: string }) {
     );
   }
 
+  const targetCompanyLabel = companies.find(c => c.id === targetCompanyId)?.name ?? '';
+
   return (
     <div className="space-y-4">
+      {/* Seletor de empresa (admin only) */}
+      {isAdmin && (
+        <div className="border rounded-md bg-white p-4 space-y-1">
+          <Label className="text-xs font-semibold">Empresa alvo</Label>
+          <Select value={targetCompanyId} onValueChange={setTargetCompanyId}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Selecione a empresa cujos segmentos deseja gerenciar..." />
+            </SelectTrigger>
+            <SelectContent>
+              {companies.map(c => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}{c.cnpj ? ` — ${c.cnpj}` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="border rounded-md bg-white p-4">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <p className="text-sm font-semibold">Segmentos sujeitos à ST — {uf}</p>
+            <p className="text-sm font-semibold">
+              Segmentos sujeitos à ST — {uf}
+              {isAdmin && targetCompanyLabel && <span className="ml-2 text-muted-foreground font-normal">({targetCompanyLabel})</span>}
+            </p>
             <p className="text-xs text-muted-foreground mt-0.5">
               Marque os segmentos em que a empresa opera. O cálculo só aplica ST para NCMs cujo segmento esteja marcado; os demais são antecipação.
             </p>
@@ -706,7 +753,7 @@ export function SegmentosTab({ uf }: { uf: string }) {
                 Novo
               </Button>
             )}
-            <Button size="sm" onClick={handleSave} disabled={saving || loading}>
+            <Button size="sm" onClick={handleSave} disabled={saving || loading || (isAdmin && !targetCompanyId)}>
               <Save className="h-3.5 w-3.5 mr-1" />
               {saving ? "Salvando..." : "Salvar seleção"}
             </Button>
