@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, FileText, Factory, MapPin, Building, ImageUp, Tag, Save, Pencil, Trash2, Plus, X } from "lucide-react";
+import { Check, FileText, Factory, MapPin, Building, ImageUp, Tag, Save, Pencil, Trash2, Plus, X, Upload, Download } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Tipos compartilhados (mesmos shapes que o backend devolve).
@@ -614,10 +614,17 @@ export function SegmentosTab({ uf }: { uf: string }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newCodigo, setNewCodigo] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  // CSV import state
+  interface CsvRow { codigo: number; descricao: string; error?: string; }
+  const [showImport, setShowImport] = useState(false);
+  const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     if (!uf) return;
-    if (isAdmin && !targetCompanyId) { setSegmentos([]); setAtivos(new Set()); setLoading(false); return; }
+    // Sem early-return para admin sem empresa: o backend retorna o catálogo global
+    // com ativo=false para todos (empresa padrão do admin está vazia).
     setLoading(true);
     try {
       const res = await fetch(`/api/icms-fronteira/segmentos?uf=${uf}`, {
@@ -712,6 +719,87 @@ export function SegmentosTab({ uf }: { uf: string }) {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // CSV helpers
+  // ---------------------------------------------------------------------------
+  const parseCSVText = (text: string): CsvRow[] => {
+    const rows: CsvRow[] = [];
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      const delimiter = line.includes(';') ? ';' : ',';
+      // Simple quoted-field split
+      const parts: string[] = [];
+      let cur = '', inQ = false;
+      for (const ch of line) {
+        if (ch === '"') { inQ = !inQ; }
+        else if (ch === delimiter && !inQ) { parts.push(cur.trim()); cur = ''; }
+        else { cur += ch; }
+      }
+      parts.push(cur.trim());
+
+      const codeStr = parts[0].replace(/^["']|["']$/g, '').trim();
+      const desc = parts.slice(1).join(delimiter).replace(/^["']|["']$/g, '').trim();
+
+      // Skip header row
+      if (/^(c[oó]digo|cod|code)$/i.test(codeStr)) continue;
+
+      const codigo = parseInt(codeStr, 10);
+      if (isNaN(codigo) || codigo <= 0) {
+        rows.push({ codigo: 0, descricao: desc, error: `Código inválido: "${codeStr}"` });
+        continue;
+      }
+      if (!desc) {
+        rows.push({ codigo, descricao: '', error: 'Descrição vazia' });
+        continue;
+      }
+      rows.push({ codigo, descricao: desc });
+    }
+    return rows;
+  };
+
+  const handleCSVFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setCsvRows(parseCSVText(ev.target?.result as string));
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+  };
+
+  const handleImport = async () => {
+    const valid = csvRows.filter(r => !r.error && r.codigo > 0 && r.descricao);
+    if (!valid.length) { toast.error('Nenhuma linha válida para importar'); return; }
+    setImporting(true);
+    const results = await Promise.allSettled(
+      valid.map(row =>
+        fetch('/api/icms-fronteira/segmentos', {
+          method: 'POST',
+          headers: companyHeader({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ codigo: row.codigo, uf, descricao: row.descricao }),
+        }).then(r => { if (!r.ok) throw new Error(String(r.status)); })
+      )
+    );
+    setImporting(false);
+    const ok = results.filter(r => r.status === 'fulfilled').length;
+    const fail = results.filter(r => r.status === 'rejected').length;
+    if (fail === 0) {
+      toast.success(`${ok} segmento(s) importado(s) com sucesso`);
+      setShowImport(false); setCsvRows([]);
+    } else {
+      toast.warning(`${ok} importado(s), ${fail} falhou(aram) — verifique duplicatas`);
+    }
+    load();
+  };
+
+  const downloadTemplate = () => {
+    const content = `codigo,descricao\n1,Alimentos e bebidas não alcoólicas\n2,Produtos de higiene e limpeza\n`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
+    a.download = `segmentos_${uf}_template.csv`;
+    a.click();
+  };
+
   if (!uf) {
     return (
       <div className="border rounded-md p-6 bg-white">
@@ -721,6 +809,8 @@ export function SegmentosTab({ uf }: { uf: string }) {
   }
 
   const targetCompanyLabel = companies.find(c => c.id === targetCompanyId)?.name ?? '';
+  const csvValid = csvRows.filter(r => !r.error).length;
+  const csvErrors = csvRows.filter(r => r.error).length;
 
   return (
     <div className="space-y-4">
@@ -754,12 +844,18 @@ export function SegmentosTab({ uf }: { uf: string }) {
               Marque os segmentos em que a empresa opera. O cálculo só aplica ST para NCMs cujo segmento esteja marcado; os demais são antecipação.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {isAdmin && (
-              <Button size="sm" variant="outline" onClick={() => setShowAdd(v => !v)}>
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Novo
-              </Button>
+              <>
+                <Button size="sm" variant="outline" onClick={() => { setShowAdd(v => !v); setShowImport(false); }}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Novo
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => { setShowImport(v => !v); setShowAdd(false); }}>
+                  <Upload className="h-3.5 w-3.5 mr-1" />
+                  Importar CSV
+                </Button>
+              </>
             )}
             <Button size="sm" onClick={handleSave} disabled={saving || loading || (isAdmin && !targetCompanyId)}>
               <Save className="h-3.5 w-3.5 mr-1" />
@@ -768,6 +864,7 @@ export function SegmentosTab({ uf }: { uf: string }) {
           </div>
         </div>
 
+        {/* Formulário de novo segmento */}
         {isAdmin && showAdd && (
           <div className="flex gap-2 mb-3 p-3 border rounded bg-slate-50 items-end">
             <div className="space-y-1 w-24">
@@ -776,10 +873,76 @@ export function SegmentosTab({ uf }: { uf: string }) {
             </div>
             <div className="space-y-1 flex-1">
               <Label className="text-xs">Descrição</Label>
-              <Input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Descrição do segmento" className="h-8" />
+              <Input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Descrição do segmento" className="h-8" onKeyDown={e => e.key === 'Enter' && handleAdd()} />
             </div>
             <Button size="sm" onClick={handleAdd} className="h-8">Criar</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)} className="h-8"><X className="h-4 w-4" /></Button>
+          </div>
+        )}
+
+        {/* Painel de importação CSV */}
+        {isAdmin && showImport && (
+          <div className="mb-3 p-4 border rounded bg-slate-50 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-700">Importar segmentos via CSV</p>
+              <Button size="sm" variant="ghost" className="h-6 px-1" onClick={() => { setShowImport(false); setCsvRows([]); }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              O CSV deve ter duas colunas: <code className="bg-muted px-1 rounded">codigo</code> e <code className="bg-muted px-1 rounded">descricao</code>.
+              Separador: vírgula ou ponto-e-vírgula. Linha de cabeçalho é ignorada automaticamente.
+            </p>
+            <div className="flex gap-2 items-center">
+              <input ref={fileInputRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleCSVFile} />
+              <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                <Upload className="h-3.5 w-3.5 mr-1" /> Selecionar arquivo
+              </Button>
+              <Button size="sm" variant="ghost" onClick={downloadTemplate}>
+                <Download className="h-3.5 w-3.5 mr-1" /> Baixar template
+              </Button>
+            </div>
+
+            {csvRows.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Preview: <span className="text-green-700 font-semibold">{csvValid} válida(s)</span>
+                  {csvErrors > 0 && <span className="text-red-600 font-semibold ml-2">{csvErrors} com erro</span>}
+                </p>
+                <div className="max-h-48 overflow-y-auto border rounded bg-white">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-16 text-xs">Cód.</TableHead>
+                        <TableHead className="text-xs">Descrição</TableHead>
+                        <TableHead className="w-40 text-xs">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {csvRows.map((row, i) => (
+                        <TableRow key={i} className={row.error ? 'bg-red-50' : ''}>
+                          <TableCell className="font-mono text-xs">{row.codigo || '—'}</TableCell>
+                          <TableCell className="text-xs">{row.descricao || '—'}</TableCell>
+                          <TableCell className="text-xs">
+                            {row.error
+                              ? <span className="text-red-600">{row.error}</span>
+                              : <span className="text-green-700">OK</span>}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleImport}
+                  disabled={importing || csvValid === 0}
+                  className="w-full"
+                >
+                  {importing ? 'Importando...' : `Importar ${csvValid} segmento(s) para ${uf}`}
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
