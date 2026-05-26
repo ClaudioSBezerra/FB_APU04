@@ -2764,17 +2764,19 @@ function RegrasTab({ token }: { token: string | null }) {
                       )}
                     </TableCell>
                     <TableCell>
-                      {!row.is_global && (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            title="Editar regra"
-                            onClick={() => setEditing({ ...row })}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
+                      <div className="flex items-center gap-1">
+                        {/* Editar: disponível para todas as regras (da empresa e globais/base). */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          title={row.is_global ? 'Editar regra base (global)' : 'Editar regra'}
+                          onClick={() => setEditing({ ...row })}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        {/* Remover: só regras da empresa — as globais são seed compartilhado. */}
+                        {!row.is_global && (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -2786,8 +2788,8 @@ function RegrasTab({ token }: { token: string | null }) {
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

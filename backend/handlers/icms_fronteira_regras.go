@@ -367,6 +367,10 @@ func IcmsFronteiraRegraUpdateHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Permite editar tanto as regras da empresa quanto as globais (seed,
+		// company_id IS NULL) — estas valem como base compartilhada e também
+		// devem ser ajustáveis. O cálculo prefere a regra da empresa quando há
+		// ambas (LATERAL ... ORDER BY company_id NULLS LAST).
 		res, err := db.Exec(`
 			UPDATE icms_fronteira_regras_ncm SET
 				descricao        = $1,
@@ -377,7 +381,7 @@ func IcmsFronteiraRegraUpdateHandler(db *sql.DB) http.HandlerFunc {
 				mva_ajustado_7pct  = $6,
 				mva_ajustado_12pct = $7,
 				reducao_bc_pct   = $8
-			WHERE id = $9::uuid AND company_id = $10::uuid
+			WHERE id = $9::uuid AND (company_id = $10::uuid OR company_id IS NULL)
 		`, body.Descricao, body.Regime, body.AliquotaInterna,
 			body.MVAOriginal, body.MVAAjustado4pct, body.MVAAjustado7pct, body.MVAAjustado12pct,
 			body.ReducaoBCPct, id, companyID)
