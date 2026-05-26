@@ -141,6 +141,19 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 		rowsBefore := make(map[string]int64, len(ops))
 		rowsTotal := make(map[string]int64, len(ops))
 		for _, op := range ops {
+			// GlobalDelete: tabela sem company_id (catálogo/seed global) → conta tudo.
+			if op.GlobalDelete {
+				q := "SELECT COUNT(*) FROM " + op.Table
+				if op.WhereExtra != "" {
+					q += " WHERE 1=1 " + op.WhereExtra
+				}
+				var n int64
+				if err := db.QueryRowContext(r.Context(), q).Scan(&n); err == nil {
+					rowsBefore[op.ResultKey] = n
+					rowsTotal[op.ResultKey] = n
+				}
+				continue
+			}
 			q := "SELECT COUNT(*) FROM " + op.Table + " WHERE company_id = $1"
 			if op.WhereExtra != "" {
 				q += " " + op.WhereExtra
@@ -168,11 +181,22 @@ func ResetCompanyDataHandler(db *sql.DB) http.HandlerFunc {
 
 		rowsDeleted := make(map[string]int64, len(ops))
 		for _, op := range ops {
-			q := "DELETE FROM " + op.Table + " WHERE company_id = $1"
-			if op.WhereExtra != "" {
-				q += " " + op.WhereExtra
+			var q string
+			var args []interface{}
+			if op.GlobalDelete {
+				// Tabela global (sem company_id): apaga tudo (clean slate).
+				q = "DELETE FROM " + op.Table
+				if op.WhereExtra != "" {
+					q += " WHERE 1=1 " + op.WhereExtra
+				}
+			} else {
+				q = "DELETE FROM " + op.Table + " WHERE company_id = $1"
+				if op.WhereExtra != "" {
+					q += " " + op.WhereExtra
+				}
+				args = append(args, req.CompanyID)
 			}
-			res, err := tx.Exec(q, req.CompanyID)
+			res, err := tx.Exec(q, args...)
 			if err != nil {
 				InsertDestructiveAuditRow(db, DestructiveAuditRow{
 					UserID: userID, UserEmail: userEmail, Action: "reset_company",

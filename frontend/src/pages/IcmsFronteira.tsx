@@ -872,14 +872,16 @@ function TabelaNotasSped({
 }
 
 // TabelaNotasXml (Bloco C) — MESMAS colunas e regras de preenchimento do Bloco
-// A/B (TabelaNotasSped). V.Operação = V.Prod + V.IPI. Frete de CT-e fica fora
-// (tratado na aba Fretes), por isso não há colunas específicas de XML aqui.
+// A/B (TabelaNotasSped), acrescidas das colunas de frete de CT-e (V.Frete CT-e
+// e ICMS CT-e), que integram o ICMS fronteira quando tomador=destinatário.
 function TabelaNotasXml({ rows, showAliq }: { rows: FronteiraXmlNaoSpedRow[]; showAliq: boolean }) {
-  const totalVProd = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
-  const totalVIpi  = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
-  const totalVOpr  = totalVProd + totalVIpi
-  const totalVIcms = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
-  const totalIcms  = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
+  const totalVProd     = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
+  const totalVIpi      = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
+  const totalVOpr      = totalVProd + totalVIpi
+  const totalVFreteCTe = rows.reduce((acc, r) => acc + (r.v_frete_cte || 0), 0)
+  const totalVIcms     = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
+  const totalVIcmsCTe  = rows.reduce((acc, r) => acc + (r.v_icms_cte || 0), 0)
+  const totalIcms      = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
@@ -894,7 +896,9 @@ function TabelaNotasXml({ rows, showAliq }: { rows: FronteiraXmlNaoSpedRow[]; sh
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Operação</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Frete CT-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS CT-e</TableHead>
             {showAliq && (
               <>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Inter.</TableHead>
@@ -921,7 +925,9 @@ function TabelaNotasXml({ rows, showAliq }: { rows: FronteiraXmlNaoSpedRow[]; sh
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL((row.v_prod || 0) + (row.v_ipi || 0))}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums text-emerald-700">{fmtBRL(row.v_frete_cte)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums text-emerald-700">{fmtBRL(row.v_icms_cte)}</TableCell>
               {showAliq && (
                 <>
                   <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
@@ -941,7 +947,9 @@ function TabelaNotasXml({ rows, showAliq }: { rows: FronteiraXmlNaoSpedRow[]; sh
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIpi)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold text-emerald-700">{fmtBRL(totalVFreteCTe)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold text-emerald-700">{fmtBRL(totalVIcmsCTe)}</TableCell>
               {showAliq && <TableCell colSpan={2} />}
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
             </TableRow>

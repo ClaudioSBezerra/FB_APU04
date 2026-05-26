@@ -141,22 +141,22 @@ SELECT
     CASE WHEN m.v_prod > 0 THEN ROUND((m.v_icms / m.v_prod * 100.0)::numeric, 2) ELSE 0 END AS aliq_inter,
     COALESCE(regra.aliquota_interna, 20.5) AS aliq_interna,
     COALESCE(regra.mva_original, regra.mva_ajustado_12pct, 0) AS mva,
-    -- Mesma regra do Bloco B: base = produto + IPI + frete da NF + outras
-    -- despesas, deduzindo apenas o ICMS destacado na própria NF. O frete do
-    -- CT-e (e seu ICMS) NÃO entra no ICMS fronteira — é tratado só na aba
-    -- Fretes. (Decisão do contador, 2026-05; ex.: NF 14817 USICORP = 472,50.)
+    -- Base = produto + IPI + frete da NF + frete do CT-e (tomador=destinatário)
+    -- + outras despesas, deduzindo o ICMS da própria NF E o ICMS do CT-e
+    -- recolhido pela transportadora. O frete do CT-e volta a integrar o ICMS
+    -- fronteira (restaurado 2026-05-26 a pedido do cliente).
     -- ST só se aplica quando regra.segmento_codigo está em company_segmentos.
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN
             GREATEST(0,
-                (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
+                (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                 * COALESCE(regra.aliquota_interna,20.5)/100.0
-                - m.v_icms)
+                - m.v_icms - COALESCE(cte.v_icms_cte,0))
         WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
             GREATEST(0,
-                (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
+                (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                 * COALESCE(regra.aliquota_interna,20.5)/100.0
-                - m.v_icms)
+                - m.v_icms - COALESCE(cte.v_icms_cte,0))
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
             CASE
                 WHEN regra.segmento_codigo IS NOT NULL
@@ -168,15 +168,15 @@ SELECT
                   )
                 THEN CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
                     THEN GREATEST(0,
-                         (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
+                         (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                          * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
                          * COALESCE(regra.aliquota_interna,20.5)/100.0
-                         - m.v_icms)
+                         - m.v_icms - COALESCE(cte.v_icms_cte,0))
                     ELSE 0 END
                 ELSE GREATEST(0,
-                    (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
+                    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - m.v_icms)
+                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
             END
         ELSE 0
     END AS icms_devido_est

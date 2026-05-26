@@ -37,6 +37,10 @@ type CompanyDeleteOp struct {
 	Table      string // nome da tabela (hardcoded, seguro para concat)
 	WhereExtra string // cláusula WHERE extra hardcoded, ex: "AND source = 'xml_upload'"
 	ResultKey  string // chave no map rows_deleted da resposta
+	// GlobalDelete: a tabela NÃO tem company_id (catálogo global, ex: segmentos_uf).
+	// Quando true, o DELETE/COUNT não filtra por company_id — remove todas as linhas
+	// (opcionalmente restritas por WhereExtra). Usado para dar "clean slate".
+	GlobalDelete bool
 }
 
 // CompanyGroups mapeia cada grupo de limpeza para suas operações DELETE.
@@ -61,16 +65,16 @@ var CompanyGroups = map[string][]CompanyDeleteOp{
 	"config": {
 		{Table: "filial_apelidos", ResultKey: "filial_apelidos"},
 	},
-	// Módulo ICMS Fronteira: dados específicos da empresa. As regras GLOBAIS
-	// (company_id IS NULL, seed PE/BA/CE) são preservadas — o DELETE WHERE
-	// company_id = $1 nunca casa NULL, então só remove as regras importadas
-	// pela própria empresa. Inaplicabilidades são config global (sem company_id),
-	// por isso ficam de fora.
-	// Módulo ICMS Fronteira: dados específicos da empresa. As regras GLOBAIS
-	// (company_id IS NULL, seed PE/BA/CE) são preservadas — o DELETE WHERE
-	// company_id = $1 nunca casa NULL, então só remove regras importadas pela empresa.
+	// Módulo ICMS Fronteira: limpeza "clean slate". Remove tanto os dados da
+	// empresa quanto os GLOBAIS compartilhados (regras NCM seed company_id NULL
+	// e o catálogo segmentos_uf), pois não há mais seed automático — regras e
+	// segmentos passam a ser cadastrados só manualmente ou via CSV.
+	//   • regras NCM: apaga as da empresa E as globais (GlobalDelete remove tudo)
+	//   • company_segmentos: por empresa
+	//   • segmentos_uf: catálogo global, sem company_id (GlobalDelete)
 	"fronteira": {
-		{Table: "icms_fronteira_regras_ncm",          ResultKey: "icms_fronteira_regras_ncm"},
+		{Table: "icms_fronteira_regras_ncm",          ResultKey: "icms_fronteira_regras_ncm", GlobalDelete: true},
+		{Table: "segmentos_uf",                        ResultKey: "segmentos_uf", GlobalDelete: true},
 		{Table: "company_segmentos",                   ResultKey: "company_segmentos"},
 		{Table: "icms_fronteira_extrato_sefaz",        ResultKey: "icms_fronteira_extrato_sefaz"},
 		{Table: "icms_fronteira_contestacoes",         ResultKey: "icms_fronteira_contestacoes"},

@@ -387,17 +387,22 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			} else {
 				cSheet := "C - Não no SPED (XML)"
 				f.NewSheet(cSheet)
-				// Mesmas colunas (A–O) das planilhas A/B. Sem CT-e (frete fica na
-				// aba Fretes e não compõe o ICMS fronteira).
+				// Mesmas colunas (A–O) das planilhas A/B + colunas extras de CT-e
+				// (P = V.Frete CT-e, Q = ICMS CT-e), pois o frete do CT-e integra o
+				// ICMS fronteira no Bloco C quando tomador=destinatário.
 				for i, h := range sheetHeaders {
 					cell := fmt.Sprintf("%s1", cols[i])
 					f.SetCellValue(cSheet, cell, h)
 					f.SetCellStyle(cSheet, cell, cell, headerStyle)
 				}
+				f.SetCellValue(cSheet, "P1", "V.Frete CT-e")
+				f.SetCellStyle(cSheet, "P1", "P1", headerStyle)
+				f.SetCellValue(cSheet, "Q1", "ICMS CT-e")
+				f.SetCellStyle(cSheet, "Q1", "Q1", headerStyle)
 				slateStyle, _      := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}}})
 				moneySlateStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}}, CustomNumFmt: &moneyFmt})
 				numSlateStyle, _   := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}}, CustomNumFmt: &numFmt})
-				var totalVProdC, totalVIpiC, totalVIcmsC, totalIcmsC float64
+				var totalVProdC, totalVIpiC, totalVFreteCTeC, totalVIcmsC, totalVIcmsCTeC, totalIcmsC float64
 				er := 2
 				for _, row := range cRows {
 					vOpr := row.VProd + row.VIPI
@@ -416,10 +421,12 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), row.AliqInterna)
 					f.SetCellValue(cSheet, fmt.Sprintf("N%d", er), row.IcmsDevidoEst) // ICMS fronteira
 					f.SetCellValue(cSheet, fmt.Sprintf("O%d", er), row.ChaveNFe)
+					f.SetCellValue(cSheet, fmt.Sprintf("P%d", er), row.VFreteCTe)   // V.Frete CT-e
+					f.SetCellValue(cSheet, fmt.Sprintf("Q%d", er), row.VIcmsCTe)    // ICMS CT-e
 					for _, c := range []string{"A","B","C","D","E","F","G","O"} {
 						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), slateStyle)
 					}
-					for _, c := range []string{"H","I","J","K","N"} {
+					for _, c := range []string{"H","I","J","K","N","P","Q"} {
 						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneySlateStyle)
 					}
 					for _, c := range []string{"L","M"} {
@@ -427,18 +434,22 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					}
 					totalVProdC += row.VProd
 					totalVIpiC += row.VIPI
+					totalVFreteCTeC += row.VFreteCTe
 					totalVIcmsC += row.VIcmsNF
+					totalVIcmsCTeC += row.VIcmsCTe
 					totalIcmsC += row.IcmsDevidoEst
 					er++
 				}
 				f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), "TOTAL")
-				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", er), fmt.Sprintf("O%d", er), boldStyle)
+				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", er), fmt.Sprintf("Q%d", er), boldStyle)
 				f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), totalVProdC)
 				f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), totalVIpiC)
 				f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), totalVProdC+totalVIpiC)
 				f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), totalVIcmsC)
 				f.SetCellValue(cSheet, fmt.Sprintf("N%d", er), totalIcmsC)
-				for _, c := range []string{"H","I","J","K","N"} {
+				f.SetCellValue(cSheet, fmt.Sprintf("P%d", er), totalVFreteCTeC)
+				f.SetCellValue(cSheet, fmt.Sprintf("Q%d", er), totalVIcmsCTeC)
+				for _, c := range []string{"H","I","J","K","N","P","Q"} {
 					f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneyBoldStyle)
 				}
 			}
@@ -648,11 +659,14 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 		type pdfRow struct {
 			Data, NF, Forn, CNPJ, UF, CFOP, Chave                 string
 			VProd, VIPI, VIcms, AliqInter, AliqInterna, IcmsFront float64
+			VFreteCTe, VIcmsCTe                                   float64 // só Bloco C
 		}
 		var blocoA, blocoB, blocoC []pdfRow
 		for _, row := range dataRows {
-			pr := pdfRow{row.DataEmissao, row.NumeroNFe, row.FornNome, row.FornCNPJ, row.FornUF, row.CFOP, row.ChaveNFe,
-				row.VProd, row.VIPI, row.VIcms, row.AliqInter, row.AliqInterna, row.IcmsDevidoEst}
+			pr := pdfRow{Data: row.DataEmissao, NF: row.NumeroNFe, Forn: row.FornNome, CNPJ: row.FornCNPJ,
+				UF: row.FornUF, CFOP: row.CFOP, Chave: row.ChaveNFe,
+				VProd: row.VProd, VIPI: row.VIPI, VIcms: row.VIcms,
+				AliqInter: row.AliqInter, AliqInterna: row.AliqInterna, IcmsFront: row.IcmsDevidoEst}
 			if row.Bloco == "mes_anterior" {
 				blocoA = append(blocoA, pr)
 			} else {
@@ -662,8 +676,11 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 		if regime != "todos" && periodo != "" {
 			if cRows, errC := fetchNaoSpedRows(db, companyID, periodo, strings.ToUpper(regime)); errC == nil {
 				for _, r := range cRows {
-					blocoC = append(blocoC, pdfRow{r.DataEmissao, r.NumeroNFe, r.FornNome, r.FornCNPJ, r.FornUF, r.CfopSaida, r.ChaveNFe,
-						r.VProd, r.VIPI, r.VIcmsNF, r.AliqInter, r.AliqInterna, r.IcmsDevidoEst})
+					blocoC = append(blocoC, pdfRow{Data: r.DataEmissao, NF: r.NumeroNFe, Forn: r.FornNome, CNPJ: r.FornCNPJ,
+						UF: r.FornUF, CFOP: r.CfopSaida, Chave: r.ChaveNFe,
+						VProd: r.VProd, VIPI: r.VIPI, VIcms: r.VIcmsNF,
+						AliqInter: r.AliqInter, AliqInterna: r.AliqInterna, IcmsFront: r.IcmsDevidoEst,
+						VFreteCTe: r.VFreteCTe, VIcmsCTe: r.VIcmsCTe})
 				}
 			}
 		}
@@ -713,16 +730,25 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 
 		var grandVProd, grandVIPI, grandVIcms, grandDevido float64
 
-		renderBloco := func(titulo string, rows []pdfRow) {
+		// showFrete: só o Bloco C exibe as colunas de frete de CT-e (V.Frete CT-e
+		// e ICMS CT-e), que integram o ICMS fronteira quando tomador=destinatário.
+		renderBloco := func(titulo string, rows []pdfRow, showFrete bool) {
 			if len(rows) == 0 {
 				return
 			}
-			var tVProd, tVIPI, tVIcms, tDevido float64
+			var tVProd, tVIPI, tVIcms, tDevido, tFreteCTe, tIcmsCTe float64
 			sb.WriteString(fmt.Sprintf(
 				`<div class="rpt-section">%s <span class="rpt-section-cnt">(%d nota(s))</span></div>`,
 				htmlEscape(titulo), len(rows)))
 			sb.WriteString(`<table class="nf-tbl"><thead><tr>`)
-			heads := []string{"Data", "NF-e", "Fornecedor", "UF", "CFOP", "V. Prod.", "V. IPI", "V. Operação", "ICMS NF"}
+			heads := []string{"Data", "NF-e", "Fornecedor", "UF", "CFOP", "V. Prod.", "V. IPI", "V. Operação"}
+			if showFrete {
+				heads = append(heads, "V. Frete CT-e")
+			}
+			heads = append(heads, "ICMS NF")
+			if showFrete {
+				heads = append(heads, "ICMS CT-e")
+			}
 			if showAliq {
 				heads = append(heads, "Alíq. Inter.", "Alíq. Int.")
 			}
@@ -739,7 +765,14 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				sb.WriteString(`<tr>`)
 				sb.WriteString(fmt.Sprintf(`<td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>`,
 					htmlEscape(data), htmlEscape(r.NF), htmlEscape(r.Forn), htmlEscape(r.UF), htmlEscape(r.CFOP)))
-				sb.WriteString(numTd(r.VProd) + numTd(r.VIPI) + numTd(r.VProd+r.VIPI) + numTd(r.VIcms))
+				sb.WriteString(numTd(r.VProd) + numTd(r.VIPI) + numTd(r.VProd+r.VIPI))
+				if showFrete {
+					sb.WriteString(numTd(r.VFreteCTe))
+				}
+				sb.WriteString(numTd(r.VIcms))
+				if showFrete {
+					sb.WriteString(numTd(r.VIcmsCTe))
+				}
 				if showAliq {
 					sb.WriteString(fmt.Sprintf(`<td style="text-align:right">%.2f%%</td><td style="text-align:right">%.2f%%</td>`, r.AliqInter, r.AliqInterna))
 				}
@@ -750,9 +783,18 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				tVIPI += r.VIPI
 				tVIcms += r.VIcms
 				tDevido += r.IcmsFront
+				tFreteCTe += r.VFreteCTe
+				tIcmsCTe += r.VIcmsCTe
 			}
 			sb.WriteString(`<tr class="tot-row"><td colspan="5">TOTAL</td>`)
-			sb.WriteString(numTd(tVProd) + numTd(tVIPI) + numTd(tVProd+tVIPI) + numTd(tVIcms))
+			sb.WriteString(numTd(tVProd) + numTd(tVIPI) + numTd(tVProd+tVIPI))
+			if showFrete {
+				sb.WriteString(numTd(tFreteCTe))
+			}
+			sb.WriteString(numTd(tVIcms))
+			if showFrete {
+				sb.WriteString(numTd(tIcmsCTe))
+			}
 			if showAliq {
 				sb.WriteString(`<td></td><td></td>`)
 			}
@@ -764,9 +806,9 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			grandDevido += tDevido
 		}
 
-		renderBloco("Bloco A — NFs de meses anteriores no SPED", blocoA)
-		renderBloco("Bloco B — NFs do mês presentes no SPED", blocoB)
-		renderBloco("Bloco C — NFs do mês não localizadas no SPED (apenas XML)", blocoC)
+		renderBloco("Bloco A — NFs de meses anteriores no SPED", blocoA, false)
+		renderBloco("Bloco B — NFs do mês presentes no SPED", blocoB, false)
+		renderBloco("Bloco C — NFs do mês não localizadas no SPED (apenas XML)", blocoC, true)
 
 		// Página de Totalização — um valor por linha, fontes grandes
 		if totalNotas > 0 {
