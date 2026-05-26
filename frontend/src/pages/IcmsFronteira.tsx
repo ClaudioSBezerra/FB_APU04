@@ -172,11 +172,19 @@ interface RegraNCM {
   reducao_bc_pct: number
   uf_estado: string
   is_global: boolean
+  segmento_codigo: number | null
 }
 
 interface RegrasResponse {
   rows: RegraNCM[]
   count: number
+}
+
+interface SegmentoUFOption {
+  codigo: number
+  uf: string
+  descricao: string
+  ativo: boolean
 }
 
 interface ExtratoRow {
@@ -2503,6 +2511,9 @@ function RegrasTab({ token }: { token: string | null }) {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importLoading, setImportLoading] = useState(false)
   const [selectedUF, setSelectedUF] = useState<'PE' | 'BA' | 'CE'>('PE')
+  // Segmento × UF: ao trocar a UF, a lista de segmentos e a seleção são resetadas.
+  const [importSegmento, setImportSegmento] = useState<string>('')
+  const [createSegmento, setCreateSegmento] = useState<string>('')
   // Resultado da última importação. Aberto em Dialog enquanto não-nulo, para
   // que o usuário possa ler o detalhe dos erros sem perder pela transição de toast.
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null)
@@ -2525,6 +2536,28 @@ function RegrasTab({ token }: { token: string | null }) {
       return res.json()
     },
   })
+
+  // Segmentos disponíveis para a UF selecionada (catálogo segmentos_uf).
+  const { data: segmentosData } = useQuery<{ segmentos: SegmentoUFOption[] }>({
+    queryKey: ['icms-fronteira/segmentos', selectedUF],
+    queryFn: async () => {
+      const res = await fetch(`/api/icms-fronteira/segmentos?uf=${selectedUF}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: !!token,
+  })
+  const segmentos = segmentosData?.segmentos ?? []
+  const segmentoLabel = (codigo: number | null): string => {
+    if (codigo == null) return '—'
+    const s = segmentos.find(x => x.codigo === codigo)
+    return s ? `${String(s.codigo).padStart(2, '0')} — ${s.descricao}` : String(codigo)
+  }
+
+  // Reset das seleções de segmento ao trocar de UF (segmento é vinculado à UF).
+  useEffect(() => { setImportSegmento(''); setCreateSegmento('') }, [selectedUF])
 
   const createMutation = useMutation({
     mutationFn: async (body: object) => {
@@ -2579,6 +2612,7 @@ function RegrasTab({ token }: { token: string | null }) {
           mva_ajustado_7pct: r.mva_ajustado_7pct,
           mva_ajustado_12pct: r.mva_ajustado_12pct,
           reducao_bc_pct: r.reducao_bc_pct,
+          segmento_codigo: r.segmento_codigo,
         }),
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
@@ -2599,9 +2633,11 @@ function RegrasTab({ token }: { token: string | null }) {
     setAliqInterna('20.5')
     setMva('')
     setReducaoBC('0')
+    setCreateSegmento('')
   }
 
   function handleCreate() {
+    if (!createSegmento) { toast.error('Selecione o segmento da regra'); return }
     createMutation.mutate({
       ncm_prefixo: ncmPrefixo,
       descricao,
@@ -2609,16 +2645,19 @@ function RegrasTab({ token }: { token: string | null }) {
       aliquota_interna: parseFloat(aliqInterna) || 20.5,
       mva_original: mva ? parseFloat(mva) : null,
       reducao_bc_pct: parseFloat(reducaoBC) || 0,
+      segmento_codigo: parseInt(createSegmento, 10),
     })
   }
 
   async function handleImport() {
     if (!importFile) return
+    if (!importSegmento) { toast.error('Selecione o segmento antes de importar'); return }
     setImportLoading(true)
     try {
       const fd = new FormData()
       fd.append('file', importFile)
       fd.append('uf_estado', selectedUF)
+      fd.append('segmento_codigo', importSegmento)
       const res = await fetch('/api/icms-fronteira/regras/importar', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -2671,25 +2710,50 @@ function RegrasTab({ token }: { token: string | null }) {
         <CardContent>
           <Alert className="mb-3">
             <AlertDescription className="text-xs">
-              Formato esperado: <code>ncm_prefixo; descricao; regime; aliquota_interna; mva_original; reducao_bc_pct</code>
+              Formato esperado: <code>ncm_prefixo; descricao; regime; aliquota_interna; mva_original; reducao_bc_pct</code>.
+              Todas as regras importadas ficam vinculadas ao <strong>segmento selecionado</strong> nesta UF.
             </AlertDescription>
           </Alert>
-          <div className="flex items-center gap-2">
-            <Input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              className="max-w-sm text-xs"
-              onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-            />
-            <Button
-              size="sm"
-              onClick={handleImport}
-              disabled={!importFile || importLoading}
-            >
-              <Upload className="h-3.5 w-3.5 mr-1" />
-              {importLoading ? 'Importando...' : 'Importar'}
-            </Button>
-          </div>
+          {segmentos.length === 0 ? (
+            <Alert variant="destructive">
+              <AlertDescription className="text-xs">
+                Nenhum segmento cadastrado para {selectedUF}. Cadastre os segmentos em
+                <strong> Administrativo → Segmentos ST</strong> antes de importar regras.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <div className="flex items-end gap-2 flex-wrap">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Segmento (obrigatório)</Label>
+                <Select value={importSegmento} onValueChange={setImportSegmento}>
+                  <SelectTrigger className="w-72 text-xs">
+                    <SelectValue placeholder="Selecione o segmento desta UF..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {segmentos.map(s => (
+                      <SelectItem key={s.codigo} value={String(s.codigo)}>
+                        {String(s.codigo).padStart(2, '0')} — {s.descricao}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="max-w-sm text-xs"
+                onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+              />
+              <Button
+                size="sm"
+                onClick={handleImport}
+                disabled={!importFile || !importSegmento || importLoading}
+              >
+                <Upload className="h-3.5 w-3.5 mr-1" />
+                {importLoading ? 'Importando...' : 'Importar'}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -2725,6 +2789,7 @@ function RegrasTab({ token }: { token: string | null }) {
               <TableRow className="bg-muted/30 hover:bg-transparent">
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">NCM</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Descrição</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Segmento</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Regime</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Int. %</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA %</TableHead>
@@ -2736,7 +2801,7 @@ function RegrasTab({ token }: { token: string | null }) {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-xs text-muted-foreground py-6">
+                  <TableCell colSpan={9} className="text-center text-xs text-muted-foreground py-6">
                     Nenhuma regra encontrada
                   </TableCell>
                 </TableRow>
@@ -2746,6 +2811,11 @@ function RegrasTab({ token }: { token: string | null }) {
                     <TableCell className="text-xs font-mono">{row.ncm_prefixo}</TableCell>
                     <TableCell className="text-xs max-w-[200px]">
                       <div className="truncate" title={row.descricao}>{row.descricao}</div>
+                    </TableCell>
+                    <TableCell className="text-xs max-w-[180px]">
+                      {row.segmento_codigo == null
+                        ? <span className="text-amber-600" title="Sem segmento — não gera ST">⚠ sem segmento</span>
+                        : <div className="truncate" title={segmentoLabel(row.segmento_codigo)}>{segmentoLabel(row.segmento_codigo)}</div>}
                     </TableCell>
                     <TableCell><RegimeBadge regime={row.regime} /></TableCell>
                     <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliquota_interna)}</TableCell>
@@ -2820,6 +2890,27 @@ function RegrasTab({ token }: { token: string | null }) {
               />
             </div>
             <div className="grid gap-1.5">
+              <Label>Segmento ({selectedUF}) — obrigatório</Label>
+              {segmentos.length === 0 ? (
+                <p className="text-xs text-amber-600">
+                  Nenhum segmento cadastrado para {selectedUF}. Cadastre em Administrativo → Segmentos ST.
+                </p>
+              ) : (
+                <Select value={createSegmento} onValueChange={setCreateSegmento}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o segmento desta UF..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {segmentos.map(s => (
+                      <SelectItem key={s.codigo} value={String(s.codigo)}>
+                        {String(s.codigo).padStart(2, '0')} — {s.descricao}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <div className="grid gap-1.5">
               <Label>Regime</Label>
               <Select value={regimenForm} onValueChange={setRegimenForm}>
                 <SelectTrigger>
@@ -2872,7 +2963,7 @@ function RegrasTab({ token }: { token: string | null }) {
             <Button variant="outline" onClick={() => setOpenCreate(false)}>Cancelar</Button>
             <Button
               onClick={handleCreate}
-              disabled={createMutation.isPending || !ncmPrefixo || !descricao}
+              disabled={createMutation.isPending || !ncmPrefixo || !descricao || !createSegmento}
             >
               {createMutation.isPending ? 'Salvando...' : 'Criar Regra'}
             </Button>
@@ -2898,6 +2989,22 @@ function RegrasTab({ token }: { token: string | null }) {
                   value={editing.descricao}
                   onChange={(e) => setEditing({ ...editing, descricao: e.target.value })}
                 />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Segmento ({selectedUF})</Label>
+                <Select
+                  value={editing.segmento_codigo != null ? String(editing.segmento_codigo) : ''}
+                  onValueChange={(v) => setEditing({ ...editing, segmento_codigo: parseInt(v, 10) })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione o segmento..." /></SelectTrigger>
+                  <SelectContent>
+                    {segmentos.map(s => (
+                      <SelectItem key={s.codigo} value={String(s.codigo)}>
+                        {String(s.codigo).padStart(2, '0')} — {s.descricao}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5">

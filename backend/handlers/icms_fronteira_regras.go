@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -14,6 +15,24 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/xuri/excelize/v2"
 )
+
+// validateSegmentoUF garante que o código de segmento existe no catálogo
+// segmentos_uf para a UF informada. Mantém a invariante Regras × Segmento × UF:
+// uma regra NCM só pode apontar para um segmento que exista naquela UF.
+func validateSegmentoUF(db *sql.DB, codigo int, uf string) error {
+	var exists bool
+	err := db.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM segmentos_uf WHERE codigo = $1 AND uf = $2)`,
+		codigo, strings.ToUpper(strings.TrimSpace(uf)),
+	).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("erro ao validar segmento: %v", err)
+	}
+	if !exists {
+		return fmt.Errorf("segmento_codigo %d não existe para a UF %s", codigo, uf)
+	}
+	return nil
+}
 
 // ---------------------------------------------------------------------------
 // Structs
@@ -204,6 +223,7 @@ func IcmsFronteiraRegraCreateHandler(db *sql.DB) http.HandlerFunc {
 			MVAOriginal     *float64 `json:"mva_original"`
 			ReducaoBCPct    float64  `json:"reducao_bc_pct"`
 			UFEstado        string   `json:"uf_estado"`
+			SegmentoCodigo  *int     `json:"segmento_codigo"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -234,6 +254,18 @@ func IcmsFronteiraRegraCreateHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Segmento obrigatório e vinculado à UF: a regra só gera ST quando casa
+		// com company_segmentos. Validamos que o código existe em segmentos_uf
+		// para esta UF (Regras × Segmento × UF).
+		if body.SegmentoCodigo == nil || *body.SegmentoCodigo <= 0 {
+			jsonErr(w, http.StatusBadRequest, "segmento_codigo é obrigatório")
+			return
+		}
+		if err := validateSegmentoUF(db, *body.SegmentoCodigo, body.UFEstado); err != nil {
+			jsonErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		var mvaArg interface{}
 		if body.MVAOriginal != nil && *body.MVAOriginal != 0 {
 			mvaArg = *body.MVAOriginal
@@ -241,17 +273,19 @@ func IcmsFronteiraRegraCreateHandler(db *sql.DB) http.HandlerFunc {
 
 		var row FronteiraRegraRow
 		var mva sql.NullFloat64
+		var segCod sql.NullInt64
 		err = db.QueryRow(`
 			INSERT INTO icms_fronteira_regras_ncm
-				(company_id, ncm_prefixo, descricao, regime, aliquota_interna, mva_original, reducao_bc_pct, uf_estado)
+				(company_id, ncm_prefixo, descricao, regime, aliquota_interna, mva_original, reducao_bc_pct, uf_estado, segmento_codigo)
 			VALUES
-				($1, $2, $3, $4, $5, $6, $7, $8)
+				($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (company_id, ncm_prefixo, uf_estado) DO UPDATE
 				SET descricao = EXCLUDED.descricao,
 				    regime = EXCLUDED.regime,
 				    aliquota_interna = EXCLUDED.aliquota_interna,
 				    mva_original = EXCLUDED.mva_original,
-				    reducao_bc_pct = EXCLUDED.reducao_bc_pct
+				    reducao_bc_pct = EXCLUDED.reducao_bc_pct,
+				    segmento_codigo = EXCLUDED.segmento_codigo
 			RETURNING
 				id::text,
 				ncm_prefixo,
@@ -261,11 +295,12 @@ func IcmsFronteiraRegraCreateHandler(db *sql.DB) http.HandlerFunc {
 				mva_original,
 				COALESCE(reducao_bc_pct, 0),
 				uf_estado,
-				(company_id IS NULL)
-		`, companyID, body.NCMPrefixo, body.Descricao, body.Regime, body.AliquotaInterna, mvaArg, body.ReducaoBCPct, body.UFEstado,
+				(company_id IS NULL),
+				segmento_codigo
+		`, companyID, body.NCMPrefixo, body.Descricao, body.Regime, body.AliquotaInterna, mvaArg, body.ReducaoBCPct, body.UFEstado, *body.SegmentoCodigo,
 		).Scan(
 			&row.ID, &row.NCMPrefixo, &row.Descricao, &row.Regime,
-			&row.AliquotaInterna, &mva, &row.ReducaoBCPct, &row.UFEstado, &row.IsGlobal,
+			&row.AliquotaInterna, &mva, &row.ReducaoBCPct, &row.UFEstado, &row.IsGlobal, &segCod,
 		)
 		if err != nil {
 			log.Printf("IcmsFronteiraRegraCreate error: %v", err)
@@ -274,6 +309,10 @@ func IcmsFronteiraRegraCreateHandler(db *sql.DB) http.HandlerFunc {
 		}
 		if mva.Valid {
 			row.MVAOriginal = &mva.Float64
+		}
+		if segCod.Valid {
+			v := int(segCod.Int64)
+			row.SegmentoCodigo = &v
 		}
 
 		w.WriteHeader(http.StatusCreated)
@@ -374,6 +413,7 @@ func IcmsFronteiraRegraUpdateHandler(db *sql.DB) http.HandlerFunc {
 			MVAAjustado7pct  *float64 `json:"mva_ajustado_7pct"`
 			MVAAjustado12pct *float64 `json:"mva_ajustado_12pct"`
 			ReducaoBCPct     float64  `json:"reducao_bc_pct"`
+			SegmentoCodigo   *int     `json:"segmento_codigo"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			jsonErr(w, http.StatusBadRequest, "JSON inválido: "+err.Error())
@@ -386,6 +426,28 @@ func IcmsFronteiraRegraUpdateHandler(db *sql.DB) http.HandlerFunc {
 		if body.Regime != "" && !validRegimes[body.Regime] {
 			jsonErr(w, http.StatusBadRequest, "regime inválido")
 			return
+		}
+
+		// Segmento opcional no update; quando informado, valida contra a UF da
+		// própria regra (Regras × Segmento × UF).
+		if body.SegmentoCodigo != nil && *body.SegmentoCodigo > 0 {
+			var ufRegra string
+			if err := db.QueryRow(
+				`SELECT uf_estado FROM icms_fronteira_regras_ncm WHERE id = $1::uuid`, id,
+			).Scan(&ufRegra); err != nil {
+				jsonErr(w, http.StatusNotFound, "Regra não encontrada")
+				return
+			}
+			if err := validateSegmentoUF(db, *body.SegmentoCodigo, ufRegra); err != nil {
+				jsonErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
+		// segmentoArg: NULL quando não informado (preserva via COALESCE), valor quando informado.
+		var segmentoArg interface{}
+		if body.SegmentoCodigo != nil && *body.SegmentoCodigo > 0 {
+			segmentoArg = *body.SegmentoCodigo
 		}
 
 		// Permite editar tanto as regras da empresa quanto as globais (seed,
@@ -401,11 +463,12 @@ func IcmsFronteiraRegraUpdateHandler(db *sql.DB) http.HandlerFunc {
 				mva_ajustado_4pct  = $5,
 				mva_ajustado_7pct  = $6,
 				mva_ajustado_12pct = $7,
-				reducao_bc_pct   = $8
+				reducao_bc_pct   = $8,
+				segmento_codigo  = COALESCE($11, segmento_codigo)
 			WHERE id = $9::uuid AND (company_id = $10::uuid OR company_id IS NULL)
 		`, body.Descricao, body.Regime, body.AliquotaInterna,
 			body.MVAOriginal, body.MVAAjustado4pct, body.MVAAjustado7pct, body.MVAAjustado12pct,
-			body.ReducaoBCPct, id, companyID)
+			body.ReducaoBCPct, id, companyID, segmentoArg)
 		if err != nil {
 			log.Printf("IcmsFronteiraRegraUpdate error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao atualizar regra NCM")
@@ -617,6 +680,18 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Segmento obrigatório no import: o valor do formulário é aplicado a TODAS
+		// as linhas (sobrepõe qualquer coluna de segmento no arquivo). 1 import = 1 segmento.
+		segmentoCodigoForm, errSeg := strconv.Atoi(strings.TrimSpace(r.FormValue("segmento_codigo")))
+		if errSeg != nil || segmentoCodigoForm <= 0 {
+			jsonErr(w, http.StatusBadRequest, "segmento_codigo é obrigatório para importar regras")
+			return
+		}
+		if err := validateSegmentoUF(db, segmentoCodigoForm, ufEstado); err != nil {
+			jsonErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		file, header, err := r.FormFile("file")
 		if err != nil {
 			jsonErr(w, http.StatusBadRequest, "Campo 'file' não encontrado: "+err.Error())
@@ -742,13 +817,9 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 			descricao := get(rec, "descricao")
 			cest := get(rec, "cest")
 			segmento := get(rec, "segmento")
-			// segmento_codigo: código numérico do segmento (obrigatório para ST)
-			var segmentoCodigoArg interface{}
-			if sc := strings.TrimSpace(get(rec, "segmento_codigo")); sc != "" && sc != "-" {
-				if v, err2 := strconv.Atoi(sc); err2 == nil && v > 0 {
-					segmentoCodigoArg = v
-				}
-			}
+			// segmento_codigo: o valor escolhido no formulário sempre vence — aplicado
+			// a todas as linhas, ignorando qualquer coluna de segmento do arquivo.
+			segmentoCodigoArg := interface{}(segmentoCodigoForm)
 
 			// MVA ajustado pré-calculado (formato unificado) e MVA original
 			mva4 := parsePctOrNull(get(rec, "mva4"))
