@@ -66,7 +66,7 @@ import {
   Calculator,
   Play,
   Loader2,
-  FileDown,
+  Pencil,
 } from 'lucide-react'
 import {
   BarChart,
@@ -2569,6 +2569,35 @@ function RegrasTab({ token }: { token: string | null }) {
     onError: () => toast.error('Erro ao remover regra'),
   })
 
+  // Edição de regra existente (ajuste manual dos dados importados).
+  const [editing, setEditing] = useState<RegraNCM | null>(null)
+  const updateMutation = useMutation({
+    mutationFn: async (r: RegraNCM) => {
+      const res = await fetch(`/api/icms-fronteira/regras/${r.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          descricao: r.descricao,
+          regime: r.regime,
+          aliquota_interna: r.aliquota_interna,
+          mva_original: r.mva_original,
+          mva_ajustado_4pct: r.mva_ajustado_4pct,
+          mva_ajustado_7pct: r.mva_ajustado_7pct,
+          mva_ajustado_12pct: r.mva_ajustado_12pct,
+          reducao_bc_pct: r.reducao_bc_pct,
+        }),
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras', selectedUF] })
+      toast.success('Regra atualizada')
+      setEditing(null)
+    },
+    onError: () => toast.error('Erro ao atualizar regra'),
+  })
+
   function resetForm() {
     setNcmPrefixo('')
     setDescricao('')
@@ -2737,16 +2766,28 @@ function RegrasTab({ token }: { token: string | null }) {
                     </TableCell>
                     <TableCell>
                       {!row.is_global && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                          onClick={() => {
-                            if (confirm('Remover esta regra?')) deleteMutation.mutate(row.id)
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            title="Editar regra"
+                            onClick={() => setEditing({ ...row })}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            title="Remover regra"
+                            onClick={() => {
+                              if (confirm('Remover esta regra?')) deleteMutation.mutate(row.id)
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -2838,6 +2879,109 @@ function RegrasTab({ token }: { token: string | null }) {
               disabled={createMutation.isPending || !ncmPrefixo || !descricao}
             >
               {createMutation.isPending ? 'Salvando...' : 'Criar Regra'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog — ajuste manual de uma regra NCM importada */}
+      <Dialog open={!!editing} onOpenChange={(o) => { if (!o) setEditing(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Regra NCM {editing?.ncm_prefixo}</DialogTitle>
+            <DialogDescription className="text-xs">
+              Ajuste os dados desta regra para a UF {selectedUF}. Campos em branco
+              de MVA significam "não se aplica".
+            </DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <div className="grid gap-3 py-2">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Descrição</Label>
+                <Input
+                  value={editing.descricao}
+                  onChange={(e) => setEditing({ ...editing, descricao: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">Regime</Label>
+                  <Select
+                    value={editing.regime}
+                    onValueChange={(v) => setEditing({ ...editing, regime: v })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ANTECIPACAO">Antecipação</SelectItem>
+                      <SelectItem value="ST">Substituição Tributária</SelectItem>
+                      <SelectItem value="DIFAL">DIFAL</SelectItem>
+                      <SelectItem value="ISENTO">Isento</SelectItem>
+                      <SelectItem value="NORMAL">Normal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">Alíquota Interna %</Label>
+                  <Input
+                    type="number" step="0.01"
+                    value={editing.aliquota_interna}
+                    onChange={(e) => setEditing({ ...editing, aliquota_interna: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">MVA Original %</Label>
+                  <Input
+                    type="number" step="0.01" placeholder="—"
+                    value={editing.mva_original ?? ''}
+                    onChange={(e) => setEditing({ ...editing, mva_original: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">Redução BC %</Label>
+                  <Input
+                    type="number" step="0.01"
+                    value={editing.reducao_bc_pct}
+                    onChange={(e) => setEditing({ ...editing, reducao_bc_pct: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">MVA Aj. 4%</Label>
+                  <Input
+                    type="number" step="0.01" placeholder="—"
+                    value={editing.mva_ajustado_4pct ?? ''}
+                    onChange={(e) => setEditing({ ...editing, mva_ajustado_4pct: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">MVA Aj. 7%</Label>
+                  <Input
+                    type="number" step="0.01" placeholder="—"
+                    value={editing.mva_ajustado_7pct ?? ''}
+                    onChange={(e) => setEditing({ ...editing, mva_ajustado_7pct: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">MVA Aj. 12%</Label>
+                  <Input
+                    type="number" step="0.01" placeholder="—"
+                    value={editing.mva_ajustado_12pct ?? ''}
+                    onChange={(e) => setEditing({ ...editing, mva_ajustado_12pct: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
+            <Button
+              onClick={() => editing && updateMutation.mutate(editing)}
+              disabled={updateMutation.isPending}
+            >
+              {updateMutation.isPending ? 'Salvando...' : 'Salvar alterações'}
             </Button>
           </DialogFooter>
         </DialogContent>
