@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -412,26 +412,34 @@ interface FronteiraFiltros {
   num_nota?: string
   data_ini?: string
   data_fim?: string
+  uf?: string
 }
 
 // aplicaFiltros adiciona os filtros não-vazios a um URLSearchParams.
 function aplicaFiltros(params: URLSearchParams, f?: FronteiraFiltros) {
   if (!f) return
+  if (f.uf?.trim()) params.set('uf', f.uf.trim())
   if (f.forn?.trim()) params.set('forn', f.forn.trim())
   if (f.num_nota?.trim()) params.set('num_nota', f.num_nota.trim())
   if (f.data_ini) params.set('data_ini', f.data_ini)
   if (f.data_fim) params.set('data_fim', f.data_fim)
 }
 
+// UF selecionada para o módulo inteiro (eixo UF). Provida pelo componente raiz.
+const FronteiraUFContext = createContext<string>('')
+const useFronteiraUF = () => useContext(FronteiraUFContext)
+
 // ---------------------------------------------------------------------------
 // Export buttons (shared by tabs)
 // ---------------------------------------------------------------------------
 function ExportButtons({ regime, token, periodo, filtros }: { regime: string; token: string | null; periodo?: string; filtros?: FronteiraFiltros }) {
+  const uf = useFronteiraUF()
   async function downloadFile(format: 'csv' | 'xlsx') {
     try {
       const params = new URLSearchParams({ regime })
       if (periodo) params.set('periodo', periodo)
       if (token) params.set('token', token)
+      if (uf) params.set('uf', uf)
       aplicaFiltros(params, filtros)
       const res = await fetch(`/api/icms-fronteira/exportar/${format}?${params}`)
       if (!res.ok) throw new Error(`Erro ${res.status}`)
@@ -452,6 +460,7 @@ function ExportButtons({ regime, token, periodo, filtros }: { regime: string; to
     const params = new URLSearchParams({ regime })
     if (periodo) params.set('periodo', periodo)
     if (token) params.set('token', token)
+    if (uf) params.set('uf', uf)
     aplicaFiltros(params, filtros)
     window.open(`/api/icms-fronteira/exportar/pdf?${params}`, '_blank')
   }
@@ -504,14 +513,16 @@ function RecalcularButton() {
 function ResumoTab({ token }: { token: string | null }) {
   const [monthInput, setMonthInput] = useState('')
   const periodo = monthToPeriodo(monthInput)
+  const uf = useFronteiraUF()
 
   const { data, isLoading, isError } = useQuery<FronteiraResumoResponse>({
-    queryKey: ['icms-fronteira/resumo', periodo],
+    queryKey: ['icms-fronteira/resumo', periodo, uf],
     queryFn: async () => {
-      const url = periodo
-        ? `/api/icms-fronteira/resumo?periodo=${encodeURIComponent(periodo)}`
-        : '/api/icms-fronteira/resumo'
-      const res = await fetch(url, {
+      const params = new URLSearchParams()
+      if (periodo) params.set('periodo', periodo)
+      if (uf) params.set('uf', uf)
+      const qs = params.toString()
+      const res = await fetch(`/api/icms-fronteira/resumo${qs ? `?${qs}` : ''}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
@@ -982,9 +993,10 @@ function NotasTabBlocos({
   const [numNota, setNumNota] = useState('')
   const [dataIni, setDataIni] = useState('')
   const [dataFim, setDataFim] = useState('')
-  const filtros: FronteiraFiltros = { forn, num_nota: numNota, data_ini: dataIni, data_fim: dataFim }
+  const uf = useFronteiraUF()
+  const filtros: FronteiraFiltros = { forn, num_nota: numNota, data_ini: dataIni, data_fim: dataFim, uf }
   // chave de cache estável dos filtros (só dispara refetch quando mudam)
-  const filtrosKey = `${forn}|${numNota}|${dataIni}|${dataFim}`
+  const filtrosKey = `${uf}|${forn}|${numNota}|${dataIni}|${dataFim}`
 
   const [openA, setOpenA] = useState(true)
   const [openB, setOpenB] = useState(true)
@@ -4175,6 +4187,22 @@ export default function IcmsFronteira() {
   const navigate = useNavigate()
   const { token } = useAuth()
 
+  // Eixo UF: UF de trabalho do módulo (filiais daquela UF). Lista vem do SPED.
+  const { data: ufsData } = useQuery<{ ufs: string[] }>({
+    queryKey: ['icms-fronteira/ufs'],
+    queryFn: async () => {
+      const res = await fetch('/api/icms-fronteira/ufs', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: !!token,
+  })
+  const ufs = ufsData?.ufs ?? []
+  const [uf, setUf] = useState('')
+  useEffect(() => {
+    if (!uf && ufs.length > 0) setUf(ufs[0])
+  }, [ufs, uf])
+
   const pathToTab: Record<string, string> = {
     '/icms-fronteira':              'resumo',
     '/icms-fronteira/antecipacao':  'antecipacao',
@@ -4247,11 +4275,33 @@ export default function IcmsFronteira() {
         <p className="text-sm text-muted-foreground ml-1">
           Apuração de ICMS na entrada interestadual de mercadorias
         </p>
+
+        {/* Seletor de UF (eixo do módulo) */}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">UF de trabalho:</span>
+          <Select value={uf} onValueChange={setUf} disabled={ufs.length === 0}>
+            <SelectTrigger className="h-8 w-24 text-sm font-semibold">
+              <SelectValue placeholder={ufs.length === 0 ? '—' : 'UF'} />
+            </SelectTrigger>
+            <SelectContent>
+              {ufs.map((u) => (
+                <SelectItem key={u} value={u}>{u}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+
+      {ufs.length > 1 && (
+        <p className="text-xs text-muted-foreground -mt-2">
+          Apurando as filiais da UF <strong>{uf}</strong>. Troque a UF acima para ver as demais.
+        </p>
+      )}
 
       <Separator />
 
-      {/* Tabs */}
+      {/* Tabs — todo o módulo opera sobre a UF selecionada */}
+      <FronteiraUFContext.Provider value={uf}>
       <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
@@ -4489,6 +4539,7 @@ export default function IcmsFronteira() {
           </Card>
         </TabsContent>
       </Tabs>
+      </FronteiraUFContext.Provider>
     </div>
   )
 }
