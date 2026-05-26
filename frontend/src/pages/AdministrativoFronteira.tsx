@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, FileText, Factory, MapPin, Building, ImageUp } from "lucide-react";
+import { Check, FileText, Factory, MapPin, Building, ImageUp, Tag, Save } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Tipos compartilhados (mesmos shapes que o backend devolve).
@@ -560,10 +560,150 @@ export function EmpresaEditTab({ company }: { company: CompanyEditable }) {
 }
 
 // ---------------------------------------------------------------------------
-// AdministrativoTab — entrada única, usada como TabsContent="administrativo"
-// dentro do /icms-fronteira. Carrega /api/user/hierarchy e organiza 3 sub-abas.
+// SegmentosTab — gerencia os segmentos de ST cadastrados para a empresa/UF.
+// Lista todos os segmentos disponíveis para a UF selecionada e permite marcar
+// quais a empresa opera — o motor de cálculo usa essa lista para decidir se
+// um CFOP de ST é realmente ST ou antecipação.
 // ---------------------------------------------------------------------------
-export function AdministrativoTab() {
+interface SegmentoUF {
+  codigo: number;
+  uf: string;
+  descricao: string;
+  ativo: boolean;
+}
+
+export function SegmentosTab({ uf }: { uf: string }) {
+  const { token } = useAuth();
+  const [segmentos, setSegmentos] = useState<SegmentoUF[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [ativos, setAtivos] = useState<Set<number>>(new Set());
+
+  const load = async () => {
+    if (!uf) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/icms-fronteira/segmentos?uf=${uf}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const list: SegmentoUF[] = data.segmentos || [];
+      setSegmentos(list);
+      setAtivos(new Set(list.filter(s => s.ativo).map(s => s.codigo)));
+    } catch {
+      toast.error("Erro ao carregar segmentos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [uf, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = (codigo: number) => {
+    setAtivos(prev => {
+      const next = new Set(prev);
+      if (next.has(codigo)) next.delete(codigo); else next.add(codigo);
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/icms-fronteira/company-segmentos", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ uf, codigos: Array.from(ativos) }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success(`Segmentos de ${uf} atualizados`);
+      load();
+    } catch {
+      toast.error("Erro ao salvar segmentos");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!uf) {
+    return (
+      <div className="border rounded-md p-6 bg-white">
+        <p className="text-muted-foreground text-sm">Selecione uma UF no seletor acima para gerenciar os segmentos.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="border rounded-md bg-white p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-sm font-semibold">Segmentos sujeitos à ST — {uf}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Marque os segmentos em que a empresa opera. O cálculo só aplica ST para NCMs
+              cujo segmento esteja marcado aqui; os demais são tratados como antecipação.
+            </p>
+          </div>
+          <Button size="sm" onClick={handleSave} disabled={saving || loading}>
+            <Save className="h-3.5 w-3.5 mr-1" />
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+        </div>
+
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Carregando...</p>
+        ) : segmentos.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nenhum segmento cadastrado para {uf}. A tabela de segmentos é alimentada pela migration de seed.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10">Ativo</TableHead>
+                <TableHead className="w-16">Cód.</TableHead>
+                <TableHead>Descrição do Segmento</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {segmentos.map(seg => (
+                <TableRow
+                  key={seg.codigo}
+                  className={ativos.has(seg.codigo) ? "bg-blue-50" : ""}
+                  onClick={() => toggle(seg.codigo)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <TableCell>
+                    <Checkbox
+                      checked={ativos.has(seg.codigo)}
+                      onCheckedChange={() => toggle(seg.codigo)}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </TableCell>
+                  <TableCell className="font-mono text-sm font-semibold">{String(seg.codigo).padStart(2, '0')}</TableCell>
+                  <TableCell className="text-sm">{seg.descricao}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
+        <p className="text-[11px] text-muted-foreground mt-3">
+          <strong>{ativos.size}</strong> de {segmentos.length} segmentos ativos para {uf}.
+          As regras NCM importadas precisam ter o código do segmento preenchido para que o
+          motor diferencie ST de antecipação.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AdministrativoTab — entrada única, usada como TabsContent="administrativo"
+// dentro do /icms-fronteira. Carrega /api/user/hierarchy e organiza 4 sub-abas.
+// ---------------------------------------------------------------------------
+export function AdministrativoTab({ uf }: { uf: string }) {
   const { token } = useAuth();
 
   const { data, isLoading, isError } = useQuery<UserHierarchy>({
@@ -601,6 +741,10 @@ export function AdministrativoTab() {
           <MapPin className="h-4 w-4" />
           UFs
         </TabsTrigger>
+        <TabsTrigger value="segmentos" className="flex items-center gap-2">
+          <Tag className="h-4 w-4" />
+          Segmentos ST
+        </TabsTrigger>
         <TabsTrigger value="empresa" className="flex items-center gap-2">
           <Building className="h-4 w-4" />
           Empresa
@@ -613,6 +757,10 @@ export function AdministrativoTab() {
 
       <TabsContent value="ufs">
         <UFsHubTab />
+      </TabsContent>
+
+      <TabsContent value="segmentos">
+        <SegmentosTab uf={uf} />
       </TabsContent>
 
       <TabsContent value="empresa">

@@ -32,6 +32,9 @@ type FronteiraRegraRow struct {
 	ReducaoBCPct     float64  `json:"reducao_bc_pct"`
 	UFEstado         string   `json:"uf_estado"`
 	IsGlobal         bool     `json:"is_global"`
+	CEST             *string  `json:"cest"`
+	Segmento         *string  `json:"segmento"`
+	SegmentoCodigo   *int     `json:"segmento_codigo"`
 }
 
 type FronteiraRegrasResponse struct {
@@ -88,7 +91,10 @@ func IcmsFronteiraRegrasListHandler(db *sql.DB) http.HandlerFunc {
 				mva_ajustado_12pct,
 				COALESCE(reducao_bc_pct, 0),
 				uf_estado,
-				(company_id IS NULL) AS is_global
+				(company_id IS NULL) AS is_global,
+				cest,
+				segmento,
+				segmento_codigo
 			FROM icms_fronteira_regras_ncm
 			WHERE (company_id = $1 OR company_id IS NULL)
 			  AND uf_estado = $2
@@ -105,6 +111,8 @@ func IcmsFronteiraRegrasListHandler(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var row FronteiraRegraRow
 			var mva, mva4, mva7, mva12 sql.NullFloat64
+			var cest, segmento sql.NullString
+			var segmentoCodigo sql.NullInt64
 			if err := rows.Scan(
 				&row.ID,
 				&row.NCMPrefixo,
@@ -118,6 +126,9 @@ func IcmsFronteiraRegrasListHandler(db *sql.DB) http.HandlerFunc {
 				&row.ReducaoBCPct,
 				&row.UFEstado,
 				&row.IsGlobal,
+				&cest,
+				&segmento,
+				&segmentoCodigo,
 			); err != nil {
 				log.Printf("IcmsFronteiraRegrasList scan error: %v", err)
 				continue
@@ -133,6 +144,16 @@ func IcmsFronteiraRegrasListHandler(db *sql.DB) http.HandlerFunc {
 			}
 			if mva12.Valid {
 				row.MVAAjustado12pct = &mva12.Float64
+			}
+			if cest.Valid {
+				row.CEST = &cest.String
+			}
+			if segmento.Valid {
+				row.Segmento = &segmento.String
+			}
+			if segmentoCodigo.Valid {
+				v := int(segmentoCodigo.Int64)
+				row.SegmentoCodigo = &v
 			}
 			result = append(result, row)
 		}
@@ -463,6 +484,11 @@ func detectFronteiraRegrasColumns(header []string) map[string]int {
 			set("cest", i)
 		case strings.HasPrefix(n, "descri"):
 			set("descricao", i)
+		// Código numérico do segmento (ex: "Cód. Segmento", "Código Segmento", "segmento_codigo")
+		case (strings.Contains(n, "cod") || strings.Contains(n, "cod.")) && strings.Contains(n, "segmento"),
+			n == "segmento_codigo", n == "codsegmento", n == "cod_segmento",
+			n == "codigos_segmento", n == "codigo_segmento":
+			set("segmento_codigo", i)
 		case strings.HasPrefix(n, "segmento") || strings.HasPrefix(n, "grupo"):
 			set("segmento", i)
 		case n == "uf" || strings.HasPrefix(n, "uf "):
@@ -716,6 +742,13 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 			descricao := get(rec, "descricao")
 			cest := get(rec, "cest")
 			segmento := get(rec, "segmento")
+			// segmento_codigo: código numérico do segmento (obrigatório para ST)
+			var segmentoCodigoArg interface{}
+			if sc := strings.TrimSpace(get(rec, "segmento_codigo")); sc != "" && sc != "-" {
+				if v, err2 := strconv.Atoi(sc); err2 == nil && v > 0 {
+					segmentoCodigoArg = v
+				}
+			}
 
 			// MVA ajustado pré-calculado (formato unificado) e MVA original
 			mva4 := parsePctOrNull(get(rec, "mva4"))
@@ -758,9 +791,9 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 					(company_id, ncm_prefixo, descricao, regime, aliquota_interna,
 					 mva_original, reducao_bc_pct, uf_estado,
 					 mva_ajustado_4pct, mva_ajustado_7pct, mva_ajustado_12pct,
-					 cest, segmento)
+					 cest, segmento, segmento_codigo)
 				VALUES
-					($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+					($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 				ON CONFLICT (company_id, ncm_prefixo, uf_estado) DO UPDATE
 					SET descricao = EXCLUDED.descricao,
 					    regime = EXCLUDED.regime,
@@ -771,11 +804,12 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 					    mva_ajustado_7pct = EXCLUDED.mva_ajustado_7pct,
 					    mva_ajustado_12pct = EXCLUDED.mva_ajustado_12pct,
 					    cest = EXCLUDED.cest,
-					    segmento = EXCLUDED.segmento
+					    segmento = EXCLUDED.segmento,
+					    segmento_codigo = EXCLUDED.segmento_codigo
 			`, companyID, ncmPrefixo, descricao, regime, aliquotaInterna,
 					mvaOrig, reducaoBCPct, rowUF,
 					mva4, mva7, mva12,
-					nullIfEmpty(cest), nullIfEmpty(segmento))
+					nullIfEmpty(cest), nullIfEmpty(segmento), segmentoCodigoArg)
 				if err2 != nil {
 					log.Printf("IcmsFronteiraRegrasImportar upsert error row %d ncm=%s: %v", i+1, ncmPrefixo, err2)
 					if len(res.Errors) < 100 {

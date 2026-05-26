@@ -701,6 +701,22 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraUFsHandler(database), "")(w, r)
 	})
+	http.HandleFunc("/api/icms-fronteira/segmentos", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraSegmentosHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/company-segmentos", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraCompanySegmentosHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/antecipacao", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {

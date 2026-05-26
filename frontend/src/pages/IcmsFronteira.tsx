@@ -4706,7 +4706,7 @@ export default function IcmsFronteira() {
                 Filiais importadas, parâmetros por UF (benefícios) e edição dos dados da empresa em foco.
                 Substitui a antiga aba "Filiais" e "UFs" da Gestão de Ambiente.
               </p>
-              <AdministrativoTab />
+              <AdministrativoTab uf={uf} />
             </CardContent>
           </Card>
         </TabsContent>

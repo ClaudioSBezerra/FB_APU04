@@ -105,10 +105,22 @@ SELECT
     m.forn_cnpj, m.forn_nome, COALESCE(m.forn_uf,'') AS forn_uf,
     m.cfop_saida,
     COALESCE(m.ncm,'') AS ncm,
+    -- ST apenas se segmento da regra coincide com segmento cadastrado na empresa.
     COALESCE(cm.regime,
         CASE
             WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
-            WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN 'ST'
+            WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
+                CASE
+                    WHEN regra.segmento_codigo IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1 FROM company_segmentos cs
+                          WHERE cs.company_id = $1::uuid
+                            AND cs.segmento_codigo = regra.segmento_codigo
+                            AND cs.uf = COALESCE(m.dest_uf, 'PE')
+                      )
+                    THEN 'ST'
+                    ELSE 'ANTECIPACAO'
+                END
             WHEN m.cfop_entrada IN ('2101','2102','2152') THEN 'ANTECIPACAO'
             ELSE 'NAO_FRONTEIRA'
         END
@@ -133,6 +145,7 @@ SELECT
     -- despesas, deduzindo apenas o ICMS destacado na própria NF. O frete do
     -- CT-e (e seu ICMS) NÃO entra no ICMS fronteira — é tratado só na aba
     -- Fretes. (Decisão do contador, 2026-05; ex.: NF 14817 USICORP = 472,50.)
+    -- ST só se aplica quando regra.segmento_codigo está em company_segmentos.
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN
             GREATEST(0,
@@ -145,23 +158,38 @@ SELECT
                 * COALESCE(regra.aliquota_interna,20.5)/100.0
                 - m.v_icms)
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
-            CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
-                THEN GREATEST(0,
-                     (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
-                     * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
-                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                     - m.v_icms)
-                ELSE 0 END
+            CASE
+                WHEN regra.segmento_codigo IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM company_segmentos cs
+                      WHERE cs.company_id = $1::uuid
+                        AND cs.segmento_codigo = regra.segmento_codigo
+                        AND cs.uf = COALESCE(m.dest_uf, 'PE')
+                  )
+                THEN CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
+                    THEN GREATEST(0,
+                         (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
+                         * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
+                         * COALESCE(regra.aliquota_interna,20.5)/100.0
+                         - m.v_icms)
+                    ELSE 0 END
+                ELSE GREATEST(0,
+                    (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
+                    * COALESCE(regra.aliquota_interna,20.5)/100.0
+                    - m.v_icms)
+            END
         ELSE 0
     END AS icms_devido_est
 FROM mapped m
 LEFT JOIN LATERAL (
-    SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct
+    SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct,
+           r.segmento_codigo
     FROM icms_fronteira_regras_ncm r
     WHERE (r.company_id = $1 OR r.company_id IS NULL)
       AND r.uf_estado = COALESCE(m.dest_uf, 'PE')
       AND m.ncm IS NOT NULL
       AND LEFT(m.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
+      AND LENGTH(r.ncm_prefixo) >= 4
     ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC LIMIT 1
 ) regra ON true
 LEFT JOIN cte_por_nfe cte ON cte.chave_nfe = m.chave_nfe
@@ -170,7 +198,18 @@ LEFT JOIN icms_fronteira_classificacao_manual cm
 WHERE COALESCE(cm.regime,
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
-        WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN 'ST'
+        WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
+            CASE
+                WHEN regra.segmento_codigo IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM company_segmentos cs
+                      WHERE cs.company_id = $1::uuid
+                        AND cs.segmento_codigo = regra.segmento_codigo
+                        AND cs.uf = COALESCE(m.dest_uf, 'PE')
+                  )
+                THEN 'ST'
+                ELSE 'ANTECIPACAO'
+            END
         WHEN m.cfop_entrada IN ('2101','2102','2152') THEN 'ANTECIPACAO'
         ELSE 'NAO_FRONTEIRA'
     END) = $3

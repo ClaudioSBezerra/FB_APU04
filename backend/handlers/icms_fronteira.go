@@ -246,11 +246,24 @@ classified AS (
         COALESCE(l.vl_icms_st, 0)                           AS v_st,
         COALESCE(NULLIF(l.aliq_icms, 0), 12.0)              AS aliq_inter,
         COALESCE(regra.aliquota_interna, 20.5)              AS aliq_interna,
+        -- ST só se aplica quando a regra NCM tem segmento_codigo cadastrado E a
+        -- empresa tem esse segmento registrado (company_segmentos). Sem match →
+        -- reclassifica como ANTECIPAÇÃO (decisão do contador, 2026-05).
         CASE
             WHEN l.cfop IN ('2551','2556')
                 THEN 'DIFAL'
             WHEN l.cfop IN ('2403','2409','2651','2652')
-                THEN 'ST'
+                THEN CASE
+                    WHEN regra.segmento_codigo IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1 FROM company_segmentos cs
+                          WHERE cs.company_id = $1::uuid
+                            AND cs.segmento_codigo = regra.segmento_codigo
+                            AND cs.uf = COALESCE(j.uf, 'PE')
+                      )
+                    THEN 'ST'
+                    ELSE 'ANTECIPACAO'
+                END
             WHEN l.cfop IN ('2101','2102','2152')
                 THEN 'ANTECIPACAO'
         END                                                 AS regime,
@@ -272,37 +285,51 @@ classified AS (
                     ) / 100.0)
             WHEN l.cfop IN ('2403','2409','2651','2652')
                 THEN CASE
-                    -- MVA efetivo: ajustado pré-calc por alíquota interestadual real,
-                    -- fallback Convênio 110/07 a partir do MVA original, fallback MVA original.
-                    WHEN COALESCE(
-                        CASE COALESCE(NULLIF(l.aliq_icms,0),12.0)
-                            WHEN 4.0  THEN regra.mva_ajustado_4pct
-                            WHEN 7.0  THEN regra.mva_ajustado_7pct
-                            WHEN 12.0 THEN regra.mva_ajustado_12pct
-                        END,
-                        CASE WHEN regra.mva_original IS NOT NULL AND COALESCE(regra.aliquota_interna,20.5) < 100 THEN
-                            ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(l.aliq_icms,0),12.0)/100.0)
-                             / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0) - 1.0) * 100.0
-                        END,
-                        regra.mva_original
-                    ) IS NOT NULL
-                        THEN GREATEST(0,
-                            l.base_calc
-                            * (1.0 + COALESCE(
-                                CASE COALESCE(NULLIF(l.aliq_icms,0),12.0)
-                                    WHEN 4.0  THEN regra.mva_ajustado_4pct
-                                    WHEN 7.0  THEN regra.mva_ajustado_7pct
-                                    WHEN 12.0 THEN regra.mva_ajustado_12pct
-                                END,
-                                CASE WHEN regra.mva_original IS NOT NULL AND COALESCE(regra.aliquota_interna,20.5) < 100 THEN
-                                    ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(l.aliq_icms,0),12.0)/100.0)
-                                     / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0) - 1.0) * 100.0
-                                END,
-                                regra.mva_original
-                            )/100.0)
-                            * COALESCE(regra.aliquota_interna, 20.5)/100.0
-                            - COALESCE(l.vl_icms, 0))
-                    ELSE COALESCE(l.vl_icms_st, 0)
+                    -- ST: segmento da empresa coincide com o da regra NCM
+                    WHEN regra.segmento_codigo IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1 FROM company_segmentos cs
+                          WHERE cs.company_id = $1::uuid
+                            AND cs.segmento_codigo = regra.segmento_codigo
+                            AND cs.uf = COALESCE(j.uf, 'PE')
+                      )
+                    THEN CASE
+                        -- MVA efetivo: ajustado pré-calc por alíquota interestadual real,
+                        -- fallback Convênio 110/07 a partir do MVA original, fallback MVA original.
+                        WHEN COALESCE(
+                            CASE COALESCE(NULLIF(l.aliq_icms,0),12.0)
+                                WHEN 4.0  THEN regra.mva_ajustado_4pct
+                                WHEN 7.0  THEN regra.mva_ajustado_7pct
+                                WHEN 12.0 THEN regra.mva_ajustado_12pct
+                            END,
+                            CASE WHEN regra.mva_original IS NOT NULL AND COALESCE(regra.aliquota_interna,20.5) < 100 THEN
+                                ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(l.aliq_icms,0),12.0)/100.0)
+                                 / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0) - 1.0) * 100.0
+                            END,
+                            regra.mva_original
+                        ) IS NOT NULL
+                            THEN GREATEST(0,
+                                l.base_calc
+                                * (1.0 + COALESCE(
+                                    CASE COALESCE(NULLIF(l.aliq_icms,0),12.0)
+                                        WHEN 4.0  THEN regra.mva_ajustado_4pct
+                                        WHEN 7.0  THEN regra.mva_ajustado_7pct
+                                        WHEN 12.0 THEN regra.mva_ajustado_12pct
+                                    END,
+                                    CASE WHEN regra.mva_original IS NOT NULL AND COALESCE(regra.aliquota_interna,20.5) < 100 THEN
+                                        ((1.0 + regra.mva_original/100.0) * (1.0 - COALESCE(NULLIF(l.aliq_icms,0),12.0)/100.0)
+                                         / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0) - 1.0) * 100.0
+                                    END,
+                                    regra.mva_original
+                                )/100.0)
+                                * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                                - COALESCE(l.vl_icms, 0))
+                        ELSE COALESCE(l.vl_icms_st, 0)
+                    END
+                    -- Sem segmento cadastrado → reclassificado como ANTECIPAÇÃO
+                    ELSE GREATEST(0,
+                        l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                        - COALESCE(l.vl_icms, 0))
                 END
             WHEN l.cfop IN ('2101','2102','2152')
                 THEN GREATEST(0,
@@ -329,12 +356,14 @@ classified AS (
     ) top_item ON true
     LEFT JOIN LATERAL (
         SELECT r.aliquota_interna, r.mva_original,
-               r.mva_ajustado_4pct, r.mva_ajustado_7pct, r.mva_ajustado_12pct
+               r.mva_ajustado_4pct, r.mva_ajustado_7pct, r.mva_ajustado_12pct,
+               r.segmento_codigo
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
           AND r.uf_estado = COALESCE(j.uf, 'PE')
           AND top_item.ncm IS NOT NULL
           AND LEFT(top_item.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
+          AND LENGTH(r.ncm_prefixo) >= 4
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
         LIMIT 1
     ) regra ON true
