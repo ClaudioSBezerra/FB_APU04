@@ -128,10 +128,12 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string, r *http.Requ
 	return result, nil
 }
 
+// Colunas iguais às exibidas na tela (blocos A/B/C). Bloco/Regime servem só de
+// agrupador no CSV; V.Operação = V.Prod + V.IPI; "ICMS fronteira" = ICMS devido.
 var exportCSVHeaders = []string{
 	"Bloco", "Data Emissão", "Número NF-e", "Fornecedor", "CNPJ", "UF", "CFOP", "Regime",
-	"V.Prod", "V.IPI", "ICMS Atual", "V.BC ST", "V.ST", "Alíq.Inter.%", "Alíq.Interna.%", "ICMS Devido Est.",
-	"Chave NF-e", "Chave CT-e",
+	"V.Prod", "V.IPI", "V.Operação", "ICMS NF", "Alíq.Inter.%", "Alíq.Interna.%", "ICMS fronteira",
+	"Chave NF-e",
 }
 
 func blocoLabel(bloco string) string {
@@ -153,14 +155,12 @@ func rowToCSVRecord(row fronteiraExportRow) []string {
 		row.Regime,
 		fmt.Sprintf("%.2f", row.VProd),
 		fmt.Sprintf("%.2f", row.VIPI),
-		fmt.Sprintf("%.2f", row.VIcms),
-		fmt.Sprintf("%.2f", row.VBcST),
-		fmt.Sprintf("%.2f", row.VST),
+		fmt.Sprintf("%.2f", row.VProd+row.VIPI), // V.Operação
+		fmt.Sprintf("%.2f", row.VIcms),          // ICMS NF (destacado)
 		fmt.Sprintf("%.2f", row.AliqInter),
 		fmt.Sprintf("%.2f", row.AliqInterna),
-		fmt.Sprintf("%.2f", row.IcmsDevidoEst),
+		fmt.Sprintf("%.2f", row.IcmsDevidoEst), // ICMS fronteira
 		row.ChaveNFe,
-		"",
 	}
 }
 
@@ -282,27 +282,10 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		moneyWarnStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}}, CustomNumFmt: &moneyFmt})
 		numWarnStyle, _   := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}}, CustomNumFmt: &numFmt})
 
-		// CT-e rows: fundo verde-claro para distinguir da NF
-		cteStyle, _      := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}})
-		moneyCteStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}, CustomNumFmt: &moneyFmt})
-		numCteStyle, _   := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}, CustomNumFmt: &numFmt})
-
-		// exportCSVHeaders[0] = "Bloco", drop it (already separated by sheet)
+		// Colunas espelham a tela (A–O). Sem linhas de CT-e: o frete é tratado
+		// na aba Fretes e não compõe o ICMS fronteira.
 		sheetHeaders := exportCSVHeaders[1:]
-		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q"}
-
-		// Monta mapa de parâmetros das NFs para cálculo do frete
-		nfParams := make(map[string]nfFreteParams)
-		for _, row := range dataRows {
-			if row.ChaveNFe != "" && row.Regime != "" {
-				nfParams[row.ChaveNFe] = nfFreteParams{
-					Regime:      row.Regime,
-					AliqInter:   row.AliqInter,
-					AliqInterna: row.AliqInterna,
-				}
-			}
-		}
-		freteLinks := fetchFreteLinks(db, companyID, periodo, nfParams)
+		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"}
 
 		// ── Sheets B e A (SPED) ──────────────────────────────────────────────
 		type sheetDef struct{ key, name string; warn bool }
@@ -336,10 +319,10 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellStyle(sheetName, cell, cell, headerStyle)
 			}
 
-			var totalVProd, totalVIcms, totalVBcST, totalVST, totalIcmsDevido, totalVIPI float64
+			var totalVProd, totalVIcms, totalIcmsDevido, totalVIPI float64
 			excelRow := 2
 			for _, row := range sheetRows {
-				// ── linha da NF ──────────────────────────────────────────────
+				vOpr := row.VProd + row.VIPI
 				f.SetCellValue(sheetName, fmt.Sprintf("A%d", excelRow), row.DataEmissao)
 				f.SetCellValue(sheetName, fmt.Sprintf("B%d", excelRow), row.NumeroNFe)
 				f.SetCellValue(sheetName, fmt.Sprintf("C%d", excelRow), row.FornNome)
@@ -349,14 +332,12 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellValue(sheetName, fmt.Sprintf("G%d", excelRow), row.Regime)
 				f.SetCellValue(sheetName, fmt.Sprintf("H%d", excelRow), row.VProd)
 				f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), row.VIPI)
-				f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), row.VIcms)
-				f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), row.VBcST)
-				f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.VST)
-				f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInter)
-				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.AliqInterna)
-				f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.IcmsDevidoEst)
-				f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), row.ChaveNFe)
-				f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), "")
+				f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), vOpr)            // V.Operação
+				f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), row.VIcms)       // ICMS NF
+				f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), row.AliqInter)
+				f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInterna)
+				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.IcmsDevidoEst) // ICMS fronteira
+				f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.ChaveNFe)
 				// Aplica estilos por tipo de coluna
 				textStyle := 0
 				mStyle := moneyStyle
@@ -367,76 +348,34 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					nStyle = numWarnStyle
 				}
 				if textStyle > 0 {
-					for _, c := range []string{"A","B","C","D","E","F","G","P","Q"} {
+					for _, c := range []string{"A","B","C","D","E","F","G","O"} {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), textStyle)
 					}
 				}
-				for _, c := range []string{"H","I","J","K","L","O"} {
+				for _, c := range []string{"H","I","J","K","N"} {
 					f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), mStyle)
 				}
-				for _, c := range []string{"M","N"} {
+				for _, c := range []string{"L","M"} {
 					f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), nStyle)
 				}
 				totalVProd += row.VProd
 				totalVIcms += row.VIcms
-				totalVBcST += row.VBcST
-				totalVST += row.VST
 				totalIcmsDevido += row.IcmsDevidoEst
 				totalVIPI += row.VIPI
 				excelRow++
-
-				// ── linhas de CT-e abaixo da NF ─────────────────────────────
-				for _, cte := range freteLinks[row.ChaveNFe] {
-					// Coluna A: identificação "CT-e NNNNNN" + fonte
-					label := fmt.Sprintf("CT-e %s", cte.NumeroCTe)
-					if cte.Fonte != "D162" && cte.Fonte != "XML-CTE" {
-						label += " (" + cte.Fonte + ")"
-					}
-					f.SetCellValue(sheetName, fmt.Sprintf("A%d", excelRow), row.DataEmissao)
-					f.SetCellValue(sheetName, fmt.Sprintf("B%d", excelRow), label)
-					f.SetCellValue(sheetName, fmt.Sprintf("C%d", excelRow), cte.EmitNome)
-					f.SetCellValue(sheetName, fmt.Sprintf("D%d", excelRow), cte.EmitCNPJ)
-					f.SetCellValue(sheetName, fmt.Sprintf("E%d", excelRow), "") // UF transportadora não crítica
-					f.SetCellValue(sheetName, fmt.Sprintf("F%d", excelRow), "CTE")
-					f.SetCellValue(sheetName, fmt.Sprintf("G%d", excelRow), row.Regime)
-					f.SetCellValue(sheetName, fmt.Sprintf("H%d", excelRow), cte.VPrest)
-					f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), 0) // CT-e não tem IPI
-					f.SetCellValue(sheetName, fmt.Sprintf("J%d", excelRow), cte.VIcmsCTe)
-					f.SetCellValue(sheetName, fmt.Sprintf("K%d", excelRow), 0) // V.BC ST (n/a)
-					f.SetCellValue(sheetName, fmt.Sprintf("L%d", excelRow), 0) // V.ST (n/a)
-					f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), row.AliqInter)
-					f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.AliqInterna)
-					f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), cte.IcmsFronteira)
-					f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), row.ChaveNFe)
-					f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), cte.ChaveCTe)
-					for _, c := range []string{"A","B","C","D","E","F","G","P","Q"} {
-						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), cteStyle)
-					}
-					for _, c := range []string{"H","I","J","K","L","O"} {
-						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), moneyCteStyle)
-					}
-					for _, c := range []string{"M","N"} {
-						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), numCteStyle)
-					}
-					totalVProd += cte.VPrest
-					totalVIcms += cte.VIcmsCTe
-					totalIcmsDevido += cte.IcmsFronteira
-					excelRow++
-				}
 			}
 			totalRow := excelRow
 			f.SetCellValue(sheetName, fmt.Sprintf("A%d", totalRow), "TOTAL")
-			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("Q%d", totalRow), boldStyle)
+			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("O%d", totalRow), boldStyle)
 			f.SetCellValue(sheetName, fmt.Sprintf("H%d", totalRow), totalVProd)
 			f.SetCellValue(sheetName, fmt.Sprintf("I%d", totalRow), totalVIPI)
-			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVIcms)
+			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVProd+totalVIPI) // V.Operação
+			f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVIcms)           // ICMS NF
+			f.SetCellValue(sheetName, fmt.Sprintf("N%d", totalRow), totalIcmsDevido)      // ICMS fronteira
 			// Aplica formato monetário nas células TOTAL (mantém bold)
-			for _, c := range []string{"H","I","J","K","L","O"} {
+			for _, c := range []string{"H","I","J","K","N"} {
 				f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, totalRow), fmt.Sprintf("%s%d", c, totalRow), moneyBoldStyle)
 			}
-			f.SetCellValue(sheetName, fmt.Sprintf("K%d", totalRow), totalVBcST)
-			f.SetCellValue(sheetName, fmt.Sprintf("L%d", totalRow), totalVST)
-			f.SetCellValue(sheetName, fmt.Sprintf("O%d", totalRow), totalIcmsDevido)
 		}
 
 		// ── Sheet C — XML não lançadas no SPED ───────────────────────────────
@@ -446,30 +385,22 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			if err != nil {
 				log.Printf("IcmsFronteiraExportXLSX nao-sped error: %v", err)
 			} else {
-				// Pré-carrega CT-es (toma=destinatário) para todas as NFs do Bloco C.
-				chaves := make([]string, 0, len(cRows))
-				for _, r := range cRows {
-					chaves = append(chaves, r.ChaveNFe)
-				}
-				ctesPorNFe := fetchCTesPorChaveNFe(db, companyID, chaves)
-
 				cSheet := "C - Não no SPED (XML)"
 				f.NewSheet(cSheet)
-				cHeaders := []string{"Data Emissão", "NF-e", "Fornecedor", "CNPJ", "UF", "CFOP Saída", "Regime", "V.Operação", "V.IPI", "ICMS Est.", "Classificação", "Chave NF-e", "Chave CT-e"}
-				cCols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"}
-				for i, h := range cHeaders {
-					cell := fmt.Sprintf("%s1", cCols[i])
+				// Mesmas colunas (A–O) das planilhas A/B. Sem CT-e (frete fica na
+				// aba Fretes e não compõe o ICMS fronteira).
+				for i, h := range sheetHeaders {
+					cell := fmt.Sprintf("%s1", cols[i])
 					f.SetCellValue(cSheet, cell, h)
 					f.SetCellStyle(cSheet, cell, cell, headerStyle)
 				}
 				slateStyle, _      := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}}})
 				moneySlateStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}}, CustomNumFmt: &moneyFmt})
-				cteRowStyle, _     := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}})
-				moneyCteRowStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2EFDA"}}, Font: &excelize.Font{Italic: true}, CustomNumFmt: &moneyFmt})
-				var totalIcmsC, totalIpiC float64
+				numSlateStyle, _   := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F1F5F9"}}, CustomNumFmt: &numFmt})
+				var totalVProdC, totalVIpiC, totalVIcmsC, totalIcmsC float64
 				er := 2
 				for _, row := range cRows {
-					// ── linha da NF ─────────────────────────────────────────────
+					vOpr := row.VProd + row.VIPI
 					f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), row.DataEmissao)
 					f.SetCellValue(cSheet, fmt.Sprintf("B%d", er), row.NumeroNFe)
 					f.SetCellValue(cSheet, fmt.Sprintf("C%d", er), row.FornNome)
@@ -477,52 +408,37 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(cSheet, fmt.Sprintf("E%d", er), row.FornUF)
 					f.SetCellValue(cSheet, fmt.Sprintf("F%d", er), row.CfopSaida)
 					f.SetCellValue(cSheet, fmt.Sprintf("G%d", er), row.Regime)
-					f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), row.VOpr)
+					f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), row.VProd)
 					f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), row.VIPI)
-					f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), row.IcmsDevidoEst)
-					f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ClassStatus)
-					f.SetCellValue(cSheet, fmt.Sprintf("L%d", er), row.ChaveNFe)
-					for _, c := range []string{"A","B","C","D","E","F","G","K","L","M"} {
+					f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), vOpr)            // V.Operação
+					f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.VIcmsNF)     // ICMS NF
+					f.SetCellValue(cSheet, fmt.Sprintf("L%d", er), row.AliqInter)
+					f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), row.AliqInterna)
+					f.SetCellValue(cSheet, fmt.Sprintf("N%d", er), row.IcmsDevidoEst) // ICMS fronteira
+					f.SetCellValue(cSheet, fmt.Sprintf("O%d", er), row.ChaveNFe)
+					for _, c := range []string{"A","B","C","D","E","F","G","O"} {
 						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), slateStyle)
 					}
-					for _, c := range []string{"H","I","J"} {
+					for _, c := range []string{"H","I","J","K","N"} {
 						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneySlateStyle)
 					}
-					totalIcmsC += row.IcmsDevidoEst
-					totalIpiC += row.VIPI
-					er++
-
-					// ── linhas filhas: CT-es vinculados (verde) ────────────────
-					for _, cte := range ctesPorNFe[row.ChaveNFe] {
-						label := fmt.Sprintf("CT-e %s", cte.NumeroCTe)
-						f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), row.DataEmissao)
-						f.SetCellValue(cSheet, fmt.Sprintf("B%d", er), label)
-						f.SetCellValue(cSheet, fmt.Sprintf("C%d", er), cte.EmitNome)
-						f.SetCellValue(cSheet, fmt.Sprintf("D%d", er), cte.EmitCNPJ)
-						f.SetCellValue(cSheet, fmt.Sprintf("E%d", er), "")
-						f.SetCellValue(cSheet, fmt.Sprintf("F%d", er), "CTE")
-						f.SetCellValue(cSheet, fmt.Sprintf("G%d", er), row.Regime)
-						f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), cte.VPrest)
-						f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), 0) // CT-e não tem IPI
-						f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), cte.VIcmsCTe)
-						f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), "")
-						f.SetCellValue(cSheet, fmt.Sprintf("L%d", er), row.ChaveNFe)
-						f.SetCellValue(cSheet, fmt.Sprintf("M%d", er), cte.ChaveCTe)
-						for _, c := range []string{"A","B","C","D","E","F","G","K","L","M"} {
-							f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), cteRowStyle)
-						}
-						for _, c := range []string{"H","I","J"} {
-							f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneyCteRowStyle)
-						}
-						er++
+					for _, c := range []string{"L","M"} {
+						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), numSlateStyle)
 					}
+					totalVProdC += row.VProd
+					totalVIpiC += row.VIPI
+					totalVIcmsC += row.VIcmsNF
+					totalIcmsC += row.IcmsDevidoEst
+					er++
 				}
 				f.SetCellValue(cSheet, fmt.Sprintf("A%d", er), "TOTAL")
-				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", er), fmt.Sprintf("M%d", er), boldStyle)
-				f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), totalIpiC)
-				f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), totalIcmsC)
-				// Aplica moeda+bold nas colunas H, I e J do TOTAL
-				for _, c := range []string{"H","I","J"} {
+				f.SetCellStyle(cSheet, fmt.Sprintf("A%d", er), fmt.Sprintf("O%d", er), boldStyle)
+				f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), totalVProdC)
+				f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), totalVIpiC)
+				f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), totalVProdC+totalVIpiC)
+				f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), totalVIcmsC)
+				f.SetCellValue(cSheet, fmt.Sprintf("N%d", er), totalIcmsC)
+				for _, c := range []string{"H","I","J","K","N"} {
 					f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneyBoldStyle)
 				}
 			}
@@ -727,21 +643,31 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Agrupar linhas por chave_nfe mantendo ordem de aparição
-		type nfGroup struct {
-			rows []fronteiraExportRow
+		// Linhas normalizadas para a tabela plana (MESMAS colunas da tela),
+		// separadas por bloco A/B/C — sem agrupar por NF nem detalhar item.
+		type pdfRow struct {
+			Data, NF, Forn, CNPJ, UF, CFOP, Chave                 string
+			VProd, VIPI, VIcms, AliqInter, AliqInterna, IcmsFront float64
 		}
-		var nfOrder []string
-		nfMap := make(map[string]*nfGroup)
+		var blocoA, blocoB, blocoC []pdfRow
 		for _, row := range dataRows {
-			if _, exists := nfMap[row.ChaveNFe]; !exists {
-				nfOrder = append(nfOrder, row.ChaveNFe)
-				nfMap[row.ChaveNFe] = &nfGroup{}
+			pr := pdfRow{row.DataEmissao, row.NumeroNFe, row.FornNome, row.FornCNPJ, row.FornUF, row.CFOP, row.ChaveNFe,
+				row.VProd, row.VIPI, row.VIcms, row.AliqInter, row.AliqInterna, row.IcmsDevidoEst}
+			if row.Bloco == "mes_anterior" {
+				blocoA = append(blocoA, pr)
+			} else {
+				blocoB = append(blocoB, pr)
 			}
-			nfMap[row.ChaveNFe].rows = append(nfMap[row.ChaveNFe].rows, row)
 		}
-
-		ncmByChave := fetchTopNcmByChave(db, companyID, nfOrder)
+		if regime != "todos" && periodo != "" {
+			if cRows, errC := fetchNaoSpedRows(db, companyID, periodo, strings.ToUpper(regime)); errC == nil {
+				for _, r := range cRows {
+					blocoC = append(blocoC, pdfRow{r.DataEmissao, r.NumeroNFe, r.FornNome, r.FornCNPJ, r.FornUF, r.CfopSaida, r.ChaveNFe,
+						r.VProd, r.VIPI, r.VIcmsNF, r.AliqInter, r.AliqInterna, r.IcmsDevidoEst})
+				}
+			}
+		}
+		totalNotas := len(blocoA) + len(blocoB) + len(blocoC)
 
 		regimeLabel := strings.ToUpper(regime)
 		if regimeLabel == "TODOS" {
@@ -778,95 +704,72 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 		sb.WriteString(`</div>`)
 		sb.WriteString(`</div>`)
 
-		if len(nfOrder) == 0 {
+		if totalNotas == 0 {
 			sb.WriteString(`<div class="empty">Nenhuma nota encontrada para este período e regime.</div>`)
-		} else {
-			// Quebra única pelo modelo do regime — não repetido em cada nota
-			sb.WriteString(fmt.Sprintf(
-				`<div class="rpt-section">Modelo: %s <span class="rpt-section-cnt">(%d nota(s))</span></div>`,
-				htmlEscape(regimeNome), len(nfOrder)))
 		}
 
-		var grandVOpr, grandIPI, grandBase, grandIcmsDest, grandST, grandDevido float64
+		showAliq := regime != "st"
+		numTd := func(v float64) string { return fmt.Sprintf(`<td style="text-align:right">%s</td>`, brl(v)) }
 
-		for _, chave := range nfOrder {
-			grp := nfMap[chave]
-			first := grp.rows[0]
-			ncm := ncmByChave[chave]
-			if ncm == "" {
-				ncm = "-"
+		var grandVProd, grandVIPI, grandVIcms, grandDevido float64
+
+		renderBloco := func(titulo string, rows []pdfRow) {
+			if len(rows) == 0 {
+				return
 			}
-
-			var nfVOpr, nfIPI, nfBase, nfIcmsDest, nfST, nfDevido float64
-			for _, row := range grp.rows {
-				nfVOpr += row.VProd
-				nfIPI += row.VIPI
-				nfBase += row.VProd
-				nfIcmsDest += row.VIcms
-				nfST += row.VST
-				nfDevido += row.IcmsDevidoEst
-			}
-
-			sb.WriteString(`<div class="nf-card">`)
-
-			// Cabeçalho da NF
+			var tVProd, tVIPI, tVIcms, tDevido float64
 			sb.WriteString(fmt.Sprintf(
-				`<div class="nf-hdr"><span class="nf-num">NF: %s</span><span class="nf-total">Total Devido: %s</span></div>`,
-				htmlEscape(first.NumeroNFe), brl(nfDevido)))
-			sb.WriteString(fmt.Sprintf(
-				`<div class="nf-forn">Fornecedor: %s</div>`,
-				htmlEscape(first.FornNome)))
-			sb.WriteString(fmt.Sprintf(`<div class="nf-chave">Chave: %s</div>`, htmlEscape(chave)))
-
-			// Tabela de itens
+				`<div class="rpt-section">%s <span class="rpt-section-cnt">(%d nota(s))</span></div>`,
+				htmlEscape(titulo), len(rows)))
 			sb.WriteString(`<table class="nf-tbl"><thead><tr>`)
-			for _, h := range []string{"Cód.", "NCM", "V. Operação", "IPI", "MVA", "Alíq. I/I", "Base Cálc.", "ICMS Dest.", "ICMS-ST Ret", "V. Devido"} {
+			heads := []string{"Data", "NF-e", "Fornecedor", "UF", "CFOP", "V. Prod.", "V. IPI", "V. Operação", "ICMS NF"}
+			if showAliq {
+				heads = append(heads, "Alíq. Inter.", "Alíq. Int.")
+			}
+			heads = append(heads, "ICMS fronteira", "Chave NF-e")
+			for _, h := range heads {
 				sb.WriteString(fmt.Sprintf(`<th>%s</th>`, h))
 			}
 			sb.WriteString(`</tr></thead><tbody>`)
-
-			for i, row := range grp.rows {
-				vstDisp := "-"
-				if row.VST > 0.001 {
-					vstDisp = brl(row.VST)
+			for _, r := range rows {
+				data := r.Data
+				if len(data) >= 10 {
+					data = data[:10]
 				}
-				ipiDisp := "-"
-				if row.VIPI > 0.001 {
-					ipiDisp = brl(row.VIPI)
+				sb.WriteString(`<tr>`)
+				sb.WriteString(fmt.Sprintf(`<td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>`,
+					htmlEscape(data), htmlEscape(r.NF), htmlEscape(r.Forn), htmlEscape(r.UF), htmlEscape(r.CFOP)))
+				sb.WriteString(numTd(r.VProd) + numTd(r.VIPI) + numTd(r.VProd+r.VIPI) + numTd(r.VIcms))
+				if showAliq {
+					sb.WriteString(fmt.Sprintf(`<td style="text-align:right">%.2f%%</td><td style="text-align:right">%.2f%%</td>`, r.AliqInter, r.AliqInterna))
 				}
-				aliqII := fmt.Sprintf("%.1f%% / %.1f%%", row.AliqInter, row.AliqInterna)
-				sb.WriteString(fmt.Sprintf(
-					`<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-					i+1, ncm,
-					brl(row.VProd), ipiDisp, aliqII, brl(row.VProd),
-					brl(row.VIcms), vstDisp, brl(row.IcmsDevidoEst)))
+				sb.WriteString(numTd(r.IcmsFront))
+				sb.WriteString(fmt.Sprintf(`<td style="font-size:7px;word-break:break-all">%s</td>`, htmlEscape(r.Chave)))
+				sb.WriteString(`</tr>`)
+				tVProd += r.VProd
+				tVIPI += r.VIPI
+				tVIcms += r.VIcms
+				tDevido += r.IcmsFront
 			}
-
-			// Linha TOTAIS da NF
-			stTotDisp := "-"
-			if nfST > 0.001 {
-				stTotDisp = brl(nfST)
+			sb.WriteString(`<tr class="tot-row"><td colspan="5">TOTAL</td>`)
+			sb.WriteString(numTd(tVProd) + numTd(tVIPI) + numTd(tVProd+tVIPI) + numTd(tVIcms))
+			if showAliq {
+				sb.WriteString(`<td></td><td></td>`)
 			}
-			ipiTotDisp := "-"
-			if nfIPI > 0.001 {
-				ipiTotDisp = brl(nfIPI)
-			}
-			sb.WriteString(fmt.Sprintf(
-				`<tr class="tot-row"><td colspan="2">TOTAIS</td><td>%s</td><td>%s</td><td>-</td><td>-</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-				brl(nfVOpr), ipiTotDisp, brl(nfBase), brl(nfIcmsDest), stTotDisp, brl(nfDevido)))
-
-			sb.WriteString(`</tbody></table></div>`)
-
-			grandVOpr += nfVOpr
-			grandIPI += nfIPI
-			grandBase += nfBase
-			grandIcmsDest += nfIcmsDest
-			grandST += nfST
-			grandDevido += nfDevido
+			sb.WriteString(numTd(tDevido) + `<td></td></tr>`)
+			sb.WriteString(`</tbody></table>`)
+			grandVProd += tVProd
+			grandVIPI += tVIPI
+			grandVIcms += tVIcms
+			grandDevido += tDevido
 		}
 
+		renderBloco("Bloco A — NFs de meses anteriores no SPED", blocoA)
+		renderBloco("Bloco B — NFs do mês presentes no SPED", blocoB)
+		renderBloco("Bloco C — NFs do mês não localizadas no SPED (apenas XML)", blocoC)
+
 		// Página de Totalização — um valor por linha, fontes grandes
-		if len(nfOrder) > 0 {
+		if totalNotas > 0 {
 			sb.WriteString(`<div class="totpage">`)
 			sb.WriteString(`<div class="totpage-title">Totalização</div>`)
 			sb.WriteString(fmt.Sprintf(
@@ -877,14 +780,13 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				sb.WriteString(fmt.Sprintf(
 					`<div class="totrow"><span class="totlabel">%s</span><span class="totval">%s</span></div>`, label, val))
 			}
-			totRow("Quantidade de Notas", fmt.Sprintf("%d", len(nfOrder)))
-			totRow("Valor da Operação", brl(grandVOpr))
-			totRow("IPI", brl(grandIPI))
-			totRow("Base de Cálculo", brl(grandBase))
-			totRow("ICMS Destacado", brl(grandIcmsDest))
-			totRow("ICMS-ST Retido", brl(grandST))
+			totRow("Quantidade de Notas", fmt.Sprintf("%d", totalNotas))
+			totRow("Valor dos Produtos", brl(grandVProd))
+			totRow("IPI", brl(grandVIPI))
+			totRow("Valor da Operação", brl(grandVProd+grandVIPI))
+			totRow("ICMS Destacado (NF)", brl(grandVIcms))
 			sb.WriteString(fmt.Sprintf(
-				`<div class="totrow totrow-grand"><span class="totlabel">Valor Total Devido</span><span class="totval">%s</span></div>`,
+				`<div class="totrow totrow-grand"><span class="totlabel">Total ICMS Fronteira</span><span class="totval">%s</span></div>`,
 				brl(grandDevido)))
 			sb.WriteString(`</div></div>`)
 		}
