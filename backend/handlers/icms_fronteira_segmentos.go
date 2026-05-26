@@ -35,6 +35,11 @@ func IcmsFronteiraSegmentosHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
 		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
 		if !ok {
 			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
@@ -234,6 +239,11 @@ func IcmsFronteiraCompanySegmentosHandler(db *sql.DB) http.HandlerFunc {
 func IcmsFronteiraSegmentoItemHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodPut && r.Method != http.MethodDelete {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
 
 		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
 		if !ok {
