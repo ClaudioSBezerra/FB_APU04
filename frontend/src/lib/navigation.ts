@@ -27,9 +27,9 @@ export const modules: Record<string, ModuleConfig> = {
   notas: {
     label: 'Importação de XMLs',
     tabs: [
-      { label: 'Importar XMLs Entradas', path: '/importacoes/xml/entradas',      adminOnly: true },
-      { label: 'Importar XMLs Saídas',   path: '/importacoes/xml/saidas',        adminOnly: true },
-      { label: 'Importar XMLs CT-es',    path: '/importacoes/xml/ctes',          adminOnly: true },
+      { label: 'Importar XMLs Entradas', path: '/importacoes/xml/entradas' },
+      { label: 'Importar XMLs Saídas',   path: '/importacoes/xml/saidas' },
+      { label: 'Importar XMLs CT-es',    path: '/importacoes/xml/ctes' },
       { label: 'Saneamento CCLASSTRIB',  path: '/relatorios/saneamento-cclasstrib' },
       { label: 'Conciliação Bridge vs XML', path: '/conciliacao/bridge-xml' },
       { label: 'Comparativo EFD vs XMLs',  path: '/comparativo/efd-xml' },

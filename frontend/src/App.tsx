@@ -173,9 +173,9 @@ function AppLayout() {
               <Route path="/apuracao/nfse"                     element={<ComingSoon title="NFS-e Entradas" />} />
               <Route path="/importacoes/erp-bridge"            element={<AdminRoute><ERPBridgeConfig /></AdminRoute>} />
               <Route path="/importacoes/erp-bridge/logs"       element={<AdminRoute><ERPBridgeLogs /></AdminRoute>} />
-              <Route path="/importacoes/xml/entradas"          element={<AdminRoute><ImportarXMLsEntrada /></AdminRoute>} />
-              <Route path="/importacoes/xml/saidas"            element={<AdminRoute><ImportarXMLsSaida /></AdminRoute>} />
-              <Route path="/importacoes/xml/ctes"              element={<AdminRoute><ImportarXMLsCTe /></AdminRoute>} />
+              <Route path="/importacoes/xml/entradas"          element={<ProtectedRoute><ImportarXMLsEntrada /></ProtectedRoute>} />
+              <Route path="/importacoes/xml/saidas"            element={<ProtectedRoute><ImportarXMLsSaida /></ProtectedRoute>} />
+              <Route path="/importacoes/xml/ctes"              element={<ProtectedRoute><ImportarXMLsCTe /></ProtectedRoute>} />
               <Route path="/painel/xmls"                       element={<PainelXMLs />} />
               <Route path="/relatorios/saneamento-cclasstrib"  element={<RelatorioSaneamento />} />
               <Route path="/conciliacao/bridge-xml"            element={<ConciliacaoBridgeXML />} />
