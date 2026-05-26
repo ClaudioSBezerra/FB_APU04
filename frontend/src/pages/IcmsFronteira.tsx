@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -4432,42 +4431,34 @@ export default function IcmsFronteira() {
         </p>
       </div>
 
-      {/* Seletor de UF (eixo obrigatório do módulo) — faixa central, destaque
-          visual em vermelho para deixar claro que TODO o módulo opera sobre a
-          UF selecionada. Sem UF informada, nenhuma apuração é exibida. */}
-      <div className="flex justify-center">
-        <div className="inline-flex items-center gap-4 rounded-lg border-2 border-red-500 bg-red-50 px-6 py-3 shadow-sm">
-          <span className="text-base font-bold uppercase tracking-wide text-red-700">
+      {/* Menu do módulo: 1ª linha = UF de trabalho (eixo obrigatório, colado à
+          esquerda e compacto, destaque vermelho); 2ª linha = abas. Todo o módulo
+          opera sobre a UF selecionada. */}
+      <FronteiraUFContext.Provider value={uf}>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-bold uppercase tracking-wide text-red-700">
             UF de trabalho:
           </span>
           <Select value={uf} onValueChange={setUf} disabled={ufs.length === 0}>
-            <SelectTrigger className="h-12 w-32 border-2 border-red-500 bg-white text-2xl font-extrabold text-red-700 focus:ring-red-500">
+            <SelectTrigger className="h-9 w-20 border-2 border-red-500 bg-white text-base font-extrabold text-red-700 focus:ring-red-500">
               <SelectValue placeholder={ufs.length === 0 ? '—' : 'UF'} />
             </SelectTrigger>
             <SelectContent>
               {ufs.map((u) => (
-                <SelectItem key={u} value={u} className="text-lg font-bold">
+                <SelectItem key={u} value={u} className="font-bold">
                   {u}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs font-medium text-red-700">
-            * obrigatório — toda apuração é feita sobre as filiais desta UF
+          <span className="text-xs text-muted-foreground">
+            {ufs.length > 1
+              ? <>* obrigatório — apurando as filiais de <strong>{uf}</strong>; troque para ver as demais.</>
+              : <>* obrigatório — toda apuração é feita sobre as filiais desta UF.</>}
           </span>
         </div>
-      </div>
 
-      {ufs.length > 1 && (
-        <p className="text-center text-xs text-muted-foreground">
-          Apurando as filiais da UF <strong>{uf}</strong>. Troque a UF acima para ver as demais.
-        </p>
-      )}
-
-      <Separator />
-
-      {/* Tabs — todo o módulo opera sobre a UF selecionada */}
-      <FronteiraUFContext.Provider value={uf}>
       <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
@@ -4723,6 +4714,7 @@ export default function IcmsFronteira() {
           </Card>
         </TabsContent>
       </Tabs>
+      </div>
       </FronteiraUFContext.Provider>
     </div>
   )
