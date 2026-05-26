@@ -2488,6 +2488,9 @@ function RegrasTab({ token }: { token: string | null }) {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importLoading, setImportLoading] = useState(false)
   const [selectedUF, setSelectedUF] = useState<'PE' | 'BA' | 'CE'>('PE')
+  // Resultado da última importação. Aberto em Dialog enquanto não-nulo, para
+  // que o usuário possa ler o detalhe dos erros sem perder pela transição de toast.
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null)
 
   // Form state
   const [ncmPrefixo, setNcmPrefixo] = useState('')
@@ -2578,11 +2581,15 @@ function RegrasTab({ token }: { token: string | null }) {
         body: fd,
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
-      const result = await res.json()
-      toast.success(`Importadas: ${result.imported}, ignoradas: ${result.skipped}`)
-      if (result.errors?.length) {
-        toast.warning(`${result.errors.length} erro(s) na importação`)
+      const result = await res.json() as { imported: number; skipped: number; errors?: string[] }
+      const errors = result.errors ?? []
+      // Mostra um único toast com summary; o Dialog abaixo entrega o detalhe.
+      if (errors.length === 0) {
+        toast.success(`${result.imported} regra(s) importada(s). ${result.skipped} ignorada(s).`)
+      } else {
+        toast.warning(`${result.imported} importada(s), ${errors.length} com erro — abra os detalhes.`)
       }
+      setImportResult({ imported: result.imported, skipped: result.skipped, errors })
       queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras', selectedUF] })
       setImportFile(null)
     } catch {
@@ -2811,6 +2818,49 @@ function RegrasTab({ token }: { token: string | null }) {
             >
               {createMutation.isPending ? 'Salvando...' : 'Criar Regra'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detalhe da última importação — toast some, este dialog persiste */}
+      <Dialog open={!!importResult} onOpenChange={(v) => !v && setImportResult(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Resultado da importação</DialogTitle>
+            <DialogDescription>
+              Resumo do processamento do arquivo na UF {selectedUF}.
+            </DialogDescription>
+          </DialogHeader>
+          {importResult && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <div className="rounded border bg-emerald-50 px-3 py-2">
+                  <div className="text-[11px] text-emerald-700 uppercase">Importadas</div>
+                  <div className="text-2xl font-bold text-emerald-700">{importResult.imported}</div>
+                </div>
+                <div className="rounded border bg-slate-50 px-3 py-2">
+                  <div className="text-[11px] text-slate-700 uppercase">Ignoradas</div>
+                  <div className="text-2xl font-bold text-slate-700">{importResult.skipped}</div>
+                </div>
+                <div className={`rounded border px-3 py-2 ${importResult.errors.length > 0 ? 'bg-amber-50' : 'bg-slate-50'}`}>
+                  <div className={`text-[11px] uppercase ${importResult.errors.length > 0 ? 'text-amber-700' : 'text-slate-700'}`}>Com erro</div>
+                  <div className={`text-2xl font-bold ${importResult.errors.length > 0 ? 'text-amber-700' : 'text-slate-700'}`}>{importResult.errors.length}</div>
+                </div>
+              </div>
+              {importResult.errors.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-amber-700">Detalhes:</p>
+                  <ul className="max-h-72 overflow-y-auto rounded border bg-amber-50/50 p-2 text-xs font-mono space-y-1">
+                    {importResult.errors.map((err, i) => (
+                      <li key={i} className="text-amber-900">{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setImportResult(null)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

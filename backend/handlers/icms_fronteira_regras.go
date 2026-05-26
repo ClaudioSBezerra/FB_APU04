@@ -434,13 +434,24 @@ func detectFronteiraRegrasColumns(header []string) map[string]int {
 	for i, h := range header {
 		n := normalizeHeader(h)
 		switch {
-		case strings.Contains(n, "mva 4") || strings.Contains(n, "mva4"):
+		// MVA ajustada (ordem importa — checa antes de "aliq" genérico,
+		// porque a coluna "Alíquotas de N%" no padrão SEFAZ é justamente o MVA
+		// ajustado para a alíquota interestadual N).
+		case strings.Contains(n, "mva 4") || strings.Contains(n, "mva4") ||
+			strings.Contains(n, "ajustado 4") || strings.Contains(n, "aliquotas de 4") ||
+			strings.Contains(n, "aliquota de 4"):
 			set("mva4", i)
-		case strings.Contains(n, "mva 7") || strings.Contains(n, "mva7"):
+		case strings.Contains(n, "mva 7") || strings.Contains(n, "mva7") ||
+			strings.Contains(n, "ajustado 7") || strings.Contains(n, "aliquotas de 7") ||
+			strings.Contains(n, "aliquota de 7"):
 			set("mva7", i)
-		case strings.Contains(n, "mva 12") || strings.Contains(n, "mva12"):
+		case strings.Contains(n, "mva 12") || strings.Contains(n, "mva12") ||
+			strings.Contains(n, "ajustado 12") || strings.Contains(n, "aliquotas de 12") ||
+			strings.Contains(n, "aliquota de 12"):
 			set("mva12", i)
-		case strings.Contains(n, "mva orig") || strings.Contains(n, "mva original") || n == "mva":
+		// MVA original (operação interna/importação no padrão SEFAZ).
+		case strings.Contains(n, "mva orig") || strings.Contains(n, "mva original") ||
+			strings.Contains(n, "operacao interna") || n == "mva":
 			set("mva_orig", i)
 		case strings.HasPrefix(n, "ncm"):
 			set("ncm", i)
@@ -454,6 +465,7 @@ func detectFronteiraRegrasColumns(header []string) map[string]int {
 			set("uf", i)
 		case strings.HasPrefix(n, "regime"):
 			set("regime", i)
+		// "Alíquota Interna" (singular) — só casa depois das MVAs específicas acima.
 		case strings.Contains(n, "aliq"):
 			set("aliq", i)
 		case strings.Contains(n, "reduc"):
@@ -482,6 +494,54 @@ func nullIfEmpty(s string) interface{} {
 		return nil
 	}
 	return s
+}
+
+// splitNCMs aceita uma célula que pode conter um ou vários NCMs e devolve a
+// lista normalizada. Separadores aceitos: quebra de linha (\n, \r), vírgula,
+// ponto-e-vírgula, barra. Em cada NCM remove pontuação ".", "-", espaço.
+//
+// Tabelas SEFAZ frequentemente agrupam NCMs irmãos numa só célula
+// (ex.: "8544\n7605\n7614" ou "3815.12.10, 3815.12.90"), por isso um único
+// linha do XLSX/CSV pode produzir várias regras.
+func splitNCMs(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	// Normaliza separadores para vírgula
+	r := strings.NewReplacer(
+		"\r\n", ",",
+		"\n", ",",
+		"\r", ",",
+		";", ",",
+		"/", ",",
+	)
+	parts := strings.Split(r.Replace(raw), ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]bool{}
+	clean := strings.NewReplacer(".", "", " ", "", "-", "", "\t", "")
+	for _, p := range parts {
+		ncm := clean.Replace(strings.TrimSpace(p))
+		if ncm == "" {
+			continue
+		}
+		// só aceita NCMs com dígitos (descarta "etc.", "ou", lixo de OCR)
+		allDigits := true
+		for _, c := range ncm {
+			if c < '0' || c > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if !allDigits {
+			continue
+		}
+		if seen[ncm] {
+			continue
+		}
+		seen[ncm] = true
+		out = append(out, ncm)
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -639,17 +699,12 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 				continue
 			}
 
-			ncmPrefixo := get(rec, "ncm")
-			// remove pontuação comum de NCM ("2710.19.31" → "27101931")
-			ncmPrefixo = strings.NewReplacer(".", "", " ", "", "-", "").Replace(ncmPrefixo)
-			if ncmPrefixo == "" {
-				res.Skipped++
-				continue
-			}
-			if len([]rune(ncmPrefixo)) > 8 {
-				if len(res.Errors) < 100 {
-					res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": NCM não pode ter mais de 8 caracteres (valor: "+ncmPrefixo+")")
-				}
+			// Tabelas SEFAZ frequentemente agrupam NCMs irmãos numa célula só,
+			// separados por \n, vírgula, ;, /, ou espaço. Cada NCM vira uma regra
+			// independente (PK = company_id + ncm_prefixo + uf_estado) com os
+			// mesmos atributos da linha (regime, alíquota, MVAs, CEST, etc.).
+			ncms := splitNCMs(get(rec, "ncm"))
+			if len(ncms) == 0 {
 				res.Skipped++
 				continue
 			}
@@ -686,7 +741,15 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 				rowUF = ufEstado
 			}
 
-			_, err2 := db.Exec(`
+			for _, ncmPrefixo := range ncms {
+				if len([]rune(ncmPrefixo)) > 8 {
+					if len(res.Errors) < 100 {
+						res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": NCM não pode ter mais de 8 caracteres (valor: "+ncmPrefixo+")")
+					}
+					res.Skipped++
+					continue
+				}
+				_, err2 := db.Exec(`
 				INSERT INTO icms_fronteira_regras_ncm
 					(company_id, ncm_prefixo, descricao, regime, aliquota_interna,
 					 mva_original, reducao_bc_pct, uf_estado,
@@ -706,18 +769,19 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 					    cest = EXCLUDED.cest,
 					    segmento = EXCLUDED.segmento
 			`, companyID, ncmPrefixo, descricao, regime, aliquotaInterna,
-				mvaOrig, reducaoBCPct, rowUF,
-				mva4, mva7, mva12,
-				nullIfEmpty(cest), nullIfEmpty(segmento))
-			if err2 != nil {
-				log.Printf("IcmsFronteiraRegrasImportar upsert error row %d: %v", i+1, err2)
-				if len(res.Errors) < 100 {
-					res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": "+err2.Error())
+					mvaOrig, reducaoBCPct, rowUF,
+					mva4, mva7, mva12,
+					nullIfEmpty(cest), nullIfEmpty(segmento))
+				if err2 != nil {
+					log.Printf("IcmsFronteiraRegrasImportar upsert error row %d ncm=%s: %v", i+1, ncmPrefixo, err2)
+					if len(res.Errors) < 100 {
+						res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+" ("+ncmPrefixo+"): "+err2.Error())
+					}
+					res.Skipped++
+					continue
 				}
-				res.Skipped++
-				continue
+				res.Imported++
 			}
-			res.Imported++
 		}
 		_ = legacy
 
