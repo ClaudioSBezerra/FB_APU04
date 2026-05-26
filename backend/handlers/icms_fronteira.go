@@ -227,7 +227,11 @@ classified AS (
         COALESCE(c100.num_doc, '')                          AS numero_nfe,
         COALESCE(part.cnpj, ne.forn_cnpj, '')               AS forn_cnpj,
         COALESCE(part.nome, ne.forn_nome, '')               AS forn_nome,
-        COALESCE(ne.forn_uf, '')                            AS forn_uf,
+        -- forn_uf: 1º o XML (mais preciso), senão a UF resolvida via município
+        -- do participante (reg 0150 do SPED → cod_mun → municipios_ibge.uf).
+        -- Sem o fallback, o Bloco A (NFs de meses anteriores no SPED) ficava
+        -- com UF vazia quando o XML do fornecedor não estava importado.
+        COALESCE(NULLIF(ne.forn_uf, ''), NULLIF(m_part.uf, ''), '') AS forn_uf,
         l.cfop                                              AS cfop,
         l.v_prod_disp                                       AS v_prod,
         COALESCE(l.sum_ipi_xml, 0)                          AS v_ipi,
@@ -306,6 +310,9 @@ classified AS (
     JOIN import_jobs j ON j.id = c100.job_id
     LEFT JOIN participants part
         ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
+    -- Município do participante → UF (alimenta o fallback de forn_uf quando o
+    -- XML não foi importado). Cobertura típica ~99% (reg 0150 sempre traz cod_mun).
+    LEFT JOIN municipios_ibge m_part ON m_part.codigo_ibge = part.cod_mun
     LEFT JOIN nfe_entradas ne ON ne.company_id = j.company_id AND ne.chave_nfe = c100.chv_nfe
     LEFT JOIN LATERAL (
         SELECT nii.ncm AS ncm
