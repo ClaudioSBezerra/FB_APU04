@@ -502,33 +502,6 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Ownership check: o user logado precisa ter acesso à empresa.
-		// Admin pode editar qualquer uma; demais users só as suas (via
-		// companies.owner_id ou via user_environments).
-		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
-		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		userID, _ := claims["user_id"].(string)
-		role, _ := claims["role"].(string)
-		if role != "admin" {
-			var hasAccess bool
-			err := db.QueryRow(`
-				SELECT EXISTS(
-					SELECT 1
-					FROM companies c
-					LEFT JOIN enterprise_groups eg ON c.group_id = eg.id
-					LEFT JOIN user_environments ue ON eg.environment_id = ue.environment_id
-					WHERE c.id = $1
-					  AND (c.owner_id = $2 OR ue.user_id = $2)
-				)`, id, userID).Scan(&hasAccess)
-			if err != nil || !hasAccess {
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
-		}
-
 		var payload struct {
 			RegimeTributario  string           `json:"regime_tributario"`
 			CNPJ              string           `json:"cnpj"`
@@ -558,6 +531,33 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 			re := regexp.MustCompile(`^\d{14}$`)
 			if !re.MatchString(payload.CNPJ) {
 				http.Error(w, "CNPJ deve ter 14 dígitos numéricos", http.StatusBadRequest)
+				return
+			}
+		}
+
+		// Ownership check (após as validações de formato): o user logado precisa
+		// ter acesso à empresa. Admin pode editar qualquer uma; demais users só as
+		// suas (via companies.owner_id ou via user_environments).
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		role, _ := claims["role"].(string)
+		if role != "admin" {
+			var hasAccess bool
+			err := db.QueryRow(`
+				SELECT EXISTS(
+					SELECT 1
+					FROM companies c
+					LEFT JOIN enterprise_groups eg ON c.group_id = eg.id
+					LEFT JOIN user_environments ue ON eg.environment_id = ue.environment_id
+					WHERE c.id = $1
+					  AND (c.owner_id = $2 OR ue.user_id = $2)
+				)`, id, userID).Scan(&hasAccess)
+			if err != nil || !hasAccess {
+				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
 		}
