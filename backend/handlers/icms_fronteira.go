@@ -11,16 +11,22 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// fronteiraFiltros monta o WHERE adicional (fornecedor, número da nota, intervalo
-// de data) a partir dos query params, com placeholders posicionais a partir de
-// startIdx. Retorna o fragmento SQL (começando com " AND ...") e os argumentos.
-// As colunas referenciadas (forn_cnpj/forn_nome/numero_nfe/data_emissao) existem
-// no CTE classified do fronteiraBaseQuery.
+// fronteiraFiltros monta o WHERE adicional (UF da filial, fornecedor, número da
+// nota, intervalo de data) a partir dos query params, com placeholders posicionais
+// a partir de startIdx. Retorna o fragmento SQL (começando com " AND ...") e os
+// argumentos. As colunas referenciadas (uf_filial/forn_cnpj/forn_nome/numero_nfe/
+// data_emissao) existem no CTE classified do fronteiraBaseQuery.
 func fronteiraFiltros(r *http.Request, startIdx int) (string, []interface{}) {
 	var sb strings.Builder
 	var args []interface{}
 	idx := startIdx
 
+	// Eixo UF: quando informado, restringe às filiais (estabelecimentos) da UF.
+	if uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf"))); uf != "" {
+		sb.WriteString(fmt.Sprintf(" AND uf_filial = $%d", idx))
+		args = append(args, uf)
+		idx++
+	}
 	if forn := strings.TrimSpace(r.URL.Query().Get("forn")); forn != "" {
 		sb.WriteString(fmt.Sprintf(" AND (forn_cnpj ILIKE $%d OR forn_nome ILIKE $%d)", idx, idx))
 		args = append(args, "%"+forn+"%")
@@ -293,7 +299,8 @@ classified AS (
                     l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
                     - COALESCE(l.vl_icms, 0))
             ELSE 0
-        END                                                 AS icms_devido_est
+        END                                                 AS icms_devido_est,
+        COALESCE(j.uf, 'PE')                                AS uf_filial
     FROM linhas l
     JOIN reg_c100 c100 ON c100.id = l.c100_id
     JOIN import_jobs j ON j.id = c100.job_id
@@ -312,7 +319,7 @@ classified AS (
                r.mva_ajustado_4pct, r.mva_ajustado_7pct, r.mva_ajustado_12pct
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
-          AND r.uf_estado = COALESCE(ne.dest_uf, 'PE')
+          AND r.uf_estado = COALESCE(j.uf, 'PE')
           AND top_item.ncm IS NOT NULL
           AND LEFT(top_item.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
@@ -332,6 +339,49 @@ classified AS (
 // ---------------------------------------------------------------------------
 // IcmsFronteiraResumoHandler — GET /api/icms-fronteira/resumo
 // ---------------------------------------------------------------------------
+
+// IcmsFronteiraUFsHandler — GET /api/icms-fronteira/ufs
+// Lista as UFs das filiais (estabelecimentos) da empresa, derivadas do reg 0000
+// do SPED (import_jobs.uf). Alimenta o seletor de UF do módulo Fronteira.
+func IcmsFronteiraUFsHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		rows, err := db.Query(`
+			SELECT DISTINCT uf
+			FROM import_jobs
+			WHERE company_id = $1::uuid AND uf IS NOT NULL AND uf <> ''
+			ORDER BY uf`, companyID)
+		if err != nil {
+			log.Printf("IcmsFronteiraUFs error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao listar UFs")
+			return
+		}
+		defer rows.Close()
+		ufs := []string{}
+		for rows.Next() {
+			var uf string
+			if err := rows.Scan(&uf); err == nil {
+				ufs = append(ufs, uf)
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"ufs": ufs})
+	}
+}
 
 func IcmsFronteiraResumoHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
