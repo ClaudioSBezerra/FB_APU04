@@ -614,10 +614,9 @@ export function SegmentosTab({ uf }: { uf: string }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newCodigo, setNewCodigo] = useState('');
   const [newDesc, setNewDesc] = useState('');
-  // CSV import state
-  interface CsvRow { codigo: number; descricao: string; error?: string; }
+  // CSV import state — arquivo enviado ao backend (parsing server-side robusto).
   const [showImport, setShowImport] = useState(false);
-  const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
+  const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -720,76 +719,38 @@ export function SegmentosTab({ uf }: { uf: string }) {
   };
 
   // ---------------------------------------------------------------------------
-  // CSV helpers
+  // CSV import — envia o arquivo ao backend, que faz o parsing (robusto a
+  // vírgula/ponto-e-vírgula/TAB, BOM e cabeçalho) e o upsert em massa.
   // ---------------------------------------------------------------------------
-  const parseCSVText = (text: string): CsvRow[] => {
-    const rows: CsvRow[] = [];
-    for (const raw of text.split(/\r?\n/)) {
-      const line = raw.trim();
-      if (!line) continue;
-      const delimiter = line.includes(';') ? ';' : ',';
-      // Simple quoted-field split
-      const parts: string[] = [];
-      let cur = '', inQ = false;
-      for (const ch of line) {
-        if (ch === '"') { inQ = !inQ; }
-        else if (ch === delimiter && !inQ) { parts.push(cur.trim()); cur = ''; }
-        else { cur += ch; }
-      }
-      parts.push(cur.trim());
-
-      const codeStr = parts[0].replace(/^["']|["']$/g, '').trim();
-      const desc = parts.slice(1).join(delimiter).replace(/^["']|["']$/g, '').trim();
-
-      // Skip header row
-      if (/^(c[oó]digo|cod|code)$/i.test(codeStr)) continue;
-
-      const codigo = parseInt(codeStr, 10);
-      if (isNaN(codigo) || codigo <= 0) {
-        rows.push({ codigo: 0, descricao: desc, error: `Código inválido: "${codeStr}"` });
-        continue;
-      }
-      if (!desc) {
-        rows.push({ codigo, descricao: '', error: 'Descrição vazia' });
-        continue;
-      }
-      rows.push({ codigo, descricao: desc });
-    }
-    return rows;
-  };
-
-  const handleCSVFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => setCsvRows(parseCSVText(ev.target?.result as string));
-    reader.readAsText(file, 'UTF-8');
-    e.target.value = '';
-  };
-
   const handleImport = async () => {
-    const valid = csvRows.filter(r => !r.error && r.codigo > 0 && r.descricao);
-    if (!valid.length) { toast.error('Nenhuma linha válida para importar'); return; }
+    if (!importFile) { toast.error('Selecione um arquivo'); return; }
+    if (!uf) { toast.error('UF não definida'); return; }
     setImporting(true);
-    const results = await Promise.allSettled(
-      valid.map(row =>
-        fetch('/api/icms-fronteira/segmentos', {
-          method: 'POST',
-          headers: companyHeader({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ codigo: row.codigo, uf, descricao: row.descricao }),
-        }).then(r => { if (!r.ok) throw new Error(String(r.status)); })
-      )
-    );
-    setImporting(false);
-    const ok = results.filter(r => r.status === 'fulfilled').length;
-    const fail = results.filter(r => r.status === 'rejected').length;
-    if (fail === 0) {
-      toast.success(`${ok} segmento(s) importado(s) com sucesso`);
-      setShowImport(false); setCsvRows([]);
-    } else {
-      toast.warning(`${ok} importado(s), ${fail} falhou(aram) — verifique duplicatas`);
+    try {
+      const fd = new FormData();
+      fd.append('file', importFile);
+      fd.append('uf', uf);
+      const res = await fetch('/api/icms-fronteira/segmentos/importar', {
+        method: 'POST',
+        headers: companyHeader(), // sem Content-Type: o browser define o boundary
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const imported = data.imported ?? 0;
+      const skipped = data.skipped ?? 0;
+      if (imported > 0) {
+        toast.success(`${imported} segmento(s) importado(s) para ${uf}${skipped ? ` (${skipped} ignorado(s))` : ''}`);
+        setShowImport(false); setImportFile(null);
+      } else {
+        toast.warning(`Nenhum segmento importado (${skipped} ignorado(s)). Verifique o arquivo.`);
+      }
+      load();
+    } catch (e) {
+      toast.error('Erro ao importar: ' + (e instanceof Error ? e.message : ''));
+    } finally {
+      setImporting(false);
     }
-    load();
   };
 
   const downloadTemplate = () => {
@@ -809,8 +770,6 @@ export function SegmentosTab({ uf }: { uf: string }) {
   }
 
   const targetCompanyLabel = companies.find(c => c.id === targetCompanyId)?.name ?? '';
-  const csvValid = csvRows.filter(r => !r.error).length;
-  const csvErrors = csvRows.filter(r => r.error).length;
 
   return (
     <div className="space-y-4">
@@ -886,11 +845,17 @@ export function SegmentosTab({ uf }: { uf: string }) {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              O CSV deve ter duas colunas: <code className="bg-muted px-1 rounded">codigo</code> e <code className="bg-muted px-1 rounded">descricao</code>.
-              Separador: vírgula ou ponto-e-vírgula. Linha de cabeçalho é ignorada automaticamente.
+              O arquivo (CSV ou XLSX) deve ter duas colunas: <code className="bg-muted px-1 rounded">codigo</code> e <code className="bg-muted px-1 rounded">descricao</code>.
+              Separador: vírgula, ponto-e-vírgula ou tabulação. Cabeçalho é ignorado automaticamente.
             </p>
-            <div className="flex gap-2 items-center">
-              <input ref={fileInputRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleCSVFile} />
+            <div className="flex gap-2 items-center flex-wrap">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.txt,.xlsx"
+                className="hidden"
+                onChange={e => { setImportFile(e.target.files?.[0] ?? null); e.target.value = ''; }}
+              />
               <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
                 <Upload className="h-3.5 w-3.5 mr-1" /> Selecionar arquivo
               </Button>
@@ -899,43 +864,18 @@ export function SegmentosTab({ uf }: { uf: string }) {
               </Button>
             </div>
 
-            {csvRows.length > 0 && (
+            {importFile && (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  Preview: <span className="text-green-700 font-semibold">{csvValid} válida(s)</span>
-                  {csvErrors > 0 && <span className="text-red-600 font-semibold ml-2">{csvErrors} com erro</span>}
+                  Arquivo selecionado: <span className="font-medium text-slate-700">{importFile.name}</span>
                 </p>
-                <div className="max-h-48 overflow-y-auto border rounded bg-white">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-16 text-xs">Cód.</TableHead>
-                        <TableHead className="text-xs">Descrição</TableHead>
-                        <TableHead className="w-40 text-xs">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {csvRows.map((row, i) => (
-                        <TableRow key={i} className={row.error ? 'bg-red-50' : ''}>
-                          <TableCell className="font-mono text-xs">{row.codigo || '—'}</TableCell>
-                          <TableCell className="text-xs">{row.descricao || '—'}</TableCell>
-                          <TableCell className="text-xs">
-                            {row.error
-                              ? <span className="text-red-600">{row.error}</span>
-                              : <span className="text-green-700">OK</span>}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
                 <Button
                   size="sm"
                   onClick={handleImport}
-                  disabled={importing || csvValid === 0}
+                  disabled={importing}
                   className="w-full"
                 >
-                  {importing ? 'Importando...' : `Importar ${csvValid} segmento(s) para ${uf}`}
+                  {importing ? 'Importando...' : `Importar segmentos de ${importFile.name} para ${uf}`}
                 </Button>
               </div>
             )}

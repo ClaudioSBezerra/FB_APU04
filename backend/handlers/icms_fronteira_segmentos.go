@@ -1,14 +1,18 @@
 package handlers
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/xuri/excelize/v2"
 )
 
 // ---------------------------------------------------------------------------
@@ -299,5 +303,148 @@ func IcmsFronteiraSegmentoItemHandler(db *sql.DB) http.HandlerFunc {
 		default:
 			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IcmsFronteiraSegmentosImportarHandler — POST /api/icms-fronteira/segmentos/importar
+//
+// Recebe um arquivo CSV/XLSX (campo multipart "file") + a UF (campo "uf") e faz
+// upsert em massa no catálogo segmentos_uf. Parsing no servidor para ser robusto
+// a delimitadores (vírgula, ponto-e-vírgula, TAB), BOM e cabeçalho.
+//
+// Colunas: 1ª = código (int), 2ª = descrição. Linha de cabeçalho ("codigo",
+// "cod", "code") é ignorada automaticamente. Mesmo padrão do import de regras.
+// ---------------------------------------------------------------------------
+func IcmsFronteiraSegmentosImportarHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodPost {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		if _, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims); !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, 2<<20) // 2 MB
+		if err := r.ParseMultipartForm(2 << 20); err != nil {
+			jsonErr(w, http.StatusBadRequest, "Arquivo muito grande ou formulário inválido: "+err.Error())
+			return
+		}
+
+		uf := strings.ToUpper(strings.TrimSpace(r.FormValue("uf")))
+		if uf == "" {
+			jsonErr(w, http.StatusBadRequest, "Campo 'uf' é obrigatório")
+			return
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			jsonErr(w, http.StatusBadRequest, "Campo 'file' não encontrado: "+err.Error())
+			return
+		}
+		defer file.Close()
+
+		var records [][]string
+		if strings.HasSuffix(strings.ToLower(header.Filename), ".xlsx") {
+			data, err := io.ReadAll(file)
+			if err != nil {
+				jsonErr(w, http.StatusInternalServerError, "Erro ao ler XLSX")
+				return
+			}
+			f, err := excelize.OpenReader(bytes.NewReader(data))
+			if err != nil {
+				jsonErr(w, http.StatusBadRequest, "XLSX inválido: "+err.Error())
+				return
+			}
+			sheets := f.GetSheetList()
+			if len(sheets) == 0 {
+				jsonErr(w, http.StatusBadRequest, "XLSX sem planilhas")
+				return
+			}
+			records, _ = f.GetRows(sheets[0])
+		} else {
+			data, err := io.ReadAll(file)
+			if err != nil {
+				jsonErr(w, http.StatusInternalServerError, "Erro ao ler CSV")
+				return
+			}
+			content := strings.TrimPrefix(string(data), "\ufeff") // remove BOM
+			// Detecta delimitador: ponto-e-vírgula, TAB ou vírgula.
+			delim := ','
+			if strings.Contains(content, ";") {
+				delim = ';'
+			} else if strings.Contains(content, "\t") {
+				delim = '\t'
+			}
+			cr := csv.NewReader(strings.NewReader(content))
+			cr.Comma = delim
+			cr.LazyQuotes = true
+			cr.TrimLeadingSpace = true
+			cr.FieldsPerRecord = -1 // tolera nº de colunas variável
+			records, err = cr.ReadAll()
+			if err != nil {
+				jsonErr(w, http.StatusBadRequest, "CSV inválido: "+err.Error())
+				return
+			}
+		}
+
+		type importResult struct {
+			Imported int      `json:"imported"`
+			Skipped  int      `json:"skipped"`
+			Errors   []string `json:"errors"`
+		}
+		res := importResult{Errors: []string{}}
+
+		for i, rec := range records {
+			if len(rec) == 0 {
+				res.Skipped++
+				continue
+			}
+			codeStr := strings.TrimSpace(strings.Trim(rec[0], `"'`))
+			desc := ""
+			if len(rec) > 1 {
+				desc = strings.TrimSpace(strings.Trim(strings.Join(rec[1:], " "), `"'`))
+			}
+			// Ignora cabeçalho.
+			low := strings.ToLower(codeStr)
+			if low == "codigo" || low == "código" || low == "cod" || low == "code" {
+				continue
+			}
+			codigo, errc := strconv.Atoi(codeStr)
+			if errc != nil || codigo <= 0 {
+				if len(res.Errors) < 50 {
+					res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": código inválido ("+codeStr+")")
+				}
+				res.Skipped++
+				continue
+			}
+			if desc == "" {
+				if len(res.Errors) < 50 {
+					res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": descrição vazia")
+				}
+				res.Skipped++
+				continue
+			}
+			if _, err := db.Exec(`
+				INSERT INTO segmentos_uf (codigo, uf, descricao)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (codigo, uf) DO UPDATE SET descricao = EXCLUDED.descricao
+			`, codigo, uf, desc); err != nil {
+				log.Printf("SegmentosImportar upsert error linha %d: %v", i+1, err)
+				if len(res.Errors) < 50 {
+					res.Errors = append(res.Errors, "Linha "+strconv.Itoa(i+1)+": "+err.Error())
+				}
+				res.Skipped++
+				continue
+			}
+			res.Imported++
+		}
+
+		log.Printf("SegmentosImportar: uf=%s imported=%d skipped=%d", uf, res.Imported, res.Skipped)
+		json.NewEncoder(w).Encode(res)
 	}
 }
