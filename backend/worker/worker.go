@@ -754,10 +754,17 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 				filialCNPJ = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(parts[7], ".", ""), "/", ""), "-", "")
 				count0000++
 
-				// UF do destinatário (campo 9 do 0000 — pode estar vazio)
-				uf := ""
+				// Dados do estabelecimento (reg 0000): UF(9), IE(10), COD_MUN(11).
+				// Podem estar vazios em alguns layouts.
+				uf, ie, codMun := "", "", ""
 				if len(parts) >= 10 {
 					uf = strings.TrimSpace(parts[9])
+				}
+				if len(parts) >= 11 {
+					ie = strings.TrimSpace(parts[10])
+				}
+				if len(parts) >= 12 {
+					codMun = strings.TrimSpace(parts[11])
 				}
 
 				// Extract mes_ano (periodo) from dt_ini (format: DDMMYYYY -> MM/YYYY)
@@ -767,7 +774,8 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 				}
 
 				// Update job metadata immediately (outside tx for visibility)
-				db.Exec("UPDATE import_jobs SET company_name=$1, cnpj=$2, dt_ini=$3, dt_fin=$4, mes_ano=$5, uf=$6 WHERE id=$7", company, filialCNPJ, parseDate(dtIni), parseDate(dtFin), mesAno, uf, jobID)
+				db.Exec("UPDATE import_jobs SET company_name=$1, cnpj=$2, dt_ini=$3, dt_fin=$4, mes_ano=$5, uf=$6, inscricao_estadual=$7, cod_municipio=$8 WHERE id=$9",
+					company, filialCNPJ, parseDate(dtIni), parseDate(dtFin), mesAno, uf, ie, codMun, jobID)
 
 				if len(dtIni) == 8 {
 					year, _ := strconv.Atoi(dtIni[4:8])
