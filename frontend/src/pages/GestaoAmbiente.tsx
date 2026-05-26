@@ -32,9 +32,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { ImageUp, Plus, Trash2, Building, Layers, Factory, Pencil } from "lucide-react";
+import { ImageUp, Plus, Trash2, Building, Layers, Factory, Pencil, MapPin, FileText, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Environment {
   id: string;
@@ -70,6 +73,30 @@ interface Company {
 interface Branch {
   cnpj: string;
   company_name: string;
+  uf: string;
+  inscricao_estadual: string;
+  cod_municipio: string;
+  municipio_nome: string;
+  uf_nome: string;
+}
+
+interface UFBeneficios {
+  aliquota_interna: number | null;
+  fecp_percentual: number | null;
+  reducao_bc_percentual: number | null;
+  mva_ajustada_padrao: number | null;
+  inaplicabilidade_st: boolean;
+  antecipacao_aplicavel: boolean;
+  observacoes: string;
+  configurado: boolean;
+}
+
+interface UFHubItem {
+  uf: string;
+  uf_nome: string;
+  num_filiais: number;
+  legislacao: Record<string, number>;
+  beneficios: UFBeneficios;
 }
 
 interface UserHierarchy {
@@ -100,9 +127,7 @@ export default function GestaoAmbiente() {
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyTradeName, setNewCompanyTradeName] = useState("");
   const [newCompanyRegime, setNewCompanyRegime] = useState("lucro_real");
-  const [newCompanyIE, setNewCompanyIE] = useState("");
   const [newCompanyCNAE, setNewCompanyCNAE] = useState("");
-  const [newCompanyMunicipio, setNewCompanyMunicipio] = useState("");
   const [newCompanySegmento, setNewCompanySegmento] = useState("");
 
   const [editingGroup, setEditingGroup] = useState<EnterpriseGroup | null>(null);
@@ -112,9 +137,7 @@ export default function GestaoAmbiente() {
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [editRegime, setEditRegime] = useState("lucro_real");
   const [editCNPJ, setEditCNPJ] = useState("");
-  const [editIE, setEditIE] = useState("");
   const [editCNAE, setEditCNAE] = useState("");
-  const [editMunicipio, setEditMunicipio] = useState("");
   const [editSegmento, setEditSegmento] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -128,11 +151,14 @@ export default function GestaoAmbiente() {
 
   // Initial Load
   useEffect(() => {
-    if (user?.role === 'admin') {
+    if (!user) return;
+    // Admin tem a UI hierárquica (3 colunas) + abas Filiais/UFs; o não-admin
+    // tem só os cards de cabeçalho + abas. Em ambos os casos precisamos da
+    // hierarquia do usuário para alimentar a aba "Filiais".
+    if (user.role === 'admin') {
       fetchEnvironments();
-    } else if (user) {
-      fetchUserHierarchy();
     }
+    fetchUserHierarchy();
   }, [user]);
 
   // Load Groups when Env selected — clear state first to avoid stale flash,
@@ -318,9 +344,7 @@ export default function GestaoAmbiente() {
           name: newCompanyName,
           trade_name: newCompanyTradeName,
           regime_tributario: newCompanyRegime,
-          inscricao_estadual: newCompanyIE,
           cnae_principal: newCompanyCNAE,
-          municipio: newCompanyMunicipio,
           segmento_economico: newCompanySegmento,
         }),
       });
@@ -333,9 +357,7 @@ export default function GestaoAmbiente() {
       setNewCompanyName("");
       setNewCompanyTradeName("");
       setNewCompanyRegime("lucro_real");
-      setNewCompanyIE("");
       setNewCompanyCNAE("");
-      setNewCompanyMunicipio("");
       setNewCompanySegmento("");
       fetchCompanies(selectedGroup.id);
     } catch (error) {
@@ -430,9 +452,7 @@ export default function GestaoAmbiente() {
         body: JSON.stringify({
           regime_tributario: editRegime,
           cnpj: editCNPJ,
-          inscricao_estadual: editIE,
           cnae_principal: editCNAE,
-          municipio: editMunicipio,
           segmento_economico: editSegmento,
         }),
       });
@@ -526,31 +546,27 @@ export default function GestaoAmbiente() {
                 </Card>
             </div>
 
-            <div className="space-y-4">
-                <h2 className="text-xl font-semibold">Filiais Importadas</h2>
-                <div className="border rounded-md p-4 bg-white">
-                    {userHierarchy.branches.length === 0 ? (
-                        <p className="text-muted-foreground">Nenhuma filial identificada nas importações.</p>
-                    ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>CNPJ</TableHead>
-                                    <TableHead>Razão Social (Importada)</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {userHierarchy.branches.map((branch, idx) => (
-                                    <TableRow key={idx}>
-                                        <TableCell className="font-mono">{branch.cnpj}</TableCell>
-                                        <TableCell>{branch.company_name}</TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    )}
-                </div>
-            </div>
+            <Tabs defaultValue="filiais" className="space-y-4">
+                <TabsList>
+                    <TabsTrigger value="filiais" className="flex items-center gap-2">
+                        <Factory className="h-4 w-4" />
+                        Filiais
+                        <span className="ml-1 text-xs text-muted-foreground">({userHierarchy.branches.length})</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="ufs" className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        UFs
+                    </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="filiais">
+                    <FiliaisTab branches={userHierarchy.branches} />
+                </TabsContent>
+
+                <TabsContent value="ufs">
+                    <UFsHubTab />
+                </TabsContent>
+            </Tabs>
             </>
         )}
       </div>
@@ -566,6 +582,33 @@ export default function GestaoAmbiente() {
         </p>
       </div>
 
+      <Tabs defaultValue="hierarquia" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="hierarquia" className="flex items-center gap-2">
+            <Layers className="h-4 w-4" /> Hierarquia
+          </TabsTrigger>
+          <TabsTrigger value="filiais" className="flex items-center gap-2">
+            <Factory className="h-4 w-4" /> Filiais
+            {userHierarchy && (
+              <span className="ml-1 text-xs text-muted-foreground">({userHierarchy.branches.length})</span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="ufs" className="flex items-center gap-2">
+            <MapPin className="h-4 w-4" /> UFs
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="filiais">
+          {userHierarchy
+            ? <FiliaisTab branches={userHierarchy.branches} />
+            : <p className="text-muted-foreground">Carregando filiais...</p>}
+        </TabsContent>
+
+        <TabsContent value="ufs">
+          <UFsHubTab />
+        </TabsContent>
+
+        <TabsContent value="hierarquia">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100vh-12rem)]">
         {/* Column 1: Environments */}
         <div className="flex flex-col space-y-4 h-full">
@@ -810,16 +853,8 @@ export default function GestaoAmbiente() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label>Inscrição Estadual</Label>
-                    <Input value={newCompanyIE} onChange={(e) => setNewCompanyIE(e.target.value)} placeholder="Opcional" maxLength={30} />
-                  </div>
-                  <div className="space-y-2">
                     <Label>CNAE Principal</Label>
                     <Input value={newCompanyCNAE} onChange={(e) => setNewCompanyCNAE(e.target.value)} placeholder="Ex: 4711301" maxLength={7} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Município</Label>
-                    <Input value={newCompanyMunicipio} onChange={(e) => setNewCompanyMunicipio(e.target.value)} placeholder="Opcional" maxLength={100} />
                   </div>
                   <div className="space-y-2">
                     <Label>Segmento Econômico</Label>
@@ -879,9 +914,7 @@ export default function GestaoAmbiente() {
                         setEditingCompany(company);
                         setEditRegime(company.regime_tributario || 'lucro_real');
                         setEditCNPJ(company.cnpj || '');
-                        setEditIE(company.inscricao_estadual || '');
                         setEditCNAE(company.cnae_principal || '');
-                        setEditMunicipio(company.municipio || '');
                         setEditSegmento(company.segmento_economico || '');
                         loadEmpresaAssets(company.id);
                       }}
@@ -915,32 +948,12 @@ export default function GestaoAmbiente() {
                         />
                       </div>
                       <div>
-                        <p className="text-[10px] text-blue-700 mb-0.5">Inscrição Estadual</p>
-                        <Input
-                          value={editIE}
-                          onChange={(e) => setEditIE(e.target.value)}
-                          placeholder="Opcional"
-                          maxLength={30}
-                          className="h-7 text-xs"
-                        />
-                      </div>
-                      <div>
                         <p className="text-[10px] text-blue-700 mb-0.5">CNAE Principal</p>
                         <Input
                           value={editCNAE}
                           onChange={(e) => setEditCNAE(e.target.value)}
                           placeholder="Ex: 4711301"
                           maxLength={7}
-                          className="h-7 text-xs"
-                        />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-blue-700 mb-0.5">Município</p>
-                        <Input
-                          value={editMunicipio}
-                          onChange={(e) => setEditMunicipio(e.target.value)}
-                          placeholder="Opcional"
-                          maxLength={100}
                           className="h-7 text-xs"
                         />
                       </div>
@@ -999,6 +1012,311 @@ export default function GestaoAmbiente() {
           </div>
         </div>
       </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FiliaisTab — aba "Filiais" da Gestão de Ambiente.
+//
+// Tabela read-only das filiais (CNPJs) vinculadas à empresa do usuário, vindas
+// do registro 0000 do SPED a cada importação (worker.go). UF/IE/COD_MUN são
+// preenchidos automaticamente; nome do município/UF vem do JOIN com
+// municipios_ibge no backend (hierarchy.go).
+// ---------------------------------------------------------------------------
+function FiliaisTab({ branches }: { branches: Branch[] }) {
+  return (
+    <div className="border rounded-md p-4 bg-white">
+      {branches.length === 0 ? (
+        <p className="text-muted-foreground">Nenhuma filial identificada nas importações.</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>CNPJ</TableHead>
+              <TableHead>Razão Social (Importada)</TableHead>
+              <TableHead className="w-16">UF</TableHead>
+              <TableHead>Município</TableHead>
+              <TableHead>Inscrição Estadual</TableHead>
+              <TableHead className="w-24">COD IBGE</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {branches.map((branch, idx) => (
+              <TableRow key={idx}>
+                <TableCell className="font-mono">{branch.cnpj}</TableCell>
+                <TableCell>{branch.company_name}</TableCell>
+                <TableCell>
+                  {branch.uf
+                    ? <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700" title={branch.uf_nome || branch.uf}>{branch.uf}</span>
+                    : <span className="text-xs text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell className="text-sm">{branch.municipio_nome || <span className="text-muted-foreground">—</span>}</TableCell>
+                <TableCell className="font-mono text-sm">{branch.inscricao_estadual || <span className="text-muted-foreground">—</span>}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{branch.cod_municipio || "—"}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      <p className="text-[11px] text-muted-foreground mt-3">
+        Filiais e dados (UF, IE, município) são extraídos do registro 0000 do SPED a cada importação.
+        Imports anteriores podem ter campos vazios — reimporte o SPED para preencher.
+      </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// UFsHubTab — aba "UFs" da Gestão de Ambiente.
+//
+// Hub híbrido por UF: para cada UF onde a empresa tem filial (vindo do reg
+// 0000 do SPED via /api/uf-hub), mostra:
+//   • nº de filiais
+//   • status da legislação interpretada pela IA (legislacao_fronteira)
+//   • formulário de benefícios fiscais manuais (uf_beneficios_fiscais)
+//
+// O backend devolve as UFs já com defaults (antecipacao_aplicavel=true) para
+// UFs sem registro salvo, então o formulário sempre tem estado inicial válido.
+// ---------------------------------------------------------------------------
+function UFsHubTab() {
+  const { token } = useAuth();
+  const [items, setItems] = useState<UFHubItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedUF, setSelectedUF] = useState<string>("");
+  // edits[uf] guarda o estado do formulário enquanto o usuário digita.
+  const [edits, setEdits] = useState<Record<string, UFBeneficios>>({});
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/uf-hub", { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const ufs: UFHubItem[] = data.ufs || [];
+      setItems(ufs);
+      if (ufs.length > 0 && !selectedUF) setSelectedUF(ufs[0].uf);
+      // hidrata edits com o que veio do backend
+      const e: Record<string, UFBeneficios> = {};
+      ufs.forEach(u => { e[u.uf] = { ...u.beneficios }; });
+      setEdits(e);
+    } catch (err) {
+      toast.error("Erro ao carregar hub de UFs");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { if (token) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [token]);
+
+  const current = items.find(i => i.uf === selectedUF);
+  const form = edits[selectedUF];
+
+  const setField = <K extends keyof UFBeneficios>(field: K, value: UFBeneficios[K]) => {
+    setEdits(prev => ({ ...prev, [selectedUF]: { ...prev[selectedUF], [field]: value } }));
+  };
+
+  // Converte input string para number|null. Vazio → null (não preenchido).
+  const numOrNull = (s: string): number | null => {
+    if (s.trim() === "") return null;
+    const n = parseFloat(s.replace(",", "."));
+    return isNaN(n) ? null : n;
+  };
+  const showNum = (v: number | null) => (v === null || v === undefined ? "" : String(v));
+
+  const handleSave = async () => {
+    if (!form || !selectedUF) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/uf-beneficios", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ uf: selectedUF, ...form }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success(`Benefícios da UF ${selectedUF} salvos`);
+      await load();
+    } catch (err) {
+      toast.error("Erro ao salvar");
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <p className="text-muted-foreground">Carregando UFs...</p>;
+  if (items.length === 0) {
+    return (
+      <div className="border rounded-md p-6 bg-white">
+        <p className="text-muted-foreground">
+          Nenhuma UF identificada nas importações. Importe um SPED para que a UF da filial
+          (registro 0000) apareça aqui.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4">
+      {/* Coluna esquerda — lista de UFs */}
+      <div className="border rounded-md bg-white p-2 space-y-1">
+        <p className="text-xs font-medium text-muted-foreground px-2 py-1">
+          UFs com filiais ({items.length})
+        </p>
+        {items.map(u => {
+          const isActive = u.uf === selectedUF;
+          const legTotal = Object.values(u.legislacao).reduce((a, b) => a + b, 0);
+          return (
+            <button
+              key={u.uf}
+              onClick={() => setSelectedUF(u.uf)}
+              className={`w-full text-left rounded px-2 py-2 text-sm flex items-center gap-2 ${
+                isActive ? "bg-slate-900 text-white" : "hover:bg-slate-100"
+              }`}
+            >
+              <span className={`inline-flex items-center justify-center rounded font-bold text-xs w-8 h-6 ${
+                isActive ? "bg-white text-slate-900" : "bg-slate-200 text-slate-700"
+              }`}>{u.uf}</span>
+              <span className="flex-1 truncate">{u.uf_nome || u.uf}</span>
+              <span className="flex flex-col items-end text-[10px] leading-tight">
+                <span className={isActive ? "text-slate-300" : "text-muted-foreground"}>
+                  {u.num_filiais} filial{u.num_filiais === 1 ? "" : "is"}
+                </span>
+                {legTotal > 0 && (
+                  <span className={isActive ? "text-blue-200" : "text-blue-600"}>
+                    {legTotal} legisl.
+                  </span>
+                )}
+                {u.beneficios.configurado && (
+                  <span className={isActive ? "text-emerald-300" : "text-emerald-600"}>
+                    <Check className="inline h-3 w-3" /> conf.
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Coluna direita — detalhe da UF selecionada */}
+      {current && form && (
+        <div className="space-y-4">
+          {/* Cabeçalho + status da legislação */}
+          <div className="border rounded-md bg-white p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="inline-flex items-center justify-center rounded bg-slate-900 text-white font-bold text-sm w-12 h-9">
+                {current.uf}
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">{current.uf_nome || current.uf}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {current.num_filiais} filial{current.num_filiais === 1 ? "" : "is"} importada{current.num_filiais === 1 ? "" : "s"} nesta UF
+                </p>
+              </div>
+            </div>
+            <div className="border-t pt-3">
+              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                <FileText className="h-3 w-3" /> Legislação interpretada (IA)
+              </p>
+              {Object.keys(current.legislacao).length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Nenhuma legislação importada para esta UF. Use o módulo de Fronteira → Legislação para subir decretos/RICMS.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(current.legislacao).map(([status, n]) => (
+                    <span key={status} className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs">
+                      <span className="font-semibold text-slate-700 mr-1">{n}</span>
+                      <span className="text-slate-600">{status}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Formulário de benefícios manuais */}
+          <div className="border rounded-md bg-white p-4">
+            <p className="text-sm font-semibold mb-1">Benefícios fiscais (manual)</p>
+            <p className="text-xs text-muted-foreground mb-4">
+              Parâmetros aplicados pelo motor de fronteira nesta UF. Use a IA para extrair de decretos
+              ou preencha manualmente aqui.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs">Alíquota interna (%)</Label>
+                <Input
+                  type="number" step="0.01" placeholder="Ex: 18.00"
+                  value={showNum(form.aliquota_interna)}
+                  onChange={e => setField("aliquota_interna", numOrNull(e.target.value))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">FECP (%)</Label>
+                <Input
+                  type="number" step="0.01" placeholder="Ex: 2.00"
+                  value={showNum(form.fecp_percentual)}
+                  onChange={e => setField("fecp_percentual", numOrNull(e.target.value))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Redução de BC (%)</Label>
+                <Input
+                  type="number" step="0.01" placeholder="Opcional"
+                  value={showNum(form.reducao_bc_percentual)}
+                  onChange={e => setField("reducao_bc_percentual", numOrNull(e.target.value))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">MVA ajustada padrão (%)</Label>
+                <Input
+                  type="number" step="0.01" placeholder="Quando não há regra por NCM"
+                  value={showNum(form.mva_ajustada_padrao)}
+                  onChange={e => setField("mva_ajustada_padrao", numOrNull(e.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-6 mt-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  checked={form.inaplicabilidade_st}
+                  onCheckedChange={v => setField("inaplicabilidade_st", !!v)}
+                />
+                Inaplicabilidade de ST nesta UF
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  checked={form.antecipacao_aplicavel}
+                  onCheckedChange={v => setField("antecipacao_aplicavel", !!v)}
+                />
+                Antecipação aplicável nesta UF
+              </label>
+            </div>
+
+            <div className="space-y-1 mt-4">
+              <Label className="text-xs">Observações</Label>
+              <Textarea
+                rows={3}
+                placeholder="Anotações livres (ex: decreto base, data de vigência)..."
+                value={form.observacoes}
+                onChange={e => setField("observacoes", e.target.value)}
+              />
+            </div>
+
+            <div className="flex justify-end mt-4">
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? "Salvando..." : "Salvar benefícios"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

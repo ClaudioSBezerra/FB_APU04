@@ -528,6 +528,24 @@ func main() {
 		}
 	}, ""))
 
+	// ── Hub por UF — benefícios fiscais (manual) + status da legislação (IA) ──
+	http.HandleFunc("/api/uf-hub", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.UFHubHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/uf-beneficios", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.UFBeneficiosUpsertHandler(database), "")(w, r)
+	})
+
 	// ── Parâmetros de Empresa — logo e template de relatório ──
 	http.HandleFunc("/api/config/empresa/parametros",
 		withAuth(handlers.GetEmpresaParametrosHandler, ""))

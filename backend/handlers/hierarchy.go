@@ -14,8 +14,13 @@ type UserHierarchyResponse struct {
 }
 
 type Branch struct {
-	CNPJ        string `json:"cnpj"`
-	CompanyName string `json:"company_name"`
+	CNPJ              string `json:"cnpj"`
+	CompanyName       string `json:"company_name"`
+	UF                string `json:"uf"`                 // UF do estabelecimento (reg 0000 do SPED)
+	InscricaoEstadual string `json:"inscricao_estadual"` // IE (reg 0000)
+	CodMunicipio      string `json:"cod_municipio"`      // código IBGE do município (reg 0000)
+	MunicipioNome     string `json:"municipio_nome"`     // nome do município (ref municipios_ibge)
+	UFNome            string `json:"uf_nome"`            // nome da UF (ref municipios_ibge)
 }
 
 func GetUserHierarchyHandler(db *sql.DB) http.HandlerFunc {
@@ -75,24 +80,47 @@ func GetUserHierarchyHandler(db *sql.DB) http.HandlerFunc {
 		// 5. Get Branches (Filiais) from import_jobs using Company ID
 		var branches []Branch
 		if company.ID != "" {
-			// Query import_jobs for unique CNPJ/Company Names linked to this company_id
+			// Filiais (CNPJ) da empresa com UF, IE e município do estabelecimento
+			// (reg 0000 do SPED). Resolve o código IBGE → nome do município/UF
+			// via municipios_ibge (LEFT JOIN — código pode estar vazio em imports
+			// antigos, então o nome volta vazio).
 			rows, err := db.Query(`
-                SELECT DISTINCT cnpj, company_name 
-                FROM import_jobs 
-                WHERE company_id = $1 AND status = 'completed'
-                ORDER BY cnpj
+                SELECT j.cnpj,
+                       j.company_name,
+                       j.uf,
+                       j.inscricao_estadual,
+                       j.cod_municipio,
+                       COALESCE(m.nome, '')    AS municipio_nome,
+                       COALESCE(m.uf_nome, '') AS uf_nome
+                FROM (
+                    SELECT cnpj,
+                           MAX(company_name)                    AS company_name,
+                           COALESCE(MAX(uf), '')                AS uf,
+                           COALESCE(MAX(inscricao_estadual),'') AS inscricao_estadual,
+                           COALESCE(MAX(cod_municipio), '')     AS cod_municipio
+                    FROM import_jobs
+                    WHERE company_id = $1 AND status = 'completed'
+                      AND cnpj IS NOT NULL AND cnpj <> ''
+                    GROUP BY cnpj
+                ) j
+                LEFT JOIN municipios_ibge m ON m.codigo_ibge = j.cod_municipio
+                ORDER BY j.cnpj
             `, company.ID)
 
 			if err == nil {
 				defer rows.Close()
 				for rows.Next() {
 					var b Branch
-					var cName sql.NullString
-					var cCNPJ sql.NullString
-					if err := rows.Scan(&cCNPJ, &cName); err == nil {
+					var cName, cCNPJ, cUF, cIE, cMun, cMunNome, cUFNome sql.NullString
+					if err := rows.Scan(&cCNPJ, &cName, &cUF, &cIE, &cMun, &cMunNome, &cUFNome); err == nil {
 						if cCNPJ.Valid {
 							b.CNPJ = cCNPJ.String
 							b.CompanyName = cName.String
+							b.UF = cUF.String
+							b.InscricaoEstadual = cIE.String
+							b.CodMunicipio = cMun.String
+							b.MunicipioNome = cMunNome.String
+							b.UFNome = cUFNome.String
 							branches = append(branches, b)
 						}
 					}
