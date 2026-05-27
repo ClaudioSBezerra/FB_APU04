@@ -896,8 +896,8 @@ function TabelaNotasXml({ rows, showAliq }: { rows: FronteiraXmlNaoSpedRow[]; sh
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Operação</TableHead>
-            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Frete CT-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS NF</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Frete CT-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS CT-e</TableHead>
             {showAliq && (
               <>
@@ -925,8 +925,8 @@ function TabelaNotasXml({ rows, showAliq }: { rows: FronteiraXmlNaoSpedRow[]; sh
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL((row.v_prod || 0) + (row.v_ipi || 0))}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums text-emerald-700">{fmtBRL(row.v_frete_cte)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums text-emerald-700">{fmtBRL(row.v_frete_cte)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums text-emerald-700">{fmtBRL(row.v_icms_cte)}</TableCell>
               {showAliq && (
                 <>
@@ -947,8 +947,8 @@ function TabelaNotasXml({ rows, showAliq }: { rows: FronteiraXmlNaoSpedRow[]; sh
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIpi)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOpr)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums font-bold text-emerald-700">{fmtBRL(totalVFreteCTe)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold text-emerald-700">{fmtBRL(totalVFreteCTe)}</TableCell>
               <TableCell className="text-xs text-right tabular-nums font-bold text-emerald-700">{fmtBRL(totalVIcmsCTe)}</TableCell>
               {showAliq && <TableCell colSpan={2} />}
               <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
