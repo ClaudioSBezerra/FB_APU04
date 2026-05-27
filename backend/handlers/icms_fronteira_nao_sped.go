@@ -147,17 +147,35 @@ SELECT
     -- recolhido pela transportadora. O frete do CT-e volta a integrar o ICMS
     -- fronteira (restaurado 2026-05-26 a pedido do cliente).
     -- ST só se aplica quando regra.segmento_codigo está em company_segmentos.
+    -- Base por dentro (ufb.base_por_dentro, ex.: PE): a base de antecipação/DIFAL
+    -- é (operação − ICMS destacado total) / (1 − alíq_interna). ST não usa gross-up.
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN
-            GREATEST(0,
-                (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
-                * COALESCE(regra.aliquota_interna,20.5)/100.0
-                - m.v_icms - COALESCE(cte.v_icms_cte,0))
+            CASE WHEN COALESCE(ufb.base_por_dentro, false)
+                THEN GREATEST(0,
+                    ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
+                      - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                     / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
+                    * (COALESCE(regra.aliquota_interna,20.5)
+                       - CASE WHEN m.v_prod > 0 THEN m.v_icms / m.v_prod * 100.0 ELSE 12.0 END) / 100.0)
+                ELSE GREATEST(0,
+                    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                    * COALESCE(regra.aliquota_interna,20.5)/100.0
+                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
+            END
         WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
-            GREATEST(0,
-                (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
-                * COALESCE(regra.aliquota_interna,20.5)/100.0
-                - m.v_icms - COALESCE(cte.v_icms_cte,0))
+            CASE WHEN COALESCE(ufb.base_por_dentro, false)
+                THEN GREATEST(0,
+                    ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
+                      - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                     / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
+                    * COALESCE(regra.aliquota_interna,20.5)/100.0
+                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                ELSE GREATEST(0,
+                    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                    * COALESCE(regra.aliquota_interna,20.5)/100.0
+                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
+            END
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
             CASE
                 WHEN regra.segmento_codigo IS NOT NULL
@@ -174,10 +192,19 @@ SELECT
                          * COALESCE(regra.aliquota_interna,20.5)/100.0
                          - m.v_icms - COALESCE(cte.v_icms_cte,0))
                     ELSE 0 END
-                ELSE GREATEST(0,
-                    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
-                    * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                -- Sem segmento → reclassificada como ANTECIPAÇÃO (respeita base por dentro)
+                ELSE CASE WHEN COALESCE(ufb.base_por_dentro, false)
+                    THEN GREATEST(0,
+                        ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
+                          - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                         / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
+                        * COALESCE(regra.aliquota_interna,20.5)/100.0
+                        - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                    ELSE GREATEST(0,
+                        (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                        * COALESCE(regra.aliquota_interna,20.5)/100.0
+                        - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                END
             END
         ELSE 0
     END AS icms_devido_est
@@ -194,6 +221,8 @@ LEFT JOIN LATERAL (
     ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC LIMIT 1
 ) regra ON true
 LEFT JOIN cte_por_nfe cte ON cte.chave_nfe = m.chave_nfe
+LEFT JOIN uf_beneficios_fiscais ufb
+    ON ufb.company_id = $1 AND ufb.uf = COALESCE(m.dest_uf, 'PE')
 LEFT JOIN icms_fronteira_classificacao_manual cm
     ON cm.company_id = $1 AND cm.chave_nfe = m.chave_nfe
 WHERE COALESCE(cm.regime,

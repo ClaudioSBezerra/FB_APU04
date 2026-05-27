@@ -278,11 +278,19 @@ classified AS (
         -- frete quando há XML, ou vl_opr do SPED quando não há).
         CASE
             WHEN l.cfop IN ('2551','2556')
-                THEN GREATEST(0,
-                    l.base_calc * (
-                        COALESCE(regra.aliquota_interna, 20.5)
-                        - COALESCE(NULLIF(l.aliq_icms, 0), 12.0)
-                    ) / 100.0)
+                THEN CASE WHEN COALESCE(ufb.base_por_dentro, false)
+                    -- DIFAL por dentro (PE): base = (operação − ICMS destacado) /
+                    -- (1 − alíq_interna), aplicada à diferença de alíquotas, sem dedução.
+                    THEN GREATEST(0,
+                        ((l.base_calc - COALESCE(l.vl_icms,0))
+                         / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
+                        * (COALESCE(regra.aliquota_interna,20.5) - COALESCE(NULLIF(l.aliq_icms,0),12.0)) / 100.0)
+                    ELSE GREATEST(0,
+                        l.base_calc * (
+                            COALESCE(regra.aliquota_interna, 20.5)
+                            - COALESCE(NULLIF(l.aliq_icms, 0), 12.0)
+                        ) / 100.0)
+                END
             WHEN l.cfop IN ('2403','2409','2651','2652')
                 THEN CASE
                     -- ST: segmento da empresa coincide com o da regra NCM
@@ -327,14 +335,30 @@ classified AS (
                         ELSE COALESCE(l.vl_icms_st, 0)
                     END
                     -- Sem segmento cadastrado → reclassificado como ANTECIPAÇÃO
+                    ELSE CASE WHEN COALESCE(ufb.base_por_dentro, false)
+                        THEN GREATEST(0,
+                            ((l.base_calc - COALESCE(l.vl_icms,0))
+                             / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
+                            * COALESCE(regra.aliquota_interna,20.5)/100.0
+                            - COALESCE(l.vl_icms,0))
+                        ELSE GREATEST(0,
+                            l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                            - COALESCE(l.vl_icms, 0))
+                    END
+                END
+            WHEN l.cfop IN ('2101','2102','2152')
+                -- Antecipação. Por dentro (PE): base = (operação − ICMS destacado) /
+                -- (1 − alíq_interna), depois × alíq_interna − ICMS destacado.
+                THEN CASE WHEN COALESCE(ufb.base_por_dentro, false)
+                    THEN GREATEST(0,
+                        ((l.base_calc - COALESCE(l.vl_icms,0))
+                         / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
+                        * COALESCE(regra.aliquota_interna,20.5)/100.0
+                        - COALESCE(l.vl_icms,0))
                     ELSE GREATEST(0,
                         l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
                         - COALESCE(l.vl_icms, 0))
                 END
-            WHEN l.cfop IN ('2101','2102','2152')
-                THEN GREATEST(0,
-                    l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
-                    - COALESCE(l.vl_icms, 0))
             ELSE 0
         END                                                 AS icms_devido_est,
         COALESCE(j.uf, 'PE')                                AS uf_filial
@@ -380,6 +404,9 @@ classified AS (
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
         LIMIT 1
     ) regra ON true
+    -- Parâmetros da UF da filial (base por dentro etc.), configurados no módulo administrativo.
+    LEFT JOIN uf_beneficios_fiscais ufb
+        ON ufb.company_id = $1 AND ufb.uf = COALESCE(j.uf, 'PE')
     WHERE j.company_id = $1
       AND c100.cod_sit NOT IN ('02','03','04','05')
       AND ($2::text = '' OR j.mes_ano = $2

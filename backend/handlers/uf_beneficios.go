@@ -18,6 +18,7 @@ type UFBeneficio struct {
 	MVAAjustadaPadrao    *float64 `json:"mva_ajustada_padrao"`
 	InaplicabilidadeST   bool     `json:"inaplicabilidade_st"`
 	AntecipacaoAplicavel bool     `json:"antecipacao_aplicavel"`
+	BasePorDentro        bool     `json:"base_por_dentro"` // gross-up da base antecipação/DIFAL (PE)
 	Observacoes          string   `json:"observacoes"`
 	Configurado          bool     `json:"configurado"` // true se há linha salva
 }
@@ -114,7 +115,7 @@ func UFHubHandler(db *sql.DB) http.HandlerFunc {
 		if benRows, err := db.Query(`
 			SELECT uf, aliquota_interna, fecp_percentual, reducao_bc_percentual,
 			       mva_ajustada_padrao, inaplicabilidade_st, antecipacao_aplicavel,
-			       COALESCE(observacoes, '')
+			       base_por_dentro, COALESCE(observacoes, '')
 			FROM uf_beneficios_fiscais
 			WHERE company_id = $1::uuid`, companyID); err == nil {
 			for benRows.Next() {
@@ -122,7 +123,7 @@ func UFHubHandler(db *sql.DB) http.HandlerFunc {
 				var b UFBeneficio
 				if err := benRows.Scan(&uf, &b.AliquotaInterna, &b.FECPPercentual,
 					&b.ReducaoBCPercentual, &b.MVAAjustadaPadrao, &b.InaplicabilidadeST,
-					&b.AntecipacaoAplicavel, &b.Observacoes); err == nil {
+					&b.AntecipacaoAplicavel, &b.BasePorDentro, &b.Observacoes); err == nil {
 					b.Configurado = true
 					if it, ok := idx[uf]; ok {
 						it.Beneficios = b
@@ -152,6 +153,7 @@ type ufBeneficioInput struct {
 	MVAAjustadaPadrao    *float64 `json:"mva_ajustada_padrao"`
 	InaplicabilidadeST   bool     `json:"inaplicabilidade_st"`
 	AntecipacaoAplicavel bool     `json:"antecipacao_aplicavel"`
+	BasePorDentro        bool     `json:"base_por_dentro"`
 	Observacoes          string   `json:"observacoes"`
 }
 
@@ -190,8 +192,8 @@ func UFBeneficiosUpsertHandler(db *sql.DB) http.HandlerFunc {
 		_, err = db.Exec(`
 			INSERT INTO uf_beneficios_fiscais
 			    (company_id, uf, aliquota_interna, fecp_percentual, reducao_bc_percentual,
-			     mva_ajustada_padrao, inaplicabilidade_st, antecipacao_aplicavel, observacoes)
-			VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
+			     mva_ajustada_padrao, inaplicabilidade_st, antecipacao_aplicavel, base_por_dentro, observacoes)
+			VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 			ON CONFLICT (company_id, uf) DO UPDATE SET
 			    aliquota_interna      = EXCLUDED.aliquota_interna,
 			    fecp_percentual       = EXCLUDED.fecp_percentual,
@@ -199,10 +201,11 @@ func UFBeneficiosUpsertHandler(db *sql.DB) http.HandlerFunc {
 			    mva_ajustada_padrao   = EXCLUDED.mva_ajustada_padrao,
 			    inaplicabilidade_st   = EXCLUDED.inaplicabilidade_st,
 			    antecipacao_aplicavel = EXCLUDED.antecipacao_aplicavel,
+			    base_por_dentro       = EXCLUDED.base_por_dentro,
 			    observacoes           = EXCLUDED.observacoes,
 			    updated_at            = now()`,
 			companyID, uf, in.AliquotaInterna, in.FECPPercentual, in.ReducaoBCPercentual,
-			in.MVAAjustadaPadrao, in.InaplicabilidadeST, in.AntecipacaoAplicavel,
+			in.MVAAjustadaPadrao, in.InaplicabilidadeST, in.AntecipacaoAplicavel, in.BasePorDentro,
 			strings.TrimSpace(in.Observacoes))
 		if err != nil {
 			jsonErr(w, http.StatusInternalServerError, "Erro ao salvar: "+err.Error())

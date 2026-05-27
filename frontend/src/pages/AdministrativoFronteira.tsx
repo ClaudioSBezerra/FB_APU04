@@ -61,6 +61,7 @@ export interface UFBeneficios {
   mva_ajustada_padrao: number | null;
   inaplicabilidade_st: boolean;
   antecipacao_aplicavel: boolean;
+  base_por_dentro: boolean;
   observacoes: string;
   configurado: boolean;
 }
@@ -353,6 +354,13 @@ export function UFsHubTab({ uf: ufProp }: { uf?: string }) {
                   onCheckedChange={v => setField("antecipacao_aplicavel", !!v)}
                 />
                 Antecipação aplicável nesta UF
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer" title="PE: base = (operação − ICMS destacado) ÷ (1 − alíq. interna). BA/CE: deixar desmarcado.">
+                <Checkbox
+                  checked={form.base_por_dentro}
+                  onCheckedChange={v => setField("base_por_dentro", !!v)}
+                />
+                Base "por dentro" (antecipação/DIFAL — PE)
               </label>
             </div>
 
