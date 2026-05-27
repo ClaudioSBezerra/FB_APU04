@@ -758,6 +758,14 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraProdepeNcmsImportarHandler(database), "")(w, r)
 	})
+	http.HandleFunc("/api/icms-fronteira/prodepe/ncms", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraProdepeNcmsHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/prodepe", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {
@@ -781,6 +789,17 @@ func main() {
 			return
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraSTHandler(database), "")(w, r)
+	})
+	// Aba "Incentivo" — espelho de Antecipação/ST/DIFAL filtrado pelas notas
+	// dispensadas pelo motor (PRODEPE/PROIND), com o "icms_seria_devido"
+	// recalculado p/ mostrar o valor que foi de fato dispensado.
+	http.HandleFunc("/api/icms-fronteira/incentivo", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraIncentivoHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/difal", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()

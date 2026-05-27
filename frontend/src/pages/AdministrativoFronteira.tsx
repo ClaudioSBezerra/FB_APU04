@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { RegrasTab } from "./IcmsFronteira";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -38,7 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, FileText, Factory, MapPin, Building, Building2, ImageUp, Tag, Save, Pencil, Trash2, Plus, X, Upload, Download, AlertTriangle, ShieldCheck } from "lucide-react";
+import { Check, FileText, Factory, MapPin, Building, Building2, ImageUp, Tag, Save, Pencil, Trash2, Plus, X, Upload, Download, AlertTriangle, ShieldCheck, List, Search } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Tipos compartilhados (mesmos shapes que o backend devolve).
@@ -1000,12 +1001,21 @@ export function ProdepeTab() {
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...emptyEnquadramento });
+  // editingId === null   → form em modo criação
+  // editingId === string → form em modo edição (do enquadramento com esse id)
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Import CSV de NCMs (por enquadramento já criado)
   const [importTarget, setImportTarget] = useState<ProdepeEnquadramento | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Listagem dos NCMs já cadastrados (para auditoria do que foi importado)
+  const [ncmsTarget, setNcmsTarget] = useState<ProdepeEnquadramento | null>(null);
+  const [ncmsList, setNcmsList] = useState<{ ncm: string; descricao: string }[]>([]);
+  const [ncmsLoading, setNcmsLoading] = useState(false);
+  const [ncmsFilter, setNcmsFilter] = useState("");
 
   const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
     Authorization: `Bearer ${token}`,
@@ -1050,8 +1060,9 @@ export function ProdepeTab() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || `HTTP ${res.status}`);
       }
-      toast.success("Enquadramento salvo");
+      toast.success(editingId ? "Enquadramento atualizado" : "Enquadramento criado");
       setShowForm(false);
+      setEditingId(null);
       setForm({ ...emptyEnquadramento });
       load();
     } catch (e) {
@@ -1059,6 +1070,33 @@ export function ProdepeTab() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Abre o form em modo edição com os valores carregados. O upsert do backend
+  // (ON CONFLICT company_id+cnpj+num_ato) atualiza a mesma linha quando salvar.
+  const handleEdit = (e: ProdepeEnquadramento) => {
+    setEditingId(e.id);
+    setForm({
+      cnpj: e.cnpj,
+      inscricao_estadual: e.inscricao_estadual || "",
+      programa: e.programa,
+      num_ato: e.num_ato || "",
+      enquadramento: e.enquadramento || programaDefaults[e.programa],
+      credito_presumido_pct: Number(e.credito_presumido_pct || 0),
+      vigencia_inicio: e.vigencia_inicio || "",
+      vigencia_fim: e.vigencia_fim || "",
+      dispensa_antecipacao: e.dispensa_antecipacao,
+      observacoes: e.observacoes || "",
+      ativo: e.ativo,
+    });
+    setShowForm(true);
+    setImportTarget(null); // fecha painel de import se estiver aberto
+  };
+
+  const handleCancelForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setForm({ ...emptyEnquadramento });
   };
 
   const handleDelete = async (e: ProdepeEnquadramento) => {
@@ -1073,6 +1111,65 @@ export function ProdepeTab() {
       load();
     } catch {
       toast.error("Erro ao excluir enquadramento");
+    }
+  };
+
+  const loadNcms = async (enq: ProdepeEnquadramento) => {
+    setNcmsLoading(true);
+    setNcmsFilter("");
+    try {
+      const res = await fetch(`/api/icms-fronteira/prodepe/ncms?enquadramento_id=${encodeURIComponent(enq.id)}`, {
+        headers: headers(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setNcmsList(data.ncms ?? []);
+    } catch {
+      toast.error("Erro ao carregar NCMs");
+      setNcmsList([]);
+    } finally {
+      setNcmsLoading(false);
+    }
+  };
+
+  const handleOpenNcms = (enq: ProdepeEnquadramento) => {
+    setNcmsTarget(enq);
+    setImportTarget(null); // fecha import se estiver aberto
+    setShowForm(false);
+    loadNcms(enq);
+  };
+
+  const handleDeleteNcm = async (ncm: string) => {
+    if (!ncmsTarget) return;
+    if (!confirm(`Excluir NCM ${ncm} deste enquadramento?`)) return;
+    try {
+      const res = await fetch(
+        `/api/icms-fronteira/prodepe/ncms?enquadramento_id=${encodeURIComponent(ncmsTarget.id)}&ncm=${encodeURIComponent(ncm)}`,
+        { method: "DELETE", headers: headers() }
+      );
+      if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+      toast.success(`NCM ${ncm} removido`);
+      loadNcms(ncmsTarget);
+      load(); // atualiza contagem na tabela principal
+    } catch {
+      toast.error("Erro ao excluir NCM");
+    }
+  };
+
+  const handleClearAllNcms = async () => {
+    if (!ncmsTarget) return;
+    if (!confirm(`Limpar TODOS os ${ncmsList.length} NCMs deste enquadramento?\nÚtil para re-importar do zero se a importação ficou bagunçada.`)) return;
+    try {
+      const res = await fetch(
+        `/api/icms-fronteira/prodepe/ncms?enquadramento_id=${encodeURIComponent(ncmsTarget.id)}&all=1`,
+        { method: "DELETE", headers: headers() }
+      );
+      if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+      toast.success("Todos os NCMs foram removidos");
+      loadNcms(ncmsTarget);
+      load();
+    } catch {
+      toast.error("Erro ao limpar NCMs");
     }
   };
 
@@ -1092,12 +1189,20 @@ export function ProdepeTab() {
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       const imported = data.imported ?? 0;
       const skipped = data.skipped ?? 0;
+      const mode = data.mode ?? "csv"; // csv | xlsx | pdf | text
       if (imported > 0) {
-        toast.success(`${imported} NCM(s) importado(s)${skipped ? ` (${skipped} ignorado(s))` : ""}`);
+        const ctx = (mode === "pdf" || mode === "text")
+          ? ` (extraído de ${mode === "pdf" ? "PDF" : "texto"})`
+          : (skipped ? ` (${skipped} ignorado(s))` : "");
+        toast.success(`${imported} NCM(s) importado(s)${ctx}`);
         setImportTarget(null);
         setImportFile(null);
       } else {
-        toast.warning(`Nenhum NCM importado (${skipped} ignorado(s)). Verifique o arquivo.`);
+        toast.warning(
+          (mode === "pdf" || mode === "text")
+            ? `Nenhum NCM extraído do ${mode === "pdf" ? "PDF" : "texto"}. Pode ser PDF digitalizado/imagem (sem texto pesquisável).`
+            : `Nenhum NCM importado (${skipped} ignorado(s)). Verifique o arquivo.`
+        );
       }
       load();
     } catch (e) {
@@ -1136,7 +1241,10 @@ export function ProdepeTab() {
               <span className="block mt-1 italic text-amber-700">Exceções (combustíveis/lubrificantes/camarão) ficarão em uma lista negativa por NCM na Fase B.1 — hoje todos os NCMs do estabelecimento beneficiado são dispensados.</span>
             </p>
           </div>
-          <Button size="sm" onClick={() => { setShowForm(v => !v); setForm({ ...emptyEnquadramento }); }}>
+          <Button size="sm" onClick={() => {
+            if (showForm) { handleCancelForm(); }
+            else { setEditingId(null); setForm({ ...emptyEnquadramento }); setShowForm(true); }
+          }}>
             <Plus className="h-3.5 w-3.5 mr-1" />
             Novo enquadramento
           </Button>
@@ -1144,6 +1252,16 @@ export function ProdepeTab() {
 
         {showForm && (
           <div className="mb-4 p-4 border rounded bg-slate-50 space-y-3">
+            <div className="flex items-center justify-between -mt-1 -mb-1">
+              <p className="text-xs font-semibold text-slate-700">
+                {editingId ? "Editar enquadramento" : "Novo enquadramento"}
+              </p>
+              {editingId && (
+                <span className="text-[11px] text-muted-foreground">
+                  Atualizando linha existente (mesmo CNPJ + Nº ato).
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Programa *</Label>
@@ -1176,8 +1294,13 @@ export function ProdepeTab() {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">CNPJ da filial beneficiada *</Label>
-                {filiais.length > 0 ? (
+                <Label className="text-xs">
+                  CNPJ da filial beneficiada *
+                  {editingId && <span className="ml-1 text-[10px] text-muted-foreground">(não editável — chave do registro)</span>}
+                </Label>
+                {editingId ? (
+                  <Input value={fmtCnpj(form.cnpj)} disabled className="h-8 font-mono text-sm" />
+                ) : filiais.length > 0 ? (
                   <Select value={form.cnpj} onValueChange={v => setForm(f => ({ ...f, cnpj: v }))}>
                     <SelectTrigger className="h-8"><SelectValue placeholder="Selecione um CNPJ..." /></SelectTrigger>
                     <SelectContent>
@@ -1257,14 +1380,91 @@ export function ProdepeTab() {
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>
+              <Button size="sm" variant="ghost" onClick={handleCancelForm}>
                 <X className="h-3.5 w-3.5 mr-1" /> Cancelar
               </Button>
               <Button size="sm" onClick={handleSave} disabled={saving}>
                 <Save className="h-3.5 w-3.5 mr-1" />
-                {saving ? "Salvando..." : "Salvar enquadramento"}
+                {saving ? "Salvando..." : (editingId ? "Atualizar enquadramento" : "Criar enquadramento")}
               </Button>
             </div>
+          </div>
+        )}
+
+        {ncmsTarget && (
+          <div className="mb-4 p-4 border rounded bg-slate-50 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-700">
+                NCMs cadastrados — {fmtCnpj(ncmsTarget.cnpj)} ({ncmsTarget.num_ato || "—"})
+                <span className="ml-2 text-muted-foreground font-normal">{ncmsList.length} NCM(s)</span>
+              </p>
+              <div className="flex gap-2">
+                {ncmsList.length > 0 && (
+                  <Button size="sm" variant="outline" className="h-7 text-red-600 hover:text-red-800" onClick={handleClearAllNcms}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Limpar todos
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" className="h-7 px-1" onClick={() => { setNcmsTarget(null); setNcmsList([]); }}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={ncmsFilter}
+                  onChange={e => setNcmsFilter(e.target.value)}
+                  placeholder="Filtrar por NCM ou descrição..."
+                  className="h-8 pl-7 text-sm"
+                />
+              </div>
+              {ncmsFilter && (
+                <span className="text-[11px] text-muted-foreground">
+                  {ncmsList.filter(n => n.ncm.includes(ncmsFilter) || n.descricao.toLowerCase().includes(ncmsFilter.toLowerCase())).length} de {ncmsList.length}
+                </span>
+              )}
+            </div>
+            {ncmsLoading ? (
+              <p className="text-sm text-muted-foreground">Carregando NCMs...</p>
+            ) : ncmsList.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum NCM cadastrado neste enquadramento. Use o botão de import (📤) na linha para subir um CSV.</p>
+            ) : (
+              <div className="max-h-80 overflow-y-auto border rounded bg-white">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-white">
+                    <TableRow>
+                      <TableHead className="w-28">NCM</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead className="w-12 text-right">—</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {ncmsList
+                      .filter(n => !ncmsFilter
+                        || n.ncm.includes(ncmsFilter)
+                        || n.descricao.toLowerCase().includes(ncmsFilter.toLowerCase()))
+                      .map(n => (
+                        <TableRow key={n.ncm}>
+                          <TableCell className="font-mono text-xs">{n.ncm}</TableCell>
+                          <TableCell className="text-xs">{n.descricao || <span className="text-muted-foreground">—</span>}</TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 text-red-500 hover:text-red-700"
+                              title={`Excluir NCM ${n.ncm}`}
+                              onClick={() => handleDeleteNcm(n.ncm)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
         )}
 
@@ -1279,14 +1479,16 @@ export function ProdepeTab() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              CSV ou XLSX com duas colunas: <code className="bg-muted px-1 rounded">ncm</code> e <code className="bg-muted px-1 rounded">descricao</code>.
-              Separador: vírgula, ponto-e-vírgula ou tabulação. Cabeçalho é ignorado automaticamente.
+              Aceita <strong>PDF do decreto</strong> (extração automática de NCMs do texto),{" "}
+              <strong>CSV/XLSX</strong> (2 colunas: NCM, descrição) ou <strong>TXT</strong> (texto bruto colado).
+              No PDF/TXT o servidor varre todo o texto procurando padrões <code className="bg-muted px-1 rounded">9999.99.99</code>{" "}
+              ou <code className="bg-muted px-1 rounded">99999999</code> — não é necessário planilha bem-formada.
             </p>
             <div className="flex gap-2 items-center flex-wrap">
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,.txt,.xlsx"
+                accept=".csv,.txt,.xlsx,.pdf"
                 className="hidden"
                 onChange={e => { setImportFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
               />
@@ -1294,7 +1496,7 @@ export function ProdepeTab() {
                 <Upload className="h-3.5 w-3.5 mr-1" /> Selecionar arquivo
               </Button>
               <Button size="sm" variant="ghost" onClick={downloadTemplate}>
-                <Download className="h-3.5 w-3.5 mr-1" /> Baixar template
+                <Download className="h-3.5 w-3.5 mr-1" /> Baixar template CSV
               </Button>
               {importFile && (
                 <Button size="sm" onClick={handleImportNcms} disabled={importing}>
@@ -1362,8 +1564,26 @@ export function ProdepeTab() {
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7"
+                        title="Editar"
+                        onClick={() => handleEdit(e)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={`Ver NCMs (${e.ncm_count})`}
+                        onClick={() => handleOpenNcms(e)}
+                      >
+                        <List className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
                         title="Importar NCMs"
-                        onClick={() => { setImportTarget(e); setImportFile(null); }}
+                        onClick={() => { setImportTarget(e); setImportFile(null); setNcmsTarget(null); }}
                       >
                         <Upload className="h-3.5 w-3.5" />
                       </Button>
@@ -1447,6 +1667,10 @@ export function AdministrativoTab({ uf }: { uf: string }) {
           <ShieldCheck className="h-4 w-4" />
           PRODEPE
         </TabsTrigger>
+        <TabsTrigger value="regras" className="flex items-center gap-2">
+          <FileText className="h-4 w-4" />
+          Regras NCM por Decreto
+        </TabsTrigger>
         <TabsTrigger value="empresa" className="flex items-center gap-2">
           <Building className="h-4 w-4" />
           Empresa
@@ -1467,6 +1691,17 @@ export function AdministrativoTab({ uf }: { uf: string }) {
 
       <TabsContent value="prodepe">
         <ProdepeTab />
+      </TabsContent>
+
+      <TabsContent value="regras">
+        <div className="mb-4 p-3 border-l-4 border-emerald-400 bg-emerald-50 text-xs text-emerald-900 rounded">
+          <strong>Regras NCM por Decreto.</strong> Cadastre prefixos NCM com regime fiscal
+          (alíquota interna, MVA original/ajustado, segmento ST) <em>amparados em decreto</em>{" "}
+          — esses parâmetros alimentam o motor de cálculo de fronteira. Regras globais (vindas
+          de seed) podem ser sobrescritas por regras da empresa. Vincule sempre a uma UF e,
+          quando aplicável, a um decreto/protocolo na coluna de origem.
+        </div>
+        <RegrasTab token={token} />
       </TabsContent>
 
       <TabsContent value="empresa">

@@ -380,7 +380,19 @@ classified AS (
                 END
             ELSE 0
         END                                                 AS icms_devido_est,
-        COALESCE(j.uf, 'PE')                                AS uf_filial
+        COALESCE(j.uf, 'PE')                                AS uf_filial,
+        -- Campos crus expostos para o relatório "Incentivo" recalcular o
+        -- icms_que_seria_devido (sem o branch PRODEPE) e fazer JOIN por CNPJ.
+        -- Nenhum SELECT atual referencia estas colunas — adição inócua.
+        COALESCE(j.cnpj, '')                                AS cnpj_filial,
+        l.base_calc                                         AS base_calc,
+        regra.aliquota_interna                              AS regra_aliq_interna,
+        regra.mva_original                                  AS regra_mva_original,
+        regra.mva_ajustado_4pct                             AS regra_mva_4,
+        regra.mva_ajustado_7pct                             AS regra_mva_7,
+        regra.mva_ajustado_12pct                            AS regra_mva_12,
+        regra.segmento_codigo                               AS regra_seg_codigo,
+        COALESCE(ufb.base_por_dentro, false)                AS base_por_dentro
     FROM linhas l
     JOIN reg_c100 c100 ON c100.id = l.c100_id
     JOIN import_jobs j ON j.id = c100.job_id

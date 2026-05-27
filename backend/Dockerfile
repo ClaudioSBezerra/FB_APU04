@@ -20,7 +20,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -v -ldflags="-w -s" -o server 
 
 # Run Stage
 FROM alpine:latest
-RUN apk add --no-cache postgresql-client
+# postgresql-client: pg_dump usado pelo reset administrativo
+# poppler-utils:    fornece pdftotext, usado para extrair NCMs de PDFs do decreto
+#                   PRODEPE/PROIND (ver icms_fronteira_prodepe.go).
+RUN apk add --no-cache postgresql-client poppler-utils
 WORKDIR /root/
 COPY --from=builder /app/server .
 COPY --from=builder /app/migrations ./migrations

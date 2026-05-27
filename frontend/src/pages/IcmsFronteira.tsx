@@ -66,6 +66,8 @@ import {
   Play,
   Loader2,
   Pencil,
+  ShieldCheck,
+  BadgePercent,
 } from 'lucide-react'
 import {
   BarChart,
@@ -307,6 +309,45 @@ interface ContestacaoRow {
 interface ContestacaoResponse {
   rows: ContestacaoRow[]
   count: number
+}
+
+// Aba Incentivo — relatório das notas dispensadas pelo motor (PRODEPE/PROIND).
+// Espelha as colunas de Antecipação/ST e ADICIONA programa+ato+vigência+economia.
+interface IncentivoRow {
+  chave_nfe: string
+  data_emissao: string
+  numero_nfe: string
+  forn_cnpj: string
+  forn_nome: string
+  forn_uf: string
+  cfop: string
+  v_prod: number
+  v_ipi: number
+  v_icms: number
+  aliq_inter: number
+  aliq_interna: number
+  regime: string
+  bloco: string
+  cnpj_filial: string
+  programa: string
+  num_ato: string
+  vigencia_inicio: string
+  vigencia_fim: string
+  icms_seria_devido: number
+}
+
+interface IncentivoResponse {
+  rows: IncentivoRow[]
+  count: number
+  total_dispensado: number
+  total_mes_atual: number
+  total_mes_anterior: number
+  total_nao_sped: number
+  count_mes_atual: number
+  count_mes_anterior: number
+  count_nao_sped: number
+  por_programa: Record<string, number>
+  por_filial: Record<string, number>
 }
 
 // ---------------------------------------------------------------------------
@@ -2513,7 +2554,7 @@ function ReconciliacaoTab({ token }: { token: string | null }) {
 // ---------------------------------------------------------------------------
 // Regras NCM tab
 // ---------------------------------------------------------------------------
-function RegrasTab({ token }: { token: string | null }) {
+export function RegrasTab({ token }: { token: string | null }) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [openCreate, setOpenCreate] = useState(false)
@@ -4445,6 +4486,199 @@ function ApuracaoMensalTab({ token }: { token: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
+// IncentivoTab — relatório das notas dispensadas pelo motor (PRODEPE/PROIND).
+// Mesma estrutura visual de Antecipação/ST/DIFAL: cards de total + tabela.
+// O endpoint /api/icms-fronteira/incentivo retorna A (SPED mês), B (SPED anterior)
+// e C (XML sem SPED) — todos os blocos exibidos em uma só tabela com `bloco` na coluna.
+// ---------------------------------------------------------------------------
+function IncentivoTab({ token }: { token: string | null }) {
+  const uf = useFronteiraUF()
+  const [monthInput, setMonthInput] = useState('')
+  const periodo = monthToPeriodo(monthInput)
+
+  const { data, isLoading, isError } = useQuery<IncentivoResponse>({
+    queryKey: ['icms-fronteira/incentivo', periodo, uf],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      if (periodo) params.set('periodo', periodo)
+      if (uf) params.set('uf', uf)
+      const qs = params.toString()
+      const res = await fetch(`/api/icms-fronteira/incentivo${qs ? `?${qs}` : ''}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    },
+    enabled: !!token,
+  })
+
+  const programaLabel = (p: string) => {
+    const cls = p === 'PROIND'
+      ? 'bg-indigo-100 text-indigo-800'
+      : 'bg-emerald-100 text-emerald-800'
+    return <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold ${cls}`}>{p}</span>
+  }
+
+  const blocoLabel = (b: string) => {
+    const map: Record<string, { label: string; cls: string }> = {
+      mes_atual:     { label: 'Mês',       cls: 'bg-blue-50 text-blue-700' },
+      mes_anterior:  { label: 'Anterior',  cls: 'bg-slate-100 text-slate-700' },
+      nao_sped:      { label: 'Sem SPED',  cls: 'bg-amber-50 text-amber-800' },
+    }
+    const v = map[b] ?? { label: b, cls: 'bg-gray-100 text-gray-700' }
+    return <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${v.cls}`}>{v.label}</span>
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Filtros */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Label htmlFor="notas-periodo-incentivo" className="text-xs whitespace-nowrap">Período (mês/ano):</Label>
+        <Input
+          id="notas-periodo-incentivo"
+          type="month"
+          value={monthInput}
+          onChange={e => setMonthInput(e.target.value)}
+          className="w-40 h-8"
+        />
+        {periodo && <span className="text-xs text-muted-foreground">{periodo}</span>}
+        {!periodo && <span className="text-xs text-muted-foreground">Sem filtro = todos os meses</span>}
+        {uf && <span className="text-xs text-muted-foreground">UF: <strong>{uf}</strong></span>}
+      </div>
+
+      {/* Cards de total */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <Card className="border-emerald-200">
+          <CardContent className="p-4">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total dispensado</p>
+            <p className="text-2xl font-bold text-emerald-700 mt-1">
+              {fmtBRL(data?.total_dispensado ?? 0)}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {data?.count ?? 0} nota(s) com dispensa ativa
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Mês selecionado</p>
+            <p className="text-lg font-semibold mt-1">{fmtBRL(data?.total_mes_atual ?? 0)}</p>
+            <p className="text-[11px] text-muted-foreground">{data?.count_mes_atual ?? 0} nota(s)</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Meses anteriores</p>
+            <p className="text-lg font-semibold mt-1">{fmtBRL(data?.total_mes_anterior ?? 0)}</p>
+            <p className="text-[11px] text-muted-foreground">{data?.count_mes_anterior ?? 0} nota(s)</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">XML sem SPED</p>
+            <p className="text-lg font-semibold mt-1">{fmtBRL(data?.total_nao_sped ?? 0)}</p>
+            <p className="text-[11px] text-muted-foreground">{data?.count_nao_sped ?? 0} nota(s)</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quebra por programa */}
+      {data && Object.keys(data.por_programa ?? {}).length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap text-xs">
+          <span className="text-muted-foreground">Por programa:</span>
+          {Object.entries(data.por_programa).map(([prog, valor]) => (
+            <span key={prog} className="inline-flex items-center gap-1.5 rounded border bg-white px-2 py-1">
+              {programaLabel(prog)}
+              <span className="font-semibold">{fmtBRL(valor)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Tabela */}
+      <Card>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <p className="p-6 text-sm text-muted-foreground">Carregando notas dispensadas…</p>
+          ) : isError ? (
+            <p className="p-6 text-sm text-red-600">Erro ao consultar /incentivo.</p>
+          ) : !data || data.rows.length === 0 ? (
+            <div className="p-6">
+              <p className="text-sm text-muted-foreground">
+                Nenhuma nota dispensada por incentivo no recorte atual.
+                {!periodo && uf && ' Selecione um período para ver as do mês.'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                Verifique se há enquadramento PRODEPE/PROIND ativo na aba Administrativo →
+                PRODEPE para a empresa selecionada. DIFAL (CFOPs 2551/2556) não entra na
+                dispensa e por isso não aparece aqui.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-16">Bloco</TableHead>
+                    <TableHead>Chave</TableHead>
+                    <TableHead className="w-24">Data</TableHead>
+                    <TableHead className="w-20">Nº NF</TableHead>
+                    <TableHead>Fornecedor</TableHead>
+                    <TableHead className="w-12">UF</TableHead>
+                    <TableHead className="w-16">CFOP</TableHead>
+                    <TableHead className="text-right w-24">V.Prod</TableHead>
+                    <TableHead className="text-right w-24">V.ICMS NF</TableHead>
+                    <TableHead className="text-right w-28">ICMS dispensado</TableHead>
+                    <TableHead className="w-20">Programa</TableHead>
+                    <TableHead className="w-28">Nº Ato</TableHead>
+                    <TableHead className="w-44">Vigência</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.rows.map((r, i) => (
+                    <TableRow key={`${r.chave_nfe}-${r.cfop}-${i}`}>
+                      <TableCell>{blocoLabel(r.bloco)}</TableCell>
+                      <TableCell><ChaveCell chave={r.chave_nfe} /></TableCell>
+                      <TableCell className="text-xs">{r.data_emissao?.slice(0, 10)}</TableCell>
+                      <TableCell className="text-xs font-mono">{r.numero_nfe}</TableCell>
+                      <TableCell className="text-xs">
+                        <div className="leading-tight">
+                          <div className="truncate max-w-[200px]">{r.forn_nome || <span className="text-muted-foreground">—</span>}</div>
+                          <div className="font-mono text-[10px] text-muted-foreground">{r.forn_cnpj && formatCNPJ(r.forn_cnpj)}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs">{r.forn_uf}</TableCell>
+                      <TableCell className="text-xs font-mono">{r.cfop}</TableCell>
+                      <TableCell className="text-right text-xs">{fmtBRL(r.v_prod)}</TableCell>
+                      <TableCell className="text-right text-xs">{fmtBRL(r.v_icms)}</TableCell>
+                      <TableCell className="text-right text-xs font-semibold text-emerald-700">
+                        {fmtBRL(r.icms_seria_devido)}
+                      </TableCell>
+                      <TableCell>{programaLabel(r.programa)}</TableCell>
+                      <TableCell className="text-xs">{r.num_ato || <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="text-[11px] text-muted-foreground">
+                        {r.vigencia_inicio || '—'} → {r.vigencia_fim || '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-right font-semibold text-sm">Total dispensado:</TableCell>
+                    <TableCell className="text-right font-bold text-sm text-emerald-700">{fmtBRL(data.total_dispensado)}</TableCell>
+                    <TableCell colSpan={3} />
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // IcmsFronteira — main page
 // ---------------------------------------------------------------------------
 export default function IcmsFronteira() {
@@ -4473,13 +4707,14 @@ export default function IcmsFronteira() {
     '/icms-fronteira/antecipacao':  'antecipacao',
     '/icms-fronteira/st':           'st',
     '/icms-fronteira/difal':        'difal',
+    '/icms-fronteira/incentivo':    'incentivo',
     '/icms-fronteira/planilha':     'planilha',
     '/icms-fronteira/fretes':       'fretes',
     '/icms-fronteira/motor-fiscal': 'motor-fiscal',
     '/icms-fronteira/divergencias': 'divergencias',
     '/icms-fronteira/reconciliacao': 'reconciliacao',
     '/icms-fronteira/legislacao':    'legislacao',
-    '/icms-fronteira/regras':       'regras',
+    '/icms-fronteira/regras':       'administrativo', // legacy → agora vive em Administrativo
     '/icms-fronteira/extrato':      'extrato',
     '/icms-fronteira/contestacoes': 'contestacoes',
     '/icms-fronteira/apuracao':     'apuracao',
@@ -4490,13 +4725,13 @@ export default function IcmsFronteira() {
     antecipacao:   '/icms-fronteira/antecipacao',
     st:            '/icms-fronteira/st',
     difal:         '/icms-fronteira/difal',
+    incentivo:     '/icms-fronteira/incentivo',
     planilha:      '/icms-fronteira/planilha',
     fretes:        '/icms-fronteira/fretes',
     'motor-fiscal':'/icms-fronteira/motor-fiscal',
     divergencias:  '/icms-fronteira/divergencias',
     reconciliacao: '/icms-fronteira/reconciliacao',
     legislacao:    '/icms-fronteira/legislacao',
-    regras:        '/icms-fronteira/regras',
     extrato:       '/icms-fronteira/extrato',
     contestacoes:  '/icms-fronteira/contestacoes',
     apuracao:      '/icms-fronteira/apuracao',
@@ -4573,22 +4808,27 @@ export default function IcmsFronteira() {
         </div>
 
       <Tabs value={tab} onValueChange={handleTabChange}>
-        <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="resumo">Resumo</TabsTrigger>
-          <TabsTrigger value="antecipacao">Antecipação</TabsTrigger>
-          <TabsTrigger value="st">Subst. Tributária</TabsTrigger>
-          <TabsTrigger value="difal">DIFAL</TabsTrigger>
-          <TabsTrigger value="planilha">Planilha</TabsTrigger>
-          <TabsTrigger value="fretes">Fretes</TabsTrigger>
-          <TabsTrigger value="motor-fiscal">Motor Fiscal</TabsTrigger>
-          <TabsTrigger value="divergencias">Divergências</TabsTrigger>
-          <TabsTrigger value="reconciliacao">Reconciliação</TabsTrigger>
-          <TabsTrigger value="legislacao">Legislação</TabsTrigger>
-          <TabsTrigger value="apuracao">Apuração Mensal</TabsTrigger>
-          <TabsTrigger value="regras">Regras NCM</TabsTrigger>
-          <TabsTrigger value="extrato">Extrato SEFAZ</TabsTrigger>
-          <TabsTrigger value="contestacoes">Contestações</TabsTrigger>
-          <TabsTrigger value="administrativo">Administrativo</TabsTrigger>
+        {/* Tabs compactas — text-[11px] + px-2 para caber tudo em uma linha em telas ≥1280px.
+            Em telas menores faz quebra (flex-wrap). Regras NCM foi movida para dentro de Administrativo
+            (acessível via Administrativo → Regras NCM por Decreto). */}
+        <TabsList className="flex-wrap h-auto gap-0.5 text-[11px]">
+          <TabsTrigger value="resumo" className="px-2 py-1.5 text-[11px]">Resumo</TabsTrigger>
+          <TabsTrigger value="antecipacao" className="px-2 py-1.5 text-[11px]">Antecipação</TabsTrigger>
+          <TabsTrigger value="st" className="px-2 py-1.5 text-[11px]">Subst. Tributária</TabsTrigger>
+          <TabsTrigger value="difal" className="px-2 py-1.5 text-[11px]">DIFAL</TabsTrigger>
+          <TabsTrigger value="incentivo" className="px-2 py-1.5 text-[11px] data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+            <ShieldCheck className="h-3 w-3 mr-1" />Incentivo
+          </TabsTrigger>
+          <TabsTrigger value="planilha" className="px-2 py-1.5 text-[11px]">Planilha</TabsTrigger>
+          <TabsTrigger value="fretes" className="px-2 py-1.5 text-[11px]">Fretes</TabsTrigger>
+          <TabsTrigger value="motor-fiscal" className="px-2 py-1.5 text-[11px]">Motor Fiscal</TabsTrigger>
+          <TabsTrigger value="divergencias" className="px-2 py-1.5 text-[11px]">Divergências</TabsTrigger>
+          <TabsTrigger value="reconciliacao" className="px-2 py-1.5 text-[11px]">Reconciliação</TabsTrigger>
+          <TabsTrigger value="legislacao" className="px-2 py-1.5 text-[11px]">Legislação</TabsTrigger>
+          <TabsTrigger value="apuracao" className="px-2 py-1.5 text-[11px]">Apuração Mensal</TabsTrigger>
+          <TabsTrigger value="extrato" className="px-2 py-1.5 text-[11px]">Extrato SEFAZ</TabsTrigger>
+          <TabsTrigger value="contestacoes" className="px-2 py-1.5 text-[11px]">Contestações</TabsTrigger>
+          <TabsTrigger value="administrativo" className="px-2 py-1.5 text-[11px]">Administrativo</TabsTrigger>
         </TabsList>
 
         <TabsContent value="resumo" className="mt-6">
@@ -4657,6 +4897,26 @@ export default function IcmsFronteira() {
                 <RecalcularButton />
               </div>
               <NotasTabBlocos endpointSped="/api/icms-fronteira/difal" regime="difal" token={token} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="incentivo" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <BadgePercent className="h-4 w-4 text-emerald-600" />
+                Incentivo — Notas dispensadas por PRODEPE / PROIND
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-4">
+                Notas em que o motor zerou a antecipação/ST por enquadramento ativo em PRODEPE
+                ou PROIND no CNPJ recebedor. <strong>ICMS dispensado</strong> é o valor que seria devido
+                se não houvesse incentivo — funciona como prova fiscal da economia. DIFAL
+                (CFOPs 2551/2556) não entra na dispensa e por isso não aparece aqui.
+              </p>
+              <IncentivoTab token={token} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -4762,21 +5022,9 @@ export default function IcmsFronteira() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="regras" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">
-                Regras NCM
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground mb-4">
-                Defina regras de regime tributário por prefixo NCM. Regras globais são pré-definidas pelo sistema e não podem ser removidas.
-              </p>
-              <RegrasTab token={token} />
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {/* Aba "Regras NCM" foi movida para Administrativo → Regras por Decreto (ver
+            AdministrativoFronteira.tsx). Mantemos o redirect de URL no pathToTab acima
+            para que /icms-fronteira/regras continue funcionando como atalho legacy. */}
 
         <TabsContent value="extrato" className="mt-6">
           <Card>
