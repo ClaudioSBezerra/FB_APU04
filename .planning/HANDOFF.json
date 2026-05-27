@@ -1,34 +1,37 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-27T20:06:45.883Z",
+  "timestamp": "2026-05-27T18:00:00.000Z",
   "phase": null,
-  "phase_name": "Fase B — PRODEPE dispensa por CNPJ (módulo ICMS Fronteira)",
+  "phase_name": "Aba Incentivo (relatório das dispensas PRODEPE/PROIND aplicadas)",
   "phase_dir": null,
   "plan": null,
-  "task": 11,
+  "task": 1,
   "total_tasks": 5,
-  "status": "paused",
+  "status": "in_progress",
   "completed_tasks": [
-    {"id": 11, "name": "Migration tabelas PRODEPE por CNPJ", "status": "in_progress", "progress": "migration 124_prodepe_enquadramentos.sql escrita (prodepe_enquadramentos + prodepe_ncms); falta adicionar prodepe_enquadramentos ao grupo 'fronteira' do limpar-dados"}
+    {"id": "B-11", "name": "limpar-dados (admin_reset_helpers)", "status": "completed"},
+    {"id": "B-12", "name": "handlers CRUD + import CSV de NCM + rotas", "status": "completed"},
+    {"id": "B-13", "name": "motor SPED + Bloco C (EXISTS por CNPJ+vigência)", "status": "completed"},
+    {"id": "B-14", "name": "UI aba PRODEPE+PROIND (dropdown programa, badge)", "status": "completed"},
+    {"id": "B-15-localhost", "name": "Validação localhost smoke (HTTP 200, schema)", "status": "completed"}
   ],
   "remaining_tasks": [
-    {"id": 11, "name": "Add prodepe_enquadramentos ao grupo 'fronteira' do limpar-dados (admin_reset_helpers.go)", "status": "not_started"},
-    {"id": 12, "name": "Backend: handlers CRUD enquadramento + import CSV de NCM + rotas em main.go", "status": "not_started"},
-    {"id": 13, "name": "Motor: dispensa por CNPJ+vigência em icms_fronteira.go (SPED) e icms_fronteira_nao_sped.go (Bloco C) — zera antecipação+ST, DIFAL fora", "status": "not_started"},
-    {"id": 14, "name": "Frontend: aba PRODEPE por filial em AdministrativoFronteira.tsx (cadastro por CNPJ + import CSV)", "status": "not_started"},
-    {"id": 15, "name": "Validar localhost na Rolimec (CD PE zera; varejo BA normal)", "status": "not_started"}
+    {"id": "B-15-dados", "name": "Cadastrar Rolimec PE/Hipermatal/Scala em /icms-fronteira → Administrativo → PRODEPE e conferir queda do total na aba Antecipação (DIFAL deve continuar)", "status": "not_started"},
+    {"id": "INC-1", "name": "Backend: IcmsFronteiraIncentivoHandler — reusa fronteiraBaseQuery + naoSpedQuery filtrando por JOIN prodepe_enquadramentos; calcula icms_que_seria_devido em paralelo p/ exibir economia", "status": "not_started"},
+    {"id": "INC-2", "name": "Rota /api/icms-fronteira/incentivo em main.go", "status": "not_started"},
+    {"id": "INC-3", "name": "Frontend: aba Incentivo no /icms-fronteira ao lado de Antecipação/ST/DIFAL/Fretes — mesmo layout, badge PRODEPE/PROIND, coluna Nº Ato+Vigência, total dispensado destacado", "status": "not_started"},
+    {"id": "INC-4", "name": "Export CSV/XLSX da aba Incentivo (reusa padrão)", "status": "not_started"}
   ],
   "blockers": [],
   "human_actions_pending": [
-    {"action": "Confirmar com o contador se a dispensa cobre DIFAL (2551/2556) ou só antecipação+ST", "context": "Decisão atual: DIFAL fora (uso/consumo não é mercadoria de distribuição). Ajuste de 1 linha se mudar.", "blocking": false}
+    {"action": "Cadastrar Rolimec PE em /icms-fronteira → Administrativo → PRODEPE e validar que o motor zerou (task B-15-dados)", "context": "Sem dados reais cadastrados, a aba Incentivo abriria vazia. Vale o usuário validar antes de avançar para INC-*.", "blocking": false}
   ],
   "decisions": [
-    {"decision": "PRODEPE por CNPJ (estabelecimento), não por UF", "rationale": "Regime especial é do estabelecimento (Art. 11-A Dec. 21.959/1999). Numa mesma UF há CD com TARE e varejo normal."},
-    {"decision": "Leitura A (ampla): dispensa vale para TODAS as aquisições do CD, não só os NCMs da lista", "rationale": "Confirmado pelo contador citando Art. 11-A: não aplicabilidade da antecipação nas aquisições + ST nas saídas. Os 175 NCMs ficam como documentação/crédito presumido das saídas."},
-    {"decision": "Dispensa zera antecipação (2101/2102/2152) e ST (2403/2409/2651/2652); DIFAL fica fora", "rationale": "Art. 11-A cita antecipação e ST; DIFAL é uso/consumo/ativo, não mercadoria de distribuição. A confirmar com contador."},
-    {"decision": "Chave de junção: SPED import_jobs.cnpj; XML bloco C nfe_entradas.dest_cnpj_cpf", "rationale": "Identificam a filial recebedora; normalizar para dígitos."}
+    {"decision": "Aba Incentivo é RELATÓRIO (espelho de Antecipação/ST/DIFAL), não generalização do cadastro", "rationale": "Cadastro PRODEPE/PROIND continua em Administrativo. Relatório dá prova fiscal/auditoria e visibilidade ao que o motor zera."},
+    {"decision": "PRODEPE e PROIND no mesmo schema, diferenciados só por coluna 'programa' (CHECK)", "rationale": "Mesma natureza fiscal de dispensa; motor não diferencia. Coluna existe para UI/relatório e contagem separada."},
+    {"decision": "Não generalizar para Atacadista/Refinarias agora", "rationale": "Cada tipo tem regra de cálculo distinta. Arquitetura prematura sem caso real."}
   ],
-  "uncommitted_files": ["backend/migrations/124_prodepe_enquadramentos.sql"],
-  "next_action": "Adicionar prodepe_enquadramentos ao grupo 'fronteira' em backend/handlers/admin_reset_helpers.go, depois handlers (task 12) e o motor (task 13).",
-  "context_notes": "Fase A (base por dentro por UF) já em PRD (commit 861248c). Fase B = PRODEPE como dispensa por CNPJ. Migration 124 escrita (inócua, NÃO commitada — usuário pediu p/ deixar no disco). Lista de 175 NCMs da Rolimec em /tmp/beneficios/rolimec_prodepe_ncms.csv; PDFs do decreto 57.972/2024 em /tmp/beneficios/. CD da Rolimec = CNPJ 01612046000124 (PE, CACEPE 0232142-44); filial BA 01612046000558 (varejo). Vigência 01/01/2025-31/12/2032. Detalhe em memory/project_fases_beneficios_fronteira.md. Validar localhost antes de commit (web:3003/api:8084; login claudio_bezerra@hotmail.com/123456)."
+  "uncommitted_files": [],
+  "next_action": "Começar o handler IcmsFronteiraIncentivoHandler em backend/handlers/icms_fronteira_incentivo.go. Usuário pode cadastrar Rolimec em paralelo (UI já está pronta).",
+  "context_notes": "Fase B (PRODEPE/PROIND) commitada em 7ba5a06 (2026-05-27). Próximo: aba Incentivo (Leitura A — espelho de Antecipação com total dispensado em destaque). Stack docker UP em web:3003/api:8084. Empresa de teste = Rolimec MASTER (company_id 0fce5c57-e0f1-4554-9785-8fb8bcd040ff)."
 }
