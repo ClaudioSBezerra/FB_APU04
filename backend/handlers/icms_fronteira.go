@@ -347,12 +347,25 @@ classified AS (
     -- XML não foi importado). Cobertura típica ~99% (reg 0150 sempre traz cod_mun).
     LEFT JOIN municipios_ibge m_part ON m_part.codigo_ibge = part.cod_mun
     LEFT JOIN nfe_entradas ne ON ne.company_id = j.company_id AND ne.chave_nfe = c100.chv_nfe
+    -- NCM para casar a regra: 1º o XML (item de maior valor), 2º fallback no
+    -- próprio SPED (reg_0200 via reg_c170.cod_item do item de maior valor do
+    -- MESMO cfop). Sem o fallback, notas sem XML vinculado ficavam sem NCM →
+    -- nunca casavam regra → caíam em ANTECIPAÇÃO mesmo sendo ST.
     LEFT JOIN LATERAL (
-        SELECT nii.ncm AS ncm
-        FROM nfe_entradas_itens nii
-        WHERE nii.nfe_id = ne.id
-        ORDER BY nii.v_prod DESC NULLS LAST
-        LIMIT 1
+        SELECT COALESCE(
+            (SELECT nii.ncm
+             FROM nfe_entradas_itens nii
+             WHERE nii.nfe_id = ne.id AND NULLIF(nii.ncm, '') IS NOT NULL
+             ORDER BY nii.v_prod DESC NULLS LAST
+             LIMIT 1),
+            (SELECT LEFT(regexp_replace(p.cod_ncm, '[^0-9]', '', 'g'), 8)
+             FROM reg_c170 ci
+             JOIN reg_0200 p ON p.job_id = c100.job_id AND p.cod_item = ci.cod_item
+             WHERE ci.c100_id = c100.id AND ci.cfop = l.cfop
+               AND NULLIF(regexp_replace(p.cod_ncm, '[^0-9]', '', 'g'), '') IS NOT NULL
+             ORDER BY ci.vl_item DESC NULLS LAST
+             LIMIT 1)
+        ) AS ncm
     ) top_item ON true
     LEFT JOIN LATERAL (
         SELECT r.aliquota_interna, r.mva_original,

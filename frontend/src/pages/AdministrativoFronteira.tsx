@@ -382,7 +382,7 @@ export function UFsHubTab({ uf: ufProp }: { uf?: string }) {
 // EmpresaEditTab — edição dos dados da empresa em foco.
 //
 // Edita os mesmos campos que o admin já editava em /config/ambiente:
-//   regime_tributario, CNPJ, CNAE principal, segmento econômico, logo.
+//   regime_tributario, CNPJ, CNAE principal, logo.
 //
 // O backend valida ownership (apenas users com acesso à empresa via owner_id
 // ou user_environments podem alterar — admin pode tudo).
@@ -392,7 +392,6 @@ export function EmpresaEditTab({ company }: { company: CompanyEditable }) {
   const [regime, setRegime] = useState(company.regime_tributario || "lucro_real");
   const [cnpj, setCnpj] = useState(company.cnpj || "");
   const [cnae, setCnae] = useState(company.cnae_principal || "");
-  const [segmento, setSegmento] = useState(company.segmento_economico || "");
   const [saving, setSaving] = useState(false);
   // Logo
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -422,7 +421,6 @@ export function EmpresaEditTab({ company }: { company: CompanyEditable }) {
           regime_tributario: regime,
           cnpj: cnpj.replace(/\D/g, ""),
           cnae_principal: cnae,
-          segmento_economico: segmento,
         }),
       });
       if (!res.ok) {
@@ -514,15 +512,6 @@ export function EmpresaEditTab({ company }: { company: CompanyEditable }) {
               onChange={e => setCnae(e.target.value)}
               maxLength={7}
               placeholder="Ex: 4711301"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Segmento Econômico</Label>
-            <Input
-              value={segmento}
-              onChange={e => setSegmento(e.target.value)}
-              maxLength={100}
-              placeholder="Ex: Varejo de móveis"
             />
           </div>
         </div>
@@ -819,6 +808,17 @@ export function SegmentosTab({ uf }: { uf: string }) {
           </div>
         </div>
 
+        {/* Observação: vínculo dos segmentos às filiais da UF */}
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <p>
+            <strong>Importante:</strong> os segmentos marcados e salvos aqui ficam vinculados às
+            filiais de <strong>{uf}</strong>. O motor só calcula ST para um NCM quando o segmento
+            da regra estiver marcado para esta UF; sem o vínculo, a operação é tratada como
+            antecipação. Marque os segmentos e clique em <strong>“Salvar seleção”</strong> para cada UF.
+          </p>
+        </div>
+
         {/* Formulário de novo segmento */}
         {showAdd && (
           <div className="flex gap-2 mb-3 p-3 border rounded bg-slate-50 items-end">
@@ -840,7 +840,7 @@ export function SegmentosTab({ uf }: { uf: string }) {
           <div className="mb-3 p-4 border rounded bg-slate-50 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-700">Importar segmentos via CSV</p>
-              <Button size="sm" variant="ghost" className="h-6 px-1" onClick={() => { setShowImport(false); setCsvRows([]); }}>
+              <Button size="sm" variant="ghost" className="h-6 px-1" onClick={() => { setShowImport(false); setImportFile(null); }}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
