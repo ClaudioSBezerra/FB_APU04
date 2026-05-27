@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -214,12 +215,15 @@ WHERE COALESCE(cm.regime,
         ELSE 'NAO_FRONTEIRA'
     END) = $3
   AND COALESCE(cm.status, 'auto') <> 'excluded'
+  -- Eixo de UF do módulo: restringe às NFs cujo destinatário (filial) é da UF
+  -- selecionada. Consistente com o filtro uf_filial dos Blocos A/B. Vazio = todas.
+  AND ($4::text = '' OR COALESCE(m.dest_uf, 'PE') = $4)
 ORDER BY m.data_emissao, m.chave_nfe
 `
 
 // fetchNaoSpedRows é usado pelo export handler para montar o Bloco C.
-func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime string) ([]FronteiraXmlNaoSpedRow, error) {
-	rows, err := db.Query(naoSpedQuery, companyID, periodo, regime)
+func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime, uf string) ([]FronteiraXmlNaoSpedRow, error) {
+	rows, err := db.Query(naoSpedQuery, companyID, periodo, regime, uf)
 	if err != nil {
 		return nil, err
 	}
@@ -278,13 +282,14 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 
 		periodo := r.URL.Query().Get("periodo")
 		regime := r.URL.Query().Get("regime")
+		uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
 
 		if regime == "" {
 			jsonErr(w, http.StatusBadRequest, "Parâmetro 'regime' obrigatório (ANTECIPACAO|ST|DIFAL)")
 			return
 		}
 
-		rows, err := db.Query(naoSpedQuery, companyID, periodo, regime)
+		rows, err := db.Query(naoSpedQuery, companyID, periodo, regime, uf)
 		if err != nil {
 			log.Printf("IcmsFronteiraXmlNaoSped[%s] error: %v", regime, err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar NFs não encontradas no SPED")

@@ -381,7 +381,8 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		// ── Sheet C — XML não lançadas no SPED ───────────────────────────────
 		if periodo != "" && regime != "todos" {
 			regimeUpper := strings.ToUpper(regime)
-			cRows, err := fetchNaoSpedRows(db, companyID, periodo, regimeUpper)
+			ufExp := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+			cRows, err := fetchNaoSpedRows(db, companyID, periodo, regimeUpper, ufExp)
 			if err != nil {
 				log.Printf("IcmsFronteiraExportXLSX nao-sped error: %v", err)
 			} else {
@@ -674,7 +675,8 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}
 		if regime != "todos" && periodo != "" {
-			if cRows, errC := fetchNaoSpedRows(db, companyID, periodo, strings.ToUpper(regime)); errC == nil {
+			ufExp := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+			if cRows, errC := fetchNaoSpedRows(db, companyID, periodo, strings.ToUpper(regime), ufExp); errC == nil {
 				for _, r := range cRows {
 					blocoC = append(blocoC, pdfRow{Data: r.DataEmissao, NF: r.NumeroNFe, Forn: r.FornNome, CNPJ: r.FornCNPJ,
 						UF: r.FornUF, CFOP: r.CfopSaida, Chave: r.ChaveNFe,
