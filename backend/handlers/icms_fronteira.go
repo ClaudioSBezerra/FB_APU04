@@ -277,6 +277,25 @@ classified AS (
         -- ICMS devido estimado por regime. Base = l.base_calc (já inclui IPI/
         -- frete quando há XML, ou vl_opr do SPED quando não há).
         CASE
+            -- PRODEPE / regime especial de central de distribuição (art. 11-A do
+            -- Dec. 21.959/1999): a filial beneficiada é DISPENSADA de antecipação
+            -- E de ST nas aquisições → ICMS fronteira = 0. Identificação por CNPJ
+            -- da filial recebedora (import_jobs.cnpj) com vigência cobrindo a data
+            -- do documento. DIFAL (2551/2556) fica FORA da dispensa. EXISTS evita
+            -- multiplicar linhas quando há mais de um enquadramento p/ o mesmo CNPJ.
+            -- O regime classificado é preservado — só o valor é zerado.
+            WHEN l.cfop NOT IN ('2551','2556')
+             AND EXISTS (
+                 SELECT 1 FROM prodepe_enquadramentos pe
+                 WHERE pe.company_id = $1
+                   AND pe.ativo = true
+                   AND pe.dispensa_antecipacao = true
+                   AND regexp_replace(pe.cnpj, '[^0-9]', '', 'g')
+                       = regexp_replace(COALESCE(j.cnpj, ''), '[^0-9]', '', 'g')
+                   AND (pe.vigencia_inicio IS NULL OR c100.dt_doc >= pe.vigencia_inicio)
+                   AND (pe.vigencia_fim    IS NULL OR c100.dt_doc <= pe.vigencia_fim)
+             )
+                THEN 0
             WHEN l.cfop IN ('2551','2556')
                 THEN CASE WHEN COALESCE(ufb.base_por_dentro, false)
                     -- DIFAL por dentro (PE): base = (operação − ICMS destacado) /

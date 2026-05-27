@@ -80,6 +80,8 @@ var CompanyGroups = map[string][]CompanyDeleteOp{
 		{Table: "icms_fronteira_contestacoes",         ResultKey: "icms_fronteira_contestacoes"},
 		{Table: "icms_fronteira_classificacao_manual", ResultKey: "icms_fronteira_classificacao_manual"},
 		{Table: "legislacao_fronteira",                ResultKey: "legislacao_fronteira"},
+		// PRODEPE/regime especial por CNPJ; prodepe_ncms sai por FK ON DELETE CASCADE.
+		{Table: "prodepe_enquadramentos",              ResultKey: "prodepe_enquadramentos"},
 	},
 }
 

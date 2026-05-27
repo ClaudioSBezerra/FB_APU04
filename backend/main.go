@@ -733,6 +733,39 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraCompanySegmentosHandler(database), "")(w, r)
 	})
+	// ── ICMS Fronteira — PRODEPE / regime especial de CD por CNPJ ───────────
+	http.HandleFunc("/api/icms-fronteira/prodepe/item", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraProdepeItemHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/prodepe/filiais", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraProdepeFiliaisHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/prodepe/ncms/importar", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraProdepeNcmsImportarHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/prodepe", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraProdepeHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/antecipacao", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {

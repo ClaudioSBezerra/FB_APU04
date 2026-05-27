@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, FileText, Factory, MapPin, Building, ImageUp, Tag, Save, Pencil, Trash2, Plus, X, Upload, Download, AlertTriangle } from "lucide-react";
+import { Check, FileText, Factory, MapPin, Building, Building2, ImageUp, Tag, Save, Pencil, Trash2, Plus, X, Upload, Download, AlertTriangle, ShieldCheck } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Tipos compartilhados (mesmos shapes que o backend devolve).
@@ -947,6 +947,455 @@ export function SegmentosTab({ uf }: { uf: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// ProdepeTab — cadastro PRODEPE / regime especial de CD por CNPJ da filial.
+// Quando há enquadramento ativo na data do documento, o motor de fronteira zera
+// a antecipação e a ST (DIFAL fica fora). A lista de NCMs é documental — não
+// filtra o cálculo de fronteira (Leitura A do Art. 11-A Dec. 21.959/1999).
+// ---------------------------------------------------------------------------
+interface ProdepeFilial { cnpj: string; nome: string; }
+type ProdepePrograma = "PRODEPE" | "PROIND";
+interface ProdepeEnquadramento {
+  id: string;
+  cnpj: string;
+  inscricao_estadual: string;
+  programa: ProdepePrograma;
+  num_ato: string;
+  enquadramento: string;
+  credito_presumido_pct: number;
+  vigencia_inicio: string;
+  vigencia_fim: string;
+  dispensa_antecipacao: boolean;
+  observacoes: string;
+  ativo: boolean;
+  ncm_count: number;
+}
+
+// Defaults por programa: ao trocar PRODEPE↔PROIND a descrição livre acompanha
+// o caso típico (sem sobrescrever se o usuário já editou manualmente).
+const programaDefaults: Record<ProdepePrograma, string> = {
+  PRODEPE: "Central de Distribuição",
+  PROIND: "Indústria",
+};
+
+const emptyEnquadramento: Omit<ProdepeEnquadramento, "id" | "ncm_count"> = {
+  cnpj: "",
+  inscricao_estadual: "",
+  programa: "PRODEPE",
+  num_ato: "",
+  enquadramento: programaDefaults.PRODEPE,
+  credito_presumido_pct: 0,
+  vigencia_inicio: "",
+  vigencia_fim: "",
+  dispensa_antecipacao: true,
+  observacoes: "",
+  ativo: true,
+};
+
+export function ProdepeTab() {
+  const { token } = useAuth();
+
+  const [list, setList] = useState<ProdepeEnquadramento[]>([]);
+  const [filiais, setFiliais] = useState<ProdepeFilial[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ ...emptyEnquadramento });
+
+  // Import CSV de NCMs (por enquadramento já criado)
+  const [importTarget, setImportTarget] = useState<ProdepeEnquadramento | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
+    Authorization: `Bearer ${token}`,
+    ...extra,
+  });
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [rList, rFil] = await Promise.all([
+        fetch("/api/icms-fronteira/prodepe", { headers: headers() }),
+        fetch("/api/icms-fronteira/prodepe/filiais", { headers: headers() }),
+      ]);
+      if (!rList.ok) throw new Error(`HTTP ${rList.status}`);
+      const dList = await rList.json();
+      setList(dList.enquadramentos ?? []);
+      if (rFil.ok) {
+        const dFil = await rFil.json();
+        setFiliais(dFil.filiais ?? []);
+      }
+    } catch {
+      toast.error("Erro ao carregar enquadramentos PRODEPE");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async () => {
+    const cnpj = form.cnpj.replace(/\D/g, "");
+    if (!cnpj) { toast.error("Selecione o CNPJ da filial beneficiada"); return; }
+    if (!form.num_ato.trim()) { toast.error("Informe o número do ato/decreto"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/icms-fronteira/prodepe", {
+        method: "POST",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ ...form, cnpj }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `HTTP ${res.status}`);
+      }
+      toast.success("Enquadramento salvo");
+      setShowForm(false);
+      setForm({ ...emptyEnquadramento });
+      load();
+    } catch (e) {
+      toast.error("Erro ao salvar: " + (e instanceof Error ? e.message : ""));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (e: ProdepeEnquadramento) => {
+    if (!confirm(`Excluir enquadramento da filial ${e.cnpj} (ato ${e.num_ato || "—"})?\nOs NCMs associados serão removidos em cascata.`)) return;
+    try {
+      const res = await fetch(`/api/icms-fronteira/prodepe/item?id=${encodeURIComponent(e.id)}`, {
+        method: "DELETE",
+        headers: headers(),
+      });
+      if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+      toast.success("Enquadramento excluído");
+      load();
+    } catch {
+      toast.error("Erro ao excluir enquadramento");
+    }
+  };
+
+  const handleImportNcms = async () => {
+    if (!importTarget || !importFile) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", importFile);
+      fd.append("enquadramento_id", importTarget.id);
+      const res = await fetch("/api/icms-fronteira/prodepe/ncms/importar", {
+        method: "POST",
+        headers: headers(), // sem Content-Type — multipart define o boundary
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const imported = data.imported ?? 0;
+      const skipped = data.skipped ?? 0;
+      if (imported > 0) {
+        toast.success(`${imported} NCM(s) importado(s)${skipped ? ` (${skipped} ignorado(s))` : ""}`);
+        setImportTarget(null);
+        setImportFile(null);
+      } else {
+        toast.warning(`Nenhum NCM importado (${skipped} ignorado(s)). Verifique o arquivo.`);
+      }
+      load();
+    } catch (e) {
+      toast.error("Erro ao importar: " + (e instanceof Error ? e.message : ""));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const downloadTemplate = () => {
+    const content = `ncm,descricao\n22030000,Cerveja de malte\n22021000,Refrigerante\n`;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+    a.download = "prodepe_ncms_template.csv";
+    a.click();
+  };
+
+  const fmtCnpj = (c: string) => {
+    const d = (c || "").replace(/\D/g, "").padStart(14, "0");
+    return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12,14)}`;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="border rounded-md bg-white p-4">
+        <div className="flex items-start justify-between mb-3 gap-3">
+          <div>
+            <p className="text-sm font-semibold flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              PRODEPE / PROIND — Regime especial por estabelecimento
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Dispensa de antecipação e ST por <strong>CNPJ da filial recebedora</strong> durante a vigência do ato/decreto.
+              <strong> PRODEPE</strong> (central de distribuição, Art. 11-A do Dec. 21.959/1999) e <strong>PROIND</strong> (indústria) zeram a antecipação de fronteira nas aquisições do estabelecimento.
+              DIFAL (CFOPs 2551/2556) fica fora da dispensa. Os NCMs são apenas documentais — não filtram o cálculo de fronteira (Leitura A).
+              <span className="block mt-1 italic text-amber-700">Exceções (combustíveis/lubrificantes/camarão) ficarão em uma lista negativa por NCM na Fase B.1 — hoje todos os NCMs do estabelecimento beneficiado são dispensados.</span>
+            </p>
+          </div>
+          <Button size="sm" onClick={() => { setShowForm(v => !v); setForm({ ...emptyEnquadramento }); }}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Novo enquadramento
+          </Button>
+        </div>
+
+        {showForm && (
+          <div className="mb-4 p-4 border rounded bg-slate-50 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Programa *</Label>
+                <Select
+                  value={form.programa}
+                  onValueChange={v => setForm(f => {
+                    const next = v as ProdepePrograma;
+                    // Se o usuário ainda não mexeu na descrição (está no default do programa
+                    // anterior), atualiza para o default do novo programa. Caso contrário preserva.
+                    const enquadramento = (f.enquadramento === programaDefaults[f.programa])
+                      ? programaDefaults[next]
+                      : f.enquadramento;
+                    return { ...f, programa: next, enquadramento };
+                  })}
+                >
+                  <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PRODEPE">PRODEPE — Central de Distribuição</SelectItem>
+                    <SelectItem value="PROIND">PROIND — Indústria</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Descrição do enquadramento</Label>
+                <Input
+                  value={form.enquadramento}
+                  onChange={e => setForm(f => ({ ...f, enquadramento: e.target.value }))}
+                  placeholder={programaDefaults[form.programa]}
+                  className="h-8"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">CNPJ da filial beneficiada *</Label>
+                {filiais.length > 0 ? (
+                  <Select value={form.cnpj} onValueChange={v => setForm(f => ({ ...f, cnpj: v }))}>
+                    <SelectTrigger className="h-8"><SelectValue placeholder="Selecione um CNPJ..." /></SelectTrigger>
+                    <SelectContent>
+                      {filiais.map(fl => (
+                        <SelectItem key={fl.cnpj} value={fl.cnpj}>
+                          {fmtCnpj(fl.cnpj)}{fl.nome ? ` — ${fl.nome}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={form.cnpj}
+                    onChange={e => setForm(f => ({ ...f, cnpj: e.target.value.replace(/\D/g, "") }))}
+                    placeholder="14 dígitos"
+                    maxLength={14}
+                    className="h-8"
+                  />
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Inscrição estadual (CACEPE)</Label>
+                <Input
+                  value={form.inscricao_estadual}
+                  onChange={e => setForm(f => ({ ...f, inscricao_estadual: e.target.value }))}
+                  placeholder="Ex: 0232142-44"
+                  className="h-8"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Nº do ato / decreto *</Label>
+                <Input
+                  value={form.num_ato}
+                  onChange={e => setForm(f => ({ ...f, num_ato: e.target.value }))}
+                  placeholder="Ex: 57.972/2024"
+                  className="h-8"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Vigência início</Label>
+                <Input type="date" value={form.vigencia_inicio} onChange={e => setForm(f => ({ ...f, vigencia_inicio: e.target.value }))} className="h-8" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Vigência fim</Label>
+                <Input type="date" value={form.vigencia_fim} onChange={e => setForm(f => ({ ...f, vigencia_fim: e.target.value }))} className="h-8" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Crédito presumido % (saídas — documental)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  max={100}
+                  value={form.credito_presumido_pct}
+                  onChange={e => setForm(f => ({ ...f, credito_presumido_pct: parseFloat(e.target.value) || 0 }))}
+                  className="h-8"
+                />
+              </div>
+              <div className="space-y-1 flex items-end gap-4">
+                <label className="flex items-center gap-2 text-xs">
+                  <Checkbox checked={form.dispensa_antecipacao} onCheckedChange={v => setForm(f => ({ ...f, dispensa_antecipacao: !!v }))} />
+                  Dispensa antecipação/ST
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                  <Checkbox checked={form.ativo} onCheckedChange={v => setForm(f => ({ ...f, ativo: !!v }))} />
+                  Ativo
+                </label>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Observações</Label>
+              <Textarea
+                value={form.observacoes}
+                onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))}
+                placeholder="Ex.: TARE Rolimec — Decreto 57.972/2024, vigência 01/01/2025 a 31/12/2032."
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>
+                <X className="h-3.5 w-3.5 mr-1" /> Cancelar
+              </Button>
+              <Button size="sm" onClick={handleSave} disabled={saving}>
+                <Save className="h-3.5 w-3.5 mr-1" />
+                {saving ? "Salvando..." : "Salvar enquadramento"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {importTarget && (
+          <div className="mb-4 p-4 border rounded bg-emerald-50 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-emerald-900">
+                Importar NCMs do decreto — {fmtCnpj(importTarget.cnpj)} ({importTarget.num_ato || "—"})
+              </p>
+              <Button size="sm" variant="ghost" className="h-6 px-1" onClick={() => { setImportTarget(null); setImportFile(null); }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              CSV ou XLSX com duas colunas: <code className="bg-muted px-1 rounded">ncm</code> e <code className="bg-muted px-1 rounded">descricao</code>.
+              Separador: vírgula, ponto-e-vírgula ou tabulação. Cabeçalho é ignorado automaticamente.
+            </p>
+            <div className="flex gap-2 items-center flex-wrap">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.txt,.xlsx"
+                className="hidden"
+                onChange={e => { setImportFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
+              />
+              <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                <Upload className="h-3.5 w-3.5 mr-1" /> Selecionar arquivo
+              </Button>
+              <Button size="sm" variant="ghost" onClick={downloadTemplate}>
+                <Download className="h-3.5 w-3.5 mr-1" /> Baixar template
+              </Button>
+              {importFile && (
+                <Button size="sm" onClick={handleImportNcms} disabled={importing}>
+                  {importing ? "Importando..." : `Importar ${importFile.name}`}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Carregando...</p>
+        ) : list.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nenhum enquadramento cadastrado. Clique em <strong>“Novo enquadramento”</strong> para cadastrar a primeira filial beneficiada.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-24">Programa</TableHead>
+                <TableHead>CNPJ</TableHead>
+                <TableHead>IE</TableHead>
+                <TableHead>Ato/Decreto</TableHead>
+                <TableHead>Enquadramento</TableHead>
+                <TableHead>Vigência</TableHead>
+                <TableHead className="text-right">Créd. pres. %</TableHead>
+                <TableHead className="text-right">NCMs</TableHead>
+                <TableHead className="w-10">Ativo</TableHead>
+                <TableHead className="w-24 text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {list.map(e => (
+                <TableRow key={e.id} className={e.ativo && e.dispensa_antecipacao ? "bg-emerald-50/40" : ""}>
+                  <TableCell>
+                    <span className={
+                      "inline-block rounded px-2 py-0.5 text-[10px] font-semibold " +
+                      (e.programa === "PROIND"
+                        ? "bg-indigo-100 text-indigo-800"
+                        : "bg-emerald-100 text-emerald-800")
+                    }>
+                      {e.programa}
+                    </span>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{fmtCnpj(e.cnpj)}</TableCell>
+                  <TableCell className="font-mono text-xs">{e.inscricao_estadual || <span className="text-muted-foreground">—</span>}</TableCell>
+                  <TableCell className="text-sm">{e.num_ato || <span className="text-muted-foreground">—</span>}</TableCell>
+                  <TableCell className="text-sm">{e.enquadramento || <span className="text-muted-foreground">—</span>}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {(e.vigencia_inicio || "—")} → {(e.vigencia_fim || "—")}
+                  </TableCell>
+                  <TableCell className="text-right text-sm">{Number(e.credito_presumido_pct || 0).toFixed(2)}</TableCell>
+                  <TableCell className="text-right text-sm">{e.ncm_count}</TableCell>
+                  <TableCell>
+                    {e.ativo && e.dispensa_antecipacao ? (
+                      <Check className="h-4 w-4 text-emerald-600" />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">off</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title="Importar NCMs"
+                        onClick={() => { setImportTarget(e); setImportFile(null); }}
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-red-500 hover:text-red-700"
+                        title="Excluir"
+                        onClick={() => handleDelete(e)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
+        <p className="text-[11px] text-muted-foreground mt-3 flex items-center gap-1">
+          <Building2 className="h-3 w-3" />
+          {list.length} enquadramento(s) — {list.filter(e => e.programa === "PRODEPE").length} PRODEPE,{" "}
+          {list.filter(e => e.programa === "PROIND").length} PROIND;{" "}
+          {list.filter(e => e.ativo && e.dispensa_antecipacao).length} com dispensa ativa.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // AdministrativoTab — entrada única, usada como TabsContent="administrativo"
 // dentro do /icms-fronteira. Carrega /api/user/hierarchy e organiza 4 sub-abas.
 // ---------------------------------------------------------------------------
@@ -994,6 +1443,10 @@ export function AdministrativoTab({ uf }: { uf: string }) {
           <Tag className="h-4 w-4" />
           Segmentos ST
         </TabsTrigger>
+        <TabsTrigger value="prodepe" className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4" />
+          PRODEPE
+        </TabsTrigger>
         <TabsTrigger value="empresa" className="flex items-center gap-2">
           <Building className="h-4 w-4" />
           Empresa
@@ -1010,6 +1463,10 @@ export function AdministrativoTab({ uf }: { uf: string }) {
 
       <TabsContent value="segmentos">
         <SegmentosTab uf={uf} />
+      </TabsContent>
+
+      <TabsContent value="prodepe">
+        <ProdepeTab />
       </TabsContent>
 
       <TabsContent value="empresa">

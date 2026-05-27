@@ -53,7 +53,7 @@ const naoSpedQuery = `
 WITH xml_falt AS (
     SELECT
         ne.id, ne.chave_nfe, ne.data_emissao, ne.forn_cnpj, ne.forn_nome,
-        ne.forn_uf, ne.dest_uf, COALESCE(ne.numero_nfe,'') AS numero_nfe,
+        ne.forn_uf, ne.dest_uf, ne.dest_cnpj_cpf, COALESCE(ne.numero_nfe,'') AS numero_nfe,
         COALESCE(ne.v_prod,0) AS v_prod, COALESCE(ne.v_frete,0) AS v_frete,
         COALESCE(ne.v_outro,0) AS v_outro,
         COALESCE(ne.v_ipi,0) AS v_ipi,    -- IPI total do XML (<vIPI> do header)
@@ -69,7 +69,7 @@ WITH xml_falt AS (
 ), top AS (
     SELECT DISTINCT ON (xf.id)
         xf.id, xf.chave_nfe, xf.data_emissao, xf.forn_cnpj, xf.forn_nome,
-        xf.forn_uf, xf.dest_uf, xf.numero_nfe,
+        xf.forn_uf, xf.dest_uf, xf.dest_cnpj_cpf, xf.numero_nfe,
         xf.v_prod, xf.v_frete, xf.v_outro, xf.v_ipi, xf.v_icms,
         COALESCE(nii.cfop,'') AS cfop_saida, COALESCE(nii.ncm,'') AS ncm
     FROM xml_falt xf
@@ -150,6 +150,22 @@ SELECT
     -- Base por dentro (ufb.base_por_dentro, ex.: PE): a base de antecipação/DIFAL
     -- é (operação − ICMS destacado total) / (1 − alíq_interna). ST não usa gross-up.
     CASE
+        -- PRODEPE / regime especial de CD por CNPJ (art. 11-A Dec. 21.959/1999):
+        -- filial recebedora beneficiada → dispensa de antecipação E ST (DIFAL fora).
+        -- Identificação por nfe_entradas.dest_cnpj_cpf + vigência na data de emissão.
+        -- EXISTS evita multiplicar linhas com mais de um enquadramento por CNPJ.
+        WHEN m.cfop_entrada NOT IN ('2551','2556')
+         AND EXISTS (
+             SELECT 1 FROM prodepe_enquadramentos pe
+             WHERE pe.company_id = $1
+               AND pe.ativo = true
+               AND pe.dispensa_antecipacao = true
+               AND regexp_replace(pe.cnpj, '[^0-9]', '', 'g')
+                   = regexp_replace(COALESCE(m.dest_cnpj_cpf, ''), '[^0-9]', '', 'g')
+               AND (pe.vigencia_inicio IS NULL OR m.data_emissao::date >= pe.vigencia_inicio)
+               AND (pe.vigencia_fim    IS NULL OR m.data_emissao::date <= pe.vigencia_fim)
+         )
+            THEN 0
         WHEN m.cfop_entrada IN ('2551','2556') THEN
             CASE WHEN COALESCE(ufb.base_por_dentro, false)
                 THEN GREATEST(0,
