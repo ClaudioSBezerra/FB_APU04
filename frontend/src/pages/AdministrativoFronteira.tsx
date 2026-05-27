@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, FileText, Factory, MapPin, Building, ImageUp, Tag, Save, Pencil, Trash2, Plus, X, Upload, Download } from "lucide-react";
+import { Check, FileText, Factory, MapPin, Building, ImageUp, Tag, Save, Pencil, Trash2, Plus, X, Upload, Download, AlertTriangle } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Tipos compartilhados (mesmos shapes que o backend devolve).
