@@ -2672,6 +2672,9 @@ export function RegrasTab({ token }: { token: string | null }) {
   // Resultado da última importação. Aberto em Dialog enquanto não-nulo, para
   // que o usuário possa ler o detalhe dos erros sem perder pela transição de toast.
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   // Form state
   const [ncmPrefixo, setNcmPrefixo] = useState('')
@@ -2712,7 +2715,7 @@ export function RegrasTab({ token }: { token: string | null }) {
   }
 
   // Reset das seleções de segmento ao trocar de UF (segmento é vinculado à UF).
-  useEffect(() => { setImportSegmento(''); setCreateSegmento('') }, [selectedUF])
+  useEffect(() => { setImportSegmento(''); setCreateSegmento(''); setSelected(new Set()) }, [selectedUF])
 
   const createMutation = useMutation({
     mutationFn: async (body: object) => {
@@ -2837,6 +2840,27 @@ export function RegrasTab({ token }: { token: string | null }) {
     }
   }
 
+  async function handleBulkDelete() {
+    setBulkDeleting(true)
+    let ok = 0
+    let fail = 0
+    for (const id of selected) {
+      try {
+        const res = await fetch(`/api/icms-fronteira/regras/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) ok++; else fail++
+      } catch { fail++ }
+    }
+    setBulkDeleting(false)
+    setBulkDeleteOpen(false)
+    setSelected(new Set())
+    queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras', selectedUF] })
+    if (fail === 0) toast.success(`${ok} regra(s) removida(s)`)
+    else toast.warning(`${ok} removida(s), ${fail} com erro`)
+  }
+
   const filtered = (data?.rows ?? []).filter((r) => {
     const q = search.toLowerCase()
     return (
@@ -2845,6 +2869,23 @@ export function RegrasTab({ token }: { token: string | null }) {
       r.regime.toLowerCase().includes(q)
     )
   })
+
+  const filteredDeletable = filtered.filter((r) => !r.is_global)
+  const allFilteredSelected =
+    filteredDeletable.length > 0 && filteredDeletable.every((r) => selected.has(r.id))
+  const someFilteredSelected = filteredDeletable.some((r) => selected.has(r.id))
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      const next = new Set(selected)
+      filteredDeletable.forEach((r) => next.delete(r.id))
+      setSelected(next)
+    } else {
+      const next = new Set(selected)
+      filteredDeletable.forEach((r) => next.add(r.id))
+      setSelected(next)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -2920,10 +2961,22 @@ export function RegrasTab({ token }: { token: string | null }) {
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-xs text-xs"
         />
-        <Button size="sm" onClick={() => setOpenCreate(true)}>
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          Nova Regra
-        </Button>
+        <div className="flex items-center gap-2">
+          {selected.size > 0 && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Excluir selecionadas ({selected.size})
+            </Button>
+          )}
+          <Button size="sm" onClick={() => setOpenCreate(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Nova Regra
+          </Button>
+        </div>
       </div>
 
       {/* Table */}
@@ -2942,6 +2995,14 @@ export function RegrasTab({ token }: { token: string | null }) {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-transparent">
+                <TableHead className="w-8 px-2">
+                  <Checkbox
+                    checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+                    onCheckedChange={toggleSelectAll}
+                    disabled={filteredDeletable.length === 0}
+                    aria-label="Selecionar todas as regras da empresa"
+                  />
+                </TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">NCM</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Descrição</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Segmento</TableHead>
@@ -2956,13 +3017,28 @@ export function RegrasTab({ token }: { token: string | null }) {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-xs text-muted-foreground py-6">
+                  <TableCell colSpan={10} className="text-center text-xs text-muted-foreground py-6">
                     Nenhuma regra encontrada
                   </TableCell>
                 </TableRow>
               ) : (
                 filtered.map((row) => (
-                  <TableRow key={row.id}>
+                  <TableRow key={row.id} data-selected={selected.has(row.id) || undefined} className={selected.has(row.id) ? 'bg-destructive/5' : undefined}>
+                    <TableCell className="w-8 px-2">
+                      {!row.is_global ? (
+                        <Checkbox
+                          checked={selected.has(row.id)}
+                          onCheckedChange={(checked) => {
+                            const next = new Set(selected)
+                            if (checked) next.add(row.id); else next.delete(row.id)
+                            setSelected(next)
+                          }}
+                          aria-label={`Selecionar regra ${row.ncm_prefixo}`}
+                        />
+                      ) : (
+                        <span className="block w-4 h-4" />
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs font-mono">{row.ncm_prefixo}</TableCell>
                     <TableCell className="text-xs max-w-[200px]">
                       <div className="truncate" title={row.descricao}>{row.descricao}</div>
@@ -3018,6 +3094,27 @@ export function RegrasTab({ token }: { token: string | null }) {
           </Table>
         </div>
       )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={bulkDeleteOpen} onOpenChange={(o) => { if (!bulkDeleting) setBulkDeleteOpen(o) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excluir {selected.size} regra(s)?</DialogTitle>
+            <DialogDescription className="text-xs">
+              Esta ação é irreversível. As regras globais (seed) nunca são afetadas — apenas as regras importadas ou criadas pela sua empresa serão removidas.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteOpen(false)} disabled={bulkDeleting}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDelete} disabled={bulkDeleting}>
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Dialog */}
       <Dialog open={openCreate} onOpenChange={(o) => { setOpenCreate(o); if (!o) resetForm() }}>
