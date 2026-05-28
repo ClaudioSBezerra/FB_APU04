@@ -67,8 +67,8 @@ func TestRowToCSVRecord_FieldCount(t *testing.T) {
 	if len(rec) != len(exportCSVHeaders) {
 		t.Errorf("CSV fields (%d) devem casar com headers (%d)", len(rec), len(exportCSVHeaders))
 	}
-	if len(rec) != 16 {
-		t.Errorf("expected 16 CSV fields (com V.IPI), got %d", len(rec))
+	if len(rec) != 18 {
+		t.Errorf("expected 18 CSV fields (Bloco+17 colunas modelo), got %d", len(rec))
 	}
 }
 
