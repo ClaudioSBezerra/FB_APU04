@@ -132,14 +132,26 @@ type FronteiraNotaRow struct {
 	Bloco         string  `json:"bloco"`
 }
 
+// CteLink — CT-e vinculado a uma NF-e (apenas quando tomador = destinatário)
+type CteLink struct {
+	ChaveCTe    string  `json:"chave_cte"`
+	NumeroCTe   string  `json:"numero_cte"`
+	DataEmissao string  `json:"data_emissao"`
+	EmitNome    string  `json:"emit_nome"`
+	EmitCNPJ    string  `json:"emit_cnpj"`
+	VPrest      float64 `json:"v_prest"`
+	VIcmsCTe    float64 `json:"v_icms_cte"`
+}
+
 type FronteiraNotasResponse struct {
-	Rows             []FronteiraNotaRow `json:"rows"`
-	Total            float64            `json:"total"`
-	Count            int                `json:"count"`
-	TotalMesAtual    float64            `json:"total_mes_atual"`
-	TotalMesAnterior float64            `json:"total_mes_anterior"`
-	CountMesAtual    int                `json:"count_mes_atual"`
-	CountMesAnterior int                `json:"count_mes_anterior"`
+	Rows             []FronteiraNotaRow   `json:"rows"`
+	Total            float64              `json:"total"`
+	Count            int                  `json:"count"`
+	TotalMesAtual    float64              `json:"total_mes_atual"`
+	TotalMesAnterior float64              `json:"total_mes_anterior"`
+	CountMesAtual    int                  `json:"count_mes_atual"`
+	CountMesAnterior int                  `json:"count_mes_anterior"`
+	CteLinks         map[string][]CteLink `json:"cte_links"`
 }
 
 // ---------------------------------------------------------------------------
@@ -568,6 +580,12 @@ LIMIT 500
 		result = append(result, row)
 	}
 
+	chaves := make([]string, len(result))
+	for i, r := range result {
+		chaves[i] = r.ChaveNFe
+	}
+	cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
+
 	json.NewEncoder(w).Encode(FronteiraNotasResponse{
 		Rows:             result,
 		Total:            totalFull,
@@ -576,6 +594,7 @@ LIMIT 500
 		TotalMesAnterior: totalMesAnterior,
 		CountMesAtual:    countMesAtual,
 		CountMesAnterior: countMesAnterior,
+		CteLinks:         cteLinks,
 	})
 }
 

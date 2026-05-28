@@ -121,6 +121,16 @@ interface FronteiraNotaRow {
   bloco: string // 'mes_atual' | 'mes_anterior'
 }
 
+interface CteLink {
+  chave_cte: string
+  numero_cte: string
+  data_emissao: string
+  emit_nome: string
+  emit_cnpj: string
+  v_prest: number
+  v_icms_cte: number
+}
+
 interface FronteiraNotasResponse {
   rows: FronteiraNotaRow[]
   total: number
@@ -129,6 +139,7 @@ interface FronteiraNotasResponse {
   total_mes_anterior: number
   count_mes_atual: number
   count_mes_anterior: number
+  cte_links: Record<string, CteLink[]>
 }
 
 interface FronteiraXmlNaoSpedRow {
@@ -160,6 +171,7 @@ interface FronteiraXmlNaoSpedResponse {
   rows: FronteiraXmlNaoSpedRow[]
   total: number
   count: number
+  cte_links: Record<string, CteLink[]>
 }
 
 interface RegraNCM {
@@ -832,26 +844,34 @@ const REGIME_PARAM: Record<RegimedStr, string> = {
 function TabelaNotasSped({
   rows,
   showAliq,
+  cteLinks = {},
 }: {
   rows: FronteiraNotaRow[]
   showAliq: boolean
+  cteLinks?: Record<string, CteLink[]>
 }) {
   const totalVProd = rows.reduce((a, r) => a + (r.v_prod || 0), 0)
   const totalVIpi  = rows.reduce((a, r) => a + (r.v_ipi || 0), 0)
   const totalVOpr  = totalVProd + totalVIpi
   const totalVIcms = rows.reduce((a, r) => a + (r.v_icms || 0), 0)
-  const totalIcms  = rows.reduce((a, r) => a + (r.icms_devido_est || 0), 0)
+  const totalIcms  = rows.reduce((a, r) => {
+    const ctesDev = (cteLinks[r.chave_nfe] ?? []).reduce((s, c) => {
+      const dev = c.v_prest * (r.aliq_interna || 20.5) / 100 - c.v_icms_cte
+      return s + (dev > 0 ? dev : 0)
+    }, 0)
+    return a + (r.icms_devido_est || 0) + ctesDev
+  }, 0)
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-transparent">
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Data</TableHead>
-            <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e / CT-e</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
-            <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Operação</TableHead>
@@ -866,34 +886,76 @@ function TabelaNotasSped({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row, idx) => (
-            <TableRow key={`${row.chave_nfe}-${idx}`}>
-              <TableCell className="text-xs font-mono whitespace-nowrap">
-                {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
-              </TableCell>
-              <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
-              <TableCell className="text-xs max-w-[180px]">
-                <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
-                <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
-              </TableCell>
-              <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
-              <TableCell className="text-xs font-mono">{row.cfop || '—'}</TableCell>
-              <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
-              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL((row.v_prod || 0) + (row.v_ipi || 0))}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms)}</TableCell>
-              {showAliq && (
-                <>
-                  <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
-                  <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
-                </>
-              )}
-              <TableCell className="text-xs text-right tabular-nums font-semibold">
-                {fmtBRL(row.icms_devido_est)}
-              </TableCell>
-            </TableRow>
-          ))}
+          {rows.flatMap((row, idx) => {
+            const ctes = cteLinks[row.chave_nfe] ?? []
+            const nfRow = (
+              <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
+                <TableCell className="text-xs font-mono whitespace-nowrap">
+                  {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                </TableCell>
+                <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+                <TableCell className="text-xs max-w-[180px]">
+                  <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
+                  <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
+                </TableCell>
+                <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
+                <TableCell className="text-xs font-mono">{row.cfop || '—'}</TableCell>
+                <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL((row.v_prod || 0) + (row.v_ipi || 0))}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms)}</TableCell>
+                {showAliq && (
+                  <>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
+                  </>
+                )}
+                <TableCell className="text-xs text-right tabular-nums font-semibold">
+                  {fmtBRL(row.icms_devido_est)}
+                </TableCell>
+              </TableRow>
+            )
+            const cteRows = ctes.map((cte, ci) => {
+              const icmsDev = Math.max(0, cte.v_prest * (row.aliq_interna || 20.5) / 100 - cte.v_icms_cte)
+              return (
+                <TableRow key={`cte-${row.chave_nfe}-${ci}`} className="bg-blue-50 hover:bg-blue-100">
+                  <TableCell className="text-xs font-mono whitespace-nowrap text-blue-700">
+                    {cte.data_emissao ? cte.data_emissao.slice(0, 10) : '—'}
+                  </TableCell>
+                  <TableCell className="text-xs font-mono text-blue-700">
+                    <div className="flex items-center gap-1">
+                      <Truck className="h-3 w-3 shrink-0" />
+                      CT-e {cte.numero_cte}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs max-w-[180px] text-blue-700">
+                    <div className="truncate" title={cte.emit_nome}>{cte.emit_nome || '—'}</div>
+                    <div className="text-blue-400 text-[10px] font-mono">{formatCNPJ(cte.emit_cnpj)}</div>
+                  </TableCell>
+                  <TableCell className="text-xs text-blue-400">—</TableCell>
+                  <TableCell className="text-xs font-mono text-blue-700 font-semibold">CTE</TableCell>
+                  <TableCell className="text-xs">
+                    <ChaveCell chave={cte.chave_cte} label={`CT-e ${cte.numero_cte}`} />
+                  </TableCell>
+                  <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_prest)}</TableCell>
+                  <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                  <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_prest)}</TableCell>
+                  <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_icms_cte)}</TableCell>
+                  {showAliq && (
+                    <>
+                      <TableCell className="text-xs text-blue-400">—</TableCell>
+                      <TableCell className="text-xs text-right tabular-nums text-blue-600">{fmtPct(row.aliq_interna)}</TableCell>
+                    </>
+                  )}
+                  <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-700">
+                    {fmtBRL(icmsDev)}
+                  </TableCell>
+                </TableRow>
+              )
+            })
+            return [nfRow, ...cteRows]
+          })}
         </TableBody>
         {rows.length > 0 && (
           <TableFooter>
@@ -913,10 +975,16 @@ function TabelaNotasSped({
   )
 }
 
-// TabelaNotasXml (Bloco C) — MESMAS colunas e regras de preenchimento do Bloco
-// A/B (TabelaNotasSped), acrescidas das colunas de frete de CT-e (V.Frete CT-e
-// e ICMS CT-e), que integram o ICMS fronteira quando tomador=destinatário.
-function TabelaNotasXml({ rows, showAliq }: { rows: FronteiraXmlNaoSpedRow[]; showAliq: boolean }) {
+// TabelaNotasXml (Bloco C) — NFs ausentes do SPED. CT-es interleaved individualmente.
+function TabelaNotasXml({
+  rows,
+  showAliq,
+  cteLinks = {},
+}: {
+  rows: FronteiraXmlNaoSpedRow[]
+  showAliq: boolean
+  cteLinks?: Record<string, CteLink[]>
+}) {
   const totalVProd     = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
   const totalVIpi      = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
   const totalVOpr      = totalVProd + totalVIpi
@@ -951,36 +1019,70 @@ function TabelaNotasXml({ rows, showAliq }: { rows: FronteiraXmlNaoSpedRow[]; sh
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row, idx) => (
-            <TableRow key={`${row.chave_nfe}-${idx}`}>
-              <TableCell className="text-xs font-mono whitespace-nowrap">
-                {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
-              </TableCell>
-              <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
-              <TableCell className="text-xs max-w-[180px]">
-                <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
-                <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
-              </TableCell>
-              <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
-              <TableCell className="text-xs font-mono">{row.cfop_saida || '—'}</TableCell>
-              <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
-              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL((row.v_prod || 0) + (row.v_ipi || 0))}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums text-emerald-700">{fmtBRL(row.v_frete_cte)}</TableCell>
-              <TableCell className="text-xs text-right tabular-nums text-emerald-700">{fmtBRL(row.v_icms_cte)}</TableCell>
-              {showAliq && (
-                <>
-                  <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
-                  <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
-                </>
-              )}
-              <TableCell className="text-xs text-right tabular-nums font-semibold">
-                {fmtBRL(row.icms_devido_est)}
-              </TableCell>
-            </TableRow>
-          ))}
+          {rows.flatMap((row, idx) => {
+            const ctes = cteLinks[row.chave_nfe] ?? []
+            const nfRow = (
+              <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
+                <TableCell className="text-xs font-mono whitespace-nowrap">
+                  {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                </TableCell>
+                <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+                <TableCell className="text-xs max-w-[180px]">
+                  <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
+                  <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
+                </TableCell>
+                <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
+                <TableCell className="text-xs font-mono">{row.cfop_saida || '—'}</TableCell>
+                <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL((row.v_prod || 0) + (row.v_ipi || 0))}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-emerald-700">{fmtBRL(row.v_frete_cte)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-emerald-700">{fmtBRL(row.v_icms_cte)}</TableCell>
+                {showAliq && (
+                  <>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
+                  </>
+                )}
+                <TableCell className="text-xs text-right tabular-nums font-semibold">
+                  {fmtBRL(row.icms_devido_est)}
+                </TableCell>
+              </TableRow>
+            )
+            const cteRows = ctes.map((cte, ci) => (
+              <TableRow key={`cte-${row.chave_nfe}-${ci}`} className="bg-blue-50 hover:bg-blue-100">
+                <TableCell className="text-xs font-mono whitespace-nowrap text-blue-700">
+                  {cte.data_emissao ? cte.data_emissao.slice(0, 10) : '—'}
+                </TableCell>
+                <TableCell className="text-xs font-mono text-blue-700">
+                  <div className="flex items-center gap-1">
+                    <Truck className="h-3 w-3 shrink-0" />
+                    CT-e {cte.numero_cte}
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs max-w-[180px] text-blue-700">
+                  <div className="truncate" title={cte.emit_nome}>{cte.emit_nome || '—'}</div>
+                  <div className="text-blue-400 text-[10px] font-mono">{formatCNPJ(cte.emit_cnpj)}</div>
+                </TableCell>
+                <TableCell className="text-xs text-blue-400">—</TableCell>
+                <TableCell className="text-xs font-mono font-semibold text-blue-700">CTE</TableCell>
+                <TableCell className="text-xs"><ChaveCell chave={cte.chave_cte} label={`CT-e ${cte.numero_cte}`} /></TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_prest)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_prest)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_icms_cte)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_prest)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_icms_cte)}</TableCell>
+                {showAliq && <TableCell colSpan={2} />}
+                <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-600">
+                  {fmtBRL(cte.v_icms_cte)}
+                </TableCell>
+              </TableRow>
+            ))
+            return [nfRow, ...cteRows]
+          })}
         </TableBody>
         {rows.length > 0 && (
           <TableFooter>
@@ -1099,6 +1201,8 @@ function NotasTabBlocos({
   const rowsAnterior = spedQuery.data?.rows.filter(r => r.bloco === 'mes_anterior') ?? []
   const rowsAtual    = spedQuery.data?.rows.filter(r => r.bloco === 'mes_atual') ?? []
   const rowsXml      = xmlQuery.data?.rows ?? []
+  const cteLinksAB   = spedQuery.data?.cte_links ?? {}
+  const cteLinksC    = xmlQuery.data?.cte_links ?? {}
 
   const totalAnterior = spedQuery.data?.total_mes_anterior ?? 0
   const totalAtual    = spedQuery.data?.total_mes_atual ?? 0
@@ -1217,7 +1321,7 @@ function NotasTabBlocos({
                 ) : rowsAnterior.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-2 text-center">Nenhuma nota de mês anterior neste SPED.</p>
                 ) : (
-                  <TabelaNotasSped rows={rowsAnterior} showAliq={showAliq} />
+                  <TabelaNotasSped rows={rowsAnterior} showAliq={showAliq} cteLinks={cteLinksAB} />
                 )}
               </div>
             )}
@@ -1243,7 +1347,7 @@ function NotasTabBlocos({
                 ) : rowsAtual.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-2 text-center">Nenhuma nota do mês encontrada no SPED.</p>
                 ) : (
-                  <TabelaNotasSped rows={rowsAtual} showAliq={showAliq} />
+                  <TabelaNotasSped rows={rowsAtual} showAliq={showAliq} cteLinks={cteLinksAB} />
                 )}
               </div>
             )}
@@ -1278,7 +1382,7 @@ function NotasTabBlocos({
                 ) : rowsXml.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-2 text-center">Todas as notas XML do mês estão no SPED.</p>
                 ) : (
-                  <TabelaNotasXml rows={rowsXml} showAliq={showAliq} />
+                  <TabelaNotasXml rows={rowsXml} showAliq={showAliq} cteLinks={cteLinksC} />
                 )}
               </div>
             )}

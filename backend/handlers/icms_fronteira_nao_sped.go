@@ -40,9 +40,10 @@ type FronteiraXmlNaoSpedRow struct {
 }
 
 type FronteiraXmlNaoSpedResponse struct {
-	Rows  []FronteiraXmlNaoSpedRow `json:"rows"`
-	Total float64                  `json:"total"`
-	Count int                      `json:"count"`
+	Rows     []FronteiraXmlNaoSpedRow `json:"rows"`
+	Total    float64                  `json:"total"`
+	Count    int                      `json:"count"`
+	CteLinks map[string][]CteLink     `json:"cte_links"`
 }
 
 // ---------------------------------------------------------------------------
@@ -363,10 +364,17 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 			result = append(result, row)
 		}
 
+		chaves := make([]string, len(result))
+		for i, r := range result {
+			chaves[i] = r.ChaveNFe
+		}
+		cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
+
 		json.NewEncoder(w).Encode(FronteiraXmlNaoSpedResponse{
-			Rows:  result,
-			Total: total,
-			Count: len(result),
+			Rows:     result,
+			Total:    total,
+			Count:    len(result),
+			CteLinks: cteLinks,
 		})
 	}
 }
