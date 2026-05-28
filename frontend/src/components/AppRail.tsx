@@ -41,7 +41,7 @@ const mainItems = [
 export function AppRail() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { user, company, logout, token } = useAuth()
+  const { user, company, logout, token, companyId } = useAuth()
   const active = getActiveModule(location.pathname)
 
   // Logo da empresa — exibida no topo do rail; fallback para o ícone do sistema
@@ -49,10 +49,7 @@ export function AppRail() {
   useEffect(() => {
     let revoke: string | null = null
     if (!token) { setEmpresaLogoUrl(null); return }
-    const companyId = (user as { company_id?: string } | null)?.company_id
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
-    if (companyId) headers['X-Company-ID'] = companyId
-    fetch('/api/config/empresa/logo', { headers })
+    fetch('/api/config/empresa/logo')
       .then(r => r.ok ? r.blob() : null)
       .then(blob => {
         if (blob) { revoke = URL.createObjectURL(blob); setEmpresaLogoUrl(revoke) }
@@ -60,7 +57,7 @@ export function AppRail() {
       })
       .catch(() => setEmpresaLogoUrl(null))
     return () => { if (revoke) URL.revokeObjectURL(revoke) }
-  }, [token, user]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [token, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [pwDialog,  setPwDialog]  = useState(false)
   const [pwCurrent, setPwCurrent] = useState('')

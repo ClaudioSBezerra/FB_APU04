@@ -21,7 +21,7 @@ export default function Managers() {
 
   const fetchManagers = async () => {
     try {
-      const companyId = localStorage.getItem('selectedCompanyId');
+      const companyId = localStorage.getItem('companyId');
       const response = await fetch('/api/managers', {
         headers: {
           'X-Company-ID': companyId || '',
@@ -49,7 +49,7 @@ export default function Managers() {
     setMessage(null);
 
     try {
-      const companyId = localStorage.getItem('selectedCompanyId');
+      const companyId = localStorage.getItem('companyId');
       const url = editingManager
         ? `/api/managers/${editingManager.id}`
         : '/api/managers/create';
@@ -94,7 +94,7 @@ export default function Managers() {
     if (!confirm('Tem certeza que deseja desativar este gestor?')) return;
 
     try {
-      const companyId = localStorage.getItem('selectedCompanyId');
+      const companyId = localStorage.getItem('companyId');
       const response = await fetch(`/api/managers/${id}`, {
         method: 'DELETE',
         headers: {

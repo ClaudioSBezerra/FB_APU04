@@ -43,20 +43,12 @@ export default function PainelApuracaoCBS() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const token = localStorage.getItem("token") || ""
-  const companyID = localStorage.getItem("company_id") || ""
-
   const fetchData = useCallback(async (mes?: string) => {
     setLoading(true)
     setError(null)
     try {
       const params = mes ? `?mes_ano=${encodeURIComponent(mes)}` : ""
-      const res = await fetch(`/api/apuracao/painel${params}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-Company-ID": companyID,
-        },
-      })
+      const res = await fetch(`/api/apuracao/painel${params}`)
       if (!res.ok) throw new Error("Erro ao carregar dados")
       const json: PainelData = await res.json()
       setData(json)
@@ -66,7 +58,7 @@ export default function PainelApuracaoCBS() {
     } finally {
       setLoading(false)
     }
-  }, [token, companyID])
+  }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 

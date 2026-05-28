@@ -111,7 +111,7 @@ export default function ConsultaInteligente() {
   }, []);
 
   const getHeaders = () => {
-    const companyId = localStorage.getItem('selectedCompanyId');
+    const companyId = localStorage.getItem('companyId');
     return {
       'Content-Type': 'application/json',
       'X-Company-ID': companyId || '',

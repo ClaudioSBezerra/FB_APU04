@@ -170,7 +170,7 @@ const sections: NavSection[] = [
 // ---------------------------------------------------------------------------
 export function AppSidebar() {
   const location = useLocation()
-  const { user, company, logout, token } = useAuth()
+  const { user, company, logout, token, companyId } = useAuth()
   const isAdmin = user?.role === "admin"
 
   // Logo da empresa — buscada ao trocar de empresa/token
@@ -178,10 +178,7 @@ export function AppSidebar() {
   useEffect(() => {
     let revoke: string | null = null
     if (!token) { setEmpresaLogoUrl(null); return }
-    const companyId = (user as { company_id?: string } | null)?.company_id
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
-    if (companyId) headers['X-Company-ID'] = companyId
-    fetch('/api/config/empresa/logo', { headers })
+    fetch('/api/config/empresa/logo')
       .then(r => r.ok ? r.blob() : null)
       .then(blob => {
         if (blob) { revoke = URL.createObjectURL(blob); setEmpresaLogoUrl(revoke) }
@@ -189,7 +186,7 @@ export function AppSidebar() {
       })
       .catch(() => setEmpresaLogoUrl(null))
     return () => { if (revoke) URL.revokeObjectURL(revoke) }
-  }, [token, user]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [token, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(
     () => Object.fromEntries(sections.map((s) => [s.id, false]))
