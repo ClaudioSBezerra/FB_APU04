@@ -251,6 +251,18 @@ func processNextJob(db *sql.DB, workerID int) {
 				fmt.Printf("Worker #%d: mv_compras_fornecedores refreshed successfully.\n", workerID)
 			}
 
+			// 4. Refresh mv_icms_fronteira_linhas (join pesado SPED×XML para módulo Fronteira)
+			_, err = db.Exec("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_icms_fronteira_linhas")
+			if err != nil {
+				fmt.Printf("Worker #%d: Concurrent refresh failed for mv_icms_fronteira_linhas, trying standard: %v\n", workerID, err)
+				_, err = db.Exec("REFRESH MATERIALIZED VIEW mv_icms_fronteira_linhas")
+			}
+			if err != nil {
+				fmt.Printf("Worker #%d: Error refreshing mv_icms_fronteira_linhas: %v\n", workerID, err)
+			} else {
+				fmt.Printf("Worker #%d: mv_icms_fronteira_linhas refreshed successfully.\n", workerID)
+			}
+
 			fmt.Printf("Worker #%d: All views refreshed in %v.\n", workerID, time.Since(start))
 
 			// Trigger AI Report Generation for last job

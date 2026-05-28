@@ -146,86 +146,13 @@ type FronteiraNotasResponse struct {
 // SQL helpers
 // ---------------------------------------------------------------------------
 
-// baseQuery returns the common SELECT that classifies each nota and computes
-// the estimated ICMS due. Caller appends a WHERE clause for the regime filter
-// and the $1 company_id placeholder.
-// Fonte: SPED Fiscal (reg_c190 → reg_c100 → import_jobs). O CFOP de entrada
-// (2xxx) que classifica o regime de fronteira só existe no SPED — o XML traz o
-// CFOP de saída do fornecedor (6xxx). Detalhe de NCM (p/ regra MVA) vem do XML
-// via join por chave. aliq_icms e vl_icms do SPED são os valores reais da
-// operação interestadual (não estimados por CST de origem).
-// Fonte: item-level (reg_c170) + XML (nfe_entradas / nfe_entradas_itens).
-// A base do cálculo é reconstruída por item: V.Item + IPI(XML) + Frete(XML) +
-// Outras(XML). Quando a nota NÃO tem XML, cai no vl_opr do SPED (que já embute
-// IPI/frete) — assim não há regressão. Alíquota interestadual e valores de
-// ICMS/ST vêm da consolidação C190 (que casa item-a-item com o C170 nos dados)
-// para preservar a seleção de MVA ajustada (4/7/12%).
+// fronteiraBaseQuery — SELECT que classifica cada nota e calcula o ICMS estimado.
+// Os CTEs pesados (reg_c170 × reg_c190 × reg_c100 × nfe_entradas × nfe_entradas_itens)
+// são pré-computados em mv_icms_fronteira_linhas (migration 126) e refrescados pelo
+// worker SPED após cada import. A query aqui aplica apenas a lógica de negócio
+// (PRODEPE, ST vs ANTECIPAÇÃO, regras NCM, DIFAL) sobre a MV já materializada.
 const fronteiraBaseQuery = `
 WITH
-c190_consol AS (
-    -- Consolidação SPED por (nota, cfop): alíquota real (seleção de MVA) e
-    -- valores de fallback (vl_opr/icms) quando a nota não tem XML.
-    SELECT id_pai_c100, cfop,
-           MAX(NULLIF(aliq_icms, 0))       AS aliq_icms,
-           SUM(COALESCE(vl_opr, 0))        AS vl_opr_sped,
-           SUM(COALESCE(vl_icms, 0))       AS vl_icms,
-           SUM(COALESCE(vl_bc_icms_st, 0)) AS vl_bc_st,
-           SUM(COALESCE(vl_icms_st, 0))    AS vl_icms_st
-    FROM reg_c190
-    GROUP BY id_pai_c100, cfop
-),
-fonte AS (
-    -- Agrega itens C170 por (nota, cfop). IPI vem do próprio SPED (c170.vl_ipi)
-    -- com fallback no XML; frete/outras do header do XML quando disponível.
-    SELECT
-        c170.c100_id                       AS c100_id,
-        c170.cfop                          AS cfop,
-        SUM(COALESCE(c170.vl_item, 0))     AS sum_item,
-        SUM(COALESCE(c170.vl_ipi, 0))      AS sum_ipi_sped,
-        SUM(COALESCE(xi.v_ipi, 0))         AS sum_ipi_xml,
-        BOOL_OR(xi.id IS NOT NULL)         AS tem_xml,
-        MAX(COALESCE(ne.v_frete, 0))       AS nf_frete,
-        MAX(COALESCE(ne.v_outro, 0))       AS nf_outro
-    FROM reg_c170 c170
-    JOIN reg_c100 c100b ON c100b.id = c170.c100_id
-    JOIN import_jobs jb ON jb.id = c100b.job_id
-    LEFT JOIN nfe_entradas ne ON ne.company_id = jb.company_id AND ne.chave_nfe = c100b.chv_nfe
-    LEFT JOIN nfe_entradas_itens xi ON xi.nfe_id = ne.id AND xi.n_item = c170.num_item
-    WHERE jb.company_id = $1
-      AND c170.cfop = ANY(ARRAY['2101','2102','2152','2403','2409','2651','2652','2551','2556'])
-    GROUP BY c170.c100_id, c170.cfop
-),
-linhas AS (
-    SELECT
-        f.c100_id, f.cfop,
-        -- IPI efetivo: prioriza o SPED (c170.vl_ipi), cai no XML como fallback.
-        -- Garante que o Bloco A (meses anteriores, sem XML) também exiba o IPI.
-        COALESCE(NULLIF(f.sum_ipi_sped, 0), f.sum_ipi_xml, 0) AS ipi_eff,
-        cc.aliq_icms, cc.vl_icms, cc.vl_bc_st, cc.vl_icms_st,
-        -- frete/outras (header NF) rateados pela participação do cfop nos
-        -- produtos da nota (uma nota pode ter múltiplos cfops de fronteira)
-        CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
-             THEN f.nf_frete * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id)
-             ELSE 0 END AS frete_rat,
-        CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
-             THEN f.nf_outro * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id)
-             ELSE 0 END AS outro_rat,
-        -- V.Produtos exibido = produto puro (reg C170), sem IPI/frete. O IPI vai
-        -- na coluna própria; V.Operação (front) = produto + IPI.
-        f.sum_item AS v_prod_disp,
-        -- BASE do cálculo = produto + IPI + frete(NF) + outras — MESMA regra para
-        -- Bloco A e B (consistência de preenchimento). Frete de CT-e fica fora
-        -- (tratado só na aba Fretes).
-        f.sum_item
-            + COALESCE(NULLIF(f.sum_ipi_sped, 0), f.sum_ipi_xml, 0)
-            + (CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
-                    THEN f.nf_frete * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id) ELSE 0 END)
-            + (CASE WHEN SUM(f.sum_item) OVER (PARTITION BY f.c100_id) > 0
-                    THEN f.nf_outro * f.sum_item / SUM(f.sum_item) OVER (PARTITION BY f.c100_id) ELSE 0 END)
-            AS base_calc
-    FROM fonte f
-    LEFT JOIN c190_consol cc ON cc.id_pai_c100 = f.c100_id AND cc.cfop = f.cfop
-),
 classified AS (
     SELECT
         c100.chv_nfe                                        AS chave_nfe,
@@ -393,19 +320,13 @@ classified AS (
         regra.mva_ajustado_12pct                            AS regra_mva_12,
         regra.segmento_codigo                               AS regra_seg_codigo,
         COALESCE(ufb.base_por_dentro, false)                AS base_por_dentro
-    FROM linhas l
+    FROM mv_icms_fronteira_linhas l
     JOIN reg_c100 c100 ON c100.id = l.c100_id
     JOIN import_jobs j ON j.id = c100.job_id
     LEFT JOIN participants part
         ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
-    -- Município do participante → UF (alimenta o fallback de forn_uf quando o
-    -- XML não foi importado). Cobertura típica ~99% (reg 0150 sempre traz cod_mun).
     LEFT JOIN municipios_ibge m_part ON m_part.codigo_ibge = part.cod_mun
     LEFT JOIN nfe_entradas ne ON ne.company_id = j.company_id AND ne.chave_nfe = c100.chv_nfe
-    -- NCM para casar a regra: 1º o XML (item de maior valor), 2º fallback no
-    -- próprio SPED (reg_0200 via reg_c170.cod_item do item de maior valor do
-    -- MESMO cfop). Sem o fallback, notas sem XML vinculado ficavam sem NCM →
-    -- nunca casavam regra → caíam em ANTECIPAÇÃO mesmo sendo ST.
     LEFT JOIN LATERAL (
         SELECT COALESCE(
             (SELECT nii.ncm
@@ -435,10 +356,9 @@ classified AS (
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
         LIMIT 1
     ) regra ON true
-    -- Parâmetros da UF da filial (base por dentro etc.), configurados no módulo administrativo.
     LEFT JOIN uf_beneficios_fiscais ufb
         ON ufb.company_id = $1 AND ufb.uf = COALESCE(j.uf, 'PE')
-    WHERE j.company_id = $1
+    WHERE l.company_id = $1
       AND c100.cod_sit NOT IN ('02','03','04','05')
       AND ($2::text = '' OR j.mes_ano = $2
           OR (j.mes_ano IS NULL AND (
