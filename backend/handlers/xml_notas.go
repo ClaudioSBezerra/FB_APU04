@@ -78,6 +78,8 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 		dataInicio := strings.TrimSpace(q.Get("data_inicio"))
 		dataFim := strings.TrimSpace(q.Get("data_fim"))
 		cnpj := strings.TrimSpace(q.Get("cnpj"))
+		destUF := strings.ToUpper(strings.TrimSpace(q.Get("dest_uf")))
+		cnpjFilial := onlyDigits(strings.TrimSpace(q.Get("cnpj_filial")))
 		limit := 100
 		offset := 0
 		if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v <= 500 {
@@ -158,6 +160,25 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 			where += fmt.Sprintf(" AND %s LIKE $%d", cnpjCol, idx)
 			args = append(args, cnpj+"%")
 			idx++
+		}
+		if destUF != "" {
+			where += fmt.Sprintf(" AND dest_uf = $%d", idx)
+			args = append(args, destUF)
+			idx++
+		}
+		if cnpjFilial != "" {
+			var filialCol string
+			switch tipo {
+			case "entradas", "ctes":
+				filialCol = "dest_cnpj_cpf"
+			case "saidas":
+				filialCol = "emit_cnpj"
+			}
+			if filialCol != "" {
+				where += fmt.Sprintf(" AND regexp_replace(COALESCE(%s,''),'[^0-9]','','g') LIKE $%d", filialCol, idx)
+				args = append(args, cnpjFilial+"%")
+				idx++
+			}
 		}
 
 		countArgs := make([]interface{}, len(args))

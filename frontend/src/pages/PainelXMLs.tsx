@@ -74,6 +74,12 @@ interface NotasResponse {
   items: NotaRow[] | null;
 }
 
+// Filtros compartilhados entre Resumo e Nota a Nota
+interface SharedFilters {
+  destUF: string;
+  cnpjFilial: string;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -153,15 +159,23 @@ function exportNotasCSV(rows: NotaRow[], tipo: string) {
 // ---------------------------------------------------------------------------
 // Tabela resumida (agregada por fornecedor + mês)
 // ---------------------------------------------------------------------------
-function TabelaPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
+function TabelaPainel({
+  tipo,
+  shared,
+}: {
+  tipo: 'entradas' | 'saidas' | 'ctes';
+  shared: SharedFilters;
+}) {
   const [mesAno, setMesAno] = useState('');
   const [mesAnoFilter, setMesAnoFilter] = useState('');
 
   const { data, isLoading, isError, refetch } = useQuery<PainelResponse>({
-    queryKey: ['xml-painel', tipo, mesAnoFilter],
+    queryKey: ['xml-painel', tipo, mesAnoFilter, shared.destUF, shared.cnpjFilial],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: '100' });
       if (mesAnoFilter) params.set('mes_ano', mesAnoFilter);
+      if (shared.destUF) params.set('dest_uf', shared.destUF);
+      if (shared.cnpjFilial) params.set('cnpj_filial', shared.cnpjFilial);
       const res = await fetch(`/api/xml/painel/${tipo}?${params}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -196,6 +210,7 @@ function TabelaPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
             placeholder="MM/YYYY"
             value={mesAno}
             onChange={e => setMesAno(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
             className="h-8 w-28 text-sm"
           />
         </div>
@@ -278,18 +293,26 @@ function TabelaPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
 // ---------------------------------------------------------------------------
 const PAGE_SIZE = 100;
 
-function TabelaNotas({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
+function TabelaNotas({
+  tipo,
+  shared,
+}: {
+  tipo: 'entradas' | 'saidas' | 'ctes';
+  shared: SharedFilters;
+}) {
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [filtro, setFiltro] = useState({ inicio: '', fim: '' });
   const [offset, setOffset] = useState(0);
 
   const { data, isLoading, isError } = useQuery<NotasResponse>({
-    queryKey: ['xml-notas', tipo, filtro.inicio, filtro.fim, offset],
+    queryKey: ['xml-notas', tipo, filtro.inicio, filtro.fim, offset, shared.destUF, shared.cnpjFilial],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
       if (filtro.inicio) params.set('data_inicio', filtro.inicio);
       if (filtro.fim) params.set('data_fim', filtro.fim);
+      if (shared.destUF) params.set('dest_uf', shared.destUF);
+      if (shared.cnpjFilial) params.set('cnpj_filial', shared.cnpjFilial);
       const res = await fetch(`/api/xml/notas/${tipo}?${params}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -467,13 +490,78 @@ function TabelaNotas({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
 }
 
 // ---------------------------------------------------------------------------
-// Tab wrapper com toggle Resumo / Nota a Nota
+// Tab wrapper com toggle Resumo / Nota a Nota + filtros compartilhados
 // ---------------------------------------------------------------------------
 function TabPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
   const [view, setView] = useState<'resumo' | 'notas'>('resumo');
 
+  // Filtros compartilhados: aplicados em ambas as views (Resumo e Nota a Nota)
+  const [destUFInput, setDestUFInput] = useState('');
+  const [cnpjFilialInput, setCnpjFilialInput] = useState('');
+  const [shared, setShared] = useState<SharedFilters>({ destUF: '', cnpjFilial: '' });
+
+  const handleApplyShared = () => {
+    setShared({
+      destUF: destUFInput.toUpperCase().trim(),
+      cnpjFilial: cnpjFilialInput.replace(/\D/g, ''),
+    });
+  };
+
+  const handleClearShared = () => {
+    setDestUFInput('');
+    setCnpjFilialInput('');
+    setShared({ destUF: '', cnpjFilial: '' });
+  };
+
+  const hasActiveShared = shared.destUF !== '' || shared.cnpjFilial !== '';
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      {/* Filtros Filial / UF — compartilhados entre Resumo e Nota a Nota */}
+      <div className="flex items-center gap-3 flex-wrap p-3 bg-muted/20 rounded-md border border-dashed">
+        <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">Filtrar por:</span>
+        <div className="flex items-center gap-1.5">
+          <label className="text-[11px] text-muted-foreground whitespace-nowrap">UF Dest.</label>
+          <Input
+            type="text"
+            placeholder="PE"
+            value={destUFInput}
+            onChange={e => setDestUFInput(e.target.value.toUpperCase().slice(0, 2))}
+            onKeyDown={e => e.key === 'Enter' && handleApplyShared()}
+            className="h-7 w-14 text-xs uppercase"
+            maxLength={2}
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <label className="text-[11px] text-muted-foreground whitespace-nowrap">
+            {tipo === 'saidas' ? 'CNPJ Emitente' : 'CNPJ Filial'}
+          </label>
+          <Input
+            type="text"
+            placeholder="8 primeiros dígitos"
+            value={cnpjFilialInput}
+            onChange={e => setCnpjFilialInput(e.target.value.replace(/\D/g, '').slice(0, 14))}
+            onKeyDown={e => e.key === 'Enter' && handleApplyShared()}
+            className="h-7 w-40 text-xs font-mono"
+            maxLength={14}
+          />
+        </div>
+        <Button size="sm" variant="outline" onClick={handleApplyShared} className="h-7 text-[11px]">
+          Aplicar
+        </Button>
+        {hasActiveShared && (
+          <Button size="sm" variant="ghost" onClick={handleClearShared} className="h-7 text-[11px] text-muted-foreground">
+            Limpar
+          </Button>
+        )}
+        {hasActiveShared && (
+          <span className="text-[10px] text-amber-600 font-medium">
+            {[shared.destUF && `UF: ${shared.destUF}`, shared.cnpjFilial && `Filial: ${shared.cnpjFilial}`].filter(Boolean).join(' · ')}
+          </span>
+        )}
+      </div>
+
+      {/* Toggle Resumo / Nota a Nota */}
       <div className="flex gap-1 border rounded-md p-0.5 w-fit bg-muted/30">
         <button
           onClick={() => setView('resumo')}
@@ -500,9 +588,9 @@ function TabPainel({ tipo }: { tipo: 'entradas' | 'saidas' | 'ctes' }) {
       </div>
 
       {view === 'resumo' ? (
-        <TabelaPainel tipo={tipo} />
+        <TabelaPainel tipo={tipo} shared={shared} />
       ) : (
-        <TabelaNotas tipo={tipo} />
+        <TabelaNotas tipo={tipo} shared={shared} />
       )}
     </div>
   );
