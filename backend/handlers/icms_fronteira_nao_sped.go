@@ -133,14 +133,15 @@ SELECT
     m.v_frete,
     COALESCE(cte.v_frete_cte, 0) AS v_frete_cte,
     m.v_outro,
-    -- V.Operação EXIBIDO = só o produto (sem IPI/frete/outros), consistente com
-    -- Bloco B (fronteiraBaseQuery usa C170.vl_item). O IPI aparece na coluna
-    -- V.IPI separada e entra na base do cálculo abaixo. Antes estava somado
-    -- aqui E exibido separadamente → dupla contagem visual.
-    m.v_prod AS v_opr,
+    -- V.Operação EXIBIDO = produto + frete do CT-e (tomador=destinatário).
+    -- Consistente com o que o contador usa como base de referência.
+    m.v_prod + COALESCE(cte.v_frete_cte, 0) AS v_opr,
     m.v_icms AS v_icms_nf,
     COALESCE(cte.v_icms_cte, 0) AS v_icms_cte,
-    CASE WHEN m.v_prod > 0 THEN ROUND((m.v_icms / m.v_prod * 100.0)::numeric, 2) ELSE 0 END AS aliq_inter,
+    -- Alíquota interestadual efetiva: mínimo 4% (crédito presumido para SN).
+    CASE WHEN m.v_prod > 0
+         THEN ROUND((GREATEST(m.v_icms, m.v_prod * 4.0/100.0) / m.v_prod * 100.0)::numeric, 2)
+         ELSE 4.0 END AS aliq_inter,
     COALESCE(regra.aliquota_interna, 20.5) AS aliq_interna,
     COALESCE(regra.mva_original, regra.mva_ajustado_12pct, 0) AS mva,
     -- Base = produto + IPI + frete da NF + frete do CT-e (tomador=destinatário)
@@ -171,27 +172,27 @@ SELECT
             CASE WHEN COALESCE(ufb.base_por_dentro, false)
                 THEN GREATEST(0,
                     ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
-                      - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                      - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
                      / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                     * (COALESCE(regra.aliquota_interna,20.5)
-                       - CASE WHEN m.v_prod > 0 THEN m.v_icms / m.v_prod * 100.0 ELSE 12.0 END) / 100.0)
+                       - CASE WHEN m.v_prod > 0 THEN GREATEST(m.v_icms, m.v_prod * 4.0/100.0) / m.v_prod * 100.0 ELSE 4.0 END) / 100.0)
                 ELSE GREATEST(0,
                     (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                    - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
             END
         WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
             CASE WHEN COALESCE(ufb.base_por_dentro, false)
                 THEN GREATEST(0,
                     ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
-                      - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                      - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
                      / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                    - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
                 ELSE GREATEST(0,
                     (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                    - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
             END
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
             CASE
@@ -207,20 +208,20 @@ SELECT
                          (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                          * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
                          * COALESCE(regra.aliquota_interna,20.5)/100.0
-                         - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                         - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
                     ELSE 0 END
                 -- Sem segmento → reclassificada como ANTECIPAÇÃO (respeita base por dentro)
                 ELSE CASE WHEN COALESCE(ufb.base_por_dentro, false)
                     THEN GREATEST(0,
                         ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
-                          - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                          - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
                          / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                         * COALESCE(regra.aliquota_interna,20.5)/100.0
-                        - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                        - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
                     ELSE GREATEST(0,
                         (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
                         * COALESCE(regra.aliquota_interna,20.5)/100.0
-                        - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                        - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
                 END
             END
         ELSE 0

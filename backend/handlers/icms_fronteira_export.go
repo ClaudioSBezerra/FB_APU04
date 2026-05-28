@@ -534,7 +534,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(cSheet, fmt.Sprintf("E%d", er), row.FornUF)
 					f.SetCellValue(cSheet, fmt.Sprintf("F%d", er), row.CfopSaida)
 					f.SetCellValue(cSheet, fmt.Sprintf("G%d", er), row.Regime)
-					f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), row.VProd)        // V.Operação
+					f.SetCellValue(cSheet, fmt.Sprintf("H%d", er), row.VOpr)         // V.Operação = v_prod + frete CT-e
 					f.SetCellValue(cSheet, fmt.Sprintf("I%d", er), row.VIPI)
 					f.SetCellValue(cSheet, fmt.Sprintf("J%d", er), row.IcmsDevidoEst) // ICMS Est.
 					f.SetCellValue(cSheet, fmt.Sprintf("K%d", er), row.ClassStatus)   // Classificação
@@ -546,7 +546,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					for _, c := range []string{"H","I","J"} {
 						f.SetCellStyle(cSheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), moneySlateStyle)
 					}
-					totalVProdC += row.VProd
+					totalVProdC += row.VOpr
 					totalVIpiC += row.VIPI
 					totalIcmsC += row.IcmsDevidoEst
 					er++
