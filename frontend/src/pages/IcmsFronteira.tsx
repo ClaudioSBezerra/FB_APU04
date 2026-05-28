@@ -81,6 +81,7 @@ import {
 } from 'recharts'
 import { useAuth } from '@/contexts/AuthContext'
 import { AdministrativoTab } from './AdministrativoFronteira'
+import { TabErrorBoundary } from '@/components/TabErrorBoundary'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -4808,27 +4809,27 @@ export default function IcmsFronteira() {
         </div>
 
       <Tabs value={tab} onValueChange={handleTabChange}>
-        {/* Tabs compactas — text-[11px] + px-2 para caber tudo em uma linha em telas ≥1280px.
-            Em telas menores faz quebra (flex-wrap). Regras NCM foi movida para dentro de Administrativo
-            (acessível via Administrativo → Regras NCM por Decreto). */}
-        <TabsList className="flex-wrap h-auto gap-0.5 text-[11px]">
-          <TabsTrigger value="resumo" className="px-2 py-1.5 text-[11px]">Resumo</TabsTrigger>
-          <TabsTrigger value="antecipacao" className="px-2 py-1.5 text-[11px]">Antecipação</TabsTrigger>
-          <TabsTrigger value="st" className="px-2 py-1.5 text-[11px]">Subst. Tributária</TabsTrigger>
-          <TabsTrigger value="difal" className="px-2 py-1.5 text-[11px]">DIFAL</TabsTrigger>
-          <TabsTrigger value="incentivo" className="px-2 py-1.5 text-[11px] data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
-            <ShieldCheck className="h-3 w-3 mr-1" />Incentivo
+        {/* Tabs com fonte legível (text-sm). Quebram em múltiplas linhas (flex-wrap)
+            quando não cabem — preferível a fonte minúscula. Regras NCM foi movida
+            para dentro de Administrativo (Administrativo → Regras NCM por Decreto). */}
+        <TabsList className="flex-wrap h-auto gap-1">
+          <TabsTrigger value="resumo" className="text-sm">Resumo</TabsTrigger>
+          <TabsTrigger value="antecipacao" className="text-sm">Antecipação</TabsTrigger>
+          <TabsTrigger value="st" className="text-sm">Subst. Tributária</TabsTrigger>
+          <TabsTrigger value="difal" className="text-sm">DIFAL</TabsTrigger>
+          <TabsTrigger value="incentivo" className="text-sm data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+            <ShieldCheck className="h-3.5 w-3.5 mr-1" />Incentivo
           </TabsTrigger>
-          <TabsTrigger value="planilha" className="px-2 py-1.5 text-[11px]">Planilha</TabsTrigger>
-          <TabsTrigger value="fretes" className="px-2 py-1.5 text-[11px]">Fretes</TabsTrigger>
-          <TabsTrigger value="motor-fiscal" className="px-2 py-1.5 text-[11px]">Motor Fiscal</TabsTrigger>
-          <TabsTrigger value="divergencias" className="px-2 py-1.5 text-[11px]">Divergências</TabsTrigger>
-          <TabsTrigger value="reconciliacao" className="px-2 py-1.5 text-[11px]">Reconciliação</TabsTrigger>
-          <TabsTrigger value="legislacao" className="px-2 py-1.5 text-[11px]">Legislação</TabsTrigger>
-          <TabsTrigger value="apuracao" className="px-2 py-1.5 text-[11px]">Apuração Mensal</TabsTrigger>
-          <TabsTrigger value="extrato" className="px-2 py-1.5 text-[11px]">Extrato SEFAZ</TabsTrigger>
-          <TabsTrigger value="contestacoes" className="px-2 py-1.5 text-[11px]">Contestações</TabsTrigger>
-          <TabsTrigger value="administrativo" className="px-2 py-1.5 text-[11px]">Administrativo</TabsTrigger>
+          <TabsTrigger value="planilha" className="text-sm">Planilha</TabsTrigger>
+          <TabsTrigger value="fretes" className="text-sm">Fretes</TabsTrigger>
+          <TabsTrigger value="motor-fiscal" className="text-sm">Motor Fiscal</TabsTrigger>
+          <TabsTrigger value="divergencias" className="text-sm">Divergências</TabsTrigger>
+          <TabsTrigger value="reconciliacao" className="text-sm">Reconciliação</TabsTrigger>
+          <TabsTrigger value="legislacao" className="text-sm">Legislação</TabsTrigger>
+          <TabsTrigger value="apuracao" className="text-sm">Apuração Mensal</TabsTrigger>
+          <TabsTrigger value="extrato" className="text-sm">Extrato SEFAZ</TabsTrigger>
+          <TabsTrigger value="contestacoes" className="text-sm">Contestações</TabsTrigger>
+          <TabsTrigger value="administrativo" className="text-sm">Administrativo</TabsTrigger>
         </TabsList>
 
         <TabsContent value="resumo" className="mt-6">
@@ -4902,23 +4903,25 @@ export default function IcmsFronteira() {
         </TabsContent>
 
         <TabsContent value="incentivo" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <BadgePercent className="h-4 w-4 text-emerald-600" />
-                Incentivo — Notas dispensadas por PRODEPE / PROIND
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground mb-4">
-                Notas em que o motor zerou a antecipação/ST por enquadramento ativo em PRODEPE
-                ou PROIND no CNPJ recebedor. <strong>ICMS dispensado</strong> é o valor que seria devido
-                se não houvesse incentivo — funciona como prova fiscal da economia. DIFAL
-                (CFOPs 2551/2556) não entra na dispensa e por isso não aparece aqui.
-              </p>
-              <IncentivoTab token={token} />
-            </CardContent>
-          </Card>
+          <TabErrorBoundary label="Incentivo">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <BadgePercent className="h-4 w-4 text-emerald-600" />
+                  Incentivo — Notas dispensadas por PRODEPE / PROIND
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Notas em que o motor zerou a antecipação/ST por enquadramento ativo em PRODEPE
+                  ou PROIND no CNPJ recebedor. <strong>ICMS dispensado</strong> é o valor que seria devido
+                  se não houvesse incentivo — funciona como prova fiscal da economia. DIFAL
+                  (CFOPs 2551/2556) não entra na dispensa e por isso não aparece aqui.
+                </p>
+                <IncentivoTab token={token} />
+              </CardContent>
+            </Card>
+          </TabErrorBoundary>
         </TabsContent>
 
         <TabsContent value="fretes" className="mt-6">

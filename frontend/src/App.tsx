@@ -200,6 +200,7 @@ function AppLayout() {
               <Route path="/icms-fronteira/antecipacao"        element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/st"                 element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/difal"              element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/incentivo"          element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/planilha"           element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/fretes"             element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/motor-fiscal"       element={<IcmsFronteira />} />
