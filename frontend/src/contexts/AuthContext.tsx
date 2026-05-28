@@ -196,14 +196,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const switchCompany = (id: string, name: string, newCnpj: string) => {
     setCompany(name);
     setCompanyId(id);
+    companyIdRef.current = id;
     setCnpj(newCnpj);
     localStorage.setItem('company', name);
     localStorage.setItem('companyId', id);
     localStorage.setItem('cnpj', newCnpj);
-    // Salva preferência persistente para este usuário
+    // Salva preferência local (fallback offline)
     if (user?.id) {
       localStorage.setItem(`pref_company_${user.id}`, JSON.stringify({ id, name, cnpj: newCnpj }));
     }
+    // Persiste preferência no banco — garante que o login retorna a empresa certa
+    fetch('/api/auth/preferred-company', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id: id }),
+    }).catch(() => {});
     window.location.reload();
   };
 

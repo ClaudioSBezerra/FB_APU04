@@ -304,8 +304,12 @@ func GetEffectiveCompanyID(db *sql.DB, userID, requestedCompanyID string) (strin
 	err := db.QueryRowContext(ctx, `
 		SELECT c.id
 		FROM companies c
+		LEFT JOIN enterprise_groups eg ON c.group_id = eg.id
+		LEFT JOIN user_environments ue ON ue.environment_id = eg.environment_id AND ue.user_id = $1
 		WHERE c.owner_id = $1
-		ORDER BY c.created_at DESC
+		ORDER BY
+			(ue.preferred_company_id IS NOT NULL AND ue.preferred_company_id = c.id) DESC,
+			c.created_at ASC
 		LIMIT 1
 	`, userID).Scan(&companyID)
 
@@ -630,8 +634,11 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 			FROM companies c
 			JOIN enterprise_groups eg ON c.group_id = eg.id
 			JOIN environments e ON eg.environment_id = e.id
+			LEFT JOIN user_environments ue ON ue.environment_id = eg.environment_id AND ue.user_id = $1
 			WHERE c.owner_id = $1
-			ORDER BY c.created_at DESC
+			ORDER BY
+				(ue.preferred_company_id IS NOT NULL AND ue.preferred_company_id = c.id) DESC,
+				c.created_at ASC
 			LIMIT 1
 		`, user.ID).Scan(&envName, &groupName, &companyName, &companyID)
 
@@ -1057,5 +1064,55 @@ func LogoutHandler(db *sql.DB) http.HandlerFunc {
 		clearRefreshCookie(w, r)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"message": "Sessão encerrada com sucesso"})
+	}
+}
+
+// SetPreferredCompanyHandler persiste a empresa preferida do usuário no banco.
+// Chamado pelo frontend ao trocar de empresa via switchCompany.
+func SetPreferredCompanyHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		userID := GetUserIDFromContext(r)
+		if userID == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var body struct {
+			CompanyID string `json:"company_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CompanyID == "" {
+			http.Error(w, "company_id required", http.StatusBadRequest)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+
+		// Atualiza preferred_company_id em todos os user_environments do usuário
+		// que têm acesso ao ambiente onde essa empresa está.
+		_, err := db.ExecContext(ctx, `
+			UPDATE user_environments ue
+			SET preferred_company_id = $2
+			WHERE ue.user_id = $1
+			  AND ue.environment_id IN (
+				SELECT eg.environment_id
+				FROM companies c
+				JOIN enterprise_groups eg ON c.group_id = eg.id
+				WHERE c.id = $2
+			  )
+		`, userID, body.CompanyID)
+
+		if err != nil {
+			log.Printf("SetPreferredCompany: failed to update user %s → company %s: %v", userID, body.CompanyID, err)
+			http.Error(w, "failed to update preference", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
