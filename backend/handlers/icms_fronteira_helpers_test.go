@@ -86,6 +86,71 @@ func TestRowToCSVRecord_Values(t *testing.T) {
 	}
 }
 
+// ── cteLinkToCSVRecord ───────────────────────────────────────────────────────
+
+func TestCteLinkToCSVRecord_FieldCount(t *testing.T) {
+	link := CteLink{
+		ChaveCTe: "CTe123", NumeroCTe: "4981207", DataEmissao: "2026-01-10",
+		EmitNome: "Transportadora X", EmitCNPJ: "99888777000100",
+		VPrest: 155.99, VIcmsCTe: 6.24,
+	}
+	rec := cteLinkToCSVRecord("B - Mês Atual", link, "Chave-NF-123", 20.5)
+	if len(rec) != len(exportCSVHeaders) {
+		t.Errorf("CT-e CSV fields (%d) deve casar com headers (%d)", len(rec), len(exportCSVHeaders))
+	}
+}
+
+func TestCteLinkToCSVRecord_IcmsDevido(t *testing.T) {
+	link := CteLink{VPrest: 155.99, VIcmsCTe: 6.24}
+	rec := cteLinkToCSVRecord("B - Mês Atual", link, "chave", 20.5)
+	// icms_dev = 155.99 × 20.5% − 6.24 ≈ 25.74
+	if rec[15] == "0.00" {
+		t.Errorf("ICMS Devido CT-e não pode ser zero quando v_prest > 0")
+	}
+}
+
+func TestCteLinkToCSVRecord_IcmsDevidoNegativoZerado(t *testing.T) {
+	// Quando ICMS CT-e > v_prest × aliq_interna → resultado não pode ser negativo
+	link := CteLink{VPrest: 10.0, VIcmsCTe: 999.0}
+	rec := cteLinkToCSVRecord("B - Mês Atual", link, "chave", 20.5)
+	if rec[15] != "0.00" {
+		t.Errorf("ICMS Devido negativo deve virar 0.00, got %q", rec[15])
+	}
+}
+
+func TestCteLinkToCSVRecord_CFOPIsCTE(t *testing.T) {
+	link := CteLink{NumeroCTe: "777"}
+	rec := cteLinkToCSVRecord("A - Mês Anterior", link, "chave", 20.5)
+	// índice 6 = CFOP; índice 2 = Número NF-e (exibido como "CT-e NNN")
+	if rec[6] != "CTE" {
+		t.Errorf("CFOP da linha CT-e deve ser 'CTE', got %q", rec[6])
+	}
+	if rec[2] != "CT-e 777" {
+		t.Errorf("Número CT-e deve ser 'CT-e 777', got %q", rec[2])
+	}
+}
+
+func TestCteLinkToCSVRecord_ChaveNFEPreservada(t *testing.T) {
+	link := CteLink{ChaveCTe: "chave-cte-999"}
+	rec := cteLinkToCSVRecord("B - Mês Atual", link, "chave-nfe-abc", 20.5)
+	if rec[16] != "chave-nfe-abc" {
+		t.Errorf("Chave NF-e deve ser preservada na coluna P, got %q", rec[16])
+	}
+	if rec[17] != "chave-cte-999" {
+		t.Errorf("Chave CT-e deve estar na coluna Q, got %q", rec[17])
+	}
+}
+
+// ── fetchCteLinksForNFs — early-return sem DB ────────────────────────────────
+
+func TestFetchCteLinksForNFs_EmptyChaves(t *testing.T) {
+	// Com slice vazio, retorna antes de tocar no DB (db pode ser nil).
+	result := fetchCteLinksForNFs(nil, "any-company", []string{})
+	if len(result) != 0 {
+		t.Errorf("esperado mapa vazio para chaves vazio, got %d entradas", len(result))
+	}
+}
+
 // ── buildExportQuery ─────────────────────────────────────────────────────────
 
 func TestBuildExportQuery_Todos(t *testing.T) {
@@ -167,6 +232,74 @@ func TestBRL(t *testing.T) {
 				t.Errorf("brl(%v) = %q, want %q", c.in, got, c.want)
 			}
 		})
+	}
+}
+
+// ── fetchTopNcmByChave — early-return sem DB ─────────────────────────────────
+
+func TestFetchTopNcmByChave_EmptyChaves(t *testing.T) {
+	result := fetchTopNcmByChave(nil, "any-company", []string{})
+	if len(result) != 0 {
+		t.Errorf("esperado mapa vazio para chaves vazio, got %d entradas", len(result))
+	}
+}
+
+// ── itenRowToCSV ─────────────────────────────────────────────────────────────
+
+func TestItenRowToCSV_FieldCount(t *testing.T) {
+	mva := 45.5
+	row := FronteiraItemRow{
+		DataEmissao: "2026-01-15", NumeroNFe: "001", FornCNPJ: "11111111000100",
+		FornNome: "Forn", FornUF: "BA", CFOP: "2102", Regime: "ST",
+		NItem: 1, CProd: "P01", XProd: "Produto", NCM: "84714100", CEST: "2103800",
+		VProdItem: 100, VIpiItem: 5, VOutroRateado: 2, VOperacao: 107, VIcmsItem: 12,
+		AliqInter: 12, AliqInterna: 20.5, BC: 107, IcmsCalculado: 21.94, IcmsRetido: 21.94,
+		MvaOriginal: &mva, BcSt: 130.5,
+	}
+	rec := itenRowToCSV(row)
+	if len(rec) != len(itensCSVHeaders) {
+		t.Errorf("itenRowToCSV fields (%d) deve casar com headers (%d)", len(rec), len(itensCSVHeaders))
+	}
+}
+
+func TestItenRowToCSV_DateTruncation(t *testing.T) {
+	row := FronteiraItemRow{DataEmissao: "2026-01-15T00:00:00Z"}
+	rec := itenRowToCSV(row)
+	if rec[0] != "2026-01-15" {
+		t.Errorf("data deve ser truncada em 10 chars, got %q", rec[0])
+	}
+}
+
+func TestItenRowToCSV_NilMVAAndZeroBcSt(t *testing.T) {
+	row := FronteiraItemRow{DataEmissao: "2026-01-15", MvaOriginal: nil, BcSt: 0}
+	rec := itenRowToCSV(row)
+	if rec[20] != "" {
+		t.Errorf("MVA nulo deve gerar string vazia, got %q", rec[20])
+	}
+	if rec[21] != "" {
+		t.Errorf("BcSt zero deve gerar string vazia, got %q", rec[21])
+	}
+}
+
+// ── divRowToCSV ──────────────────────────────────────────────────────────────
+
+func TestDivRowToCSV_FieldCount(t *testing.T) {
+	row := DivergenciaRow{
+		Periodo: "01/2026", NumeroNF: "123", FornCNPJ: "11111111000100",
+		FornNome: "Forn", FornUF: "BA", DataEmissao: "2026-01-15",
+		Regime: "ST", IcmsSefaz: 100, IcmsCalculado: 90, Diferenca: 10, Status: "COBRADO_A_MAIS",
+	}
+	rec := divRowToCSV(row)
+	if len(rec) != len(divCSVHeaders) {
+		t.Errorf("divRowToCSV fields (%d) deve casar com headers (%d)", len(rec), len(divCSVHeaders))
+	}
+}
+
+func TestDivRowToCSV_DateTruncation(t *testing.T) {
+	row := DivergenciaRow{DataEmissao: "2026-01-15T10:30:00Z"}
+	rec := divRowToCSV(row)
+	if rec[5] != "2026-01-15" {
+		t.Errorf("data deve ser truncada em 10 chars, got %q", rec[5])
 	}
 }
 
