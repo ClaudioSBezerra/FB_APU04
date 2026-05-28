@@ -60,15 +60,15 @@ func TestRowToCSVRecord_FieldCount(t *testing.T) {
 		DataEmissao: "2026-01-15", NumeroNFe: "000123",
 		FornNome: "Fornecedor X", FornCNPJ: "12345678000199",
 		FornUF: "SP", CFOP: "2102", Regime: "ANTECIPACAO",
-		VProd: 1000, VIcms: 120, VBcST: 0, VST: 0,
+		VProd: 1000, VIcms: 120, VBcST: 0, VBcCalc: 1050, VST: 0,
 		AliqInter: 12, AliqInterna: 20.5, IcmsDevidoEst: 85, VIPI: 50,
 	}
 	rec := rowToCSVRecord(row)
 	if len(rec) != len(exportCSVHeaders) {
 		t.Errorf("CSV fields (%d) devem casar com headers (%d)", len(rec), len(exportCSVHeaders))
 	}
-	if len(rec) != 18 {
-		t.Errorf("expected 18 CSV fields (Bloco+17 colunas modelo), got %d", len(rec))
+	if len(rec) != 19 {
+		t.Errorf("expected 19 CSV fields (Bloco+18 colunas modelo), got %d", len(rec))
 	}
 }
 
@@ -103,8 +103,8 @@ func TestCteLinkToCSVRecord_FieldCount(t *testing.T) {
 func TestCteLinkToCSVRecord_IcmsDevido(t *testing.T) {
 	link := CteLink{VPrest: 155.99, VIcmsCTe: 6.24}
 	rec := cteLinkToCSVRecord("B - Mês Atual", link, "chave", 20.5)
-	// icms_dev = 155.99 × 20.5% − 6.24 ≈ 25.74
-	if rec[15] == "0.00" {
+	// icms_dev = 155.99 × 20.5% − 6.24 ≈ 25.74; agora em índice 16 (nova coluna V.BC Antecip. em 12)
+	if rec[16] == "0.00" {
 		t.Errorf("ICMS Devido CT-e não pode ser zero quando v_prest > 0")
 	}
 }
@@ -113,8 +113,8 @@ func TestCteLinkToCSVRecord_IcmsDevidoNegativoZerado(t *testing.T) {
 	// Quando ICMS CT-e > v_prest × aliq_interna → resultado não pode ser negativo
 	link := CteLink{VPrest: 10.0, VIcmsCTe: 999.0}
 	rec := cteLinkToCSVRecord("B - Mês Atual", link, "chave", 20.5)
-	if rec[15] != "0.00" {
-		t.Errorf("ICMS Devido negativo deve virar 0.00, got %q", rec[15])
+	if rec[16] != "0.00" {
+		t.Errorf("ICMS Devido negativo deve virar 0.00, got %q", rec[16])
 	}
 }
 
@@ -133,11 +133,12 @@ func TestCteLinkToCSVRecord_CFOPIsCTE(t *testing.T) {
 func TestCteLinkToCSVRecord_ChaveNFEPreservada(t *testing.T) {
 	link := CteLink{ChaveCTe: "chave-cte-999"}
 	rec := cteLinkToCSVRecord("B - Mês Atual", link, "chave-nfe-abc", 20.5)
-	if rec[16] != "chave-nfe-abc" {
-		t.Errorf("Chave NF-e deve ser preservada na coluna P, got %q", rec[16])
+	// Chave NF-e em índice 17 (col Q), Chave CT-e em índice 18 (col R)
+	if rec[17] != "chave-nfe-abc" {
+		t.Errorf("Chave NF-e deve ser preservada na coluna Q, got %q", rec[17])
 	}
-	if rec[17] != "chave-cte-999" {
-		t.Errorf("Chave CT-e deve estar na coluna Q, got %q", rec[17])
+	if rec[18] != "chave-cte-999" {
+		t.Errorf("Chave CT-e deve estar na coluna R, got %q", rec[18])
 	}
 }
 
