@@ -180,10 +180,13 @@ classified AS (
         l.cfop                                              AS cfop,
         l.v_prod_disp                                       AS v_prod,
         COALESCE(l.ipi_eff, 0)                              AS v_ipi,
-        -- Crédito interestadual: v_prod × alíq_inter (SPED C190).
-        -- Não usar l.vl_icms direto: pode incluir ICMS-ST ou alíquota
-        -- interna do estado de origem, superestimando o crédito.
-        l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0 AS v_icms,
+        -- Crédito interestadual: prioriza vl_icms_inter (SUM de bc×aliq por linha
+        -- do C190, cap 12%) que preserva mix de alíquotas dentro do mesmo CFOP.
+        -- Fallback: v_prod × aliq quando vl_bc_icms não foi preenchido no SPED.
+        COALESCE(
+            NULLIF(l.vl_icms_inter, 0),
+            l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0
+        ) AS v_icms,
         COALESCE(l.vl_bc_st, 0)                             AS v_bc_st,
         COALESCE(l.vl_icms_st, 0)                           AS v_st,
         COALESCE(NULLIF(l.aliq_icms, 0), 12.0)              AS aliq_inter,
@@ -243,7 +246,7 @@ classified AS (
                     -- DIFAL por dentro (PE): base = (operação − crédito inter.) /
                     -- (1 − alíq_interna), aplicada à diferença de alíquotas, sem dedução.
                     THEN GREATEST(0,
-                        ((l.base_calc - l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0)
+                        ((l.base_calc - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
                          / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                         * (COALESCE(regra.aliquota_interna,20.5) - COALESCE(NULLIF(l.aliq_icms,0),12.0)) / 100.0)
                     ELSE GREATEST(0,
@@ -292,19 +295,19 @@ classified AS (
                                     regra.mva_original
                                 )/100.0)
                                 * COALESCE(regra.aliquota_interna, 20.5)/100.0
-                                - l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0)
+                                - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0))
                         ELSE COALESCE(l.vl_icms_st, 0)
                     END
                     -- Sem segmento cadastrado → reclassificado como ANTECIPAÇÃO
                     ELSE CASE WHEN COALESCE(ufb.base_por_dentro, false)
                         THEN GREATEST(0,
-                            ((l.base_calc - l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0)
+                            ((l.base_calc - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
                              / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                             * COALESCE(regra.aliquota_interna,20.5)/100.0
-                            - l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0)
+                            - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
                         ELSE GREATEST(0,
                             l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
-                            - l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0)
+                            - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0))
                     END
                 END
             WHEN l.cfop IN ('2101','2102','2152')
@@ -312,13 +315,13 @@ classified AS (
                 -- (1 − alíq_interna), depois × alíq_interna − crédito inter.
                 THEN CASE WHEN COALESCE(ufb.base_por_dentro, false)
                     THEN GREATEST(0,
-                        ((l.base_calc - l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0)
+                        ((l.base_calc - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
                          / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                         * COALESCE(regra.aliquota_interna,20.5)/100.0
-                        - l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0)
+                        - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
                     ELSE GREATEST(0,
                         l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
-                        - l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0)
+                        - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0))
                 END
             ELSE 0
         END                                                 AS icms_devido_est,
