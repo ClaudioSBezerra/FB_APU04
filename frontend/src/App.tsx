@@ -44,6 +44,7 @@ import Register from './pages/Register'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import { AppRail } from '@/components/AppRail'
+import { AjudaChat } from '@/components/AjudaChat'
 import { FilialSelector } from '@/components/FilialSelector'
 import { CompanySwitcher } from '@/components/CompanySwitcher'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -243,6 +244,7 @@ function AppLayout() {
           </div>
         </main>
       </div>
+      <AjudaChat />
       <Toaster />
     </div>
   )

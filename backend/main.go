@@ -389,6 +389,7 @@ func main() {
 	http.HandleFunc("/api/reports/executive-summary", withAuth(handlers.GetExecutiveSummaryHandler, ""))
 	http.HandleFunc("/api/insights/daily", withAuth(handlers.GetDailyInsightHandler, ""))
 	http.HandleFunc("/api/ai/query", withAuth(handlers.AIQueryHandler, ""))
+	http.HandleFunc("/api/ai/ajuda", withAuth(handlers.AIAjudaChatHandler, ""))
 
 	// Saved AI Reports
 	http.HandleFunc("/api/reports", withAuth(handlers.ListSavedAIReportsHandler, ""))
