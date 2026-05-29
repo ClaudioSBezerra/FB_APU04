@@ -985,6 +985,37 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraComparativoHandler(), "")(w, r)
 	})
 
+	// ── ICMS Fronteira — Inaplicabilidade (Fase 1: cadastro + aprovação) ─────────
+	http.HandleFunc("/api/icms-fronteira/inaplicabilidade/importar", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.IcmsFronteiraInaplicImportHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/inaplicabilidade/", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		switch r.Method {
+		case "PUT":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraInaplicUpdateHandler(database), "")(w, r)
+		case "DELETE":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraInaplicDeleteHandler(database), "")(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	http.HandleFunc("/api/icms-fronteira/inaplicabilidade", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil { jsonServiceUnavailable(w); return }
+		switch r.Method {
+		case "GET":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraInaplicListHandler(database), "")(w, r)
+		case "DELETE":
+			handlers.AuthMiddleware(handlers.IcmsFronteiraInaplicDeleteHandler(database), "")(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
 	// ── ICMS Fronteira — Extrato SEFAZ ───────────────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/extrato/importar", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()

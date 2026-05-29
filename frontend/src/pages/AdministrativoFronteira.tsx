@@ -1616,6 +1616,225 @@ export function ProdepeTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Inaplicabilidade de ICMS Fronteira — Fase 1: cadastro + aprovação
+// ---------------------------------------------------------------------------
+interface InaplicRegra {
+  id: string;
+  uf_estado: string;
+  id_regra: string;
+  instituto: string;
+  grupo: string;
+  hipotese: string;
+  tipo_verif: string;
+  registro_sped: string;
+  campo_sped: string;
+  valores_gatilho: string;
+  registro_sped_2: string;
+  valores_2: string;
+  logica: string;
+  resultado: string;
+  instrucao: string;
+  base_legal: string;
+  vigencia_inicio: string | null;
+  vigencia_fim: string | null;
+  auto_aplicavel: boolean;
+  status_aprovacao: string;
+}
+
+const INSTITUTO_LABEL: Record<string, string> = {
+  ANTECIPACAO: "Antecipação ICMS Fronteira",
+  ANT_PARCIAL: "Antecipação Parcial",
+  ANT_PROPRIA: "Antecipação Própria",
+  ST: "Substituição Tributária",
+};
+
+export function InaplicabilidadeTab({ uf }: { uf: string }) {
+  const { token } = useAuth();
+  const [list, setList] = useState<InaplicRegra[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
+    Authorization: `Bearer ${token}`,
+    ...extra,
+  });
+
+  const load = async () => {
+    if (!token || !uf) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/icms-fronteira/inaplicabilidade?uf=${uf}`, { headers: headers() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const d = await res.json();
+      setList(d.regras ?? []);
+    } catch (e) {
+      toast.error("Falha ao carregar regras: " + (e instanceof Error ? e.message : ""));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [uf, token]);
+
+  const handleImport = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      Array.from(files).forEach((f) => fd.append("files", f));
+      const res = await fetch("/api/icms-fronteira/inaplicabilidade/importar", {
+        method: "POST", headers: headers(), body: fd,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const d = await res.json();
+      const byUf = Object.entries(d.by_uf ?? {}).map(([u, n]) => `${u}: ${n}`).join(", ");
+      toast.success(`${d.imported} regra(s) importada(s) (${byUf || "—"})`);
+      if (d.warnings?.length) toast.warning(d.warnings.join(" | "));
+      if (fileRef.current) fileRef.current.value = "";
+      load();
+    } catch (e) {
+      toast.error("Falha ao importar: " + (e instanceof Error ? e.message : ""));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const setStatus = async (id: string, status: string) => {
+    try {
+      const res = await fetch(`/api/icms-fronteira/inaplicabilidade/${id}`, {
+        method: "PUT", headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setList((prev) => prev.map((r) => (r.id === id ? { ...r, status_aprovacao: status } : r)));
+    } catch (e) {
+      toast.error("Falha ao atualizar: " + (e instanceof Error ? e.message : ""));
+    }
+  };
+
+  const total = list.length;
+  const aprovadas = list.filter((r) => r.status_aprovacao === "aprovada").length;
+  const pendentes = list.filter((r) => r.status_aprovacao === "pendente").length;
+  const rejeitadas = list.filter((r) => r.status_aprovacao === "rejeitada").length;
+
+  const grupos = Array.from(new Set(list.map((r) => r.instituto)));
+
+  return (
+    <div className="space-y-4">
+      <div className="p-3 border-l-4 border-amber-400 bg-amber-50 text-xs text-amber-900 rounded">
+        <strong>Inaplicabilidade de ICMS Fronteira.</strong> Importe as planilhas do contador
+        (PE/BA/CE). As regras entram como <em>pendentes</em> para sua aprovação. Apenas regras
+        <strong> aprovadas e auto-aplicáveis</strong> (gatilho 100% derivável do SPED) serão usadas
+        pelo motor numa fase futura — esta tela é só cadastro e aprovação.
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xlsx"
+          multiple
+          className="hidden"
+          onChange={(e) => handleImport(e.target.files)}
+        />
+        <Button onClick={() => fileRef.current?.click()} disabled={importing}>
+          <Upload className="h-4 w-4 mr-2" />
+          {importing ? "Importando..." : "Importar planilhas (XLSX)"}
+        </Button>
+        <Button variant="outline" onClick={load} disabled={loading}>
+          {loading ? "Atualizando..." : "Atualizar"}
+        </Button>
+        <span className="text-xs text-muted-foreground ml-auto">
+          UF <strong>{uf}</strong> · {total} regra(s) — {pendentes} pendente(s), {aprovadas} aprovada(s), {rejeitadas} rejeitada(s)
+        </span>
+      </div>
+
+      {total === 0 ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">
+          Nenhuma regra para {uf}. Importe a planilha de inaplicabilidade desta UF.
+        </p>
+      ) : (
+        grupos.map((inst) => {
+          const regras = list.filter((r) => r.instituto === inst);
+          return (
+            <div key={inst} className="rounded-md border overflow-x-auto">
+              <div className="px-3 py-2 bg-slate-50 text-sm font-semibold border-b">
+                {INSTITUTO_LABEL[inst] ?? inst} <span className="text-xs text-muted-foreground">({regras.length})</span>
+              </div>
+              <Table className="text-xs">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Regra</TableHead>
+                    <TableHead className="text-xs">Hipótese</TableHead>
+                    <TableHead className="text-xs">Gatilho</TableHead>
+                    <TableHead className="text-xs">Resultado</TableHead>
+                    <TableHead className="text-xs">Base legal</TableHead>
+                    <TableHead className="text-xs">Viab.</TableHead>
+                    <TableHead className="text-xs">Status</TableHead>
+                    <TableHead className="text-xs text-right">Ação</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {regras.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-mono whitespace-nowrap">{r.id_regra}</TableCell>
+                      <TableCell className="max-w-[240px] whitespace-normal leading-snug">
+                        {r.hipotese || r.grupo}
+                        {r.vigencia_inicio && (
+                          <span className="block text-[10px] text-muted-foreground">
+                            vig. {r.vigencia_inicio}{r.vigencia_fim ? `–${r.vigencia_fim}` : ""}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-[180px] whitespace-normal leading-snug">
+                        <span className="font-medium">{r.tipo_verif}</span>
+                        {r.valores_gatilho && <span className="block text-[10px] text-muted-foreground">{r.valores_gatilho}</span>}
+                      </TableCell>
+                      <TableCell className="max-w-[160px] whitespace-normal leading-snug">{r.resultado}</TableCell>
+                      <TableCell className="max-w-[160px] whitespace-normal leading-snug text-muted-foreground">{r.base_legal}</TableCell>
+                      <TableCell>
+                        {r.auto_aplicavel ? (
+                          <span className="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-800 text-[10px]">auto</span>
+                        ) : (
+                          <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px]">manual</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className={
+                          "inline-block px-1.5 py-0.5 rounded text-[10px] " +
+                          (r.status_aprovacao === "aprovada" ? "bg-green-100 text-green-800" :
+                           r.status_aprovacao === "rejeitada" ? "bg-red-100 text-red-800" :
+                           "bg-amber-100 text-amber-800")
+                        }>
+                          {r.status_aprovacao}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right whitespace-nowrap">
+                        {r.status_aprovacao !== "aprovada" && (
+                          <Button size="sm" variant="outline" className="h-7 mr-1" onClick={() => setStatus(r.id, "aprovada")}>
+                            <Check className="h-3 w-3" />
+                          </Button>
+                        )}
+                        {r.status_aprovacao !== "rejeitada" && (
+                          <Button size="sm" variant="outline" className="h-7" onClick={() => setStatus(r.id, "rejeitada")}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // AdministrativoTab — entrada única, usada como TabsContent="administrativo"
 // dentro do /icms-fronteira. Carrega /api/user/hierarchy e organiza 4 sub-abas.
 // ---------------------------------------------------------------------------
@@ -1671,6 +1890,10 @@ export function AdministrativoTab({ uf }: { uf: string }) {
           <FileText className="h-4 w-4" />
           Regras NCM por Decreto
         </TabsTrigger>
+        <TabsTrigger value="inaplicabilidade" className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          Inaplicabilidade
+        </TabsTrigger>
         <TabsTrigger value="empresa" className="flex items-center gap-2">
           <Building className="h-4 w-4" />
           Empresa
@@ -1702,6 +1925,10 @@ export function AdministrativoTab({ uf }: { uf: string }) {
           quando aplicável, a um decreto/protocolo na coluna de origem.
         </div>
         <RegrasTab token={token} />
+      </TabsContent>
+
+      <TabsContent value="inaplicabilidade">
+        <InaplicabilidadeTab uf={uf} />
       </TabsContent>
 
       <TabsContent value="empresa">
