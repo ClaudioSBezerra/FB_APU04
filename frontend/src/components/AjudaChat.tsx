@@ -79,7 +79,7 @@ const WELCOME_TUTORIAL: Message = {
 No modo **Tutorial** posso explicar:
 - Como usar as abas de ICMS Fronteira (Antecipação, ST, DIFAL, Comparativo…)
 - O flag **COM/SEM inaplicabilidade** e a aprovação de regras
-- Importações, exportações e o fluxo de apuração
+- A **fórmula e o racional do cálculo de uma nota** — informe o número (ex.: *nota 14817*)
 
 Em **Consulta de dados** eu transformo sua pergunta em consulta ao sistema e trago a tabela (com exportação para Excel).`,
 }
@@ -94,6 +94,7 @@ const FAQ_SUGESTOES: string[] = [
   'Como aprovo regras de inaplicabilidade?',
   'O que são os 3 blocos (Mês Anterior / Atual / Não no SPED)?',
   'O que é o mix de alíquotas (4% + 12%)?',
+  'Explique a fórmula e o racional do cálculo de uma nota (informe o número)',
 ]
 
 const WELCOME_DADOS: Message = {
@@ -202,7 +203,7 @@ export function AjudaChat() {
   }
 
   async function send(textArg?: string) {
-    const text = (textArg ?? input).trim()
+    const text = (typeof textArg === 'string' ? textArg : input).trim()
     if (!text || loading) return
     setInput('')
     const userMsg: Message = { role: 'user', content: text }
@@ -364,7 +365,7 @@ export function AjudaChat() {
               className="text-xs h-8 flex-1"
               disabled={loading}
             />
-            <Button size="sm" className="h-8 w-8 p-0 shrink-0" onClick={send} disabled={!input.trim() || loading}>
+            <Button size="sm" className="h-8 w-8 p-0 shrink-0" onClick={() => send()} disabled={!input.trim() || loading}>
               <Send className="h-3.5 w-3.5" />
             </Button>
           </div>

@@ -70,4 +70,28 @@ P: Como exporto os dados?
 R: A maioria das abas tem botão de exportar (Excel/CSV/PDF). No assistente, o modo "Consulta de dados" também tem botão Exportar Excel do resultado.
 
 P: O que o assistente faz?
-R: Modo Tutorial = tira dúvidas de uso (ajuda online, sabe em que página você está). Modo Consulta de dados = transforma sua pergunta em consulta ao sistema (somente leitura) e mostra a tabela, com exportação para Excel.`
+R: Modo Tutorial = tira dúvidas de uso (ajuda online, sabe em que página você está) E explica o cálculo de uma nota específica com os números reais. Modo Consulta de dados = transforma sua pergunta em consulta ao sistema (somente leitura) e mostra a tabela, com exportação para Excel.`
+
+// formulasConhecimento — fórmulas exatas do motor de fronteira (espelham
+// fronteiraBaseQuery). Permite ao assistente explicar o cálculo corretamente.
+const formulasConhecimento = `
+
+FÓRMULAS DO CÁLCULO (ICMS Fronteira) — use exatamente estas ao explicar:
+- Base de cálculo (base_calc) = V.Prod + frete rateado + outras despesas. O IPI NÃO entra na base.
+- Crédito interestadual = ICMS destacado na origem (ponderado por item quando há mix de alíquotas; piso de 4% para fornecedor do Simples Nacional).
+- Alíquota interna padrão: 20,5% (PE/BA). Resultado nunca negativo (piso zero).
+
+ANTECIPAÇÃO (CFOP 2101/2102/2152):
+- Padrão: ICMS devido = MAX(0; base_calc × alíq_interna − crédito_interestadual).
+- "Por dentro" (quando a UF usa base por dentro): base_ajustada = (base_calc − crédito) ÷ (1 − alíq_interna); ICMS = base_ajustada × alíq_interna − crédito.
+
+DIFAL (CFOP 2551/2556 — uso/consumo ou ativo):
+- Padrão: ICMS = base_calc × (alíq_interna − alíq_interestadual).
+- Por dentro: ((base_calc − crédito) ÷ (1 − alíq_interna)) × (alíq_interna − alíq_interestadual).
+
+ST por antecipação (CFOP 2403/2409/2651/2652, com segmento cadastrado):
+- ICMS-ST = base_calc × (1 + MVA) × alíq_interna − crédito_interestadual.
+- MVA efetivo: usa o MVA ajustado pela alíquota interestadual; senão o ajuste do Convênio 110/07 sobre o MVA original; senão o MVA original.
+- Sem segmento cadastrado para a empresa → a nota é reclassificada como ANTECIPAÇÃO.
+
+PRODEPE/Central de Distribuição: filial beneficiada com vigência cobrindo a data → ICMS fronteira = 0 (dispensa), exceto DIFAL.`

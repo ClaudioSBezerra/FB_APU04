@@ -3,11 +3,85 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"fb_apu04/services"
+
+	"github.com/golang-jwt/jwt/v5"
 )
+
+// reNotaNum captura candidatos a número de NF (4–9 dígitos) nas mensagens.
+var reNotaNum = regexp.MustCompile(`\b\d{4,9}\b`)
+
+// buscarContextoNota detecta números de NF nas mensagens do usuário e, para
+// cada um, busca os dados REAIS do cálculo de fronteira (via fronteiraBaseQuery)
+// e devolve um bloco de contexto. Assim a IA explica a fórmula com os números
+// corretos da nota, em vez de inventar. Espelha o buscarContextoProduto do
+// FB_SMARTPICK.
+func buscarContextoNota(db *sql.DB, msgs []ajudaMsg, companyID string) string {
+	if db == nil || companyID == "" {
+		return ""
+	}
+	seen := map[string]bool{}
+	var cands []string
+	for _, m := range msgs {
+		if m.Role != "user" {
+			continue
+		}
+		for _, n := range reNotaNum.FindAllString(m.Content, -1) {
+			if !seen[n] {
+				seen[n] = true
+				cands = append(cands, n)
+			}
+		}
+	}
+	if len(cands) == 0 {
+		return ""
+	}
+	if len(cands) > 2 {
+		cands = cands[:2] // limita o contexto
+	}
+
+	q := fronteiraBaseQuery + `
+SELECT cfop, regime, v_prod, v_ipi, v_st, v_icms, aliq_inter, aliq_interna,
+       base_calc, icms_devido_est, base_por_dentro, COALESCE(regra_mva_original, 0)
+FROM classified
+WHERE numero_nfe = $3 AND regime IS NOT NULL
+ORDER BY cfop`
+
+	var sb strings.Builder
+	for _, nf := range cands {
+		rows, err := db.Query(q, companyID, "", nf)
+		if err != nil {
+			continue
+		}
+		found := false
+		for rows.Next() {
+			var cfop, regime string
+			var vProd, vIpi, vSt, vIcms, aliqInter, aliqInterna, baseCalc, icmsDev, mva float64
+			var porDentro bool
+			if err := rows.Scan(&cfop, &regime, &vProd, &vIpi, &vSt, &vIcms, &aliqInter,
+				&aliqInterna, &baseCalc, &icmsDev, &porDentro, &mva); err != nil {
+				continue
+			}
+			if !found {
+				sb.WriteString("\n\nDADOS REAIS DA NOTA " + nf + " (use ESTES números na explicação; uma linha por CFOP):\n")
+				found = true
+			}
+			sb.WriteString(fmt.Sprintf(
+				"- CFOP %s | regime %s | V.Prod R$ %.2f | base_calc R$ %.2f | crédito interestadual R$ %.2f (alíq inter %.2f%%) | alíq interna %.2f%% | V.ST R$ %.2f | MVA orig %.2f%% | base por dentro: %v | ICMS devido calculado R$ %.2f\n",
+				cfop, regime, vProd, baseCalc, vIcms, aliqInter, aliqInterna, vSt, mva, porDentro, icmsDev))
+		}
+		rows.Close()
+		if !found {
+			sb.WriteString("\n\nNota " + nf + ": não localizada no cálculo de fronteira da empresa/UF atual (confira a UF de trabalho e o período).\n")
+		}
+	}
+	return sb.String()
+}
 
 // systemPromptAjuda — base de conhecimento do FB_APU04 para o modo Tutorial do
 // assistente. Mantém respostas curtas, em pt-BR, focadas em "como usar".
@@ -71,9 +145,18 @@ func AIAjudaChatHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		system := systemPromptAjuda + faqConhecimento
+		system := systemPromptAjuda + faqConhecimento + formulasConhecimento
 		if c := strings.TrimSpace(req.Context); c != "" {
 			system += "\n\nCONTEXTO ATUAL: o usuário está na página \"" + c + "\"."
+		}
+
+		// Se a pergunta cita uma NF, injeta os dados reais do cálculo daquela nota
+		// para a IA explicar a fórmula com os números corretos.
+		if claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims); ok {
+			userID, _ := claims["user_id"].(string)
+			if companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID")); err == nil {
+				system += buscarContextoNota(db, req.Messages, companyID)
+			}
 		}
 
 		// GenerateFast recebe um único userPrompt — dobramos o histórico recente
