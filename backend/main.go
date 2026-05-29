@@ -980,6 +980,11 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraExportHTMLHandler(database), "")(w, r)
 	})
 
+	// ── ICMS Fronteira — Comparativo ────────────────────────────────────────────
+	http.HandleFunc("/api/icms-fronteira/comparativo", func(w http.ResponseWriter, r *http.Request) {
+		handlers.AuthMiddleware(handlers.IcmsFronteiraComparativoHandler(), "")(w, r)
+	})
+
 	// ── ICMS Fronteira — Extrato SEFAZ ───────────────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/extrato/importar", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()

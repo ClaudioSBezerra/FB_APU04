@@ -82,6 +82,8 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { AdministrativoTab } from './AdministrativoFronteira'
 import { TabErrorBoundary } from '@/components/TabErrorBoundary'
+import * as XLSX from 'xlsx'
+import { cn } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -361,6 +363,25 @@ interface IncentivoResponse {
   count_nao_sped: number
   por_programa: Record<string, number>
   por_filial: Record<string, number>
+}
+
+interface DiffRow {
+  status: string
+  chave_nfe: string
+  numero_nfe: string
+  fornecedor: string
+  cfop: string
+  v_prod_p1: number
+  icms_devido_p1: number
+  v_prod_p2: number
+  icms_devido_p2: number
+  diff_icms: number
+}
+
+interface ComparativoResponse {
+  bloco_a: DiffRow[]
+  bloco_b: DiffRow[]
+  bloco_c: DiffRow[]
 }
 
 // ---------------------------------------------------------------------------
@@ -2535,6 +2556,326 @@ function LegislacaoTab({ token }: { token: string | null }) {
       </CardContent>
     </Card>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Comparativo Planilha Excel
+// ---------------------------------------------------------------------------
+function ComparativoTab({ token }: { token: string | null }) {
+  const [file1, setFile1] = useState<File | null>(null)
+  const [file2, setFile2] = useState<File | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<ComparativoResponse | null>(null)
+  const [activeBloco, setActiveBloco] = useState<'a' | 'b' | 'c'>('a')
+
+  async function handleCompare() {
+    if (!file1 || !file2) return
+
+    setLoading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file1', file1)
+      fd.append('file2', file2)
+
+      const res = await fetch('/api/icms-fronteira/comparativo', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      })
+
+      if (!res.ok) {
+        const err = await res.text()
+        toast.error('Erro ao comparar: ' + err)
+        return
+      }
+
+      const data = await res.json()
+      setResult(data)
+    } catch (e) {
+      toast.error('Erro: ' + (e instanceof Error ? e.message : ''))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleExportDiff() {
+    if (!result) return
+
+    const all = [
+      ...result.bloco_a.map(r => ({...r, bloco: 'A'})),
+      ...result.bloco_b.map(r => ({...r, bloco: 'B'})),
+      ...result.bloco_c.map(r => ({...r, bloco: 'C'})),
+    ]
+
+    const sheets: Record<string, any[][]> = {
+      'Bloco A': [[
+        'Status', 'NF', 'Fornecedor', 'CFOP',
+        'ICMS Planilha 1', 'ICMS Planilha 2', 'Diferença'
+      ]],
+      'Bloco B': [[
+        'Status', 'NF', 'Fornecedor', 'CFOP',
+        'ICMS Planilha 1', 'ICMS Planilha 2', 'Diferença'
+      ]],
+      'Bloco C': [[
+        'Status', 'NF', 'Fornecedor', 'CFOP',
+        'ICMS Planilha 1', 'ICMS Planilha 2', 'Diferença'
+      ]],
+    }
+
+    result.bloco_a.forEach(row => {
+      sheets['Bloco A'].push([
+        statusLabel(row.status), row.numero_nfe, row.fornecedor, row.cfop,
+        row.icms_devido_p1, row.icms_devido_p2, row.diff_icms
+      ])
+    })
+
+    result.bloco_b.forEach(row => {
+      sheets['Bloco B'].push([
+        statusLabel(row.status), row.numero_nfe, row.fornecedor, row.cfop,
+        row.icms_devido_p1, row.icms_devido_p2, row.diff_icms
+      ])
+    })
+
+    result.bloco_c.forEach(row => {
+      sheets['Bloco C'].push([
+        statusLabel(row.status), row.numero_nfe, row.fornecedor, row.cfop,
+        row.icms_devido_p1, row.icms_devido_p2, row.diff_icms
+      ])
+    })
+
+    const wb = XLSX.utils.book_new()
+    Object.entries(sheets).forEach(([name, data]) => {
+      const ws = XLSX.utils.aoa_to_sheet(data)
+      XLSX.utils.book_append_sheet(wb, ws, name)
+    })
+    XLSX.writeFile(wb, 'comparativo-fronteira.xlsx')
+    toast.success('Planilha exportada com sucesso!')
+  }
+
+  const bLocoAOnly1 = result?.bloco_a.filter(r => r.status === 'only_1').length ?? 0
+  const bLocoAOnly2 = result?.bloco_a.filter(r => r.status === 'only_2').length ?? 0
+  const bLocoADiff = result?.bloco_a.filter(r => r.status === 'diff').length ?? 0
+
+  const bLocoBOnly1 = result?.bloco_b.filter(r => r.status === 'only_1').length ?? 0
+  const bLocoBOnly2 = result?.bloco_b.filter(r => r.status === 'only_2').length ?? 0
+  const bLocoBDiff = result?.bloco_b.filter(r => r.status === 'diff').length ?? 0
+
+  const bLocoCOnly1 = result?.bloco_c.filter(r => r.status === 'only_1').length ?? 0
+  const bLocoCOnly2 = result?.bloco_c.filter(r => r.status === 'only_2').length ?? 0
+  const bLocoCDiff = result?.bloco_c.filter(r => r.status === 'diff').length ?? 0
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <FileSpreadsheet className="h-4 w-4 text-blue-500" />
+          Comparativo Planilha Excel
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <p className="text-xs text-muted-foreground">
+          Compare duas planilhas XLSX exportadas pelo sistema. O comparativo identifica notas ausentes
+          em uma das planilhas e valores divergentes.
+        </p>
+
+        {!result ? (
+          <div>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                <Label className="text-xs font-semibold mb-2 block">Planilha Correta (Base)</Label>
+                <input
+                  type="file"
+                  accept=".xlsx"
+                  onChange={e => setFile1(e.target.files?.[0] ?? null)}
+                  className="hidden"
+                  id="file1-input"
+                />
+                <label
+                  htmlFor="file1-input"
+                  className="cursor-pointer inline-block"
+                >
+                  <div className="text-xs text-muted-foreground mb-2">
+                    {file1 ? (
+                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                        {file1.name}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">Clique para selecionar</span>
+                    )}
+                  </div>
+                  <Upload className="h-4 w-4 mx-auto text-muted-foreground" />
+                </label>
+              </div>
+
+              <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                <Label className="text-xs font-semibold mb-2 block">Planilha para Conferência</Label>
+                <input
+                  type="file"
+                  accept=".xlsx"
+                  onChange={e => setFile2(e.target.files?.[0] ?? null)}
+                  className="hidden"
+                  id="file2-input"
+                />
+                <label
+                  htmlFor="file2-input"
+                  className="cursor-pointer inline-block"
+                >
+                  <div className="text-xs text-muted-foreground mb-2">
+                    {file2 ? (
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                        {file2.name}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">Clique para selecionar</span>
+                    )}
+                  </div>
+                  <Upload className="h-4 w-4 mx-auto text-muted-foreground" />
+                </label>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleCompare}
+              disabled={!file1 || !file2 || loading}
+              className="w-full"
+            >
+              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {loading ? 'Comparando...' : 'Comparar'}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <span className="text-sm text-muted-foreground">Comparação concluída</span>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setResult(null)
+                  setFile1(null)
+                  setFile2(null)
+                  setActiveBloco('a')
+                }}
+              >
+                Nova Comparação
+              </Button>
+            </div>
+
+            <Tabs value={activeBloco} onValueChange={(v) => setActiveBloco(v as 'a' | 'b' | 'c')}>
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="a" className="text-xs">
+                  Bloco A {bLocoAOnly1 + bLocoAOnly2 + bLocoADiff > 0 ? `(${bLocoAOnly1 + bLocoAOnly2 + bLocoADiff})` : ''}
+                </TabsTrigger>
+                <TabsTrigger value="b" className="text-xs">
+                  Bloco B {bLocoBOnly1 + bLocoBOnly2 + bLocoBDiff > 0 ? `(${bLocoBOnly1 + bLocoBOnly2 + bLocoBDiff})` : ''}
+                </TabsTrigger>
+                <TabsTrigger value="c" className="text-xs">
+                  Bloco C {bLocoCOnly1 + bLocoCOnly2 + bLocoCDiff > 0 ? `(${bLocoCOnly1 + bLocoCOnly2 + bLocoCDiff})` : ''}
+                </TabsTrigger>
+              </TabsList>
+
+              {['a', 'b', 'c'].map((bloco) => {
+                const blocoKey = `bloco_${bloco}` as 'bloco_a' | 'bloco_b' | 'bloco_c'
+                const data = result[blocoKey]
+                const only1 = data.filter(r => r.status === 'only_1').length
+                const only2 = data.filter(r => r.status === 'only_2').length
+                const diff = data.filter(r => r.status === 'diff').length
+
+                return (
+                  <TabsContent key={bloco} value={bloco} className="space-y-4">
+                    <div className="flex gap-2 flex-wrap">
+                      {only1 > 0 && (
+                        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                          Só na Planilha 1: {only1}
+                        </Badge>
+                      )}
+                      {only2 > 0 && (
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                          Só na Planilha 2: {only2}
+                        </Badge>
+                      )}
+                      {diff > 0 && (
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                          Divergências: {diff}
+                        </Badge>
+                      )}
+                      {only1 === 0 && only2 === 0 && diff === 0 && (
+                        <span className="text-xs text-muted-foreground">Sem diferenças detectadas</span>
+                      )}
+                    </div>
+
+                    {(only1 > 0 || only2 > 0 || diff > 0) && (
+                      <div className="rounded-md border overflow-x-auto">
+                        <Table className="text-xs">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Status</TableHead>
+                              <TableHead className="text-xs">NF</TableHead>
+                              <TableHead className="text-xs">Fornecedor</TableHead>
+                              <TableHead className="text-xs">CFOP</TableHead>
+                              <TableHead className="text-xs text-right">ICMS P1</TableHead>
+                              <TableHead className="text-xs text-right">ICMS P2</TableHead>
+                              <TableHead className="text-xs text-right">Diferença</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {data.map((row, idx) => (
+                              <TableRow key={idx}>
+                                <TableCell>
+                                  {row.status === 'only_1' && (
+                                    <Badge className="bg-red-100 text-red-800">P1</Badge>
+                                  )}
+                                  {row.status === 'only_2' && (
+                                    <Badge className="bg-blue-100 text-blue-800">P2</Badge>
+                                  )}
+                                  {row.status === 'diff' && (
+                                    <Badge className="bg-amber-100 text-amber-800">≠</Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>{row.numero_nfe}</TableCell>
+                                <TableCell>{row.fornecedor}</TableCell>
+                                <TableCell>{row.cfop}</TableCell>
+                                <TableCell className="text-right">{fmtBRL(row.icms_devido_p1)}</TableCell>
+                                <TableCell className="text-right">{fmtBRL(row.icms_devido_p2)}</TableCell>
+                                <TableCell className={cn('text-right font-semibold', {
+                                  'text-red-600': row.diff_icms < 0,
+                                  'text-green-600': row.diff_icms > 0,
+                                })}>
+                                  {fmtBRL(row.diff_icms)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </TabsContent>
+                )
+              })}
+            </Tabs>
+
+            <Button
+              onClick={handleExportDiff}
+              className="w-full"
+              variant="outline"
+            >
+              <FileDown className="h-4 w-4 mr-2" />
+              Exportar Diferenças para Excel
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function statusLabel(status: string): string {
+  if (status === 'only_1') return 'Só na Planilha 1'
+  if (status === 'only_2') return 'Só na Planilha 2'
+  if (status === 'diff') return 'Divergência'
+  return status
 }
 
 function ReconciliacaoTab({ token }: { token: string | null }) {
@@ -4914,6 +5255,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/fretes':       'fretes',
     '/icms-fronteira/motor-fiscal': 'motor-fiscal',
     '/icms-fronteira/divergencias': 'divergencias',
+    '/icms-fronteira/comparativo': 'comparativo',
     '/icms-fronteira/reconciliacao': 'reconciliacao',
     '/icms-fronteira/legislacao':    'legislacao',
     '/icms-fronteira/regras':       'administrativo', // legacy → agora vive em Administrativo
@@ -4932,6 +5274,7 @@ export default function IcmsFronteira() {
     fretes:        '/icms-fronteira/fretes',
     'motor-fiscal':'/icms-fronteira/motor-fiscal',
     divergencias:  '/icms-fronteira/divergencias',
+    comparativo:   '/icms-fronteira/comparativo',
     reconciliacao: '/icms-fronteira/reconciliacao',
     legislacao:    '/icms-fronteira/legislacao',
     extrato:       '/icms-fronteira/extrato',
@@ -5025,6 +5368,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="fretes" className="text-sm">Fretes</TabsTrigger>
           <TabsTrigger value="motor-fiscal" className="text-sm">Motor Fiscal</TabsTrigger>
           <TabsTrigger value="divergencias" className="text-sm">Divergências</TabsTrigger>
+          <TabsTrigger value="comparativo" className="text-sm">Comparativo</TabsTrigger>
           <TabsTrigger value="reconciliacao" className="text-sm">Reconciliação</TabsTrigger>
           <TabsTrigger value="legislacao" className="text-sm">Legislação</TabsTrigger>
           <TabsTrigger value="apuracao" className="text-sm">Apuração Mensal</TabsTrigger>
@@ -5199,6 +5543,10 @@ export default function IcmsFronteira() {
               <PlanilhaTab token={token} />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="comparativo" className="mt-6">
+          <ComparativoTab token={token} />
         </TabsContent>
 
         <TabsContent value="reconciliacao" className="mt-6">
