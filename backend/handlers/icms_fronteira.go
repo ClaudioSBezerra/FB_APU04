@@ -16,6 +16,16 @@ import (
 // a partir de startIdx. Retorna o fragmento SQL (começando com " AND ...") e os
 // argumentos. As colunas referenciadas (uf_filial/forn_cnpj/forn_nome/numero_nfe/
 // data_emissao) existem no CTE classified do fronteiraBaseQuery.
+// fronteiraInaplicAtivo lê o flag do simulador (?inaplic=1). HOOK da Fase 2 do
+// motor de inaplicabilidade: quando true, futuramente as regras aprovadas e
+// auto-aplicáveis serão aplicadas ao cálculo (excluir/zerar notas que casam).
+// HOJE é apenas lido e encanado — NO-OP. O resultado é idêntico com ou sem o
+// flag, garantindo risco zero em produção até a lógica da Fase 2 ser implementada.
+func fronteiraInaplicAtivo(r *http.Request) bool {
+	v := strings.TrimSpace(r.URL.Query().Get("inaplic"))
+	return v == "1" || v == "true"
+}
+
 func fronteiraFiltros(r *http.Request, startIdx int) (string, []interface{}) {
 	var sb strings.Builder
 	var args []interface{}
@@ -459,6 +469,11 @@ func IcmsFronteiraResumoHandler(db *sql.DB) http.HandlerFunc {
 		periodo := r.URL.Query().Get("periodo")
 		filtroSQL, filtroArgs := fronteiraFiltros(r, 3)
 
+		// Flag do simulador (scaffold Fase 1 — NO-OP). Encanado para a Fase 2.
+		if fronteiraInaplicAtivo(r) {
+			log.Printf("[fronteira] flag inaplicabilidade ATIVO (scaffold no-op) company=%s", companyID)
+		}
+
 		query := fronteiraBaseQuery + `
 SELECT
     regime,
@@ -526,6 +541,11 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 
 	periodo := r.URL.Query().Get("periodo")
 	filtroSQL, filtroArgs := fronteiraFiltros(r, 4)
+
+	// Flag do simulador (scaffold Fase 1 — NO-OP). Encanado para a Fase 2.
+	if fronteiraInaplicAtivo(r) {
+		log.Printf("[fronteira] flag inaplicabilidade ATIVO (scaffold no-op) regime=%s company=%s", regime, companyID)
+	}
 
 	// G14: window functions retornam totais do conjunto completo (sem LIMIT),
 	// resolvendo o bug onde totais exibidos só refletiam as primeiras 500 notas.

@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -513,6 +514,13 @@ function aplicaFiltros(params: URLSearchParams, f?: FronteiraFiltros) {
 const FronteiraUFContext = createContext<string>('')
 const useFronteiraUF = () => useContext(FronteiraUFContext)
 
+// Flag do simulador de inaplicabilidade (scaffold Fase 1). Quando true, as chamadas
+// de fronteira enviam ?inaplic=1; o backend lê mas ainda é NO-OP (sem mudar cálculo).
+const FronteiraInaplicContext = createContext<boolean>(false)
+const useFronteiraInaplic = () => useContext(FronteiraInaplicContext)
+// Sufixo de query string a anexar nas chamadas de fronteira conforme o flag.
+const inaplicParam = (on: boolean) => (on ? '1' : '')
+
 // ---------------------------------------------------------------------------
 // Export buttons (shared by tabs)
 // ---------------------------------------------------------------------------
@@ -598,13 +606,15 @@ function ResumoTab({ token }: { token: string | null }) {
   const [monthInput, setMonthInput] = useState('')
   const periodo = monthToPeriodo(monthInput)
   const uf = useFronteiraUF()
+  const inaplic = useFronteiraInaplic()
 
   const { data, isLoading, isError } = useQuery<FronteiraResumoResponse>({
-    queryKey: ['icms-fronteira/resumo', periodo, uf],
+    queryKey: ['icms-fronteira/resumo', periodo, uf, inaplic],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (periodo) params.set('periodo', periodo)
       if (uf) params.set('uf', uf)
+      if (inaplic) params.set('inaplic', inaplicParam(inaplic))
       const qs = params.toString()
       const res = await fetch(`/api/icms-fronteira/resumo${qs ? `?${qs}` : ''}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -1179,9 +1189,10 @@ function NotasTabBlocos({
   const [dataIni, setDataIni] = useState('')
   const [dataFim, setDataFim] = useState('')
   const uf = useFronteiraUF()
+  const inaplic = useFronteiraInaplic()
   const filtros: FronteiraFiltros = { forn, num_nota: numNota, data_ini: dataIni, data_fim: dataFim, uf }
   // chave de cache estável dos filtros (só dispara refetch quando mudam)
-  const filtrosKey = `${uf}|${forn}|${numNota}|${dataIni}|${dataFim}`
+  const filtrosKey = `${uf}|${forn}|${numNota}|${dataIni}|${dataFim}|inaplic=${inaplic}`
 
   const [openA, setOpenA] = useState(true)
   const [openB, setOpenB] = useState(true)
@@ -1197,6 +1208,7 @@ function NotasTabBlocos({
       const params = new URLSearchParams()
       if (periodo) params.set('periodo', periodo)
       aplicaFiltros(params, filtros)
+      if (inaplic) params.set('inaplic', '1')
       const qs = params.toString()
       const url = qs ? `${endpointSped}?${qs}` : endpointSped
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -5225,6 +5237,15 @@ export default function IcmsFronteira() {
     if (!uf && ufs.length > 0) setUf(ufs[0])
   }, [ufs, uf])
 
+  // Flag do simulador de inaplicabilidade (scaffold Fase 1). Persistido por navegador.
+  // Default OFF (SEM) — risco zero: ligado ainda não muda o cálculo (backend NO-OP).
+  const [inaplic, setInaplic] = useState<boolean>(() => {
+    try { return localStorage.getItem('fronteira_inaplic') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('fronteira_inaplic', inaplic ? '1' : '0') } catch { /* ignore */ }
+  }, [inaplic])
+
   const pathToTab: Record<string, string> = {
     '/icms-fronteira':              'resumo',
     '/icms-fronteira/antecipacao':  'antecipacao',
@@ -5306,6 +5327,7 @@ export default function IcmsFronteira() {
           esquerda e compacto, destaque vermelho); 2ª linha = abas. Todo o módulo
           opera sobre a UF selecionada. */}
       <FronteiraUFContext.Provider value={uf}>
+      <FronteiraInaplicContext.Provider value={inaplic}>
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-bold uppercase tracking-wide text-red-700">
@@ -5323,6 +5345,32 @@ export default function IcmsFronteira() {
               ))}
             </SelectContent>
           </Select>
+
+          {/* Flag do simulador: SEM ⇄ COM inaplicabilidade (scaffold — ainda NO-OP) */}
+          <div className="flex items-center gap-2 rounded-md border px-3 py-1.5">
+            <Switch id="flag-inaplic" checked={inaplic} onCheckedChange={setInaplic} />
+            <Label htmlFor="flag-inaplic" className="text-xs cursor-pointer whitespace-nowrap">
+              {inaplic
+                ? <span className="font-semibold text-amber-700">COM inaplicabilidade</span>
+                : <span className="text-muted-foreground">SEM inaplicabilidade</span>}
+            </Label>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs text-left" side="bottom">
+                  <p className="text-xs">
+                    Simulador. <strong>SEM</strong> = cálculo atual (padrão).
+                    <strong> COM</strong> aplicará, numa fase futura, as regras de
+                    inaplicabilidade <em>aprovadas</em> (Administrativo → Inaplicabilidade).
+                    Hoje o flag está encanado mas <strong>ainda não altera o cálculo</strong>.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
           <span className="text-xs text-muted-foreground">
             {ufs.length > 1
               ? <>* obrigatório — apurando as filiais de <strong>{uf}</strong>; troque para ver as demais.</>
@@ -5620,6 +5668,7 @@ export default function IcmsFronteira() {
         </TabsContent>
       </Tabs>
       </div>
+      </FronteiraInaplicContext.Provider>
       </FronteiraUFContext.Provider>
     </div>
   )

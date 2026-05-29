@@ -61,7 +61,7 @@ de já termos (ou não) o dado no sistema:
 | **NCM** (listas AP01–06, têxteis, abate…) | 0200.cod_ncm | ✅ via NCM já usado na fronteira (XML/0200) | **Alta** |
 | **CNAE do destinatário** (alimentação, industrial) | reg 0000.CNAE | ⚠️ no **cadastro de empresas** (`companies.cnae`), não do 0000 | **Média** (usar cadastro) |
 | **Raiz CNPJ remetente** (transferência mesmo titular) | 0150.CNPJ[0:8] vs 0000.CNPJ[0:8] | ⚠️ `participants.cnpj` existe; comparar com CNPJ da empresa | **Média** |
-| **CREDENCIAMENTO** (Prodepe, Proind, Mais Atacadistas…) | EXTERNO — não está no SPED | ❌ não existe | **Baixa** — exige cadastro manual de CNPJs credenciados |
+| **CREDENCIAMENTO** (Prodepe, Proind, Mais Atacadistas…) | EXTERNO — não está no SPED | ⚠️ **PARCIAL** — PRODEPE e Central de Distribuição **já cadastrados** em `prodepe_enquadramentos` (cnpj, num_ato, enquadramento, vigência) + `prodepe_ncms` (NCMs por ato) | **Média p/ PRODEPE/Central Distrib.** (JOIN no cadastro existente); **Baixa** p/ demais sistemáticas (Proind, Mais Atacadistas… exigem cadastro próprio) |
 
 **Casos que exigem cruzamento histórico (mais complexos):**
 - "Industrial **fabrica** o mesmo NCM" (ST-BA01/ST-CE01) → cruzar NCM de entrada com **saídas** do contribuinte.
@@ -153,7 +153,7 @@ o FLUXO_DECISAO de cada UF (precedência importa — a 1ª regra que dispara ven
 | **1 — Cadastro + Aprovação** | Schema novo + importador dos 3 XLSX (PE difere de BA/CE) + sub-aba de aprovação. **Não toca no cálculo.** | Baixo |
 | **2 — Motor: regras SPED-deriváveis** | Aplicar no cálculo as regras de **CST, CFOP, CEST, VL_ICMS_ST, NCM** (cobre ST, isenção, natureza da operação, NCM-específico — a maioria das regras de PE e as ST de BA/CE). | Médio (mexe na MV/`fronteiraBaseQuery`) |
 | **3 — Dados adicionais** | CNAE (cadastro), raiz CNPJ (transferência), cruzamento entrada×saída (insumo industrial, exclusividade por produto). | Médio-alto |
-| **4 — Credenciamentos** | Cadastro manual de CNPJs credenciados + Grupo 7 (Prodepe, Proind, Mais Atacadistas…) e exceções. | Alto (regra de negócio + dado externo) |
+| **4 — Credenciamentos** | Grupo 7. **PRODEPE e Central de Distribuição já têm cadastro** (`prodepe_enquadramentos`/`prodepe_ncms`) → essas regras (CR04, CR01, e as "só p/ NCMs da sistemática" CR02/03/09) podem ser aplicadas por JOIN, possivelmente já na Fase 2/3. Só as demais sistemáticas (Proind, Mais Atacadistas…) exigem cadastro novo. | Médio (era Alto) |
 
 A Fase 1 entrega exatamente o que o usuário descreveu ("trazer para aprovação na tela");
 as Fases 2–4 são o "carregar no motor", incrementais por viabilidade de dados.
@@ -166,7 +166,10 @@ as Fases 2–4 são o "carregar no motor", incrementais por viabilidade de dados
 - [ ] `0200` persiste **cod_ncm** e **cest** por item, com join `cod_item`?
 - [ ] **CNAE** do contribuinte: usar `companies.cnae` (cadastro) — confiável e atualizado?
 - [ ] **UF do remetente**: derivar de `participants.cod_mun` (2 primeiros díg. = UF) ou de `nfe_entradas`?
-- [ ] **Credenciamentos**: não há fonte automática — o cliente vai informar manualmente?
+- [x] **Credenciamentos**: PRODEPE e Central de Distribuição **já cadastrados** em
+      `prodepe_enquadramentos` (ProdepeTab) — ex.: CNPJ 01.612.046/0001-24, ato 57972/2024,
+      "Central de Distribuição", vig. 2024-12-31→2032-12-31. Fonte interna para CR04/CR01/etc.
+      via JOIN. As demais sistemáticas (Proind, Mais Atacadistas…) ainda exigiriam cadastro.
 - [ ] **Cruzamento entrada×saída** (insumo industrial): custo de query/MV — viável no volume atual?
 - [ ] Regras `CALCULAR_OUTRO` de PE referenciam **decretos específicos** — o motor já tem esses regimes ou só sinaliza?
 
