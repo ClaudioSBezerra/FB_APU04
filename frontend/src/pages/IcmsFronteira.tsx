@@ -5255,7 +5255,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/fretes':       'fretes',
     '/icms-fronteira/motor-fiscal': 'motor-fiscal',
     '/icms-fronteira/divergencias': 'divergencias',
-    '/icms-fronteira/comparativo': 'comparativo',
+    // '/icms-fronteira/comparativo': 'comparativo', // DISABLED
     '/icms-fronteira/reconciliacao': 'reconciliacao',
     '/icms-fronteira/legislacao':    'legislacao',
     '/icms-fronteira/regras':       'administrativo', // legacy → agora vive em Administrativo
@@ -5274,7 +5274,7 @@ export default function IcmsFronteira() {
     fretes:        '/icms-fronteira/fretes',
     'motor-fiscal':'/icms-fronteira/motor-fiscal',
     divergencias:  '/icms-fronteira/divergencias',
-    comparativo:   '/icms-fronteira/comparativo',
+    // comparativo:   '/icms-fronteira/comparativo', // DISABLED
     reconciliacao: '/icms-fronteira/reconciliacao',
     legislacao:    '/icms-fronteira/legislacao',
     extrato:       '/icms-fronteira/extrato',
@@ -5368,7 +5368,8 @@ export default function IcmsFronteira() {
           <TabsTrigger value="fretes" className="text-sm">Fretes</TabsTrigger>
           <TabsTrigger value="motor-fiscal" className="text-sm">Motor Fiscal</TabsTrigger>
           <TabsTrigger value="divergencias" className="text-sm">Divergências</TabsTrigger>
-          <TabsTrigger value="comparativo" className="text-sm">Comparativo</TabsTrigger>
+          {/* COMPARATIVO TAB DISABLED - Has runtime error */}
+          {/* <TabsTrigger value="comparativo" className="text-sm">Comparativo</TabsTrigger> */}
           <TabsTrigger value="reconciliacao" className="text-sm">Reconciliação</TabsTrigger>
           <TabsTrigger value="legislacao" className="text-sm">Legislação</TabsTrigger>
           <TabsTrigger value="apuracao" className="text-sm">Apuração Mensal</TabsTrigger>
@@ -5545,9 +5546,10 @@ export default function IcmsFronteira() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="comparativo" className="mt-6">
+        {/* COMPARATIVO TAB DISABLED - Has runtime error */}
+        {/* <TabsContent value="comparativo" className="mt-6">
           <ComparativoTab token={token} />
-        </TabsContent>
+        </TabsContent> */}
 
         <TabsContent value="reconciliacao" className="mt-6">
           <ReconciliacaoTab token={token} />
