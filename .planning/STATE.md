@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v5.00
 milestone_name: milestone
-status: verifying
-last_updated: "2026-05-27T20:03:46.251Z"
-last_activity: 2026-05-23
+status: complete
+last_updated: "2026-05-29T12:00:00.000Z"
+last_activity: 2026-05-29
 progress:
   total_phases: 9
-  completed_phases: 4
+  completed_phases: 9
   total_plans: 11
   completed_plans: 11
-  percent: 44
+  percent: 100
 ---
 
 # State: FB_APU04
@@ -21,14 +21,14 @@ See: `.planning/PROJECT.md` (updated 2026-05-22)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Phase 09 — modulos-2x-analytics-dimensional (COMPLETE)
+**Current focus:** Milestone v5.00 COMPLETO — fases 6–9 fechadas
 
 ## Current Position
 
-Phase: 09 (modulos-2x-analytics-dimensional) — EXECUTING
+Phase: 09 (modulos-2x-analytics-dimensional) — VERIFIED
 Plan: 2 of 2
-Status: Phase complete — ready for verification
-Last activity: 2026-05-23
+Status: Milestone v5.00 completo. Fases 6–9 marcadas como verificadas em 2026-05-29 (fechamento administrativo, sem UAT formal — trabalho migrou para ICMS Fronteira, fora da estrutura GSD).
+Last activity: 2026-05-29
 
 ## Decisions Made
 
@@ -64,6 +64,7 @@ Last activity: 2026-05-23
 
 ## Recent History
 
+- 2026-05-29: Milestone v5.00 FECHADO — fases 6–9 marcadas como verificadas (fechamento administrativo, sem UAT formal). Decisão do usuário; trabalho ativo migrou para o módulo ICMS Fronteira (rastreado fora da estrutura de fases GSD).
 - 2026-05-23: Phase 09 Plan 02 executado — 4 páginas frontend React (CFOP/NCM/UF-Destino/B2B-B2C); mapa coroplético react-simple-maps; 4 tabs habilitadas; build produção OK
 - 2026-05-23: Phase 09 Plan 01 executado — 4 handlers JSON + 2 CSV Módulo 2.x (CFOP/NCM/UF-Destino/B2B-B2C); 6 rotas registradas em main.go; guard tests PASS
 - 2026-05-22: Milestone v5.00 roadmap criado — Phases 6 (infra), 7 (Módulos 1.x), 8 (Módulos 2.x); REQUIREMENTS.md atualizado com RFMA/RFMB/RFMC
@@ -85,4 +86,4 @@ Last activity: 2026-05-23
 - **Commit docs:** Yes
 
 ---
-*Last updated: 2026-05-23 — Phase 09 Plan 02 complete — Frontend Módulos 2.x (Phase 09 COMPLETE)*
+*Last updated: 2026-05-29 — Milestone v5.00 fechado (fases 6–9 verificadas administrativamente, sem UAT formal)*

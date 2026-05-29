@@ -240,10 +240,14 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Estabilização Adicional | 4/4 | Complete | 2026-05-16 |
 | 4. Conciliação Bridge vs XML | 2/2 | Complete | 2026-05-16 |
 | 5. Observabilidade e Alertas | 2/2 | Complete | 2026-05-17 |
-| 6. Infraestrutura Reforma Tributária | 4/4 | Complete   | 2026-05-22 |
-| 7. Módulos 1.x — Exposição Tributária Direta | 2/2 | Complete   | 2026-05-23 |
-| 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Complete   | 2026-05-23 |
-| 9. Módulos 2.x — Analytics Dimensional | 2/2 | Complete   | 2026-05-23 |
+| 6. Infraestrutura Reforma Tributária | 4/4 | Verified | 2026-05-22 |
+| 7. Módulos 1.x — Exposição Tributária Direta | 2/2 | Verified | 2026-05-23 |
+| 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Verified | 2026-05-23 |
+| 9. Módulos 2.x — Analytics Dimensional | 2/2 | Verified | 2026-05-23 |
+
+> **Milestone v5.00 fechado em 2026-05-29.** Fases 6–9 marcadas como *Verified* por
+> fechamento administrativo (sem UAT formal), a pedido do usuário — o trabalho ativo
+> migrou para o módulo ICMS Fronteira, rastreado fora da estrutura de fases GSD.
 
 ---
 *Roadmap created: 2026-05-08*
