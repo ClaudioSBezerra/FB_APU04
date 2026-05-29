@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,6 +119,35 @@ func TestParseInaplicDate(t *testing.T) {
 	}
 	if parseInaplicDate("2025-01-14") == nil {
 		t.Error("ISO 2025-01-14 deveria parsear")
+	}
+}
+
+func TestInaplicCond(t *testing.T) {
+	if c := inaplicCond(nil, false); c != "" {
+		t.Errorf("sem regras deveria ser vazio, veio %q", c)
+	}
+	if c := inaplicCond(nil, true); c != "(classified.v_st > 0)" {
+		t.Errorf("só VL_ICMS_ST: %q", c)
+	}
+	c := inaplicCond([]string{"10", "30"}, false)
+	if !strings.Contains(c, "ic.cst_icms IN ('10','30')") || !strings.Contains(c, "reg_c170") {
+		t.Errorf("CST cond errada: %q", c)
+	}
+	if strings.Contains(c, "v_st > 0") {
+		t.Errorf("não deveria ter VL_ICMS_ST: %q", c)
+	}
+	both := inaplicCond([]string{"40"}, true)
+	if !strings.Contains(both, " OR ") || !strings.Contains(both, "v_st > 0") || !strings.Contains(both, "'40'") {
+		t.Errorf("combinada errada: %q", both)
+	}
+}
+
+func TestIcmsDevidoExpr(t *testing.T) {
+	if e := icmsDevidoExpr(""); e != "icms_devido_est" {
+		t.Errorf("vazio → %q", e)
+	}
+	if e := icmsDevidoExpr("X > 0"); e != "CASE WHEN X > 0 THEN 0 ELSE icms_devido_est END" {
+		t.Errorf("com cond → %q", e)
 	}
 }
 

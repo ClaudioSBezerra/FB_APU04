@@ -469,10 +469,15 @@ func IcmsFronteiraResumoHandler(db *sql.DB) http.HandlerFunc {
 		periodo := r.URL.Query().Get("periodo")
 		filtroSQL, filtroArgs := fronteiraFiltros(r, 3)
 
-		// Flag do simulador (scaffold Fase 1 — NO-OP). Encanado para a Fase 2.
+		// Fase 2 (fatia segura): aplica regras aprovadas+auto de inaplicabilidade
+		// quando o flag do simulador está ON. OFF ou sem regras → SQL idêntica.
+		var inaplicSQL string
 		if fronteiraInaplicAtivo(r) {
-			log.Printf("[fronteira] flag inaplicabilidade ATIVO (scaffold no-op) company=%s", companyID)
+			ufParam := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+			cstVals, aplicaVlSt := loadInaplicSafe(db, ufParam)
+			inaplicSQL = inaplicCond(cstVals, aplicaVlSt)
 		}
+		icmsExpr := icmsDevidoExpr(inaplicSQL)
 
 		query := fronteiraBaseQuery + `
 SELECT
@@ -481,7 +486,7 @@ SELECT
     SUM(v_prod)         AS v_prod_total,
     SUM(v_ipi)          AS v_ipi_total,
     SUM(v_st)           AS v_st_retido,
-    SUM(icms_devido_est) AS icms_devido_est
+    SUM(` + icmsExpr + `) AS icms_devido_est
 FROM classified
 WHERE regime IS NOT NULL` + filtroSQL + `
 GROUP BY regime
@@ -542,10 +547,14 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 	periodo := r.URL.Query().Get("periodo")
 	filtroSQL, filtroArgs := fronteiraFiltros(r, 4)
 
-	// Flag do simulador (scaffold Fase 1 — NO-OP). Encanado para a Fase 2.
+	// Fase 2 (fatia segura): aplica inaplicabilidade aprovada quando o flag está ON.
+	var inaplicSQL string
 	if fronteiraInaplicAtivo(r) {
-		log.Printf("[fronteira] flag inaplicabilidade ATIVO (scaffold no-op) regime=%s company=%s", regime, companyID)
+		ufParam := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+		cstVals, aplicaVlSt := loadInaplicSafe(db, ufParam)
+		inaplicSQL = inaplicCond(cstVals, aplicaVlSt)
 	}
+	icmsExpr := icmsDevidoExpr(inaplicSQL)
 
 	// G14: window functions retornam totais do conjunto completo (sem LIMIT),
 	// resolvendo o bug onde totais exibidos só refletiam as primeiras 500 notas.
@@ -554,9 +563,9 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
     cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st,
-    aliq_inter, aliq_interna, icms_devido_est, regime, bloco,
+    aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, regime, bloco,
     COUNT(*)            OVER () AS total_count,
-    SUM(icms_devido_est) OVER () AS total_full
+    SUM(` + icmsExpr + `) OVER () AS total_full
 FROM classified
 WHERE regime = $3` + filtroSQL + `
 ORDER BY bloco, data_emissao DESC, chave_nfe

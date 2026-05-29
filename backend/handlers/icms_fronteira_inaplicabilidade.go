@@ -6,11 +6,99 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/xuri/excelize/v2"
 )
+
+// ---------------------------------------------------------------------------
+// Fase 2 (fatia segura) — aplicação no cálculo, atrás do flag do simulador.
+// Só as regras APROVADAS + auto-aplicáveis com resultado "NÃO CALCULAR" e
+// gatilho CST (ST 10/30/60/70; isenção 40/41/50/51) ou VL_ICMS_ST>0.
+// ---------------------------------------------------------------------------
+
+var reCST = regexp.MustCompile(`\d{2,3}`)
+
+var cstSafeSet = map[string]bool{
+	"10": true, "30": true, "60": true, "70": true, // ST
+	"40": true, "41": true, "50": true, "51": true, // isenção/não incidência/suspensão/diferimento
+}
+
+// loadInaplicSafe lê do banco as regras aprovadas+auto da UF e extrai os CSTs
+// "seguros" e se há regra de VL_ICMS_ST>0. Sem regras → (nil,false) = sem efeito.
+func loadInaplicSafe(db *sql.DB, uf string) (cstVals []string, aplicaVlSt bool) {
+	if db == nil || uf == "" {
+		return nil, false
+	}
+	rows, err := db.Query(`
+		SELECT COALESCE(tipo_verif,''), COALESCE(valores_gatilho,''), COALESCE(resultado,'')
+		FROM icms_fronteira_inaplic_regras
+		WHERE uf_estado = $1 AND status_aprovacao = 'aprovada' AND auto_aplicavel = true`, uf)
+	if err != nil {
+		return nil, false
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	for rows.Next() {
+		var tipo, gat, res string
+		if rows.Scan(&tipo, &gat, &res) != nil {
+			continue
+		}
+		rl := strings.ToLower(res)
+		// apenas "não calcular"/inaplicável — pula CALCULAR_OUTRO (regime específico).
+		if !(strings.Contains(rl, "não calcular") || strings.Contains(rl, "nao calcular") || strings.Contains(rl, "inaplic")) {
+			continue
+		}
+		tu := strings.ToUpper(tipo)
+		if strings.Contains(tu, "VL_ICMS_ST") {
+			aplicaVlSt = true
+		}
+		if strings.Contains(tu, "CST") {
+			for _, tok := range reCST.FindAllString(gat, -1) {
+				if cstSafeSet[tok] && !seen[tok] {
+					seen[tok] = true
+					cstVals = append(cstVals, tok)
+				}
+			}
+		}
+	}
+	return cstVals, aplicaVlSt
+}
+
+// inaplicCond monta a condição booleana SQL de inaplicabilidade referenciando o
+// CTE `classified`. Retorna "" quando não há nada a aplicar (→ SQL inalterada).
+// Os CSTs vêm validados (só dígitos do conjunto seguro) — seguro para inline.
+func inaplicCond(cstVals []string, aplicaVlSt bool) string {
+	var ors []string
+	if aplicaVlSt {
+		ors = append(ors, "classified.v_st > 0")
+	}
+	if len(cstVals) > 0 {
+		quoted := make([]string, len(cstVals))
+		for i, c := range cstVals {
+			quoted[i] = "'" + c + "'"
+		}
+		ors = append(ors, "EXISTS (SELECT 1 FROM reg_c170 ic "+
+			"JOIN reg_c100 ic100 ON ic100.id = ic.c100_id "+
+			"WHERE ic100.chv_nfe = classified.chave_nfe AND ic.cfop = classified.cfop "+
+			"AND ic.cst_icms IN ("+strings.Join(quoted, ",")+"))")
+	}
+	if len(ors) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(ors, " OR ") + ")"
+}
+
+// icmsDevidoExpr devolve a expressão SQL do ICMS devido, aplicando a
+// inaplicabilidade (zera) quando ativa. cond=="" → expressão original.
+func icmsDevidoExpr(cond string) string {
+	if cond == "" {
+		return "icms_devido_est"
+	}
+	return "CASE WHEN " + cond + " THEN 0 ELSE icms_devido_est END"
+}
 
 // InaplicRegra espelha uma linha de icms_fronteira_inaplic_regras para JSON.
 type InaplicRegra struct {
