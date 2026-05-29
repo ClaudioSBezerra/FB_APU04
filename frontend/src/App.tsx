@@ -220,6 +220,7 @@ function AppLayout() {
               <Route path="/icms-fronteira/fretes"             element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/motor-fiscal"       element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/divergencias"       element={<IcmsFronteira />} />
+              <Route path="/icms-fronteira/comparativo"        element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/reconciliacao"      element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/legislacao"         element={<IcmsFronteira />} />
               <Route path="/icms-fronteira/regras"             element={<IcmsFronteira />} />

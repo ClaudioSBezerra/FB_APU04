@@ -376,6 +376,7 @@ interface DiffRow {
   v_prod_p2: number
   icms_devido_p2: number
   diff_icms: number
+  causa: string
 }
 
 interface ComparativoResponse {
@@ -2601,47 +2602,22 @@ function ComparativoTab({ token }: { token: string | null }) {
   function handleExportDiff() {
     if (!result) return
 
-    const all = [
-      ...result.bloco_a.map(r => ({...r, bloco: 'A'})),
-      ...result.bloco_b.map(r => ({...r, bloco: 'B'})),
-      ...result.bloco_c.map(r => ({...r, bloco: 'C'})),
+    const header = [
+      'Status', 'NF', 'Fornecedor', 'CFOP',
+      'ICMS Planilha 1', 'ICMS Planilha 2', 'Diferença', 'Causa provável'
     ]
-
+    const toRows = (rows: DiffRow[]) => [
+      header,
+      ...rows.map(row => [
+        statusLabel(row.status), row.numero_nfe, row.fornecedor, row.cfop,
+        row.icms_devido_p1, row.icms_devido_p2, row.diff_icms, row.causa,
+      ]),
+    ]
     const sheets: Record<string, any[][]> = {
-      'Bloco A': [[
-        'Status', 'NF', 'Fornecedor', 'CFOP',
-        'ICMS Planilha 1', 'ICMS Planilha 2', 'Diferença'
-      ]],
-      'Bloco B': [[
-        'Status', 'NF', 'Fornecedor', 'CFOP',
-        'ICMS Planilha 1', 'ICMS Planilha 2', 'Diferença'
-      ]],
-      'Bloco C': [[
-        'Status', 'NF', 'Fornecedor', 'CFOP',
-        'ICMS Planilha 1', 'ICMS Planilha 2', 'Diferença'
-      ]],
+      'Bloco A': toRows(result.bloco_a),
+      'Bloco B': toRows(result.bloco_b),
+      'Bloco C': toRows(result.bloco_c),
     }
-
-    result.bloco_a.forEach(row => {
-      sheets['Bloco A'].push([
-        statusLabel(row.status), row.numero_nfe, row.fornecedor, row.cfop,
-        row.icms_devido_p1, row.icms_devido_p2, row.diff_icms
-      ])
-    })
-
-    result.bloco_b.forEach(row => {
-      sheets['Bloco B'].push([
-        statusLabel(row.status), row.numero_nfe, row.fornecedor, row.cfop,
-        row.icms_devido_p1, row.icms_devido_p2, row.diff_icms
-      ])
-    })
-
-    result.bloco_c.forEach(row => {
-      sheets['Bloco C'].push([
-        statusLabel(row.status), row.numero_nfe, row.fornecedor, row.cfop,
-        row.icms_devido_p1, row.icms_devido_p2, row.diff_icms
-      ])
-    })
 
     const wb = XLSX.utils.book_new()
     Object.entries(sheets).forEach(([name, data]) => {
@@ -2818,6 +2794,7 @@ function ComparativoTab({ token }: { token: string | null }) {
                               <TableHead className="text-xs text-right">ICMS P1</TableHead>
                               <TableHead className="text-xs text-right">ICMS P2</TableHead>
                               <TableHead className="text-xs text-right">Diferença</TableHead>
+                              <TableHead className="text-xs">Causa provável</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -2844,6 +2821,9 @@ function ComparativoTab({ token }: { token: string | null }) {
                                   'text-green-600': row.diff_icms > 0,
                                 })}>
                                   {fmtBRL(row.diff_icms)}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground max-w-[260px] whitespace-normal leading-snug">
+                                  {row.causa}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -5255,9 +5235,9 @@ export default function IcmsFronteira() {
     '/icms-fronteira/fretes':       'fretes',
     '/icms-fronteira/motor-fiscal': 'motor-fiscal',
     '/icms-fronteira/divergencias': 'divergencias',
-    // '/icms-fronteira/comparativo': 'comparativo', // DISABLED
     '/icms-fronteira/reconciliacao': 'reconciliacao',
-    '/icms-fronteira/legislacao':    'legislacao',
+    '/icms-fronteira/comparativo':  'reconciliacao', // legacy → sub-aba de Reconciliação
+    '/icms-fronteira/legislacao':    'administrativo', // legacy → sub-aba de Administrativo
     '/icms-fronteira/regras':       'administrativo', // legacy → agora vive em Administrativo
     '/icms-fronteira/extrato':      'extrato',
     '/icms-fronteira/contestacoes': 'contestacoes',
@@ -5274,9 +5254,7 @@ export default function IcmsFronteira() {
     fretes:        '/icms-fronteira/fretes',
     'motor-fiscal':'/icms-fronteira/motor-fiscal',
     divergencias:  '/icms-fronteira/divergencias',
-    // comparativo:   '/icms-fronteira/comparativo', // DISABLED
     reconciliacao: '/icms-fronteira/reconciliacao',
-    legislacao:    '/icms-fronteira/legislacao',
     extrato:       '/icms-fronteira/extrato',
     contestacoes:  '/icms-fronteira/contestacoes',
     apuracao:      '/icms-fronteira/apuracao',
@@ -5368,10 +5346,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="fretes" className="text-sm">Fretes</TabsTrigger>
           <TabsTrigger value="motor-fiscal" className="text-sm">Motor Fiscal</TabsTrigger>
           <TabsTrigger value="divergencias" className="text-sm">Divergências</TabsTrigger>
-          {/* COMPARATIVO TAB DISABLED - Has runtime error */}
-          {/* <TabsTrigger value="comparativo" className="text-sm">Comparativo</TabsTrigger> */}
           <TabsTrigger value="reconciliacao" className="text-sm">Reconciliação</TabsTrigger>
-          <TabsTrigger value="legislacao" className="text-sm">Legislação</TabsTrigger>
           <TabsTrigger value="apuracao" className="text-sm">Apuração Mensal</TabsTrigger>
           <TabsTrigger value="extrato" className="text-sm">Extrato SEFAZ</TabsTrigger>
           <TabsTrigger value="contestacoes" className="text-sm">Contestações</TabsTrigger>
@@ -5546,17 +5521,21 @@ export default function IcmsFronteira() {
           </Card>
         </TabsContent>
 
-        {/* COMPARATIVO TAB DISABLED - Has runtime error */}
-        {/* <TabsContent value="comparativo" className="mt-6">
-          <ComparativoTab token={token} />
-        </TabsContent> */}
-
         <TabsContent value="reconciliacao" className="mt-6">
-          <ReconciliacaoTab token={token} />
-        </TabsContent>
-
-        <TabsContent value="legislacao" className="mt-6">
-          <LegislacaoTab token={token} />
+          <Tabs defaultValue="recon" className="w-full">
+            <TabsList className="mb-2">
+              <TabsTrigger value="recon" className="text-sm">Reconciliação SPED × XML</TabsTrigger>
+              <TabsTrigger value="comparativo" className="text-sm">Comparativo de Planilhas</TabsTrigger>
+            </TabsList>
+            <TabsContent value="recon">
+              <ReconciliacaoTab token={token} />
+            </TabsContent>
+            <TabsContent value="comparativo">
+              <TabErrorBoundary label="Comparativo">
+                <ComparativoTab token={token} />
+              </TabErrorBoundary>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent value="apuracao" className="mt-6">
@@ -5613,20 +5592,31 @@ export default function IcmsFronteira() {
         </TabsContent>
 
         <TabsContent value="administrativo" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">
-                Administrativo
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground mb-4">
-                Filiais importadas, parâmetros por UF (benefícios) e edição dos dados da empresa em foco.
-                Substitui a antiga aba "Filiais" e "UFs" da Gestão de Ambiente.
-              </p>
-              <AdministrativoTab uf={uf} />
-            </CardContent>
-          </Card>
+          <Tabs defaultValue="admin" className="w-full">
+            <TabsList className="mb-2">
+              <TabsTrigger value="admin" className="text-sm">Administrativo</TabsTrigger>
+              <TabsTrigger value="legislacao" className="text-sm">Legislação</TabsTrigger>
+            </TabsList>
+            <TabsContent value="admin">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold">
+                    Administrativo
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Filiais importadas, parâmetros por UF (benefícios) e edição dos dados da empresa em foco.
+                    Substitui a antiga aba "Filiais" e "UFs" da Gestão de Ambiente.
+                  </p>
+                  <AdministrativoTab uf={uf} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="legislacao">
+              <LegislacaoTab token={token} />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
       </div>
