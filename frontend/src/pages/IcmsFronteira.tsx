@@ -602,6 +602,72 @@ function RecalcularButton() {
 // ---------------------------------------------------------------------------
 // Resumo tab
 // ---------------------------------------------------------------------------
+// Renderizador markdown mínimo para a narrativa da IA (## títulos, **negrito**).
+function renderMdResumo(text: string) {
+  return text.split('\n').map((line, i) => {
+    if (line.startsWith('## ')) {
+      return <h3 key={i} className="text-sm font-semibold mt-3 mb-1 text-sky-800">{line.slice(3)}</h3>
+    }
+    const parts = line.split(/(\*\*[^*]+\*\*)/g).map((p, j) =>
+      p.startsWith('**') && p.endsWith('**') ? <strong key={j}>{p.slice(2, -2)}</strong> : p
+    )
+    const bullet = line.trimStart().startsWith('- ') || line.trimStart().startsWith('• ')
+    return <p key={i} className={`${bullet ? 'pl-3' : ''} ${i > 0 ? 'mt-1' : ''}`}>{parts}</p>
+  })
+}
+
+function ResumoExecutivoIA({ token, periodo, uf }: { token: string | null; periodo: string; uf: string }) {
+  const [loading, setLoading] = useState(false)
+  const [narrativa, setNarrativa] = useState<string | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function gerar() {
+    setLoading(true); setErro(null)
+    try {
+      const params = new URLSearchParams()
+      if (periodo) params.set('periodo', periodo)
+      if (uf) params.set('uf', uf)
+      const res = await fetch(`/api/ai/resumo-executivo?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Falha ao gerar resumo')
+      setNarrativa(d.narrativa || '(sem conteúdo)')
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card className="border-sky-200">
+      <CardHeader>
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-sky-600" /> Resumo Executivo (IA)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" onClick={gerar} disabled={loading}>
+            {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            {loading ? 'Gerando análise...' : 'Gerar análise executiva'}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            UF <strong>{uf || '—'}</strong>{periodo ? ` · ${periodo}` : ' · todos os períodos'}
+          </span>
+        </div>
+        {erro && <Alert variant="destructive"><AlertDescription>{erro}</AlertDescription></Alert>}
+        {narrativa && (
+          <div className="rounded-md border bg-white p-4 text-sm leading-relaxed">
+            {renderMdResumo(narrativa)}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function ResumoTab({ token }: { token: string | null }) {
   const [monthInput, setMonthInput] = useState('')
   const periodo = monthToPeriodo(monthInput)
@@ -641,7 +707,12 @@ function ResumoTab({ token }: { token: string | null }) {
   }
 
   if (!data || data.rows.length === 0) {
-    return <EmptyState />
+    return (
+      <div className="space-y-4">
+        <EmptyState />
+        <ResumoExecutivoIA token={token} periodo={periodo} uf={uf} />
+      </div>
+    )
   }
 
   const regimeIcons: Record<string, React.ReactNode> = {
@@ -746,6 +817,8 @@ function ResumoTab({ token }: { token: string | null }) {
           </TableBody>
         </Table>
       </div>
+
+      <ResumoExecutivoIA token={token} periodo={periodo} uf={uf} />
     </div>
   )
 }
