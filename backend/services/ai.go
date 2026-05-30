@@ -161,7 +161,10 @@ func (c *AIClient) GenerateFastRaw(system, userPrompt, model string, maxTokens i
 	if system != "" {
 		messages = append([]chatMessage{{Role: "system", Content: system}}, messages...)
 	}
-	reqBody := chatRequest{Model: model, MaxTokens: maxTokens, Messages: messages}
+	// Desliga o "deep thinking" do GLM: sem isso o modelo gasta os tokens em
+	// reasoning_content e devolve content vazio (finish_reason=length) — o
+	// text-to-SQL não recebia SQL. Desligado: resposta direta e ~4x mais rápida.
+	reqBody := chatRequest{Model: model, MaxTokens: maxTokens, Messages: messages, Thinking: &thinkingCfg{Type: "disabled"}}
 
 	resp, err := c.doRequestRaw(reqBody)
 	if err != nil {
@@ -218,7 +221,9 @@ func (c *AIClient) GenerateFast(system, userPrompt, model string, maxTokens int)
 	if system != "" {
 		messages = append([]chatMessage{{Role: "system", Content: system}}, messages...)
 	}
-	reqBody := chatRequest{Model: model, MaxTokens: maxTokens, Messages: messages}
+	// Thinking desligado: resposta direta no content (sem gastar tokens em
+	// reasoning) e bem mais rápido — essencial no caminho síncrono (assistente).
+	reqBody := chatRequest{Model: model, MaxTokens: maxTokens, Messages: messages, Thinking: &thinkingCfg{Type: "disabled"}}
 
 	// Single attempt — no retries
 	resp, err := c.doRequest(reqBody)
