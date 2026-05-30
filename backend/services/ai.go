@@ -11,10 +11,11 @@ import (
 	"time"
 )
 
-// Z.AI GLM Models
+// Z.AI GLM Models — plano GLM Coding (endpoint /api/coding/paas/v4).
+// glm-4.5-air é rápido e estável (mesmo do FB_SMARTPICK); glm-4.5 como fallback.
 const (
-	ModelFlash         = "glm-4.7-flash" // Free tier - primary
-	ModelFlashFallback = "glm-4.5-flash" // Free tier - fallback for rate limits
+	ModelFlash         = "glm-4.5-air" // primário (plano Coding)
+	ModelFlashFallback = "glm-4.5"     // fallback em rate limit
 )
 
 // AIClient wraps communication with the Z.AI GLM API (OpenAI-compatible).
@@ -85,7 +86,7 @@ func NewAIClient() *AIClient {
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
-		baseURL: "https://api.z.ai/api/paas/v4/chat/completions",
+		baseURL: "https://api.z.ai/api/coding/paas/v4/chat/completions",
 	}
 }
 
