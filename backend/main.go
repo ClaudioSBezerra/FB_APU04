@@ -227,6 +227,26 @@ func onDBConnected() {
 	// Start XML Worker (processamento assíncrono de batches >50 XMLs)
 	worker.StartXMLWorker(database)
 
+	// Goroutine: aborta requests RFB travadas > 5h, a cada 5 minutos
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			_, err := database.Exec(`
+				UPDATE rfb_requests
+				SET status        = 'error',
+				    error_code    = 'TIMEOUT',
+				    error_message = 'Solicitação abortada automaticamente: sem resposta por mais de 5 horas',
+				    updated_at    = CURRENT_TIMESTAMP
+				WHERE status IN ('requested', 'webhook_received', 'downloading', 'reprocessing')
+				  AND updated_at < NOW() - INTERVAL '5 hours'
+			`)
+			if err != nil {
+				log.Printf("[RFB AutoAbort] Erro: %v", err)
+			}
+		}
+	}()
+
 	// Trigger async refresh of materialized views at startup
 	go func() {
 		time.Sleep(5 * time.Second)
@@ -1090,6 +1110,8 @@ func main() {
 		http.HandleFunc("/api/rfb/apuracao/reprocess", withAuth(handlers.ReprocessHandler, ""))
 		http.HandleFunc("/api/rfb/apuracao/clear-errors", withAuth(handlers.ClearErrorsHandler, ""))
 		http.HandleFunc("/api/rfb/apuracao/status", withAuth(handlers.StatusApuracaoHandler, ""))
+		http.HandleFunc("/api/rfb/apuracao/abort",       withAuth(handlers.AbortRequestHandler, ""))
+		http.HandleFunc("/api/rfb/apuracao/resolicitar", withAuth(handlers.RessolicitarHandler, ""))
 		http.HandleFunc("/api/rfb/apuracao/", withAuth(handlers.DetalheApuracaoHandler, ""))
 
 		// RFB Webhook (PUBLIC - no JWT auth, called by Receita Federal)
