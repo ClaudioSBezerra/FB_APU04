@@ -514,6 +514,12 @@ function aplicaFiltros(params: URLSearchParams, f?: FronteiraFiltros) {
 const FronteiraUFContext = createContext<string>('')
 const useFronteiraUF = () => useContext(FronteiraUFContext)
 
+// Período default (mês mais recente com SPED, formato "MM/YYYY"). Provido pela raiz
+// a partir de /api/icms-fronteira/periodos. As abas inicializam o seu seletor neste
+// valor — assim a tela carrega UM mês em vez de varrer todos os meses no mount.
+const FronteiraPeriodoContext = createContext<string>('')
+const useFronteiraPeriodoDefault = () => useContext(FronteiraPeriodoContext)
+
 // Flag do simulador de inaplicabilidade (scaffold Fase 1). Quando true, as chamadas
 // de fronteira enviam ?inaplic=1; o backend lê mas ainda é NO-OP (sem mudar cálculo).
 const FronteiraInaplicContext = createContext<boolean>(false)
@@ -669,7 +675,13 @@ function ResumoExecutivoIA({ token, periodo, uf }: { token: string | null; perio
 }
 
 function ResumoTab({ token }: { token: string | null }) {
+  const periodoDefault = useFronteiraPeriodoDefault()
   const [monthInput, setMonthInput] = useState('')
+  // Seed com o mês mais recente assim que a lista de períodos chega. Sem isso a
+  // query dispararia com período vazio → backend varre TODOS os meses (15s).
+  useEffect(() => {
+    if (!monthInput && periodoDefault) setMonthInput(periodoDefault)
+  }, [periodoDefault, monthInput])
   const periodo = monthToPeriodo(monthInput)
   const uf = useFronteiraUF()
   const inaplic = useFronteiraInaplic()
@@ -688,6 +700,7 @@ function ResumoTab({ token }: { token: string | null }) {
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       return res.json()
     },
+    enabled: !!periodo,
   })
 
   if (isLoading) {
@@ -827,7 +840,11 @@ function ResumoTab({ token }: { token: string | null }) {
 // Notes table (shared by Antecipação, ST, DIFAL tabs)
 // ---------------------------------------------------------------------------
 function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: string; token: string | null }) {
+  const periodoDefault = useFronteiraPeriodoDefault()
   const [monthInput, setMonthInput] = useState('')
+  useEffect(() => {
+    if (!monthInput && periodoDefault) setMonthInput(periodoDefault)
+  }, [periodoDefault, monthInput])
   const periodo = monthToPeriodo(monthInput)
 
   const { data, isLoading, isError } = useQuery<FronteiraNotasResponse>({
@@ -842,6 +859,7 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       return res.json()
     },
+    enabled: !!periodo,
   })
 
   return (
@@ -1253,7 +1271,11 @@ function NotasTabBlocos({
   token: string | null
   // ExportButtons rendered inside with access to periodo
 }) {
+  const periodoDefault = useFronteiraPeriodoDefault()
   const [monthInput, setMonthInput] = useState('')
+  useEffect(() => {
+    if (!monthInput && periodoDefault) setMonthInput(periodoDefault)
+  }, [periodoDefault, monthInput])
   const periodo = monthToPeriodo(monthInput)
 
   // Filtros opcionais (fornecedor / número da nota / intervalo de data).
@@ -5101,7 +5123,11 @@ function ApuracaoMensalTab({ token }: { token: string | null }) {
 // ---------------------------------------------------------------------------
 function IncentivoTab({ token }: { token: string | null }) {
   const uf = useFronteiraUF()
+  const periodoDefault = useFronteiraPeriodoDefault()
   const [monthInput, setMonthInput] = useState('')
+  useEffect(() => {
+    if (!monthInput && periodoDefault) setMonthInput(periodoDefault)
+  }, [periodoDefault, monthInput])
   const periodo = monthToPeriodo(monthInput)
 
   const { data, isLoading, isError } = useQuery<IncentivoResponse>({
@@ -5117,7 +5143,7 @@ function IncentivoTab({ token }: { token: string | null }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },
-    enabled: !!token,
+    enabled: !!token && !!periodo,
   })
 
   const programaLabel = (p: string) => {
@@ -5310,6 +5336,19 @@ export default function IcmsFronteira() {
     if (!uf && ufs.length > 0) setUf(ufs[0])
   }, [ufs, uf])
 
+  // Períodos com SPED (mais recente primeiro). O primeiro vira o período default
+  // das abas, evitando varredura de todos os meses no carregamento do módulo.
+  const { data: periodosData } = useQuery<{ periodos: string[] }>({
+    queryKey: ['icms-fronteira/periodos'],
+    queryFn: async () => {
+      const res = await fetch('/api/icms-fronteira/periodos', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: !!token,
+  })
+  const periodoDefault = periodosData?.periodos?.[0] ?? ''
+
   // Flag do simulador de inaplicabilidade (scaffold Fase 1). Persistido por navegador.
   // Default OFF (SEM) — risco zero: ligado ainda não muda o cálculo (backend NO-OP).
   const [inaplic, setInaplic] = useState<boolean>(() => {
@@ -5400,6 +5439,7 @@ export default function IcmsFronteira() {
           esquerda e compacto, destaque vermelho); 2ª linha = abas. Todo o módulo
           opera sobre a UF selecionada. */}
       <FronteiraUFContext.Provider value={uf}>
+      <FronteiraPeriodoContext.Provider value={periodoDefault}>
       <FronteiraInaplicContext.Provider value={inaplic}>
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -5742,6 +5782,7 @@ export default function IcmsFronteira() {
       </Tabs>
       </div>
       </FronteiraInaplicContext.Provider>
+      </FronteiraPeriodoContext.Provider>
       </FronteiraUFContext.Provider>
     </div>
   )

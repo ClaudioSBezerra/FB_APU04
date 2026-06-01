@@ -444,6 +444,59 @@ func IcmsFronteiraUFsHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// IcmsFronteiraPeriodosHandler — GET /api/icms-fronteira/periodos
+// Lista os períodos (mes_ano "MM/YYYY") com SPED importado para a empresa, do mais
+// recente para o mais antigo. Alimenta o seletor de período do módulo Fronteira e
+// permite que o frontend escolha um período default — evitando carregar TODOS os
+// meses de uma vez no mount (que dispara a varredura completa do classified CTE).
+func IcmsFronteiraPeriodosHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		// Período efetivo = mes_ano ("MM/YYYY") quando preenchido, senão derivado de
+		// dt_ini — mesmo fallback do classified CTE, para jobs antigos sem mes_ano.
+		// Ordena por ano/mês reais (não alfabético) para que "01/2026" não venha
+		// antes de "12/2025".
+		rows, err := db.Query(`
+			SELECT periodo FROM (
+			    SELECT COALESCE(NULLIF(mes_ano, ''), to_char(dt_ini, 'MM/YYYY')) AS periodo
+			    FROM import_jobs
+			    WHERE company_id = $1::uuid AND (mes_ano IS NOT NULL OR dt_ini IS NOT NULL)
+			) p
+			WHERE periodo IS NOT NULL AND periodo <> ''
+			GROUP BY periodo
+			ORDER BY SPLIT_PART(periodo, '/', 2) DESC, SPLIT_PART(periodo, '/', 1) DESC`, companyID)
+		if err != nil {
+			log.Printf("IcmsFronteiraPeriodos error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao listar períodos")
+			return
+		}
+		defer rows.Close()
+		periodos := []string{}
+		for rows.Next() {
+			var p string
+			if err := rows.Scan(&p); err == nil {
+				periodos = append(periodos, p)
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"periodos": periodos})
+	}
+}
+
 func IcmsFronteiraResumoHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
