@@ -18,14 +18,18 @@ WORKDIR /app/backend
 
 RUN apk add --no-cache git
 
-COPY backend/ ./
+# Deps primeiro (camada cacheável): go.mod/go.sum + vendor versionado.
+# Código vem depois → mudar fonte NÃO invalida a camada de deps.
+# -mod=vendor usa o vendor/ do repo → build offline, sem `go mod download`
+# pela rede a cada build (era a causa do build lento no Coolify).
 COPY backend/go.mod backend/go.sum ./
+COPY backend/vendor ./vendor
 
-RUN go mod download
+COPY backend/ ./
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -mod=vendor \
     -ldflags="-w -s" \
-    -a -installsuffix cgo \
     -o fb_apu04-api main.go
 
 # Production stage
