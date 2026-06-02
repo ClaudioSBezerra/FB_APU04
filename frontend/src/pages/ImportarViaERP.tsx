@@ -48,6 +48,16 @@ function fmtDateBR(iso: string): string {
   return d.length === 3 ? `${d[2]}/${d[1]}/${d[0]}` : iso;
 }
 
+// Postgres 'OF' devolve offset só com horas ("…-03"); o JS exige "…-03:00".
+// Normaliza antes de new Date() e cai pro texto cru se ainda assim não parsear.
+function fmtDateTime(iso?: string): string {
+  if (!iso) return '—';
+  let s = iso.trim();
+  if (/[+-]\d{2}$/.test(s)) s += ':00';
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? iso : d.toLocaleString('pt-BR');
+}
+
 // Tabela de jobs reaproveitada pela página de Logs.
 export function ERPXMLJobsTable({ autoRefresh = true }: { autoRefresh?: boolean }) {
   const { token, companyId } = useAuth();
@@ -126,7 +136,7 @@ export function ERPXMLJobsTable({ autoRefresh = true }: { autoRefresh?: boolean 
                     )}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                    {new Date(j.created_at).toLocaleString('pt-BR')}
+                    {fmtDateTime(j.created_at)}
                   </td>
                 </tr>
               );

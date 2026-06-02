@@ -119,7 +119,7 @@ func ERPXMLImportTriggerHandler(db *sql.DB) http.HandlerFunc {
 			VALUES ($1, $2, $3, $4, $5)
 			RETURNING id, company_id, to_char(data_ini,'YYYY-MM-DD'), to_char(data_fim,'YYYY-MM-DD'),
 			          tipos, status, total_enviados, total_erros, error_message,
-			          to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SSOF'), started_at, finished_at`,
+			          to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'), started_at, finished_at`,
 			companyID, di, df, tipos, createdBy,
 		).Scan(&job.ID, &job.CompanyID, &job.DataIni, &job.DataFim, &job.Tipos, &job.Status,
 			&job.TotalEnviados, &job.TotalErros, &errMsg, &job.CreatedAt, &started, &finished)
@@ -148,9 +148,9 @@ func ERPXMLImportJobsHandler(db *sql.DB) http.HandlerFunc {
 		rows, err := db.Query(`
 			SELECT j.id, j.company_id, to_char(j.data_ini,'YYYY-MM-DD'), to_char(j.data_fim,'YYYY-MM-DD'),
 			       j.tipos, j.status, j.total_enviados, j.total_erros, j.error_message,
-			       to_char(j.created_at,'YYYY-MM-DD"T"HH24:MI:SSOF'),
-			       to_char(j.started_at,'YYYY-MM-DD"T"HH24:MI:SSOF'),
-			       to_char(j.finished_at,'YYYY-MM-DD"T"HH24:MI:SSOF'),
+			       to_char(j.created_at  AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+			       to_char(j.started_at  AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+			       to_char(j.finished_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 			       COALESCE(b.docs_total,0), COALESCE(b.importados,0), COALESCE(b.rejeitados,0),
 			       COALESCE(b.batches_total,0), COALESCE(b.batches_andamento,0)
 			FROM erp_xml_import_jobs j
