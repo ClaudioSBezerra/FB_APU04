@@ -794,7 +794,7 @@ func fetchTopNcmByChave(db *sql.DB, companyID string, chaves []string) map[strin
 // quando o tomador é o destinatário (mesmo critério fiscal do motor de cálculo).
 func fetchCteLinksForNFs(db *sql.DB, companyID string, chaves []string) map[string][]CteLink {
 	result := make(map[string][]CteLink)
-	if len(chaves) == 0 {
+	if db == nil || len(chaves) == 0 {
 		return result
 	}
 	ph := make([]string, len(chaves))
