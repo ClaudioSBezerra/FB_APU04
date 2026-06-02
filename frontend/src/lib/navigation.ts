@@ -34,8 +34,8 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Conciliação Bridge vs XML', path: '/conciliacao/bridge-xml' },
       { label: 'Comparativo EFD vs XMLs',  path: '/comparativo/efd-xml' },
       { label: 'NF-e Entradas',          path: '/apuracao/entrada/notas',        disabled: true },
-      { label: 'Importar via ERP',       path: '/importacoes/erp-bridge',        adminOnly: true, disabled: true },
-      { label: 'Logs de Importação',     path: '/importacoes/erp-bridge/logs',   adminOnly: true, disabled: true },
+      { label: 'Importar via ERP',       path: '/importacoes/erp-bridge-xml',      adminOnly: true },
+      { label: 'Logs de Importação',     path: '/importacoes/erp-bridge-xml/logs', adminOnly: true },
     ],
   },
   painel: {

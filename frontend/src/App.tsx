@@ -26,6 +26,8 @@ import RelatorioSaneamento from './pages/RelatorioSaneamento'
 import ERPBridgeConfig from './pages/ERPBridgeConfig'
 import ERPBridgeLogs from './pages/ERPBridgeLogs'
 import ERPBridgeCredenciais from './pages/ERPBridgeCredenciais'
+import ImportarViaERP from './pages/ImportarViaERP'
+import ImportacaoERPLogs from './pages/ImportacaoERPLogs'
 import AdminUsers from './pages/AdminUsers'
 import LimparDados from './pages/LimparDados'
 import ReformaParametros from './pages/ReformaParametros'
@@ -190,6 +192,8 @@ function AppLayout() {
               <Route path="/apuracao/nfse"                     element={<ComingSoon title="NFS-e Entradas" />} />
               <Route path="/importacoes/erp-bridge"            element={<AdminRoute><ERPBridgeConfig /></AdminRoute>} />
               <Route path="/importacoes/erp-bridge/logs"       element={<AdminRoute><ERPBridgeLogs /></AdminRoute>} />
+              <Route path="/importacoes/erp-bridge-xml"        element={<AdminRoute><ImportarViaERP /></AdminRoute>} />
+              <Route path="/importacoes/erp-bridge-xml/logs"   element={<AdminRoute><ImportacaoERPLogs /></AdminRoute>} />
               <Route path="/importacoes/xml/entradas"          element={<ProtectedRoute><ImportarXMLsEntrada /></ProtectedRoute>} />
               <Route path="/importacoes/xml/saidas"            element={<ProtectedRoute><ImportarXMLsSaida /></ProtectedRoute>} />
               <Route path="/importacoes/xml/ctes"              element={<ProtectedRoute><ImportarXMLsCTe /></ProtectedRoute>} />

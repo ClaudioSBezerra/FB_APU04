@@ -41,6 +41,24 @@ python bridge_simulador.py --data-ini 2026-04-01 --data-fim 2026-04-30 --dry-run
 python bridge_simulador.py --data-ini 2026-04-01 --data-fim 2026-04-30 --reset-tracker
 ```
 
+### Modo fila (`--drain`) — disparo pela UI
+
+A UI ("Importação de XMLs → Importar via ERP", admin) enfileira jobs por período.
+O conector em modo `--drain` consome todos os jobs pendentes e sai (sem daemon
+sempre-ligado). Rode manualmente ou via cron:
+
+```bash
+python bridge_simulador.py --config config.yaml --drain
+# no servidor (container do bridge):
+docker exec fbtax-bridge-apu04 python /app/bridge_simulador.py --config /app/config_simulador.yaml --drain
+```
+
+Fluxo: UI → `POST /api/erp-bridge/xml-import/trigger` (cria job pending) →
+`--drain` busca em `/xml-import/pending`, executa a janela, reporta em
+`/xml-import/status`. O histórico aparece em "Logs de Importação".
+Sugestão: um cron a cada 5–10 min rodando `--drain` para drenar a fila
+automaticamente sem manter processo ligado.
+
 ⚠️ **Volume**: a fonte tem ~450–620 mil NF-e/mês (2024–2025). Importe por janelas
 controladas (ex.: por dia ou semana nos meses pesados). O backend processa de forma
 assíncrona e idempotente (`ON CONFLICT` por chave); o conector mantém um dedup local

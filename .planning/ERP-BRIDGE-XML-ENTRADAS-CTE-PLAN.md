@@ -65,6 +65,15 @@ FCCORP sfc_nfe_imp / sfc_cte_imp (CLOB XML)
       Gotchas resolvidos: nome `.xml` no ZIP (c3909b9); drift APU02 em cte_entradas — v_carga (134) e
       IBS/CBS nullable (135).
 
+- [x] **Fase 5 — UI (fila + drain)** 2026-06-02: tabela `erp_xml_import_jobs` (migration 136) +
+      endpoints (trigger JWT admin / jobs JWT / pending+status X-API-Key) + conector `--drain` +
+      páginas `ImportarViaERP` (form período/tipos) e `ImportacaoERPLogs` (histórico), itens de menu
+      "Importar via ERP" / "Logs de Importação" ativados → rotas /importacoes/erp-bridge-xml(/logs).
+      DECISÃO PENDENTE p/ o usuário: os itens antes apontavam para o painel do bridge COMPARTILHADO
+      (ERPBridgeConfig em /importacoes/erp-bridge) — repontei para as páginas novas do conector XML;
+      ERPBridgeConfig/Logs seguem no código/rota mas sem item de menu. Confirmar se ok ou se quer
+      manter acesso ao painel do bridge compartilhado em algum item.
+
 ## Campos mínimos exigidos pela Fronteira (do parser)
 
 - `nfe_entradas`: chave_nfe, data_emissao, mes_ano, forn_cnpj, dest_uf, dest_cnpj_cpf, v_prod, v_icms, v_frete, v_outro, v_ipi

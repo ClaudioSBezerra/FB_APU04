@@ -1198,6 +1198,11 @@ func main() {
 	})
 	http.HandleFunc("/api/erp-bridge/import/batch", withDB(handlers.ERPBridgeBatchImportHandler))
 	http.HandleFunc("/api/erp-bridge/import/xml", withDB(handlers.ERPBridgeXMLImportHandler))
+	// Fila de jobs de importação XML via ERP (UI enfileira; conector --drain consome)
+	http.HandleFunc("/api/erp-bridge/xml-import/trigger", withAuth(handlers.ERPXMLImportTriggerHandler, "admin"))
+	http.HandleFunc("/api/erp-bridge/xml-import/jobs", withAuth(handlers.ERPXMLImportJobsHandler, ""))
+	http.HandleFunc("/api/erp-bridge/xml-import/pending", withDB(handlers.ERPXMLImportPendingHandler))
+	http.HandleFunc("/api/erp-bridge/xml-import/status", withDB(handlers.ERPXMLImportStatusHandler))
 	http.HandleFunc("/api/erp-bridge/parceiros/sync", withDB(handlers.ERPBridgeParceirosSyncHandler))
 
 	// Managers Endpoints (Gestores para relatorios IA)

@@ -178,6 +178,31 @@ class FBTax:
             raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
         return resp.json()
 
+    # ── Fila de jobs (modo --drain) ────────────────────────────────────────────
+    def get_pending_job(self) -> dict | None:
+        """Reivindica o próximo job pendente da empresa (ou None)."""
+        resp = requests.get(
+            f"{self.base_url}/api/erp-bridge/xml-import/pending",
+            headers={"X-API-Key": self.api_key}, timeout=60,
+        )
+        if not resp.ok:
+            raise RuntimeError(f"pending HTTP {resp.status_code}: {resp.text[:200]}")
+        data = resp.json()
+        return data if data and data.get("id") else None
+
+    def report_job(self, job_id: str, status: str, enviados: int, erros: int,
+                   error_message: str = "") -> None:
+        try:
+            requests.post(
+                f"{self.base_url}/api/erp-bridge/xml-import/status",
+                headers={"X-API-Key": self.api_key, "Content-Type": "application/json"},
+                json={"job_id": job_id, "status": status, "total_enviados": enviados,
+                      "total_erros": erros, "error_message": error_message},
+                timeout=60,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Falha ao reportar status do job %s: %s", job_id, exc)
+
 
 # ─── Processamento ──────────────────────────────────────────────────────────--
 def processar(
@@ -271,12 +296,14 @@ def parse_data(s: str) -> date:
 def main() -> int:
     p = argparse.ArgumentParser(description="ERP Bridge Simulador — XML entradas + CT-e (FCCORP → FB_APU04)")
     p.add_argument("--config", default=str(BASE_DIR / "config.yaml"))
-    p.add_argument("--data-ini", required=True, help="YYYY-MM-DD (inclusive)")
-    p.add_argument("--data-fim", required=True, help="YYYY-MM-DD (inclusive)")
+    p.add_argument("--data-ini", help="YYYY-MM-DD (inclusive). Não usar com --drain")
+    p.add_argument("--data-fim", help="YYYY-MM-DD (inclusive). Não usar com --drain")
     p.add_argument("--tipos", default="entradas,ctes", help="entradas,ctes (padrão ambos)")
     p.add_argument("--batch", type=int, default=300, help="XMLs por POST (padrão 300)")
     p.add_argument("--dry-run", action="store_true", help="lê e conta, sem enviar")
     p.add_argument("--reset-tracker", action="store_true", help="zera o tracker antes (re-importa janela)")
+    p.add_argument("--drain", action="store_true",
+                   help="consome jobs pendentes da fila (enfileirados pela UI) e sai")
     args = p.parse_args()
 
     if not os.path.exists(args.config):
@@ -285,12 +312,8 @@ def main() -> int:
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    data_ini = parse_data(args.data_ini)
-    data_fim_excl = parse_data(args.data_fim) + timedelta(days=1)  # query usa < data_fim
-    tipos = [t.strip() for t in args.tipos.split(",") if t.strip() in FONTES]
-    if not tipos:
-        log.error("Nenhum tipo válido em --tipos (use entradas,ctes)")
-        return 1
+    fbtax = FBTax(cfg["fbtax"])
+    o = cfg["oracle"]
 
     tracker_path = BASE_DIR / "tracker_simulador.db"
     if args.reset_tracker and tracker_path.exists():
@@ -298,8 +321,68 @@ def main() -> int:
         log.info("Tracker resetado.")
     tracker = init_tracker(tracker_path)
 
-    fbtax = FBTax(cfg["fbtax"])
-    o = cfg["oracle"]
+    def executar_janela(conn_ora, tipos, data_ini, data_fim_excl) -> dict:
+        grand = {"lidos": 0, "enviados": 0, "ignorados": 0, "erros": 0}
+        for tipo in tipos:
+            st = processar(tipo, conn_ora, o, fbtax, tracker, data_ini, data_fim_excl,
+                           args.batch, args.dry_run)
+            for k in grand:
+                grand[k] += st[k]
+        return grand
+
+    # ── Modo DRAIN: consome jobs pendentes enfileirados pela UI ────────────────
+    if args.drain:
+        log.info("=" * 60)
+        log.info("ERP Bridge Simulador — MODO DRAIN → %s", fbtax.base_url)
+        log.info("=" * 60)
+        conn_ora = conectar_oracle(o)
+        n_jobs = 0
+        try:
+            while True:
+                try:
+                    job = fbtax.get_pending_job()
+                except Exception as exc:  # noqa: BLE001
+                    log.error("Erro ao buscar job pendente: %s", exc)
+                    return 1
+                if not job:
+                    log.info("Sem jobs pendentes. %d job(s) processado(s).", n_jobs)
+                    break
+                n_jobs += 1
+                jid = job["id"]
+                tipos = [t.strip() for t in str(job.get("tipos", "")).split(",") if t.strip() in FONTES]
+                if not tipos:
+                    tipos = ["entradas", "ctes"]
+                try:
+                    di = parse_data(job["data_ini"])
+                    df_excl = parse_data(job["data_fim"]) + timedelta(days=1)
+                except Exception as exc:  # noqa: BLE001
+                    log.error("Job %s com datas inválidas: %s", jid, exc)
+                    fbtax.report_job(jid, "error", 0, 0, f"datas inválidas: {exc}")
+                    continue
+                log.info("► Job %s | %s a %s | tipos: %s", jid, job["data_ini"], job["data_fim"], ",".join(tipos))
+                try:
+                    g = executar_janela(conn_ora, tipos, di, df_excl)
+                    status = "done" if g["erros"] == 0 else "error"
+                    fbtax.report_job(jid, status, g["enviados"], g["erros"])
+                    log.info("◄ Job %s %s — enviados=%d erros=%d", jid, status, g["enviados"], g["erros"])
+                except Exception as exc:  # noqa: BLE001
+                    log.error("Job %s falhou: %s", jid, exc)
+                    fbtax.report_job(jid, "error", 0, 0, str(exc)[:500])
+        finally:
+            conn_ora.close()
+            tracker.close()
+        return 0
+
+    # ── Modo janela única (CLI manual) ─────────────────────────────────────────
+    if not args.data_ini or not args.data_fim:
+        log.error("Informe --data-ini e --data-fim (ou use --drain)")
+        return 1
+    data_ini = parse_data(args.data_ini)
+    data_fim_excl = parse_data(args.data_fim) + timedelta(days=1)  # query usa < data_fim
+    tipos = [t.strip() for t in args.tipos.split(",") if t.strip() in FONTES]
+    if not tipos:
+        log.error("Nenhum tipo válido em --tipos (use entradas,ctes)")
+        return 1
 
     log.info("=" * 60)
     log.info("ERP Bridge Simulador — FCCORP → %s", fbtax.base_url)
@@ -309,13 +392,8 @@ def main() -> int:
     log.info("=" * 60)
 
     conn_ora = conectar_oracle(o)
-    grand = {"lidos": 0, "enviados": 0, "ignorados": 0, "erros": 0}
     try:
-        for tipo in tipos:
-            st = processar(tipo, conn_ora, o, fbtax, tracker, data_ini, data_fim_excl,
-                           args.batch, args.dry_run)
-            for k in grand:
-                grand[k] += st[k]
+        grand = executar_janela(conn_ora, tipos, data_ini, data_fim_excl)
     finally:
         conn_ora.close()
         tracker.close()
