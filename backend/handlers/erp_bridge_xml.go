@@ -103,7 +103,13 @@ func ERPBridgeXMLImportHandler(db *sql.DB) http.HandlerFunc {
 			}
 			name := strings.TrimSpace(x.Name)
 			if name == "" {
-				name = "bridge.xml"
+				name = "bridge"
+			}
+			// O xml_worker extrai do ZIP apenas entradas com extensão .xml
+			// (extractXMLsFromZip filtra por filepath.Ext == ".xml"). Garantir o
+			// sufixo para que os XMLs do bridge não sejam descartados na extração.
+			if !strings.HasSuffix(strings.ToLower(name), ".xml") {
+				name += ".xml"
 			}
 			xmlFiles = append(xmlFiles, NamedXML{Name: name, Data: []byte(x.Content)})
 		}

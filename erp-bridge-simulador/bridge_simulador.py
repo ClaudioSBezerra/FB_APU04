@@ -35,7 +35,7 @@ import re
 import sqlite3
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import oracledb
@@ -137,7 +137,7 @@ def ja_enviado(tracker: sqlite3.Connection, tipo: str, chave: str) -> bool:
 def marcar(tracker: sqlite3.Connection, tipo: str, chave: str, status: str) -> None:
     tracker.execute(
         "INSERT OR REPLACE INTO enviados (tipo, chave, status, ts) VALUES (?,?,?,?)",
-        (tipo, chave, status, datetime.utcnow().isoformat()),
+        (tipo, chave, status, datetime.now(timezone.utc).isoformat()),
     )
 
 
@@ -244,7 +244,8 @@ def processar(
         if ja_enviado(tracker, fonte_key, chave):
             stats["ignorados"] += 1
             continue
-        lote.append({"name": chave, "content": normalizar_xml(xml_str, fonte["adicionar_decl"])})
+        # nome com .xml: o worker do backend extrai do ZIP só entradas .xml.
+        lote.append({"name": f"{chave}.xml", "content": normalizar_xml(xml_str, fonte["adicionar_decl"])})
         if len(lote) >= batch_size:
             flush()
         if time.monotonic() - prog_ts >= 60:
