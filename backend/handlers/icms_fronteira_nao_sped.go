@@ -34,7 +34,8 @@ type FronteiraXmlNaoSpedRow struct {
 	AliqInter     float64 `json:"aliq_inter"`        // alíquota interestadual efetiva = vIcms/vProd × 100
 	AliqInterna   float64 `json:"aliq_interna"`      // alíquota interna usada (regra ou fallback)
 	MVA           float64 `json:"mva"`               // MVA original (só usado em ST)
-	IcmsDevidoEst float64 `json:"icms_devido_est"`
+	IcmsDevidoEst float64 `json:"icms_devido_est"`   // ICMS a pagar (devido − ICMS destacado NF)
+	ValorDevido   float64 `json:"valor_devido"`      // V. Devido bruto (antecipação): operação × alíq, antes de abater
 	Regime        string  `json:"regime"`
 	ClassStatus   string  `json:"class_status"` // "auto" | "manual"
 }
@@ -182,17 +183,20 @@ SELECT
                     - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
             END
         WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
+            -- Antecipação (regra Gilson 2026-06-02): base = produto + IPI + frete da NF
+            -- + outras despesas da NF (SEM frete do CT-e — esse vai no bloco próprio do
+            -- CT-e). Abate apenas o ICMS destacado na NF (sem piso de 4% e sem ICMS do
+            -- CT-e). PE mantém o cálculo "por dentro"; demais UFs, direto.
             CASE WHEN COALESCE(ufb.base_por_dentro, false)
                 THEN GREATEST(0,
-                    ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
-                      - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
+                    ((m.v_prod + m.v_ipi + m.v_frete + m.v_outro - m.v_icms)
                      / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
+                    - m.v_icms)
                 ELSE GREATEST(0,
-                    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                    (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
+                    - m.v_icms)
             END
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
             CASE
@@ -210,22 +214,38 @@ SELECT
                          * COALESCE(regra.aliquota_interna,20.5)/100.0
                          - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
                     ELSE 0 END
-                -- Sem segmento → reclassificada como ANTECIPAÇÃO (respeita base por dentro)
+                -- Sem segmento → reclassificada como ANTECIPAÇÃO (regra Gilson: base sem
+                -- frete do CT-e, abate só o ICMS destacado na NF; respeita base por dentro)
                 ELSE CASE WHEN COALESCE(ufb.base_por_dentro, false)
                     THEN GREATEST(0,
-                        ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
-                          - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
+                        ((m.v_prod + m.v_ipi + m.v_frete + m.v_outro - m.v_icms)
                          / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                         * COALESCE(regra.aliquota_interna,20.5)/100.0
-                        - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
+                        - m.v_icms)
                     ELSE GREATEST(0,
-                        (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                        (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
                         * COALESCE(regra.aliquota_interna,20.5)/100.0
-                        - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
+                        - m.v_icms)
                 END
             END
         ELSE 0
-    END AS icms_devido_est
+    END AS icms_devido_est,
+    -- Valor devido BRUTO (coluna "V. Devido" da memória do Gilson, antes de abater o
+    -- ICMS destacado). Só faz sentido na antecipação (PE por dentro / demais direto);
+    -- 0 nos demais CFOPs. ICMS a pagar = GREATEST(0, valor_devido − ICMS destacado NF).
+    CASE
+        WHEN m.cfop_entrada IN ('2101','2102','2152','2403','2409','2651','2652') THEN
+            CASE WHEN COALESCE(ufb.base_por_dentro, false)
+                THEN GREATEST(0,
+                    ((m.v_prod + m.v_ipi + m.v_frete + m.v_outro - m.v_icms)
+                     / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
+                    * COALESCE(regra.aliquota_interna,20.5)/100.0)
+                ELSE GREATEST(0,
+                    (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
+                    * COALESCE(regra.aliquota_interna,20.5)/100.0)
+            END
+        ELSE 0
+    END AS valor_devido
 FROM mapped m
 LEFT JOIN LATERAL (
     SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct,
@@ -285,7 +305,7 @@ func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime, uf string) ([]Fron
 			&row.Regime, &row.ClassStatus,
 			&row.VProd, &row.VIPI, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
 			&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
-			&row.IcmsDevidoEst,
+			&row.IcmsDevidoEst, &row.ValorDevido,
 		); err != nil {
 			continue
 		}
@@ -356,7 +376,7 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 				&row.Regime, &row.ClassStatus,
 				&row.VProd, &row.VIPI, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
 				&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
-				&row.IcmsDevidoEst,
+				&row.IcmsDevidoEst, &row.ValorDevido,
 			); err != nil {
 				log.Printf("IcmsFronteiraXmlNaoSped[%s] scan error: %v", regime, err)
 				continue

@@ -166,6 +166,7 @@ interface FronteiraXmlNaoSpedRow {
   aliq_interna: number
   mva: number
   icms_devido_est: number
+  valor_devido: number
   regime: string
   class_status: string // 'auto' | 'manual'
 }
@@ -1098,8 +1099,12 @@ function TabelaNotasSped({
   )
 }
 
-// TabelaNotasXml (Bloco C) — NFs ausentes do SPED. CT-es interleaved individualmente.
-function TabelaNotasXml({
+// TabelaNotasXmlAntecip — Bloco C do regime ANTECIPAÇÃO. Memória de cálculo
+// coluna-a-coluna conforme orientação do contador Gilson (2026-06-02):
+// V.Prod · IPI · Frete NF · Outras NF · Total Operação · Alíq · V.Devido ·
+// ICMS Destacado · ICMS a Pagar. Frete/ICMS do CT-e NÃO entram na conta da NF —
+// aparecem nas linhas-filhas (azuis), calculados em separado.
+function TabelaNotasXmlAntecip({
   rows,
   showAliq,
   cteLinks = {},
@@ -1108,6 +1113,146 @@ function TabelaNotasXml({
   showAliq: boolean
   cteLinks?: Record<string, CteLink[]>
 }) {
+  const operacao       = (r: FronteiraXmlNaoSpedRow) => (r.v_prod || 0) + (r.v_ipi || 0) + (r.v_frete || 0) + (r.v_outro || 0)
+  const totalVProd     = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
+  const totalVIpi      = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
+  const totalVFrete    = rows.reduce((acc, r) => acc + (r.v_frete || 0), 0)
+  const totalVOutro    = rows.reduce((acc, r) => acc + (r.v_outro || 0), 0)
+  const totalOperacao  = rows.reduce((acc, r) => acc + operacao(r), 0)
+  const totalVDevido   = rows.reduce((acc, r) => acc + (r.valor_devido || 0), 0)
+  const totalVIcms     = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
+  const totalIcms      = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
+  return (
+    <div className="rounded-md border overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/30 hover:bg-transparent">
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Data</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">UF</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Prod.</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Frete NF</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Outras NF</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Total Operação</TableHead>
+            {showAliq && (
+              <>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Inter.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Int.</TableHead>
+              </>
+            )}
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Devido</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Destacado</TableHead>
+            <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS a Pagar</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.flatMap((row, idx) => {
+            const ctes = cteLinks[row.chave_nfe] ?? []
+            const nfRow = (
+              <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
+                <TableCell className="text-xs font-mono whitespace-nowrap">
+                  {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                </TableCell>
+                <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+                <TableCell className="text-xs max-w-[180px]">
+                  <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
+                  <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
+                </TableCell>
+                <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
+                <TableCell className="text-xs font-mono">{row.cfop_saida || '—'}</TableCell>
+                <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_frete)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_outro)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL(operacao(row))}</TableCell>
+                {showAliq && (
+                  <>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_inter)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliq_interna)}</TableCell>
+                  </>
+                )}
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.valor_devido)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_icms_nf)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(row.icms_devido_est)}</TableCell>
+              </TableRow>
+            )
+            const cteRows = ctes.map((cte, ci) => (
+              <TableRow key={`cte-${row.chave_nfe}-${ci}`} className="bg-blue-50 hover:bg-blue-100">
+                <TableCell className="text-xs font-mono whitespace-nowrap text-blue-700">
+                  {cte.data_emissao ? cte.data_emissao.slice(0, 10) : '—'}
+                </TableCell>
+                <TableCell className="text-xs font-mono text-blue-700">
+                  <div className="flex items-center gap-1">
+                    <Truck className="h-3 w-3 shrink-0" />
+                    CT-e {cte.numero_cte}
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs max-w-[180px] text-blue-700">
+                  <div className="truncate" title={cte.emit_nome}>{cte.emit_nome || '—'}</div>
+                  <div className="text-blue-400 text-[10px] font-mono">{formatCNPJ(cte.emit_cnpj)}</div>
+                </TableCell>
+                <TableCell className="text-xs text-blue-400">—</TableCell>
+                <TableCell className="text-xs font-mono font-semibold text-blue-700">CTE</TableCell>
+                <TableCell className="text-xs"><ChaveCell chave={cte.chave_cte} label={`CT-e ${cte.numero_cte}`} /></TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_prest)}</TableCell>
+                {showAliq && <TableCell colSpan={2} />}
+                <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_icms_cte)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-600">{fmtBRL(cte.v_icms_cte)}</TableCell>
+              </TableRow>
+            ))
+            return [nfRow, ...cteRows]
+          })}
+        </TableBody>
+        {rows.length > 0 && (
+          <TableFooter>
+            <TableRow className="bg-muted/60 hover:bg-muted/60">
+              <TableCell colSpan={6} className="text-xs font-bold uppercase">Total — {rows.length} nota{rows.length !== 1 ? 's' : ''}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVProd)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIpi)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVFrete)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVOutro)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalOperacao)}</TableCell>
+              {showAliq && <TableCell colSpan={2} />}
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVDevido)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalVIcms)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalIcms)}</TableCell>
+            </TableRow>
+          </TableFooter>
+        )}
+      </Table>
+    </div>
+  )
+}
+
+// TabelaNotasXml (Bloco C) — NFs ausentes do SPED. CT-es interleaved individualmente.
+function TabelaNotasXml({
+  rows,
+  showAliq,
+  cteLinks = {},
+  regime,
+}: {
+  rows: FronteiraXmlNaoSpedRow[]
+  showAliq: boolean
+  cteLinks?: Record<string, CteLink[]>
+  regime?: RegimedStr
+}) {
+  // Regime de antecipação usa a memória de cálculo coluna-a-coluna definida pelo
+  // contador Gilson (2026-06-02): Produto · IPI · Frete NF · Outras NF · Total
+  // Operação · Alíq · V. Devido · ICMS Destacado · ICMS a Pagar. DIFAL/ST mantêm
+  // o layout original (cálculos distintos — não tocados).
+  if (regime === 'antecipacao') {
+    return <TabelaNotasXmlAntecip rows={rows} showAliq={showAliq} cteLinks={cteLinks} />
+  }
   const totalVProd     = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
   const totalVIpi      = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
   const totalVOpr      = totalVProd + totalVIpi
@@ -1511,7 +1656,7 @@ function NotasTabBlocos({
                 ) : rowsXml.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-2 text-center">Todas as notas XML do mês estão no SPED.</p>
                 ) : (
-                  <TabelaNotasXml rows={rowsXml} showAliq={showAliq} cteLinks={cteLinksC} />
+                  <TabelaNotasXml rows={rowsXml} showAliq={showAliq} cteLinks={cteLinksC} regime={regime} />
                 )}
               </div>
             )}

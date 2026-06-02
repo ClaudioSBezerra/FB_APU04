@@ -264,18 +264,21 @@ SELECT
                  * COALESCE(regra.aliquota_interna,20.5)/100.0
                  - m.v_icms - COALESCE(cte.v_icms_cte,0))
             ELSE 0 END
+        -- Antecipação (regra Gilson 2026-06-02): base = produto + IPI + frete da NF
+        -- + outras despesas da NF (SEM frete do CT-e — calculado em separado); abate
+        -- só o ICMS destacado na NF (sem ICMS do CT-e). Mantém coerência com o cálculo
+        -- real da antecipação no naoSpedQuery. PE por dentro; demais UFs, direto.
         WHEN m.cfop_entrada IN ('2101','2102','2152','2403','2409','2651','2652') THEN
             CASE WHEN COALESCE(ufb.base_por_dentro, false)
                 THEN GREATEST(0,
-                    ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
-                      - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                    ((m.v_prod + m.v_ipi + m.v_frete + m.v_outro - m.v_icms)
                      / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                    - m.v_icms)
                 ELSE GREATEST(0,
-                    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                    (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - m.v_icms - COALESCE(cte.v_icms_cte,0))
+                    - m.v_icms)
             END
         ELSE 0
     END AS icms_seria_devido
