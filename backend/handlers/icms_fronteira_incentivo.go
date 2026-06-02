@@ -132,14 +132,15 @@ SELECT
                 ELSE 0
             END
         -- Antecipação (CFOPs 2101/2102/2152, ou ST sem segmento da empresa).
+        -- Regra Gilson: IPI integra a base (base_calc + v_ipi), igual ao Bloco C.
         ELSE CASE WHEN c.base_por_dentro
             THEN GREATEST(0,
-                ((c.base_calc - COALESCE(c.v_icms, 0))
+                ((c.base_calc + c.v_ipi - COALESCE(c.v_icms, 0))
                  / NULLIF(1.0 - COALESCE(c.regra_aliq_interna, 20.5)/100.0, 0))
                 * COALESCE(c.regra_aliq_interna, 20.5)/100.0
                 - COALESCE(c.v_icms, 0))
             ELSE GREATEST(0,
-                c.base_calc * COALESCE(c.regra_aliq_interna, 20.5)/100.0
+                (c.base_calc + c.v_ipi) * COALESCE(c.regra_aliq_interna, 20.5)/100.0
                 - COALESCE(c.v_icms, 0))
         END
     END AS icms_seria_devido

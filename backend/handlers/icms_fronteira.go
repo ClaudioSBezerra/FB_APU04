@@ -135,9 +135,12 @@ type FronteiraNotaRow struct {
 	VIcms         float64 `json:"v_icms"`
 	VBcST         float64 `json:"v_bc_st"`
 	VST           float64 `json:"v_st"`
+	VFrete        float64 `json:"v_frete"`        // frete da NF rateado (cadeia antecipação)
+	VOutro        float64 `json:"v_outro"`        // outras despesas da NF rateadas
 	AliqInter     float64 `json:"aliq_inter"`
 	AliqInterna   float64 `json:"aliq_interna"`
-	IcmsDevidoEst float64 `json:"icms_devido_est"`
+	IcmsDevidoEst float64 `json:"icms_devido_est"` // ICMS a pagar (devido − ICMS destacado)
+	ValorDevido   float64 `json:"valor_devido"`    // V. Devido bruto (antecipação)
 	Regime        string  `json:"regime"`
 	Bloco         string  `json:"bloco"`
 }
@@ -199,6 +202,9 @@ classified AS (
         ) AS v_icms,
         COALESCE(l.vl_bc_st, 0)                             AS v_bc_st,
         COALESCE(l.vl_icms_st, 0)                           AS v_st,
+        -- Frete/Outras da NF rateados por item (cadeia Gilson — Blocos A/B iguais ao C).
+        COALESCE(l.frete_rat, 0)                            AS v_frete,
+        COALESCE(l.outro_rat, 0)                            AS v_outro,
         COALESCE(NULLIF(l.aliq_icms, 0), 12.0)              AS aliq_inter,
         COALESCE(regra.aliquota_interna, 20.5)              AS aliq_interna,
         -- ST só se aplica quando a regra NCM tem segmento_codigo cadastrado E a
@@ -309,32 +315,48 @@ classified AS (
                         ELSE COALESCE(l.vl_icms_st, 0)
                     END
                     -- Sem segmento cadastrado → reclassificado como ANTECIPAÇÃO
+                    -- (regra Gilson: IPI integra a base — base + ipi_eff)
                     ELSE CASE WHEN COALESCE(ufb.base_por_dentro, false)
                         THEN GREATEST(0,
-                            ((l.base_calc - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
+                            ((l.base_calc + l.ipi_eff - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
                              / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                             * COALESCE(regra.aliquota_interna,20.5)/100.0
                             - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
                         ELSE GREATEST(0,
-                            l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                            (l.base_calc + l.ipi_eff) * COALESCE(regra.aliquota_interna, 20.5)/100.0
                             - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0))
                     END
                 END
             WHEN l.cfop IN ('2101','2102','2152')
-                -- Antecipação. Por dentro (PE): base = (operação − crédito inter.) /
+                -- Antecipação (regra Gilson: IPI integra a base — base + ipi_eff).
+                -- Por dentro (PE): base = (operação − crédito inter.) /
                 -- (1 − alíq_interna), depois × alíq_interna − crédito inter.
                 THEN CASE WHEN COALESCE(ufb.base_por_dentro, false)
                     THEN GREATEST(0,
-                        ((l.base_calc - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
+                        ((l.base_calc + l.ipi_eff - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
                          / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                         * COALESCE(regra.aliquota_interna,20.5)/100.0
                         - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
                     ELSE GREATEST(0,
-                        l.base_calc * COALESCE(regra.aliquota_interna, 20.5)/100.0
+                        (l.base_calc + l.ipi_eff) * COALESCE(regra.aliquota_interna, 20.5)/100.0
                         - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms, 0), 12.0) / 100.0))
                 END
             ELSE 0
         END                                                 AS icms_devido_est,
+        -- V. Devido BRUTO (cadeia Gilson, antes de abater o ICMS destacado).
+        -- Só antecipação (PE por dentro / demais direto), com IPI na base; 0 no resto.
+        CASE
+            WHEN l.cfop IN ('2101','2102','2152','2403','2409','2651','2652') THEN
+                CASE WHEN COALESCE(ufb.base_por_dentro, false)
+                    THEN GREATEST(0,
+                        ((l.base_calc + l.ipi_eff - COALESCE(NULLIF(l.vl_icms_inter,0), l.v_prod_disp * COALESCE(NULLIF(l.aliq_icms,0),12.0) / 100.0))
+                         / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
+                        * COALESCE(regra.aliquota_interna,20.5)/100.0)
+                    ELSE GREATEST(0,
+                        (l.base_calc + l.ipi_eff) * COALESCE(regra.aliquota_interna,20.5)/100.0)
+                END
+            ELSE 0
+        END                                                 AS valor_devido,
         COALESCE(j.uf, 'PE')                                AS uf_filial,
         -- Campos crus expostos para o relatório "Incentivo" recalcular o
         -- icms_que_seria_devido (sem o branch PRODEPE) e fazer JOIN por CNPJ.
@@ -615,8 +637,8 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 	query := fronteiraBaseQuery + `
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
-    cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st,
-    aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, regime, bloco,
+    cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st, v_frete, v_outro,
+    aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, valor_devido, regime, bloco,
     COUNT(*)            OVER () AS total_count,
     SUM(` + icmsExpr + `) OVER () AS total_full
 FROM classified
@@ -647,7 +669,8 @@ LIMIT 500
 			&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
 			&row.CFOP, &row.VProd, &row.VIPI, &row.VIcms, &row.VBcST, &row.VST,
-			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.Regime,
+			&row.VFrete, &row.VOutro,
+			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.ValorDevido, &row.Regime,
 			&row.Bloco,
 			&rowTotalCount, &rowTotalFull,
 		); err != nil {
