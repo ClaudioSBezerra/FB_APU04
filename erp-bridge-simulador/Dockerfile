@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+# Stdout/stderr sem buffer — logs aparecem na hora em `docker logs` (essencial no
+# modo --daemon, que fica idle no long-poll e geraria pouca saída pra flushar).
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 RUN pip install --no-cache-dir \
