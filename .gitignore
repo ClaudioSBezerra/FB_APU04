@@ -48,6 +48,10 @@ erp-bridge-aws/config-apu02.yaml
 erp-bridge-aws/config-apu04.yaml
 erp-bridge-aws/tracker*.db
 erp-bridge-aws/logs*/
+erp-bridge-simulador/config.yaml
+erp-bridge-simulador/tracker*.db
+erp-bridge-simulador/logs*/
+erp-bridge-simulador/data/
 
 # Temporary
 temp_lovable_analysis/
@@ -55,3 +59,7 @@ temp_lovable_analysis/
 # Go coverage artifacts
 backend/coverage*.out
 backend/cov_metrics.out
+
+# Python bytecode
+erp-bridge-simulador/__pycache__/
+__pycache__/

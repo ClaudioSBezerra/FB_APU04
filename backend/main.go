@@ -1197,6 +1197,7 @@ func main() {
 		handlers.ERPBridgeHeartbeatHandler(database).ServeHTTP(w, r)
 	})
 	http.HandleFunc("/api/erp-bridge/import/batch", withDB(handlers.ERPBridgeBatchImportHandler))
+	http.HandleFunc("/api/erp-bridge/import/xml", withDB(handlers.ERPBridgeXMLImportHandler))
 	http.HandleFunc("/api/erp-bridge/parceiros/sync", withDB(handlers.ERPBridgeParceirosSyncHandler))
 
 	// Managers Endpoints (Gestores para relatorios IA)

@@ -1,0 +1,11 @@
+# Config do conector ERP Bridge Simulador (isolado do bridge compartilhado).
+# Copie para config.yaml e preencha. NÃO versionar o config.yaml real (segredos).
+
+oracle:
+  dsn: "10.131.1.118:1521/FCCORP"   # mesmo FCCORP do bridge SAP
+  usuario: "fcosta"
+  senha: "COLOQUE_A_SENHA"
+
+fbtax:
+  url: "https://simu.fcxlabs.com"   # backend do FB_APU04 (simulador)
+  api_key: "COLOQUE_A_API_KEY"      # api_key do APU04 — resolve company_id no backend
