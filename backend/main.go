@@ -267,6 +267,36 @@ func onDBConnected() {
 		}
 	}()
 
+	// Goroutine: agendador da coleta automática D-1 (import XML via ERP).
+	// A cada minuto, no horário configurado (Brasília, UTC-3 — Brasil sem DST desde
+	// 2019), enfileira um job para ontem (D-1) por empresa com xml_auto_enabled.
+	// O daemon long-poll do conector processa. Guard NOT EXISTS evita duplicar no dia.
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			nowBR := time.Now().UTC().Add(-3 * time.Hour)
+			hhmm := nowBR.Format("15:04")
+			dMinus1 := nowBR.AddDate(0, 0, -1).Format("2006-01-02")
+			hoje := nowBR.Format("2006-01-02")
+			_, err := database.Exec(`
+				INSERT INTO erp_xml_import_jobs (company_id, data_ini, data_fim, tipos)
+				SELECT c.company_id, $2::date, $2::date, 'entradas,ctes'
+				FROM erp_bridge_config c
+				WHERE c.xml_auto_enabled = true AND c.xml_auto_hora = $1
+				  AND NOT EXISTS (
+				      SELECT 1 FROM erp_xml_import_jobs j
+				      WHERE j.company_id = c.company_id
+				        AND j.data_ini = $2::date AND j.data_fim = $2::date
+				        AND (j.created_at AT TIME ZONE 'America/Sao_Paulo')::date = $3::date
+				  )
+			`, hhmm, dMinus1, hoje)
+			if err != nil {
+				log.Printf("[ERPXMLJobs Scheduler] Erro: %v", err)
+			}
+		}
+	}()
+
 	// Trigger async refresh of materialized views at startup
 	go func() {
 		time.Sleep(5 * time.Second)
@@ -1221,6 +1251,7 @@ func main() {
 	// Fila de jobs de importação XML via ERP (UI enfileira; conector --drain consome)
 	http.HandleFunc("/api/erp-bridge/xml-import/trigger", withAuth(handlers.ERPXMLImportTriggerHandler, "admin"))
 	http.HandleFunc("/api/erp-bridge/xml-import/jobs", withAuth(handlers.ERPXMLImportJobsHandler, ""))
+	http.HandleFunc("/api/erp-bridge/xml-import/schedule", withAuth(handlers.ERPXMLImportScheduleHandler, "admin"))
 	http.HandleFunc("/api/erp-bridge/xml-import/pending", withDB(handlers.ERPXMLImportPendingHandler))
 	http.HandleFunc("/api/erp-bridge/xml-import/status", withDB(handlers.ERPXMLImportStatusHandler))
 	http.HandleFunc("/api/erp-bridge/parceiros/sync", withDB(handlers.ERPBridgeParceirosSyncHandler))

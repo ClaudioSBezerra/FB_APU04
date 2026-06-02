@@ -5,11 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Loader2, RefreshCw, Database, Send } from 'lucide-react';
+import { Loader2, RefreshCw, Database, Send, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
 export interface ERPXMLJob {
@@ -154,6 +154,36 @@ export default function ImportarViaERP() {
   const [dataIni, setDataIni] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [tipos, setTipos] = useState('entradas,ctes');
+  const authHeaders = { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId || '', 'Content-Type': 'application/json' };
+
+  // Agendamento da coleta automática D-1
+  const [autoEnabled, setAutoEnabled] = useState(false);
+  const [autoHora, setAutoHora] = useState('06:00');
+  useQuery<{ enabled: boolean; hora: string }>({
+    queryKey: ['erp-xml-schedule', companyId],
+    queryFn: async () => {
+      const res = await fetch('/api/erp-bridge/xml-import/schedule', { headers: authHeaders });
+      if (!res.ok) throw new Error(res.statusText);
+      const j = await res.json();
+      setAutoEnabled(!!j.enabled);
+      setAutoHora(j.hora || '06:00');
+      return j;
+    },
+    enabled: !!token && !!companyId,
+  });
+  const saveSchedule = useMutation({
+    mutationFn: async (payload: { enabled: boolean; hora: string }) => {
+      const res = await fetch('/api/erp-bridge/xml-import/schedule', {
+        method: 'PUT', headers: authHeaders, body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error((await res.text()) || 'Erro ao salvar');
+      return res.json();
+    },
+    onSuccess: (_d, v) => toast.success(v.enabled
+      ? `Coleta automática D-1 ativada às ${v.hora}.`
+      : 'Coleta automática D-1 desativada.'),
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const trigger = useMutation({
     mutationFn: async () => {
@@ -166,7 +196,7 @@ export default function ImportarViaERP() {
       return res.json();
     },
     onSuccess: () => {
-      toast.success('Importação enfileirada. O conector vai processar quando rodar (modo --drain).');
+      toast.success('Importação enfileirada — o conector processa em instantes.');
       queryClient.invalidateQueries({ queryKey: ['erp-xml-jobs'] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -181,9 +211,8 @@ export default function ImportarViaERP() {
           <Database className="h-6 w-6" /> Importar via ERP — XML (NF-e entrada + CT-e)
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Enfileira a importação dos XMLs do ERP (FCCORP) por período. O conector
-          <code className="mx-1 px-1 bg-muted rounded">erp-bridge-simulador</code>
-          processa os jobs pendentes ao rodar em modo <code className="px-1 bg-muted rounded">--drain</code>.
+          Enfileira a importação dos XMLs do ERP (FCCORP) por período — o conector processa em
+          instantes. Ative a coleta automática do D-1 abaixo para rodar todo dia sem intervenção.
         </p>
       </div>
 
@@ -220,6 +249,35 @@ export default function ImportarViaERP() {
           <p className="text-xs text-muted-foreground mt-3">
             ⚠ Volume alto: nos meses pesados, enfileire janelas menores (por dia/semana). O backend é
             idempotente e o conector tem dedup — re-enfileirar o mesmo período não duplica dados.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4" /> Coleta automática (D-1)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Switch checked={autoEnabled} onCheckedChange={setAutoEnabled} />
+              <span className="text-sm">Coletar o dia anterior (D-1) automaticamente</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="autohora" className="text-xs">às</Label>
+              <Input id="autohora" type="time" value={autoHora} onChange={(e) => setAutoHora(e.target.value)} className="w-28" disabled={!autoEnabled} />
+              <span className="text-xs text-muted-foreground">(Brasília)</span>
+            </div>
+            <Button variant="outline" size="sm"
+              onClick={() => saveSchedule.mutate({ enabled: autoEnabled, hora: autoHora })}
+              disabled={saveSchedule.isPending}>
+              {saveSchedule.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : null}
+              Salvar agendamento
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            Todo dia no horário definido, o sistema enfileira o D-1 (NF-e entradas + CT-e) e o
+            conector processa automaticamente.
           </p>
         </CardContent>
       </Card>

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,6 +134,60 @@ func ERPXMLImportTriggerHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// GET/PUT /api/erp-bridge/xml-import/schedule  (JWT) — config da coleta automática D-1.
+func ERPXMLImportScheduleHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		companyID, err := erpBridgeGetCompany(db, r)
+		if err != nil {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		if r.Method == http.MethodGet {
+			var enabled bool
+			var hora string
+			err := db.QueryRow(`SELECT COALESCE(xml_auto_enabled,false), COALESCE(xml_auto_hora,'06:00')
+				FROM erp_bridge_config WHERE company_id=$1`, companyID).Scan(&enabled, &hora)
+			if err == sql.ErrNoRows {
+				enabled, hora = false, "06:00"
+			} else if err != nil {
+				jsonErr(w, http.StatusInternalServerError, "Erro ao ler agendamento")
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"enabled": enabled, "hora": hora})
+			return
+		}
+		if r.Method == http.MethodPut || r.Method == http.MethodPost {
+			var req struct {
+				Enabled bool   `json:"enabled"`
+				Hora    string `json:"hora"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				jsonErr(w, http.StatusBadRequest, "JSON inválido")
+				return
+			}
+			hora := strings.TrimSpace(req.Hora)
+			if !regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`).MatchString(hora) {
+				jsonErr(w, http.StatusBadRequest, "hora deve estar em HH:MM (00:00–23:59)")
+				return
+			}
+			_, err := db.Exec(`
+				INSERT INTO erp_bridge_config (company_id, xml_auto_enabled, xml_auto_hora)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (company_id) DO UPDATE SET xml_auto_enabled=$2, xml_auto_hora=$3, updated_at=now()`,
+				companyID, req.Enabled, hora)
+			if err != nil {
+				log.Printf("[ERPXMLJobs] erro ao salvar agendamento: %v", err)
+				jsonErr(w, http.StatusInternalServerError, "Erro ao salvar agendamento")
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"enabled": req.Enabled, "hora": hora})
+			return
+		}
+		jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}
+
 // GET /api/erp-bridge/xml-import/jobs  (JWT) — lista os últimos jobs da empresa.
 func ERPXMLImportJobsHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -198,8 +254,36 @@ func ERPXMLImportJobsHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// claimPendingXMLJob reivindica (marca 'running') o job pendente mais antigo da
+// empresa. Retorna (job, true, nil) se pegou, (_, false, nil) se não há pendente.
+func claimPendingXMLJob(db *sql.DB, companyID string) (erpXMLJob, bool, error) {
+	var job erpXMLJob
+	err := db.QueryRow(`
+		UPDATE erp_xml_import_jobs
+		SET status='running', started_at=now(), updated_at=now()
+		WHERE id = (
+			SELECT id FROM erp_xml_import_jobs
+			WHERE company_id = $1 AND status = 'pending'
+			ORDER BY created_at
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, company_id, to_char(data_ini,'YYYY-MM-DD'), to_char(data_fim,'YYYY-MM-DD'), tipos, status`,
+		companyID,
+	).Scan(&job.ID, &job.CompanyID, &job.DataIni, &job.DataFim, &job.Tipos, &job.Status)
+	if err == sql.ErrNoRows {
+		return job, false, nil
+	}
+	if err != nil {
+		return job, false, err
+	}
+	return job, true, nil
+}
+
 // GET /api/erp-bridge/xml-import/pending  (X-API-Key) — reivindica o próximo job
 // pendente da empresa (marca 'running') e o devolve. {} se não houver.
+// Suporta long-poll via ?wait=N (segundos, máx 30): segura a resposta até surgir
+// um job ou estourar o tempo — assim o disparo manual é processado em ~1-2s.
 func ERPXMLImportPendingHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -208,30 +292,38 @@ func ERPXMLImportPendingHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusUnauthorized, "API key inválida")
 			return
 		}
-		var job erpXMLJob
-		err := db.QueryRow(`
-			UPDATE erp_xml_import_jobs
-			SET status='running', started_at=now(), updated_at=now()
-			WHERE id = (
-				SELECT id FROM erp_xml_import_jobs
-				WHERE company_id = $1 AND status = 'pending'
-				ORDER BY created_at
-				LIMIT 1
-				FOR UPDATE SKIP LOCKED
-			)
-			RETURNING id, company_id, to_char(data_ini,'YYYY-MM-DD'), to_char(data_fim,'YYYY-MM-DD'), tipos, status`,
-			companyID,
-		).Scan(&job.ID, &job.CompanyID, &job.DataIni, &job.DataFim, &job.Tipos, &job.Status)
-		if err == sql.ErrNoRows {
-			json.NewEncoder(w).Encode(map[string]interface{}{})
-			return
+		wait := 0
+		if v, e := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("wait"))); e == nil {
+			wait = v
 		}
-		if err != nil {
-			log.Printf("[ERPXMLJobs] erro ao reivindicar pendente: %v", err)
-			jsonErr(w, http.StatusInternalServerError, "Erro ao buscar pendente")
-			return
+		if wait < 0 {
+			wait = 0
 		}
-		json.NewEncoder(w).Encode(job)
+		if wait > 30 {
+			wait = 30
+		}
+		deadline := time.Now().Add(time.Duration(wait) * time.Second)
+		for {
+			job, found, err := claimPendingXMLJob(db, companyID)
+			if err != nil {
+				log.Printf("[ERPXMLJobs] erro ao reivindicar pendente: %v", err)
+				jsonErr(w, http.StatusInternalServerError, "Erro ao buscar pendente")
+				return
+			}
+			if found {
+				json.NewEncoder(w).Encode(job)
+				return
+			}
+			if time.Now().After(deadline) {
+				json.NewEncoder(w).Encode(map[string]interface{}{})
+				return
+			}
+			select {
+			case <-r.Context().Done(): // cliente desconectou
+				return
+			case <-time.After(1 * time.Second):
+			}
+		}
 	}
 }
 

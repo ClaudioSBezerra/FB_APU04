@@ -179,11 +179,15 @@ class FBTax:
         return resp.json()
 
     # ── Fila de jobs (modo --drain) ────────────────────────────────────────────
-    def get_pending_job(self) -> dict | None:
-        """Reivindica o próximo job pendente da empresa (ou None)."""
+    def get_pending_job(self, wait: int = 0) -> dict | None:
+        """Reivindica o próximo job pendente da empresa (ou None).
+        wait>0 → long-poll: o servidor segura a resposta até surgir um job ou
+        estourar 'wait' segundos (disparo manual processado em ~1-2s)."""
+        url = f"{self.base_url}/api/erp-bridge/xml-import/pending"
+        if wait > 0:
+            url += f"?wait={wait}"
         resp = requests.get(
-            f"{self.base_url}/api/erp-bridge/xml-import/pending",
-            headers={"X-API-Key": self.api_key}, timeout=60,
+            url, headers={"X-API-Key": self.api_key}, timeout=wait + 30,
         )
         if not resp.ok:
             raise RuntimeError(f"pending HTTP {resp.status_code}: {resp.text[:200]}")
@@ -305,6 +309,8 @@ def main() -> int:
     p.add_argument("--reset-tracker", action="store_true", help="zera o tracker antes (re-importa janela)")
     p.add_argument("--drain", action="store_true",
                    help="consome jobs pendentes da fila (enfileirados pela UI) e sai")
+    p.add_argument("--daemon", action="store_true",
+                   help="long-poll contínuo: processa jobs assim que aparecem (disparo imediato)")
     args = p.parse_args()
 
     if not os.path.exists(args.config):
@@ -331,7 +337,60 @@ def main() -> int:
                 grand[k] += st[k]
         return grand
 
-    # ── Modo DRAIN: consome jobs pendentes enfileirados pela UI ────────────────
+    # Processa um job (parse de datas + executar_janela + report). conn_ora já aberta.
+    def rodar_job(conn_ora, job) -> None:
+        jid = job["id"]
+        tipos = [t.strip() for t in str(job.get("tipos", "")).split(",") if t.strip() in FONTES]
+        if not tipos:
+            tipos = ["entradas", "ctes"]
+        try:
+            di = parse_data(job["data_ini"])
+            df_excl = parse_data(job["data_fim"]) + timedelta(days=1)
+        except Exception as exc:  # noqa: BLE001
+            log.error("Job %s com datas inválidas: %s", jid, exc)
+            fbtax.report_job(jid, "error", 0, 0, f"datas inválidas: {exc}")
+            return
+        log.info("► Job %s | %s a %s | tipos: %s", jid, job["data_ini"], job["data_fim"], ",".join(tipos))
+        try:
+            g = executar_janela(conn_ora, tipos, di, df_excl, jid)
+            status = "done" if g["erros"] == 0 else "error"
+            fbtax.report_job(jid, status, g["enviados"], g["erros"])
+            log.info("◄ Job %s %s — enviados=%d erros=%d", jid, status, g["enviados"], g["erros"])
+        except Exception as exc:  # noqa: BLE001
+            log.error("Job %s falhou: %s", jid, exc)
+            fbtax.report_job(jid, "error", 0, 0, str(exc)[:500])
+
+    # ── Modo DAEMON: long-poll contínuo (disparo imediato) ─────────────────────
+    if args.daemon:
+        log.info("=" * 60)
+        log.info("ERP Bridge Simulador — MODO DAEMON (long-poll) → %s", fbtax.base_url)
+        log.info("=" * 60)
+        try:
+            while True:
+                try:
+                    job = fbtax.get_pending_job(wait=25)
+                except Exception as exc:  # noqa: BLE001
+                    log.error("Erro no long-poll: %s — nova tentativa em 10s", exc)
+                    time.sleep(10)
+                    continue
+                if not job:
+                    continue  # timeout do long-poll sem job — segue esperando
+                # Conecta no Oracle só quando há job (evita queda de conexão ociosa).
+                try:
+                    conn_ora = conectar_oracle(o)
+                except Exception as exc:  # noqa: BLE001
+                    log.error("Falha ao conectar no FCCORP p/ job %s: %s", job.get("id"), exc)
+                    fbtax.report_job(job["id"], "error", 0, 0, f"falha conexão Oracle: {exc}")
+                    continue
+                try:
+                    rodar_job(conn_ora, job)
+                finally:
+                    conn_ora.close()
+        finally:
+            tracker.close()
+        return 0
+
+    # ── Modo DRAIN: consome jobs pendentes e sai ───────────────────────────────
     if args.drain:
         log.info("=" * 60)
         log.info("ERP Bridge Simulador — MODO DRAIN → %s", fbtax.base_url)
@@ -349,26 +408,7 @@ def main() -> int:
                     log.info("Sem jobs pendentes. %d job(s) processado(s).", n_jobs)
                     break
                 n_jobs += 1
-                jid = job["id"]
-                tipos = [t.strip() for t in str(job.get("tipos", "")).split(",") if t.strip() in FONTES]
-                if not tipos:
-                    tipos = ["entradas", "ctes"]
-                try:
-                    di = parse_data(job["data_ini"])
-                    df_excl = parse_data(job["data_fim"]) + timedelta(days=1)
-                except Exception as exc:  # noqa: BLE001
-                    log.error("Job %s com datas inválidas: %s", jid, exc)
-                    fbtax.report_job(jid, "error", 0, 0, f"datas inválidas: {exc}")
-                    continue
-                log.info("► Job %s | %s a %s | tipos: %s", jid, job["data_ini"], job["data_fim"], ",".join(tipos))
-                try:
-                    g = executar_janela(conn_ora, tipos, di, df_excl, jid)
-                    status = "done" if g["erros"] == 0 else "error"
-                    fbtax.report_job(jid, status, g["enviados"], g["erros"])
-                    log.info("◄ Job %s %s — enviados=%d erros=%d", jid, status, g["enviados"], g["erros"])
-                except Exception as exc:  # noqa: BLE001
-                    log.error("Job %s falhou: %s", jid, exc)
-                    fbtax.report_job(jid, "error", 0, 0, str(exc)[:500])
+                rodar_job(conn_ora, job)
         finally:
             conn_ora.close()
             tracker.close()

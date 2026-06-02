@@ -56,8 +56,23 @@ docker exec fbtax-bridge-apu04 python /app/bridge_simulador.py --config /app/con
 Fluxo: UI → `POST /api/erp-bridge/xml-import/trigger` (cria job pending) →
 `--drain` busca em `/xml-import/pending`, executa a janela, reporta em
 `/xml-import/status`. O histórico aparece em "Logs de Importação".
-Sugestão: um cron a cada 5–10 min rodando `--drain` para drenar a fila
-automaticamente sem manter processo ligado.
+
+### Modo daemon (`--daemon`) — disparo imediato (recomendado)
+
+Em vez de cron/drain periódico, o `--daemon` faz **long-poll**: chama
+`/xml-import/pending?wait=25` e o backend segura a resposta até surgir um job —
+disparo manual processado em ~1-2s, sem ficar varrendo. Conecta no Oracle só
+quando há job (robusto a queda de conexão ociosa). Container recomendado:
+
+```bash
+docker run -d --name erp-xml-drain --restart unless-stopped \
+  -v /home/<user>/erp-sim/config.yaml:/app/config.yaml \
+  erp-bridge-simulador --config /app/config.yaml --daemon
+```
+
+A **coleta automática D-1** é agendada no backend (config por empresa em
+`erp_bridge_config.xml_auto_enabled/xml_auto_hora`, ajustável na tela "Importar via
+ERP"): no horário definido o backend enfileira o job de ontem e o daemon processa.
 
 ⚠️ **Volume**: a fonte tem ~450–620 mil NF-e/mês (2024–2025). Importe por janelas
 controladas (ex.: por dia ou semana nos meses pesados). O backend processa de forma
