@@ -167,11 +167,11 @@ class FBTax:
         self.base_url = cfg["url"].rstrip("/")
         self.api_key = cfg["api_key"]
 
-    def enviar_xml_batch(self, tipo: str, xmls: list, competencia: str = "") -> dict:
+    def enviar_xml_batch(self, tipo: str, xmls: list, competencia: str = "", job_id: str = "") -> dict:
         resp = requests.post(
             f"{self.base_url}/api/erp-bridge/import/xml",
             headers={"X-API-Key": self.api_key, "Content-Type": "application/json"},
-            json={"tipo": tipo, "competencia": competencia, "xmls": xmls},
+            json={"tipo": tipo, "competencia": competencia, "job_id": job_id, "xmls": xmls},
             timeout=180,
         )
         if not resp.ok:
@@ -215,6 +215,7 @@ def processar(
     data_fim: date,
     batch_size: int,
     dry_run: bool,
+    job_id: str = "",
 ) -> dict:
     fonte = FONTES[fonte_key]
     stats = {"lidos": 0, "enviados": 0, "ignorados": 0, "erros": 0}
@@ -249,7 +250,7 @@ def processar(
             lote = []
             return
         try:
-            fbtax.enviar_xml_batch(fonte_key, lote)
+            fbtax.enviar_xml_batch(fonte_key, lote, job_id=job_id)
             for ch in chaves:
                 marcar(tracker, fonte_key, ch, "ok")
             tracker.commit()
@@ -321,11 +322,11 @@ def main() -> int:
         log.info("Tracker resetado.")
     tracker = init_tracker(tracker_path)
 
-    def executar_janela(conn_ora, tipos, data_ini, data_fim_excl) -> dict:
+    def executar_janela(conn_ora, tipos, data_ini, data_fim_excl, job_id="") -> dict:
         grand = {"lidos": 0, "enviados": 0, "ignorados": 0, "erros": 0}
         for tipo in tipos:
             st = processar(tipo, conn_ora, o, fbtax, tracker, data_ini, data_fim_excl,
-                           args.batch, args.dry_run)
+                           args.batch, args.dry_run, job_id)
             for k in grand:
                 grand[k] += st[k]
         return grand
@@ -361,7 +362,7 @@ def main() -> int:
                     continue
                 log.info("► Job %s | %s a %s | tipos: %s", jid, job["data_ini"], job["data_fim"], ",".join(tipos))
                 try:
-                    g = executar_janela(conn_ora, tipos, di, df_excl)
+                    g = executar_janela(conn_ora, tipos, di, df_excl, jid)
                     status = "done" if g["erros"] == 0 else "error"
                     fbtax.report_job(jid, status, g["enviados"], g["erros"])
                     log.info("◄ Job %s %s — enviados=%d erros=%d", jid, status, g["enviados"], g["erros"])

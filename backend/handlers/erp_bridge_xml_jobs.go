@@ -32,6 +32,12 @@ type erpXMLJob struct {
 	CreatedAt     string  `json:"created_at"`
 	StartedAt     *string `json:"started_at,omitempty"`
 	FinishedAt    *string `json:"finished_at,omitempty"`
+	// Progresso real agregado dos lotes (xml_upload_batches.erp_job_id):
+	DocsTotal        int `json:"docs_total"`        // soma de total_count dos lotes
+	Importados       int `json:"importados"`        // soma de imported_count
+	Rejeitados       int `json:"rejeitados"`        // soma de rejected_count
+	BatchesTotal     int `json:"batches_total"`     // nº de lotes
+	BatchesAndamento int `json:"batches_andamento"` // lotes pending/processing
 }
 
 // erpBridgeCompanyFromAPIKey resolve a empresa a partir do header X-API-Key
@@ -140,14 +146,27 @@ func ERPXMLImportJobsHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		rows, err := db.Query(`
-			SELECT id, company_id, to_char(data_ini,'YYYY-MM-DD'), to_char(data_fim,'YYYY-MM-DD'),
-			       tipos, status, total_enviados, total_erros, error_message,
-			       to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SSOF'),
-			       to_char(started_at,'YYYY-MM-DD"T"HH24:MI:SSOF'),
-			       to_char(finished_at,'YYYY-MM-DD"T"HH24:MI:SSOF')
-			FROM erp_xml_import_jobs
-			WHERE company_id = $1
-			ORDER BY created_at DESC
+			SELECT j.id, j.company_id, to_char(j.data_ini,'YYYY-MM-DD'), to_char(j.data_fim,'YYYY-MM-DD'),
+			       j.tipos, j.status, j.total_enviados, j.total_erros, j.error_message,
+			       to_char(j.created_at,'YYYY-MM-DD"T"HH24:MI:SSOF'),
+			       to_char(j.started_at,'YYYY-MM-DD"T"HH24:MI:SSOF'),
+			       to_char(j.finished_at,'YYYY-MM-DD"T"HH24:MI:SSOF'),
+			       COALESCE(b.docs_total,0), COALESCE(b.importados,0), COALESCE(b.rejeitados,0),
+			       COALESCE(b.batches_total,0), COALESCE(b.batches_andamento,0)
+			FROM erp_xml_import_jobs j
+			LEFT JOIN (
+				SELECT erp_job_id,
+				       SUM(total_count)    AS docs_total,
+				       SUM(imported_count) AS importados,
+				       SUM(rejected_count) AS rejeitados,
+				       COUNT(*)            AS batches_total,
+				       COUNT(*) FILTER (WHERE status IN ('pending','processing')) AS batches_andamento
+				FROM xml_upload_batches
+				WHERE erp_job_id IS NOT NULL
+				GROUP BY erp_job_id
+			) b ON b.erp_job_id = j.id
+			WHERE j.company_id = $1
+			ORDER BY j.created_at DESC
 			LIMIT 100`, companyID)
 		if err != nil {
 			log.Printf("[ERPXMLJobs] erro ao listar: %v", err)
@@ -160,7 +179,8 @@ func ERPXMLImportJobsHandler(db *sql.DB) http.HandlerFunc {
 			var j erpXMLJob
 			var errMsg, started, finished sql.NullString
 			if err := rows.Scan(&j.ID, &j.CompanyID, &j.DataIni, &j.DataFim, &j.Tipos, &j.Status,
-				&j.TotalEnviados, &j.TotalErros, &errMsg, &j.CreatedAt, &started, &finished); err != nil {
+				&j.TotalEnviados, &j.TotalErros, &errMsg, &j.CreatedAt, &started, &finished,
+				&j.DocsTotal, &j.Importados, &j.Rejeitados, &j.BatchesTotal, &j.BatchesAndamento); err != nil {
 				continue
 			}
 			if errMsg.Valid {

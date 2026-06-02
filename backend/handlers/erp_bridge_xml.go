@@ -21,6 +21,7 @@ import (
 type erpBridgeXMLRequest struct {
 	Tipo        string `json:"tipo"`        // "entradas" | "ctes" | "saidas"
 	Competencia string `json:"competencia"` // opcional "MM/YYYY" — força a competência (mes_ano)
+	JobID       string `json:"job_id"`      // opcional — liga os lotes ao job (erp_xml_import_jobs)
 	XMLs        []struct {
 		Name    string `json:"name"`    // identificador (ex.: a chave) — usado em logs/erros
 		Content string `json:"content"` // XML cru (string)
@@ -121,6 +122,7 @@ func ERPBridgeXMLImportHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		competencia := strings.TrimSpace(req.Competencia)
+		jobID := strings.TrimSpace(req.JobID)
 
 		// Enfileira em chunks assíncronos (XML comprimido em xml_data; xml_worker processa).
 		chunks := chunkXMLFiles(xmlFiles, BatchChunkSize)
@@ -134,10 +136,10 @@ func ERPBridgeXMLImportHandler(db *sql.DB) http.HandlerFunc {
 			var batchID string
 			// uploaded_by fica NULL (origem bridge, sem usuário).
 			err := db.QueryRow(`
-				INSERT INTO xml_upload_batches (company_id, tipo, filename, total_count, status, competencia)
-				VALUES ($1, $2, $3, $4, 'pending', NULLIF($5, ''))
+				INSERT INTO xml_upload_batches (company_id, tipo, filename, total_count, status, competencia, erp_job_id)
+				VALUES ($1, $2, $3, $4, 'pending', NULLIF($5, ''), NULLIF($6, '')::uuid)
 				RETURNING id`,
-				companyID, tipo, filename, len(chunk), competencia,
+				companyID, tipo, filename, len(chunk), competencia, jobID,
 			).Scan(&batchID)
 			if err != nil {
 				log.Printf("[BridgeXML] erro ao criar batch chunk %d: %v", i+1, err)

@@ -24,15 +24,23 @@ export interface ERPXMLJob {
   created_at: string;
   started_at?: string;
   finished_at?: string;
+  docs_total: number;
+  importados: number;
+  rejeitados: number;
+  batches_total: number;
+  batches_andamento: number;
 }
 
-const STATUS: Record<string, { label: string; cls: string }> = {
-  pending:  { label: 'Na fila',     cls: 'bg-amber-100 text-amber-700' },
-  running:  { label: 'Processando', cls: 'bg-blue-100 text-blue-700' },
-  done:     { label: 'Concluído',   cls: 'bg-green-100 text-green-700' },
-  error:    { label: 'Erro',        cls: 'bg-red-100 text-red-700' },
-  canceled: { label: 'Cancelado',   cls: 'bg-slate-100 text-slate-600' },
-};
+// Status efetivo: combina o status do job (fase de envio pelo conector) com o
+// progresso real dos lotes (fase de importação pelo worker).
+function effectiveStatus(j: ERPXMLJob): { label: string; cls: string } {
+  if (j.status === 'error') return { label: 'Erro', cls: 'bg-red-100 text-red-700' };
+  if (j.status === 'canceled') return { label: 'Cancelado', cls: 'bg-slate-100 text-slate-600' };
+  if (j.status === 'pending') return { label: 'Na fila', cls: 'bg-amber-100 text-amber-700' };
+  if (j.batches_andamento > 0) return { label: 'Importando', cls: 'bg-blue-100 text-blue-700' };
+  if (j.status === 'running' && j.batches_total === 0) return { label: 'Lendo ERP…', cls: 'bg-blue-100 text-blue-700' };
+  return { label: 'Concluído', cls: 'bg-green-100 text-green-700' };
+}
 
 function fmtDateBR(iso: string): string {
   if (!iso) return '';
@@ -74,17 +82,20 @@ export function ERPXMLJobsTable({ autoRefresh = true }: { autoRefresh?: boolean 
               <th className="px-3 py-2 font-semibold">Período</th>
               <th className="px-3 py-2 font-semibold">Tipos</th>
               <th className="px-3 py-2 font-semibold">Status</th>
-              <th className="px-3 py-2 font-semibold text-right">Enviados</th>
-              <th className="px-3 py-2 font-semibold text-right">Erros</th>
+              <th className="px-3 py-2 font-semibold w-64">Progresso (importados)</th>
               <th className="px-3 py-2 font-semibold">Criado</th>
             </tr>
           </thead>
           <tbody>
             {jobs.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">Nenhum job ainda.</td></tr>
+              <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">Nenhum job ainda.</td></tr>
             )}
             {jobs.map((j) => {
-              const sc = STATUS[j.status] || STATUS.pending;
+              const sc = effectiveStatus(j);
+              const total = j.docs_total || 0;
+              const imp = j.importados || 0;
+              const pct = total > 0 ? Math.min(100, Math.round((imp / total) * 100)) : 0;
+              const emAndamento = j.batches_andamento > 0;
               return (
                 <tr key={j.id} className="border-t hover:bg-muted/20">
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDateBR(j.data_ini)} – {fmtDateBR(j.data_fim)}</td>
@@ -97,9 +108,23 @@ export function ERPXMLJobsTable({ autoRefresh = true }: { autoRefresh?: boolean 
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{j.total_enviados.toLocaleString('pt-BR')}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{j.total_erros > 0
-                    ? <span className="text-red-600 font-medium">{j.total_erros}</span> : 0}</td>
+                  <td className="px-3 py-2">
+                    {total > 0 ? (
+                      <div className="space-y-1">
+                        <div className="h-2 w-full rounded bg-muted overflow-hidden">
+                          <div className={`h-full ${emAndamento ? 'bg-blue-500' : 'bg-green-500'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="text-[11px] text-muted-foreground tabular-nums">
+                          {imp.toLocaleString('pt-BR')} / {total.toLocaleString('pt-BR')} ({pct}%)
+                          {j.rejeitados > 0 && <span className="text-red-600"> · {j.rejeitados} rej.</span>}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">
+                        {sc.label === 'Lendo ERP…' ? 'lendo do ERP…' : '—'}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
                     {new Date(j.created_at).toLocaleString('pt-BR')}
                   </td>

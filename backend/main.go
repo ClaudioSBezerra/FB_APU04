@@ -247,6 +247,26 @@ func onDBConnected() {
 		}
 	}()
 
+	// Goroutine: aborta jobs de importação XML via ERP presos em 'running' > 2h
+	// (conector --drain morreu antes de reportar), a cada 5 minutos.
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			_, err := database.Exec(`
+				UPDATE erp_xml_import_jobs
+				SET status        = 'error',
+				    error_message = 'Job abortado automaticamente: sem conclusão por mais de 2 horas (conector pode ter caído)',
+				    updated_at    = now(),
+				    finished_at   = now()
+				WHERE status = 'running' AND started_at < NOW() - INTERVAL '2 hours'
+			`)
+			if err != nil {
+				log.Printf("[ERPXMLJobs AutoAbort] Erro: %v", err)
+			}
+		}
+	}()
+
 	// Trigger async refresh of materialized views at startup
 	go func() {
 		time.Sleep(5 * time.Second)
