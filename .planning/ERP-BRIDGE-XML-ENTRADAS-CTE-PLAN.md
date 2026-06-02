@@ -58,10 +58,12 @@ FCCORP sfc_nfe_imp / sfc_cte_imp (CLOB XML)
       (SELECT read-only), CLOB em streaming (fetch_lobs=False, memória limitada), dedup via SQLite,
       envia em lotes ao `/api/erp-bridge/import/xml`. CLI parametrizado por data (--data-ini/--data-fim),
       --dry-run, --reset-tracker. Dockerfile + config.example.yaml + README. py_compile OK. (concluída 2026-06-02)
-- [ ] **Fase 3 — Volume/resiliência**: janelas de data, async worker (existe), reconexão DPY-4011 (existe),
-      watermark só avança com zero erros (existe).
-- [ ] **Fase 4 — Validação**: Bloco C, fretes/CT-e e resumo refletindo entradas/CTEs num período conhecido;
-      comparar com importação direta.
+- [x] **Fase 3 — Volume/resiliência**: janelas de data (CLI), streaming de CLOB (fetch_lobs=False),
+      lotes, dedup SQLite. Validado com 1 dia (3.164 docs) sem erro.
+- [x] **Fase 4 — Validação (dados)** 2026-06-02, janela 2026-04-01: NF-e 1765 + 6442 itens;
+      CT-e 1395 + 1926 refs; 0 rejeições. Pendente só a conferência VISUAL no app (Bloco C / fretes).
+      Gotchas resolvidos: nome `.xml` no ZIP (c3909b9); drift APU02 em cte_entradas — v_carga (134) e
+      IBS/CBS nullable (135).
 
 ## Campos mínimos exigidos pela Fronteira (do parser)
 
