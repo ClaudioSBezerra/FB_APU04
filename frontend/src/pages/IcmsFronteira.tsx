@@ -2111,6 +2111,26 @@ function FretesPendentesTab({ token }: { token: string | null }) {
     },
   })
 
+  async function handleExportXLSX() {
+    try {
+      const url = periodo
+        ? `/api/icms-fronteira/fretes-pendentes/exportar/xlsx?periodo=${encodeURIComponent(periodo)}`
+        : '/api/icms-fronteira/fretes-pendentes/exportar/xlsx'
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const blob = await res.blob()
+      const objUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objUrl
+      a.download = 'fretes-pendentes.xlsx'
+      a.click()
+      URL.revokeObjectURL(objUrl)
+      toast.success('Excel de fretes pendentes gerado')
+    } catch {
+      toast.error('Erro ao exportar Excel')
+    }
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
@@ -2120,18 +2140,29 @@ function FretesPendentesTab({ token }: { token: string | null }) {
         até o CT-e da transportadora chegar e ser importado.
       </p>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <Label htmlFor="fp-periodo" className="text-xs whitespace-nowrap">Período:</Label>
-        <Input
-          id="fp-periodo"
-          type="text"
-          placeholder="MM/AAAA"
-          maxLength={7}
-          className="w-36 text-xs h-8"
-          value={monthInput}
-          onChange={(e) => setMonthInput(e.target.value)}
-        />
-        {periodo && <span className="text-xs text-muted-foreground">{periodo}</span>}
+      <div className="flex items-center gap-2 flex-wrap justify-between">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="fp-periodo" className="text-xs whitespace-nowrap">Período:</Label>
+          <Input
+            id="fp-periodo"
+            type="text"
+            placeholder="MM/AAAA"
+            maxLength={7}
+            className="w-36 text-xs h-8"
+            value={monthInput}
+            onChange={(e) => setMonthInput(e.target.value)}
+          />
+          {periodo && <span className="text-xs text-muted-foreground">{periodo}</span>}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={handleExportXLSX}
+          disabled={!data || data.count === 0}
+        >
+          <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Excel
+        </Button>
       </div>
 
       {isLoading && (
@@ -2169,6 +2200,7 @@ function FretesPendentesTab({ token }: { token: string | null }) {
                 <TableRow className="bg-muted/30 hover:bg-transparent">
                   <TableHead className="text-xs font-semibold uppercase tracking-wide">Data NF</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave NF-e</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wide">Transportadora (recebedor) pendente</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wide">CNPJ</TableHead>
                 </TableRow>
@@ -2178,6 +2210,7 @@ function FretesPendentesTab({ token }: { token: string | null }) {
                   <TableRow key={`${r.chave_nfe}-${r.transp_cnpj}`}>
                     <TableCell className="text-xs tabular-nums">{fmtDataBR(r.data_emissao)}</TableCell>
                     <TableCell className="text-xs font-medium">{r.numero_nfe}</TableCell>
+                    <TableCell className="text-xs font-mono text-[11px] tabular-nums select-all">{r.chave_nfe}</TableCell>
                     <TableCell className="text-xs">{r.transp_nome || '—'}</TableCell>
                     <TableCell className="text-xs tabular-nums text-muted-foreground">{r.transp_cnpj}</TableCell>
                   </TableRow>

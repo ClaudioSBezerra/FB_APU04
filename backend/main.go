@@ -774,6 +774,14 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraFretesPendentesHandler(database), "")(w, r)
 	})
+	http.HandleFunc("/api/icms-fronteira/fretes-pendentes/exportar/xlsx", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraFretesPendentesXLSXHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/ufs", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {
