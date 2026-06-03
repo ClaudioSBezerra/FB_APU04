@@ -186,8 +186,15 @@ jobs:
 
     steps:
       - name: Deploy simu.fcxlabs.com
+        env:
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
         run: |
           cd /opt/apps/fbtax/simu-apu04
+          # ZAI_API_KEY: se o secret existir, vira a fonte da verdade (sobrescreve o
+          # .env do servidor via interpolação do compose). Se vier vazio/ausente,
+          # desfaz a var p/ o .env local continuar mandando — evita zerar a chave
+          # (no docker compose, uma var de shell vazia tem precedência sobre o .env).
+          if [ -z "${ZAI_API_KEY:-}" ]; then unset ZAI_API_KEY; fi
           docker compose pull
           docker compose up -d --force-recreate
           sleep 8
