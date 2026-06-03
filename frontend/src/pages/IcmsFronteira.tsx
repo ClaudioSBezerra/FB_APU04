@@ -2072,6 +2072,125 @@ interface MotorFiscalResponse {
   mensagem?: string
 }
 
+// ---------------------------------------------------------------------------
+// Sub-aba "Fretes pendentes" — NFs cujo CT-e final (do tomador=empresa) ainda
+// não chegou. Consome /api/icms-fronteira/fretes-pendentes (detecta via <receb>
+// do CT-e de redespacho). Complementa a regra Gilson: essas notas ficam com
+// frete zerado até o CT-e da transportadora ser importado.
+// ---------------------------------------------------------------------------
+interface FretePendenteRow {
+  numero_nfe: string
+  chave_nfe: string
+  data_emissao: string
+  transp_cnpj: string
+  transp_nome: string
+}
+interface FretesPendentesResponse {
+  rows: FretePendenteRow[]
+  count: number
+}
+
+function fmtDataBR(s: string): string {
+  if (!s) return '—'
+  return s.slice(0, 10).split('-').reverse().join('/')
+}
+
+function FretesPendentesTab({ token }: { token: string | null }) {
+  const [monthInput, setMonthInput] = useState('')
+  const periodo = monthToPeriodo(monthInput)
+
+  const { data, isLoading, isError } = useQuery<FretesPendentesResponse>({
+    queryKey: ['icms-fronteira/fretes-pendentes', periodo],
+    queryFn: async () => {
+      const url = periodo
+        ? `/api/icms-fronteira/fretes-pendentes?periodo=${encodeURIComponent(periodo)}`
+        : '/api/icms-fronteira/fretes-pendentes'
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+  })
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        NFs cujo transporte foi redespachado a uma transportadora (recebedor do CT-e) que ainda{' '}
+        <strong>não emitiu o CT-e final</strong> referenciando a nota. Pela regra de antecipação
+        (só entra CT-e com tomador = a empresa), o frete dessas notas fica <strong>zerado</strong>{' '}
+        até o CT-e da transportadora chegar e ser importado.
+      </p>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <Label htmlFor="fp-periodo" className="text-xs whitespace-nowrap">Período:</Label>
+        <Input
+          id="fp-periodo"
+          type="text"
+          placeholder="MM/AAAA"
+          maxLength={7}
+          className="w-36 text-xs h-8"
+          value={monthInput}
+          onChange={(e) => setMonthInput(e.target.value)}
+        />
+        {periodo && <span className="text-xs text-muted-foreground">{periodo}</span>}
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+        </div>
+      )}
+
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar fretes pendentes.</AlertDescription>
+        </Alert>
+      )}
+
+      {!isLoading && !isError && data && data.count === 0 && (
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <Truck className="h-8 w-8 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">
+            Nenhum frete pendente — todas as notas já têm o CT-e do tomador.
+          </p>
+        </div>
+      )}
+
+      {data && data.count > 0 && (
+        <>
+          <div className="flex items-center gap-2 px-1">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <span className="text-xs text-muted-foreground">
+              {data.count} nota{data.count !== 1 ? 's' : ''} aguardando o CT-e final
+            </span>
+          </div>
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30 hover:bg-transparent">
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Data NF</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Transportadora (recebedor) pendente</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">CNPJ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.rows.map((r) => (
+                  <TableRow key={`${r.chave_nfe}-${r.transp_cnpj}`}>
+                    <TableCell className="text-xs tabular-nums">{fmtDataBR(r.data_emissao)}</TableCell>
+                    <TableCell className="text-xs font-medium">{r.numero_nfe}</TableCell>
+                    <TableCell className="text-xs">{r.transp_nome || '—'}</TableCell>
+                    <TableCell className="text-xs tabular-nums text-muted-foreground">{r.transp_cnpj}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function MotorFiscalTab({ token }: { token: string | null }) {
   const [monthInput, setMonthInput] = useState('')
   const periodo = monthToPeriodo(monthInput)
@@ -5947,21 +6066,42 @@ export default function IcmsFronteira() {
         </TabsContent>
 
         <TabsContent value="fretes" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Truck className="h-4 w-4 text-slate-600" />
-                Fretes — CT-e vinculados às NFs de mercadoria
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground mb-4">
-                CT-e de entrada vinculados às NFs de mercadoria interestadual. O ICMS fronteira
-                sobre o frete é calculado com o mesmo regime da NF correspondente.
-              </p>
-              <FretesTab token={token} />
-            </CardContent>
-          </Card>
+          <Tabs defaultValue="vinculados" className="w-full">
+            <TabsList className="mb-2">
+              <TabsTrigger value="vinculados" className="text-sm">CT-e vinculados</TabsTrigger>
+              <TabsTrigger value="pendentes" className="text-sm">Fretes pendentes</TabsTrigger>
+            </TabsList>
+            <TabsContent value="vinculados">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <Truck className="h-4 w-4 text-slate-600" />
+                    Fretes — CT-e vinculados às NFs de mercadoria
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    CT-e de entrada vinculados às NFs de mercadoria interestadual. O ICMS fronteira
+                    sobre o frete é calculado com o mesmo regime da NF correspondente.
+                  </p>
+                  <FretesTab token={token} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="pendentes">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    Fretes pendentes — CT-e final a chegar
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <FretesPendentesTab token={token} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent value="motor-fiscal" className="mt-6">
