@@ -524,6 +524,12 @@ func processSingleCTe(db *sql.DB, companyID string, competencia string, data []b
 		destCNPJCPF = strings.TrimSpace(inf.Dest.CPF)
 	}
 
+	// Recebedor (redespacho): pista do frete final — ver relatório de fretes pendentes.
+	recebCNPJCPF := strings.TrimSpace(inf.Receb.CNPJ)
+	if recebCNPJCPF == "" {
+		recebCNPJCPF = strings.TrimSpace(inf.Receb.CPF)
+	}
+
 	vBC, vICMS := resolveICMSCTe(inf.Imp.ICMS)
 	ib := inf.Imp.IBSCBSTot
 	modInt, _ := strconv.Atoi(mod)
@@ -552,6 +558,7 @@ func processSingleCTe(db *sql.DB, companyID string, competencia string, data []b
 			v_bc_icms, v_icms,
 			v_bc_ibs_cbs, v_ibs, v_cbs,
 			toma, toma4_cnpj,
+			receb_cnpj_cpf, receb_nome,
 			source
 		) VALUES (
 			$1,$2,$3,$4,$5,
@@ -563,6 +570,7 @@ func processSingleCTe(db *sql.DB, companyID string, competencia string, data []b
 			$23,$24,
 			$25,$26,$27,
 			$28,$29,
+			$30,$31,
 			'xml_upload'
 		)
 		ON CONFLICT ON CONSTRAINT uq_cte_entradas_company_chave DO UPDATE SET
@@ -577,6 +585,7 @@ func processSingleCTe(db *sql.DB, companyID string, competencia string, data []b
 			v_bc_icms=EXCLUDED.v_bc_icms, v_icms=EXCLUDED.v_icms,
 			v_bc_ibs_cbs=EXCLUDED.v_bc_ibs_cbs, v_ibs=EXCLUDED.v_ibs, v_cbs=EXCLUDED.v_cbs,
 			toma=EXCLUDED.toma, toma4_cnpj=EXCLUDED.toma4_cnpj,
+			receb_cnpj_cpf=EXCLUDED.receb_cnpj_cpf, receb_nome=EXCLUDED.receb_nome,
 			source='xml_upload'`,
 		companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NCT,
 		dataEmissao, mesAno, inf.Ide.NatOp, inf.Ide.CFOP, inf.Ide.Modal,
@@ -588,6 +597,7 @@ func processSingleCTe(db *sql.DB, companyID string, competencia string, data []b
 		vBC, vICMS,
 		toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GCBS.VCBS),
 		toma, toma4CNPJ,
+		recebCNPJCPF, inf.Receb.XNome,
 	)
 	if err != nil {
 		return fmt.Errorf("erro ao persistir CT-e: %w", err)
