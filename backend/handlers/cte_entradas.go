@@ -44,6 +44,7 @@ type infCte struct {
 	Emit       emitCTe    `xml:"emit"`
 	Rem        parteCTe   `xml:"rem"`
 	Dest       parteCTe   `xml:"dest"`
+	Receb      parteCTe   `xml:"receb"` // recebedor (redespacho) — pista do frete final
 	VPrest     vPrestCTe  `xml:"vPrest"`
 	Imp        impCTe     `xml:"imp"`
 	InfCTeNorm infCTeNorm `xml:"infCTeNorm"`
@@ -378,6 +379,12 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 				destCNPJCPF = strings.TrimSpace(inf.Dest.CPF)
 			}
 
+			// Recebedor (redespacho): CNPJ ou CPF — vazio quando não há <receb>
+			recebCNPJCPF := strings.TrimSpace(inf.Receb.CNPJ)
+			if recebCNPJCPF == "" {
+				recebCNPJCPF = strings.TrimSpace(inf.Receb.CPF)
+			}
+
 			// UF do remetente: tag <enderReme>
 			remUF := strings.TrimSpace(inf.Rem.EnderReme.UF)
 			// UF do destinatário: tag <enderDest>
@@ -408,6 +415,7 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					emit_cnpj, emit_nome, emit_uf,
 					rem_cnpj_cpf, rem_nome, rem_uf,
 					dest_cnpj_cpf, dest_nome, dest_uf,
+					receb_cnpj_cpf, receb_nome,
 					v_prest, v_rec, v_carga,
 					v_bc_icms, v_icms,
 					v_bc_ibs_cbs, v_ibs, v_cbs,
@@ -418,20 +426,23 @@ func CteEntradasUploadHandler(db *sql.DB) http.HandlerFunc {
 					$11,$12,$13,
 					$14,$15,$16,
 					$17,$18,$19,
-					$20,$21,$22,
-					$23,$24,
-					$25,$26,$27,
-					$28,$29
+					$20,$21,
+					$22,$23,$24,
+					$25,$26,
+					$27,$28,$29,
+					$30,$31
 				)
 				ON CONFLICT ON CONSTRAINT uq_cte_entradas_company_chave DO UPDATE
 					SET mes_ano = EXCLUDED.mes_ano,
-					    toma = EXCLUDED.toma, toma4_cnpj = EXCLUDED.toma4_cnpj
+					    toma = EXCLUDED.toma, toma4_cnpj = EXCLUDED.toma4_cnpj,
+					    receb_cnpj_cpf = EXCLUDED.receb_cnpj_cpf, receb_nome = EXCLUDED.receb_nome
 				RETURNING id`,
 				companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NCT,
 				dataEmissao, mesAno, inf.Ide.NatOp, inf.Ide.CFOP, inf.Ide.Modal,
 				inf.Emit.CNPJ, inf.Emit.XNome, inf.Emit.EnderEmit.UF,
 				remCNPJCPF, inf.Rem.XNome, remUF,
 				destCNPJCPF, inf.Dest.XNome, destUF,
+				recebCNPJCPF, inf.Receb.XNome,
 				toDecimal(inf.VPrest.VTPrest), toDecimal(inf.VPrest.VRec),
 				toDecimal(inf.InfCTeNorm.InfCarga.VCarga),
 				vBC, vICMS,
