@@ -23,12 +23,12 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	MaxUploadFileBytes   = 2 * 1024 * 1024 * 1024  // 2 GB — tamanho máximo do .zip/.xml enviado
-	MaxUncompressedBytes = 8 * 1024 * 1024 * 1024  // 8 GB — proteção anti-ZIP bomb (total descomprimido)
-	MaxSingleXMLBytes    = 10 * 1024 * 1024         // 10 MB — limite por XML individual
-	MaxXMLsPerBatch      = 100_000                  // sem limite prático; auto-split cuida do chunking
-	BatchChunkSize       = 2000                     // XMLs por sub-lote quando auto-split é ativado
-	BatchAsyncThreshold  = 50                       // acima disto: background job
+	MaxUploadFileBytes   = 2 * 1024 * 1024 * 1024 // 2 GB — tamanho máximo do .zip/.xml enviado
+	MaxUncompressedBytes = 8 * 1024 * 1024 * 1024 // 8 GB — proteção anti-ZIP bomb (total descomprimido)
+	MaxSingleXMLBytes    = 10 * 1024 * 1024       // 10 MB — limite por XML individual
+	MaxXMLsPerBatch      = 100_000                // sem limite prático; auto-split cuida do chunking
+	BatchChunkSize       = 2000                   // XMLs por sub-lote quando auto-split é ativado
+	BatchAsyncThreshold  = 50                     // acima disto: background job
 )
 
 // ---------------------------------------------------------------------------
@@ -54,12 +54,19 @@ type infProt struct {
 }
 
 type infNFe struct {
-	ID    string `xml:"Id,attr"` // "NFe" + 44 dígitos (fallback)
-	Ide   ide    `xml:"ide"`
-	Emit  emit   `xml:"emit"`
-	Dest  dest   `xml:"dest"`
-	Det   []det  `xml:"det"` // array de itens da nota
-	Total total  `xml:"total"`
+	ID     string `xml:"Id,attr"` // "NFe" + 44 dígitos (fallback)
+	Ide    ide    `xml:"ide"`
+	Emit   emit   `xml:"emit"`
+	Dest   dest   `xml:"dest"`
+	Det    []det  `xml:"det"` // array de itens da nota
+	Total  total  `xml:"total"`
+	Transp transp `xml:"transp"`
+}
+
+// transp.modFrete: modalidade do frete (0=remetente/CIF, 1=destinatário/FOB,
+// 2=terceiros, 3=próprio remetente, 4=próprio destinatário, 9=sem transporte).
+type transp struct {
+	ModFrete string `xml:"modFrete"`
 }
 
 // ---------------------------------------------------------------------------
@@ -120,11 +127,11 @@ type detIPI struct {
 }
 
 type ide struct {
-	Mod      string `xml:"mod"`      // 55 ou 65
+	Mod      string `xml:"mod"` // 55 ou 65
 	Serie    string `xml:"serie"`
 	NNF      string `xml:"nNF"`
-	DhEmi    string `xml:"dhEmi"`    // ISO8601 → data_emissao + mes_ano
-	TpNF     string `xml:"tpNF"`    // 1 = saída (rejeitar se ≠ 1)
+	DhEmi    string `xml:"dhEmi"` // ISO8601 → data_emissao + mes_ano
+	TpNF     string `xml:"tpNF"`  // 1 = saída (rejeitar se ≠ 1)
 	NatOp    string `xml:"natOp"`
 	IndFinal string `xml:"indFinal"` // "0"=B2B/normal, "1"=consumidor final; "" para NF-e antigas
 }
@@ -132,7 +139,7 @@ type ide struct {
 type emit struct {
 	CNPJ      string    `xml:"CNPJ"`
 	XNome     string    `xml:"xNome"`
-	CRT       string    `xml:"CRT"`        // "1" = Simples Nacional
+	CRT       string    `xml:"CRT"` // "1" = Simples Nacional
 	EnderEmit enderEmit `xml:"enderEmit"`
 }
 
@@ -187,14 +194,18 @@ type ibsCbsTot struct {
 }
 
 type gIBS struct {
-	GIBSuf   gIBSuf  `xml:"gIBSUF"`
-	GIBSMun  gIBSMun `xml:"gIBSMun"`
-	VIBS     string  `xml:"vIBS"`
-	VCredPres string `xml:"vCredPres"`
+	GIBSuf    gIBSuf  `xml:"gIBSUF"`
+	GIBSMun   gIBSMun `xml:"gIBSMun"`
+	VIBS      string  `xml:"vIBS"`
+	VCredPres string  `xml:"vCredPres"`
 }
 
-type gIBSuf  struct{ VIBSuf  string `xml:"vIBSUF"` }
-type gIBSMun struct{ VIBSMun string `xml:"vIBSMun"` }
+type gIBSuf struct {
+	VIBSuf string `xml:"vIBSUF"`
+}
+type gIBSMun struct {
+	VIBSMun string `xml:"vIBSMun"`
+}
 
 type gCBS struct {
 	VCBS      string `xml:"vCBS"`
@@ -446,9 +457,9 @@ type nfeSaidaErro struct {
 }
 
 type nfeSaidaUploadResult struct {
-	Importados int             `json:"importados"`
-	Ignorados  int             `json:"ignorados"` // duplicatas
-	Erros      []nfeSaidaErro  `json:"erros"`
+	Importados int            `json:"importados"`
+	Ignorados  int            `json:"ignorados"` // duplicatas
+	Erros      []nfeSaidaErro `json:"erros"`
 }
 
 // ---------------------------------------------------------------------------
@@ -714,30 +725,30 @@ type nfeSaidaRow struct {
 	DestUF      string `json:"dest_uf"`
 	DestCMun    string `json:"dest_c_mun"`
 	// ICMSTot
-	VBC       float64 `json:"v_bc"`
-	VICMS     float64 `json:"v_icms"`
+	VBC        float64 `json:"v_bc"`
+	VICMS      float64 `json:"v_icms"`
 	VICMSDeson float64 `json:"v_icms_deson"`
-	VFCP      float64 `json:"v_fcp"`
-	VBcST     float64 `json:"v_bc_st"`
-	VST       float64 `json:"v_st"`
-	VFcpST    float64 `json:"v_fcp_st"`
-	VFcpSTRet float64 `json:"v_fcp_st_ret"`
-	VProd     float64 `json:"v_prod"`
-	VFrete    float64 `json:"v_frete"`
-	VSeg      float64 `json:"v_seg"`
-	VDesc     float64 `json:"v_desc"`
-	VII       float64 `json:"v_ii"`
-	VIPI      float64 `json:"v_ipi"`
-	VIPIDevol float64 `json:"v_ipi_devol"`
-	VPIS      float64 `json:"v_pis"`
-	VCOFINS   float64 `json:"v_cofins"`
-	VOutro    float64 `json:"v_outro"`
-	VNF       float64 `json:"v_nf"`
+	VFCP       float64 `json:"v_fcp"`
+	VBcST      float64 `json:"v_bc_st"`
+	VST        float64 `json:"v_st"`
+	VFcpST     float64 `json:"v_fcp_st"`
+	VFcpSTRet  float64 `json:"v_fcp_st_ret"`
+	VProd      float64 `json:"v_prod"`
+	VFrete     float64 `json:"v_frete"`
+	VSeg       float64 `json:"v_seg"`
+	VDesc      float64 `json:"v_desc"`
+	VII        float64 `json:"v_ii"`
+	VIPI       float64 `json:"v_ipi"`
+	VIPIDevol  float64 `json:"v_ipi_devol"`
+	VPIS       float64 `json:"v_pis"`
+	VCOFINS    float64 `json:"v_cofins"`
+	VOutro     float64 `json:"v_outro"`
+	VNF        float64 `json:"v_nf"`
 	// IBSCBSTot
-	VBCIbsCbs   *float64 `json:"v_bc_ibs_cbs"`
-	VIBSuf      *float64 `json:"v_ibs_uf"`
-	VIBSMun     *float64 `json:"v_ibs_mun"`
-	VIBS        *float64 `json:"v_ibs"`
+	VBCIbsCbs    *float64 `json:"v_bc_ibs_cbs"`
+	VIBSuf       *float64 `json:"v_ibs_uf"`
+	VIBSMun      *float64 `json:"v_ibs_mun"`
+	VIBS         *float64 `json:"v_ibs"`
 	VCredPresIBS *float64 `json:"v_cred_pres_ibs"`
 	VCBS         *float64 `json:"v_cbs"`
 	VCredPresCBS *float64 `json:"v_cred_pres_cbs"`

@@ -987,11 +987,16 @@ func fetchCteLinksForNFs(db *sql.DB, companyID string, chaves []string) map[stri
 		       COALESCE(ce.v_icms, 0)             AS v_icms_cte
 		FROM cte_entradas_nfe_refs ref
 		JOIN cte_entradas ce ON ce.id = ref.cte_id
+		LEFT JOIN nfe_entradas ne ON ne.company_id = ref.company_id AND ne.chave_nfe = ref.chave_nfe
 		WHERE ref.company_id = $1::uuid
 		  AND ref.chave_nfe IN (%s)
 		  AND (
 		      ce.toma = '3'
 		      OR (ce.toma = '4' AND ce.toma4_cnpj = ce.dest_cnpj_cpf)
+		      -- Dupla validação (Gilson 2026-06-03): quando o tomador do CT-e não é o
+		      -- destinatário (ex.: toma=0/CIF), lê o modFrete da NF. modFrete 1/2/4 =
+		      -- frete por conta do destinatário/terceiros → antecipação do frete se aplica.
+		      OR COALESCE(ne.mod_frete, -1) IN (1, 2, 4)
 		  )
 		ORDER BY ref.chave_nfe, ce.data_emissao
 	`, strings.Join(ph, ","))

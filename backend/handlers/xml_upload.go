@@ -297,6 +297,14 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, competencia str
 	ic := inf.Total.ICMSTot
 	ib := inf.Total.IBSCBSTot
 
+	// modFrete da NF (<transp><modFrete>): NULL quando ausente/inválido.
+	var modFreteVal interface{}
+	if mf := strings.TrimSpace(inf.Transp.ModFrete); mf != "" {
+		if n, e := strconv.Atoi(mf); e == nil {
+			modFreteVal = n
+		}
+	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("erro ao iniciar transação: %w", err)
@@ -320,6 +328,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, competencia str
 				v_ii, v_ipi, v_ipi_devol, v_pis, v_cofins, v_outro, v_nf,
 				v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cred_pres_ibs,
 				v_cbs, v_cred_pres_cbs,
+				mod_frete,
 				source
 			) VALUES (
 				$1,$2,$3,$4,$5,
@@ -332,6 +341,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, competencia str
 				$29,$30,$31,$32,$33,$34,$35,
 				$36,$37,$38,$39,$40,
 				$41,$42,
+				$43,
 				'xml_upload'
 			)
 			ON CONFLICT ON CONSTRAINT uq_nfe_entradas_company_chave DO UPDATE SET
@@ -358,6 +368,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, competencia str
 				v_ibs_mun=EXCLUDED.v_ibs_mun, v_ibs=EXCLUDED.v_ibs,
 				v_cred_pres_ibs=EXCLUDED.v_cred_pres_ibs,
 				v_cbs=EXCLUDED.v_cbs, v_cred_pres_cbs=EXCLUDED.v_cred_pres_cbs,
+				mod_frete = EXCLUDED.mod_frete,
 				source = CASE WHEN nfe_entradas.source = 'oracle_bridge' THEN 'oracle_bridge' ELSE 'xml_upload' END
 			RETURNING id`,
 			companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
@@ -371,6 +382,7 @@ func processSingleXML(db *sql.DB, companyID string, tipo string, competencia str
 			toDecimal(ib.VBCIBSCBS), toDecimal(ib.GIBS.GIBSuf.VIBSuf), toDecimal(ib.GIBS.GIBSMun.VIBSMun),
 			toDecimal(ib.GIBS.VIBS), toDecimal(ib.GIBS.VCredPres),
 			toDecimal(ib.GCBS.VCBS), toDecimal(ib.GCBS.VCredPres),
+			modFreteVal,
 		).Scan(&nfeID)
 		if err != nil {
 			return fmt.Errorf("erro ao persistir entrada: %w", err)
@@ -814,11 +826,12 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 // disparar atualização (valor vazio ou código fora de {1,2,3}).
 //
 // Mapeamento:
-//   "1" → simples_nacional  (Simples Nacional)
-//   "2" → simples_nacional  (SN excesso de sublimite — ainda é SN)
-//   "3" → lucro_real        (Regime Normal — cobre LR e LP; o usuário pode
-//                             corrigir para lucro_presumido em GestaoAmbiente
-//                             se necessário)
+//
+//	"1" → simples_nacional  (Simples Nacional)
+//	"2" → simples_nacional  (SN excesso de sublimite — ainda é SN)
+//	"3" → lucro_real        (Regime Normal — cobre LR e LP; o usuário pode
+//	                          corrigir para lucro_presumido em GestaoAmbiente
+//	                          se necessário)
 //
 // Nota: esta função não acessa o banco — é puramente determinística para
 // facilitar testes unitários sem dependência de banco de dados.
@@ -922,9 +935,9 @@ func XMLUploadBatchStatusHandler(db *sql.DB) http.HandlerFunc {
 		var (
 			id, batchCompanyID, batchTipo, batchFilename, batchStatus string
 			totalCount, processedCount, importedCount, rejectedCount  int
-			createdAt                                                  time.Time
-			completedAt                                                sql.NullTime
-			errorDetails                                               sql.NullString
+			createdAt                                                 time.Time
+			completedAt                                               sql.NullTime
+			errorDetails                                              sql.NullString
 		)
 
 		err = db.QueryRow(`
@@ -951,15 +964,15 @@ func XMLUploadBatchStatusHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		resp := map[string]interface{}{
-			"id":               id,
-			"tipo":             batchTipo,
-			"filename":         batchFilename,
-			"status":           batchStatus,
-			"total_count":      totalCount,
-			"processed_count":  processedCount,
-			"imported_count":   importedCount,
-			"rejected_count":   rejectedCount,
-			"created_at":       createdAt.Format(time.RFC3339),
+			"id":              id,
+			"tipo":            batchTipo,
+			"filename":        batchFilename,
+			"status":          batchStatus,
+			"total_count":     totalCount,
+			"processed_count": processedCount,
+			"imported_count":  importedCount,
+			"rejected_count":  rejectedCount,
+			"created_at":      createdAt.Format(time.RFC3339),
 		}
 		if completedAt.Valid {
 			resp["completed_at"] = completedAt.Time.Format(time.RFC3339)
