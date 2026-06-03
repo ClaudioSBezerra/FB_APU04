@@ -287,12 +287,30 @@ WHERE COALESCE(cm.regime,
   -- Eixo de UF do módulo: restringe às NFs cujo destinatário (filial) é da UF
   -- selecionada. Consistente com o filtro uf_filial dos Blocos A/B. Vazio = todas.
   AND ($4::text = '' OR COALESCE(m.dest_uf, 'PE') = $4)
+  -- Filtros opcionais (fornecedor / número da nota / intervalo de data), iguais
+  -- aos dos Blocos A/B. Vazio = sem filtro.
+  AND ($5::text = '' OR m.forn_cnpj ILIKE '%'||$5||'%' OR m.forn_nome ILIKE '%'||$5||'%')
+  AND ($6::text = '' OR m.numero_nfe ILIKE '%'||$6||'%')
+  AND ($7::text = '' OR m.data_emissao::date >= $7::date)
+  AND ($8::text = '' OR m.data_emissao::date <= $8::date)
 ORDER BY m.data_emissao, m.chave_nfe
 `
 
+// naoSpedFiltros extrai os filtros opcionais (forn / num_nota / data_ini /
+// data_fim) da requisição, com os mesmos nomes de query param dos Blocos A/B.
+// Vazio = sem filtro.
+func naoSpedFiltros(r *http.Request) (forn, numNota, dataIni, dataFim string) {
+	forn = strings.TrimSpace(r.URL.Query().Get("forn"))
+	numNota = strings.TrimSpace(r.URL.Query().Get("num_nota"))
+	dataIni = strings.TrimSpace(r.URL.Query().Get("data_ini"))
+	dataFim = strings.TrimSpace(r.URL.Query().Get("data_fim"))
+	return
+}
+
 // fetchNaoSpedRows é usado pelo export handler para montar o Bloco C.
-func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime, uf string) ([]FronteiraXmlNaoSpedRow, error) {
-	rows, err := db.Query(naoSpedQuery, companyID, periodo, regime, uf)
+// forn/numNota/dataIni/dataFim são filtros opcionais (vazio = sem filtro).
+func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime, uf, forn, numNota, dataIni, dataFim string) ([]FronteiraXmlNaoSpedRow, error) {
+	rows, err := db.Query(naoSpedQuery, companyID, periodo, regime, uf, forn, numNota, dataIni, dataFim)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +376,8 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		rows, err := db.Query(naoSpedQuery, companyID, periodo, regime, uf)
+		forn, numNota, dataIni, dataFim := naoSpedFiltros(r)
+		rows, err := db.Query(naoSpedQuery, companyID, periodo, regime, uf, forn, numNota, dataIni, dataFim)
 		if err != nil {
 			log.Printf("IcmsFronteiraXmlNaoSped[%s] error: %v", regime, err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar NFs não encontradas no SPED")

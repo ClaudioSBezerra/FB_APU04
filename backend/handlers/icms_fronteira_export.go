@@ -628,7 +628,8 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		if periodo != "" && regime != "todos" {
 			regimeUpper := strings.ToUpper(regime)
 			ufExp := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
-			cRows, err := fetchNaoSpedRows(db, companyID, periodo, regimeUpper, ufExp)
+			fornC, numNotaC, dataIniC, dataFimC := naoSpedFiltros(r)
+			cRows, err := fetchNaoSpedRows(db, companyID, periodo, regimeUpper, ufExp, fornC, numNotaC, dataIniC, dataFimC)
 			if err != nil {
 				log.Printf("IcmsFronteiraExportXLSX nao-sped error: %v", err)
 			} else {
@@ -1185,7 +1186,8 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 		}
 		if regime != "todos" && periodo != "" {
 			ufExp := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
-			if cRows, errC := fetchNaoSpedRows(db, companyID, periodo, strings.ToUpper(regime), ufExp); errC == nil {
+			fornC, numNotaC, dataIniC, dataFimC := naoSpedFiltros(r)
+			if cRows, errC := fetchNaoSpedRows(db, companyID, periodo, strings.ToUpper(regime), ufExp, fornC, numNotaC, dataIniC, dataFimC); errC == nil {
 				cChavesHTML := make([]string, len(cRows))
 				for i, row := range cRows {
 					cChavesHTML[i] = row.ChaveNFe

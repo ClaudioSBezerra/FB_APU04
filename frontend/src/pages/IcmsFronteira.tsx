@@ -1652,11 +1652,14 @@ function NotasTabBlocos({
 
   // Bloco C — XML não lançado no SPED
   const xmlQuery = useQuery<FronteiraXmlNaoSpedResponse>({
-    queryKey: ['icms-fronteira-nao-sped', regime, periodo, uf],
+    queryKey: ['icms-fronteira-nao-sped', regime, periodo, filtrosKey],
     queryFn: async () => {
       if (!periodo) return { rows: [], total: 0, count: 0 }
-      let url = `/api/icms-fronteira/nao-sped?periodo=${encodeURIComponent(periodo)}&regime=${encodeURIComponent(regimeParam)}`
-      if (uf) url += `&uf=${encodeURIComponent(uf)}`
+      const params = new URLSearchParams()
+      params.set('periodo', periodo)
+      params.set('regime', regimeParam)
+      aplicaFiltros(params, filtros)
+      const url = `/api/icms-fronteira/nao-sped?${params.toString()}`
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       return res.json()
