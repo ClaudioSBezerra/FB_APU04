@@ -21,7 +21,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as ChartTooltip,
   Legend,
   ResponsiveContainer,
 } from 'recharts';
@@ -452,7 +452,7 @@ export default function ConciliacaoBridgeXML() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="mes_ano" tick={{ fontSize: 11 }} />
                   <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
+                  <ChartTooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
                   <Legend />
                   <Bar dataKey="pct_xml" name="XML (Autêntico)" fill="#22c55e" stackId="a" />
                 </BarChart>
