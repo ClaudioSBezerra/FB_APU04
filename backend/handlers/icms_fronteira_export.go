@@ -991,6 +991,10 @@ func fetchCteLinksForNFs(db *sql.DB, companyID string, chaves []string) map[stri
 		LEFT JOIN nfe_entradas ne ON ne.company_id = ref.company_id AND ne.chave_nfe = ref.chave_nfe
 		WHERE ref.company_id = $1::uuid
 		  AND ref.chave_nfe IN (%s)
+		  -- Trava de filial (2026-06-03): o destinatário do CT-e tem de ser o MESMO
+		  -- estabelecimento (CNPJ completo) que recebeu a NF. Descarta frete endereçado
+		  -- a outra filial do mesmo grupo (caso NF 9466 — CT-es de outra filial Rolimec).
+		  AND ce.dest_cnpj_cpf = ne.dest_cnpj_cpf
 		  AND (
 		      ce.toma = '3'
 		      OR (ce.toma = '4' AND ce.toma4_cnpj = ce.dest_cnpj_cpf)
