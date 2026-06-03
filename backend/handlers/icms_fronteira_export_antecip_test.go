@@ -1,10 +1,40 @@
 package handlers
 
 import (
+	"math"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
 )
+
+// TestCteAntecip valida a antecipação do frete (CT-e) na mesma cadeia da NF —
+// mapa confirmado pelo contador (frete 1000, destacado 120, alíq interna 20,5%).
+func TestCteAntecip(t *testing.T) {
+	const frete, destacado, aliq = 1000.0, 120.0, 20.5
+
+	// BA (direto): devido = 1000 × 20,5% = 205; a pagar = 205 − 120 = 85.
+	dev, pagar := cteAntecip(frete, destacado, aliq, false)
+	if math.Abs(dev-205.0) > 0.01 {
+		t.Errorf("direto devido = %.2f, quer 205,00", dev)
+	}
+	if math.Abs(pagar-85.0) > 0.01 {
+		t.Errorf("direto a pagar = %.2f, quer 85,00", pagar)
+	}
+
+	// PE (por dentro): devido = (1000−120)/0,795 × 20,5% = 226,92; a pagar = 106,92.
+	devPD, pagarPD := cteAntecip(frete, destacado, aliq, true)
+	if math.Abs(devPD-226.92) > 0.01 {
+		t.Errorf("por dentro devido = %.2f, quer ~226,92", devPD)
+	}
+	if math.Abs(pagarPD-106.92) > 0.01 {
+		t.Errorf("por dentro a pagar = %.2f, quer ~106,92", pagarPD)
+	}
+
+	// Nunca negativo: destacado maior que o devido → a pagar = 0.
+	if _, p := cteAntecip(1000, 500, aliq, false); p != 0 {
+		t.Errorf("a pagar deveria ser 0 quando destacado > devido, veio %.2f", p)
+	}
+}
 
 // TestWriteBlocoCAntecipXLSX exercita a geração da aba C (antecipação) com a
 // cadeia de cálculo do contador. Usa db=nil (sem CT-e) — o guard em

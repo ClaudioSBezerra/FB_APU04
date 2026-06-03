@@ -123,6 +123,7 @@ interface FronteiraNotaRow {
   aliq_interna: number
   icms_devido_est: number
   valor_devido: number
+  base_por_dentro: boolean
   regime: string
   bloco: string // 'mes_atual' | 'mes_anterior'
 }
@@ -170,6 +171,7 @@ interface FronteiraXmlNaoSpedRow {
   mva: number
   icms_devido_est: number
   valor_devido: number
+  base_por_dentro: boolean
   regime: string
   class_status: string // 'auto' | 'manual'
 }
@@ -968,6 +970,24 @@ const REGIME_PARAM: Record<RegimedStr, string> = {
   difal: 'DIFAL',
 }
 
+// cteAntecip — antecipação do frete (CT-e) na MESMA cadeia da NF (regra Gilson
+// 2026-06-03): base = valor do frete; PE "por dentro", demais UFs direto; abate o
+// ICMS destacado do próprio CT-e. Alíquota interna = a do destino (mesma da NF-mãe).
+function cteAntecip(vPrest: number, vIcmsCte: number, aliqInterna: number, porDentro: boolean) {
+  const a = aliqInterna || 20.5
+  let devido: number
+  if (porDentro) {
+    const den = 1 - a / 100
+    devido = den !== 0 ? ((vPrest - vIcmsCte) / den) * (a / 100) : 0
+  } else {
+    devido = (vPrest * a) / 100
+  }
+  if (devido < 0) devido = 0
+  const aPagar = Math.max(0, devido - vIcmsCte)
+  const aliqInter = vPrest > 0 ? (vIcmsCte / vPrest) * 100 : 0
+  return { devido, aPagar, aliqInter }
+}
+
 // TabelaNotasSpedAntecip — Blocos A/B do regime ANTECIPAÇÃO com a cadeia de cálculo
 // do contador (igual ao Bloco C): V.Prod · IPI · Frete NF · Outras NF · Total Operação
 // · Alíq · V.Devido · ICMS Destacado · ICMS a Pagar. IPI integra a base. CT-e nas
@@ -986,10 +1006,16 @@ function TabelaNotasSpedAntecip({
   const totalVIpi     = rows.reduce((a, r) => a + (r.v_ipi || 0), 0)
   const totalVFrete   = rows.reduce((a, r) => a + (r.v_frete || 0), 0)
   const totalVOutro   = rows.reduce((a, r) => a + (r.v_outro || 0), 0)
-  const totalOperacao = rows.reduce((a, r) => a + operacao(r), 0)
-  const totalVDevido  = rows.reduce((a, r) => a + (r.valor_devido || 0), 0)
-  const totalVIcms    = rows.reduce((a, r) => a + (r.v_icms || 0), 0)
-  const totalIcms     = rows.reduce((a, r) => a + (r.icms_devido_est || 0), 0)
+  // CT-e (frete): mesma cadeia da NF; entra nos totais (regra Gilson 2026-06-03).
+  let cteOper = 0, cteDevido = 0, cteDest = 0, ctePagar = 0
+  rows.forEach(r => (cteLinks[r.chave_nfe] ?? []).forEach(cte => {
+    const c = cteAntecip(cte.v_prest, cte.v_icms_cte, r.aliq_interna, r.base_por_dentro)
+    cteOper += cte.v_prest; cteDevido += c.devido; cteDest += cte.v_icms_cte; ctePagar += c.aPagar
+  }))
+  const totalOperacao = rows.reduce((a, r) => a + operacao(r), 0) + cteOper
+  const totalVDevido  = rows.reduce((a, r) => a + (r.valor_devido || 0), 0) + cteDevido
+  const totalVIcms    = rows.reduce((a, r) => a + (r.v_icms || 0), 0) + cteDest
+  const totalIcms     = rows.reduce((a, r) => a + (r.icms_devido_est || 0), 0) + ctePagar
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
@@ -1049,7 +1075,9 @@ function TabelaNotasSpedAntecip({
                 <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(row.icms_devido_est)}</TableCell>
               </TableRow>
             )
-            const cteRows = ctes.map((cte, ci) => (
+            const cteRows = ctes.map((cte, ci) => {
+              const c = cteAntecip(cte.v_prest, cte.v_icms_cte, row.aliq_interna, row.base_por_dentro)
+              return (
               <TableRow key={`cte-${row.chave_nfe}-${ci}`} className="bg-blue-50 hover:bg-blue-100">
                 <TableCell className="text-xs font-mono whitespace-nowrap text-blue-700">
                   {cte.data_emissao ? cte.data_emissao.slice(0, 10) : '—'}
@@ -1072,12 +1100,18 @@ function TabelaNotasSpedAntecip({
                 <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
                 <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
                 <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_prest)}</TableCell>
-                {showAliq && <TableCell colSpan={2} />}
-                <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                {showAliq && (
+                  <>
+                    <TableCell className="text-xs text-right tabular-nums text-blue-600">{fmtPct(c.aliqInter)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums text-blue-600">{fmtPct(row.aliq_interna)}</TableCell>
+                  </>
+                )}
+                <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(c.devido)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_icms_cte)}</TableCell>
-                <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-600">{fmtBRL(cte.v_icms_cte)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-600">{fmtBRL(c.aPagar)}</TableCell>
               </TableRow>
-            ))
+              )
+            })
             return [nfRow, ...cteRows]
           })}
         </TableBody>
@@ -1262,10 +1296,16 @@ function TabelaNotasXmlAntecip({
   const totalVIpi      = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
   const totalVFrete    = rows.reduce((acc, r) => acc + (r.v_frete || 0), 0)
   const totalVOutro    = rows.reduce((acc, r) => acc + (r.v_outro || 0), 0)
-  const totalOperacao  = rows.reduce((acc, r) => acc + operacao(r), 0)
-  const totalVDevido   = rows.reduce((acc, r) => acc + (r.valor_devido || 0), 0)
-  const totalVIcms     = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
-  const totalIcms      = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
+  // CT-e (frete): mesma cadeia da NF; entra nos totais (regra Gilson 2026-06-03).
+  let cteOper = 0, cteDevido = 0, cteDest = 0, ctePagar = 0
+  rows.forEach(r => (cteLinks[r.chave_nfe] ?? []).forEach(cte => {
+    const c = cteAntecip(cte.v_prest, cte.v_icms_cte, r.aliq_interna, r.base_por_dentro)
+    cteOper += cte.v_prest; cteDevido += c.devido; cteDest += cte.v_icms_cte; ctePagar += c.aPagar
+  }))
+  const totalOperacao  = rows.reduce((acc, r) => acc + operacao(r), 0) + cteOper
+  const totalVDevido   = rows.reduce((acc, r) => acc + (r.valor_devido || 0), 0) + cteDevido
+  const totalVIcms     = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0) + cteDest
+  const totalIcms      = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0) + ctePagar
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
@@ -1325,7 +1365,9 @@ function TabelaNotasXmlAntecip({
                 <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(row.icms_devido_est)}</TableCell>
               </TableRow>
             )
-            const cteRows = ctes.map((cte, ci) => (
+            const cteRows = ctes.map((cte, ci) => {
+              const c = cteAntecip(cte.v_prest, cte.v_icms_cte, row.aliq_interna, row.base_por_dentro)
+              return (
               <TableRow key={`cte-${row.chave_nfe}-${ci}`} className="bg-blue-50 hover:bg-blue-100">
                 <TableCell className="text-xs font-mono whitespace-nowrap text-blue-700">
                   {cte.data_emissao ? cte.data_emissao.slice(0, 10) : '—'}
@@ -1348,12 +1390,18 @@ function TabelaNotasXmlAntecip({
                 <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
                 <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
                 <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_prest)}</TableCell>
-                {showAliq && <TableCell colSpan={2} />}
-                <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                {showAliq && (
+                  <>
+                    <TableCell className="text-xs text-right tabular-nums text-blue-600">{fmtPct(c.aliqInter)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums text-blue-600">{fmtPct(row.aliq_interna)}</TableCell>
+                  </>
+                )}
+                <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(c.devido)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(cte.v_icms_cte)}</TableCell>
-                <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-600">{fmtBRL(cte.v_icms_cte)}</TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-600">{fmtBRL(c.aPagar)}</TableCell>
               </TableRow>
-            ))
+              )
+            })
             return [nfRow, ...cteRows]
           })}
         </TableBody>

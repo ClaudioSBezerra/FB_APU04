@@ -42,7 +42,8 @@ SELECT
     v_ipi,
     v_frete,
     v_outro,
-    valor_devido
+    valor_devido,
+    base_por_dentro
 FROM classified
 `
 
@@ -84,6 +85,7 @@ type fronteiraExportRow struct {
 	VFrete        float64 // frete da NF rateado (cadeia antecipação)
 	VOutro        float64 // outras despesas da NF rateadas
 	VDevido       float64 // V. Devido bruto (antecipação)
+	BasePorDentro bool    // UF usa cálculo "por dentro" (ex.: PE)
 }
 
 func fetchExportRows(db *sql.DB, companyID, regime, periodo string, r *http.Request) ([]fronteiraExportRow, error) {
@@ -131,6 +133,7 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string, r *http.Requ
 			&row.VFrete,
 			&row.VOutro,
 			&row.VDevido,
+			&row.BasePorDentro,
 		); err != nil {
 			log.Printf("fronteiraExport scan error: %v", err)
 			continue
@@ -445,15 +448,23 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				er++
 
 				for _, cte := range cteLinksMap[row.ChaveNFe] {
+					cteDev, ctePagar := cteAntecip(cte.VPrest, cte.VIcmsCTe, row.AliqInterna, row.BasePorDentro)
+					cteAliqInter := 0.0
+					if cte.VPrest > 0 {
+						cteAliqInter = cte.VIcmsCTe / cte.VPrest * 100.0
+					}
 					set := func(c string, v interface{}) { f.SetCellValue(sheetName, fmt.Sprintf("%s%d", c, er), v) }
 					set("A", cte.DataEmissao)
 					set("B", "CT-e "+cte.NumeroCTe)
 					set("C", cte.EmitNome)
 					set("D", cte.EmitCNPJ)
 					set("F", "CTE")
-					set("L", cte.VPrest)
-					set("P", cte.VIcmsCTe)
-					set("Q", cte.VIcmsCTe)
+					set("L", cte.VPrest)      // Total Operação = frete
+					set("M", cteAliqInter)    // Alíq. Inter. efetiva
+					set("N", row.AliqInterna) // Alíq. Interna (destino)
+					set("O", cteDev)          // V. Devido
+					set("P", cte.VIcmsCTe)    // ICMS Destacado
+					set("Q", ctePagar)        // ICMS a Pagar
 					set("R", row.ChaveNFe)
 					set("S", cte.ChaveCTe)
 					for _, c := range textCols {
@@ -462,6 +473,10 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					for _, c := range moneyCols {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), cteMoneyStyle)
 					}
+					tOper += cte.VPrest
+					tDevido += cteDev
+					tDest += cte.VIcmsCTe
+					tPagar += ctePagar
 					er++
 				}
 			}
@@ -723,6 +738,32 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// cteAntecip calcula a antecipação do frete (CT-e) na MESMA cadeia da NF
+// (regra Gilson 2026-06-03): base = valor do frete (v_prest); PE "por dentro",
+// demais UFs direto; abate o ICMS destacado do próprio CT-e. Usa a alíquota
+// interna do destino (mesma da NF-mãe). Retorna (valorDevido, icmsAPagar).
+func cteAntecip(vPrest, vIcmsCte, aliqInterna float64, porDentro bool) (devido, aPagar float64) {
+	a := aliqInterna
+	if a == 0 {
+		a = 20.5
+	}
+	if porDentro {
+		if den := 1.0 - a/100.0; den != 0 {
+			devido = (vPrest - vIcmsCte) / den * (a / 100.0)
+		}
+	} else {
+		devido = vPrest * a / 100.0
+	}
+	if devido < 0 {
+		devido = 0
+	}
+	aPagar = devido - vIcmsCte
+	if aPagar < 0 {
+		aPagar = 0
+	}
+	return devido, aPagar
+}
+
 // writeBlocoCAntecipXLSX escreve a aba "C" do regime de ANTECIPAÇÃO com a memória
 // de cálculo coluna-a-coluna definida pelo contador (regra Gilson 2026-06-02):
 // Produto · IPI · Frete NF · Outras NF · Total Operação · Alíq · V. Devido ·
@@ -797,18 +838,26 @@ func writeBlocoCAntecipXLSX(f *excelize.File, db *sql.DB, companyID, sheet strin
 		tPagar += row.IcmsDevidoEst
 		er++
 
-		// Linhas-filhas: CT-e calculado em separado (frete em Total Operação;
-		// ICMS do CT-e nas colunas de destacado/a pagar, informativo).
+		// Linhas-filhas: CT-e calculado em separado, na MESMA cadeia da NF
+		// (frete × alíq interna − ICMS destacado do CT-e; regra Gilson 2026-06-03).
 		for _, cte := range cteMap[row.ChaveNFe] {
+			cteDev, ctePagar := cteAntecip(cte.VPrest, cte.VIcmsCTe, row.AliqInterna, row.BasePorDentro)
+			cteAliqInter := 0.0
+			if cte.VPrest > 0 {
+				cteAliqInter = cte.VIcmsCTe / cte.VPrest * 100.0
+			}
 			set := func(col string, v interface{}) { f.SetCellValue(sheet, fmt.Sprintf("%s%d", col, er), v) }
 			set("A", cte.DataEmissao)
 			set("B", "CT-e "+cte.NumeroCTe)
 			set("C", cte.EmitNome)
 			set("D", cte.EmitCNPJ)
 			set("F", "CTE")
-			set("L", cte.VPrest)
-			set("P", cte.VIcmsCTe)
-			set("Q", cte.VIcmsCTe)
+			set("L", cte.VPrest)      // Total Operação = frete
+			set("M", cteAliqInter)    // Alíq. Inter. efetiva
+			set("N", row.AliqInterna) // Alíq. Interna (destino)
+			set("O", cteDev)          // V. Devido
+			set("P", cte.VIcmsCTe)    // ICMS Destacado
+			set("Q", ctePagar)        // ICMS a Pagar
 			set("S", row.ChaveNFe)
 			set("T", cte.ChaveCTe)
 			for _, c := range textCols {
@@ -817,6 +866,10 @@ func writeBlocoCAntecipXLSX(f *excelize.File, db *sql.DB, companyID, sheet strin
 			for _, c := range moneyCols {
 				f.SetCellStyle(sheet, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), cteSlateMoney)
 			}
+			tOper += cte.VPrest
+			tDevido += cteDev
+			tDest += cte.VIcmsCTe
+			tPagar += ctePagar
 			er++
 		}
 	}
@@ -1104,12 +1157,23 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				if icmsCTeDev < 0 {
 					icmsCTeDev = 0
 				}
+				// Antecipação: frete na MESMA cadeia da NF (por-dentro em PE). DIFAL/ST
+				// mantêm o cálculo direto antigo (icmsCTeDev).
+				cteDev, ctePagar := cteAntecip(cte.VPrest, cte.VIcmsCTe, row.AliqInterna, row.BasePorDentro)
+				cteAliqInter := 0.0
+				if cte.VPrest > 0 {
+					cteAliqInter = cte.VIcmsCTe / cte.VPrest * 100.0
+				}
+				front := icmsCTeDev
+				if strings.ToUpper(regime) == "ANTECIPACAO" {
+					front = ctePagar
+				}
 				*target = append(*target, pdfRow{
 					Data: cte.DataEmissao, NF: "CT-e " + cte.NumeroCTe,
 					Forn: cte.EmitNome, CNPJ: cte.EmitCNPJ, UF: "", CFOP: "CTE",
 					Chave: row.ChaveNFe, ChaveCTe: cte.ChaveCTe,
-					VProd: cte.VPrest, VIPI: 0, VIcms: cte.VIcmsCTe,
-					AliqInter: 0, AliqInterna: row.AliqInterna, IcmsFront: icmsCTeDev,
+					VProd: cte.VPrest, VIPI: 0, VIcms: cte.VIcmsCTe, VDevido: cteDev,
+					AliqInter: cteAliqInter, AliqInterna: row.AliqInterna, IcmsFront: front,
 					IsCTe: true,
 				})
 			}
@@ -1129,13 +1193,22 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 						VFrete: row.VFrete, VOutro: row.VOutro, VDevido: row.ValorDevido,
 						AliqInter: row.AliqInter, AliqInterna: row.AliqInterna, IcmsFront: row.IcmsDevidoEst})
 					for _, cte := range cteLinksC[row.ChaveNFe] {
+						cteDev, ctePagar := cteAntecip(cte.VPrest, cte.VIcmsCTe, row.AliqInterna, row.BasePorDentro)
+						cteAliqInter := 0.0
+						if cte.VPrest > 0 {
+							cteAliqInter = cte.VIcmsCTe / cte.VPrest * 100.0
+						}
+						front := cte.VIcmsCTe // informativo (DIFAL/ST)
+						if strings.ToUpper(regime) == "ANTECIPACAO" {
+							front = ctePagar
+						}
 						blocoC = append(blocoC, pdfRow{
 							Data: cte.DataEmissao, NF: "CT-e " + cte.NumeroCTe,
 							Forn: cte.EmitNome, CNPJ: cte.EmitCNPJ, UF: "", CFOP: "CTE",
 							Chave: row.ChaveNFe, ChaveCTe: cte.ChaveCTe,
-							VProd: cte.VPrest, VIPI: 0, VIcms: cte.VIcmsCTe,
-							IcmsFront: cte.VIcmsCTe, // ICMS informativo no Bloco C
-							IsCTe:     true,
+							VProd: cte.VPrest, VIPI: 0, VIcms: cte.VIcmsCTe, VDevido: cteDev,
+							AliqInter: cteAliqInter, AliqInterna: row.AliqInterna, IcmsFront: front,
+							IsCTe: true,
 						})
 					}
 				}
@@ -1308,14 +1381,10 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 					sb.WriteString(numTd(r.VProd) + numTd(r.VIPI) + numTd(r.VFrete) + numTd(r.VOutro) + numTd(r.VProd+r.VIPI+r.VFrete+r.VOutro))
 				}
 				if showAliq {
-					if r.IsCTe {
-						sb.WriteString(fmt.Sprintf(`<td></td><td style="text-align:right">%.2f%%</td>`, r.AliqInterna))
-					} else {
-						sb.WriteString(fmt.Sprintf(`<td style="text-align:right">%.2f%%</td><td style="text-align:right">%.2f%%</td>`, r.AliqInter, r.AliqInterna))
-					}
+					sb.WriteString(fmt.Sprintf(`<td style="text-align:right">%.2f%%</td><td style="text-align:right">%.2f%%</td>`, r.AliqInter, r.AliqInterna))
 				}
 				if r.IsCTe {
-					sb.WriteString(`<td></td>` + numTd(r.VIcms) + numTd(r.VIcms))
+					sb.WriteString(numTd(r.VDevido) + numTd(r.VIcms) + numTd(r.IcmsFront))
 				} else {
 					sb.WriteString(numTd(r.VDevido) + numTd(r.VIcms) + numTd(r.IcmsFront))
 				}
@@ -1331,6 +1400,11 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 					tFrete += r.VFrete
 					tOutro += r.VOutro
 					tOper += r.VProd + r.VIPI + r.VFrete + r.VOutro
+					tDevido += r.VDevido
+					tDest += r.VIcms
+				} else {
+					// CT-e (frete) também entra nos totais: operação = frete.
+					tOper += r.VProd
 					tDevido += r.VDevido
 					tDest += r.VIcms
 				}

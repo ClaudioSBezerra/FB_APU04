@@ -74,9 +74,9 @@ func fronteiraFiltros(r *http.Request, startIdx int) (string, []interface{}) {
 
 // fronteiraAllCFOPs contém todos os CFOPs válidos para qualquer regime de fronteira.
 var fronteiraAllCFOPs = []string{
-	"2101", "2102", "2152",           // Antecipação sem liberação
-	"2403", "2409", "2651", "2652",   // ST (antecipação com liberação)
-	"2551", "2556",                    // DIFAL
+	"2101", "2102", "2152", // Antecipação sem liberação
+	"2403", "2409", "2651", "2652", // ST (antecipação com liberação)
+	"2551", "2556", // DIFAL
 }
 
 // Sul/Sudeste states subject to 7% interestadual rate (ES and MT excluded per legislação).
@@ -104,18 +104,18 @@ func aliqInterestadual(cstOrig, uf string) float64 {
 // ---------------------------------------------------------------------------
 
 type FronteiraResumoRow struct {
-	Regime         string  `json:"regime"`
-	QtdNotas       int     `json:"qtd_notas"`
-	VProdTotal     float64 `json:"v_prod_total"`
-	VIpiTotal      float64 `json:"v_ipi_total"`
-	VStRetido      float64 `json:"v_st_retido"`
-	IcmsDevidoEst  float64 `json:"icms_devido_est"`
+	Regime        string  `json:"regime"`
+	QtdNotas      int     `json:"qtd_notas"`
+	VProdTotal    float64 `json:"v_prod_total"`
+	VIpiTotal     float64 `json:"v_ipi_total"`
+	VStRetido     float64 `json:"v_st_retido"`
+	IcmsDevidoEst float64 `json:"icms_devido_est"`
 }
 
 type FronteiraResumoResponse struct {
-	Rows         []FronteiraResumoRow `json:"rows"`
-	TotalDevido  float64              `json:"total_devido"`
-	TotalProd    float64              `json:"total_prod"`
+	Rows        []FronteiraResumoRow `json:"rows"`
+	TotalDevido float64              `json:"total_devido"`
+	TotalProd   float64              `json:"total_prod"`
 }
 
 // ---------------------------------------------------------------------------
@@ -135,12 +135,13 @@ type FronteiraNotaRow struct {
 	VIcms         float64 `json:"v_icms"`
 	VBcST         float64 `json:"v_bc_st"`
 	VST           float64 `json:"v_st"`
-	VFrete        float64 `json:"v_frete"`        // frete da NF rateado (cadeia antecipação)
-	VOutro        float64 `json:"v_outro"`        // outras despesas da NF rateadas
+	VFrete        float64 `json:"v_frete"` // frete da NF rateado (cadeia antecipação)
+	VOutro        float64 `json:"v_outro"` // outras despesas da NF rateadas
 	AliqInter     float64 `json:"aliq_inter"`
 	AliqInterna   float64 `json:"aliq_interna"`
 	IcmsDevidoEst float64 `json:"icms_devido_est"` // ICMS a pagar (devido − ICMS destacado)
 	ValorDevido   float64 `json:"valor_devido"`    // V. Devido bruto (antecipação)
+	BasePorDentro bool    `json:"base_por_dentro"` // UF usa cálculo "por dentro" (ex.: PE)
 	Regime        string  `json:"regime"`
 	Bloco         string  `json:"bloco"`
 }
@@ -638,7 +639,7 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
     cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st, v_frete, v_outro,
-    aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, valor_devido, regime, bloco,
+    aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, valor_devido, base_por_dentro, regime, bloco,
     COUNT(*)            OVER () AS total_count,
     SUM(` + icmsExpr + `) OVER () AS total_full
 FROM classified
@@ -670,7 +671,7 @@ LIMIT 500
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
 			&row.CFOP, &row.VProd, &row.VIPI, &row.VIcms, &row.VBcST, &row.VST,
 			&row.VFrete, &row.VOutro,
-			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.ValorDevido, &row.Regime,
+			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.ValorDevido, &row.BasePorDentro, &row.Regime,
 			&row.Bloco,
 			&rowTotalCount, &rowTotalFull,
 		); err != nil {

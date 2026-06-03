@@ -24,18 +24,19 @@ type FronteiraXmlNaoSpedRow struct {
 	CfopSaida     string  `json:"cfop_saida"`
 	NCM           string  `json:"ncm"`
 	VProd         float64 `json:"v_prod"`
-	VIPI          float64 `json:"v_ipi"`             // IPI do XML (<vIPI> do header)
+	VIPI          float64 `json:"v_ipi"` // IPI do XML (<vIPI> do header)
 	VFrete        float64 `json:"v_frete"`
-	VFreteCTe     float64 `json:"v_frete_cte"`       // soma dos CT-es onde tomador=destinatário
+	VFreteCTe     float64 `json:"v_frete_cte"` // soma dos CT-es onde tomador=destinatário
 	VOutro        float64 `json:"v_outro"`
 	VOpr          float64 `json:"v_opr"`
-	VIcmsNF       float64 `json:"v_icms_nf"`        // ICMS destacado na NF (<vICMS>)
-	VIcmsCTe      float64 `json:"v_icms_cte"`        // ICMS dos CT-es do destinatário
-	AliqInter     float64 `json:"aliq_inter"`        // alíquota interestadual efetiva = vIcms/vProd × 100
-	AliqInterna   float64 `json:"aliq_interna"`      // alíquota interna usada (regra ou fallback)
-	MVA           float64 `json:"mva"`               // MVA original (só usado em ST)
-	IcmsDevidoEst float64 `json:"icms_devido_est"`   // ICMS a pagar (devido − ICMS destacado NF)
-	ValorDevido   float64 `json:"valor_devido"`      // V. Devido bruto (antecipação): operação × alíq, antes de abater
+	VIcmsNF       float64 `json:"v_icms_nf"`       // ICMS destacado na NF (<vICMS>)
+	VIcmsCTe      float64 `json:"v_icms_cte"`      // ICMS dos CT-es do destinatário
+	AliqInter     float64 `json:"aliq_inter"`      // alíquota interestadual efetiva = vIcms/vProd × 100
+	AliqInterna   float64 `json:"aliq_interna"`    // alíquota interna usada (regra ou fallback)
+	MVA           float64 `json:"mva"`             // MVA original (só usado em ST)
+	IcmsDevidoEst float64 `json:"icms_devido_est"` // ICMS a pagar (devido − ICMS destacado NF)
+	ValorDevido   float64 `json:"valor_devido"`    // V. Devido bruto (antecipação): operação × alíq, antes de abater
+	BasePorDentro bool    `json:"base_por_dentro"` // UF usa cálculo "por dentro" (ex.: PE)
 	Regime        string  `json:"regime"`
 	ClassStatus   string  `json:"class_status"` // "auto" | "manual"
 }
@@ -245,7 +246,8 @@ SELECT
                     * COALESCE(regra.aliquota_interna,20.5)/100.0)
             END
         ELSE 0
-    END AS valor_devido
+    END AS valor_devido,
+    COALESCE(ufb.base_por_dentro, false) AS base_por_dentro
 FROM mapped m
 LEFT JOIN LATERAL (
     SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct,
@@ -305,7 +307,7 @@ func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime, uf string) ([]Fron
 			&row.Regime, &row.ClassStatus,
 			&row.VProd, &row.VIPI, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
 			&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
-			&row.IcmsDevidoEst, &row.ValorDevido,
+			&row.IcmsDevidoEst, &row.ValorDevido, &row.BasePorDentro,
 		); err != nil {
 			continue
 		}
@@ -376,7 +378,7 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 				&row.Regime, &row.ClassStatus,
 				&row.VProd, &row.VIPI, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
 				&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
-				&row.IcmsDevidoEst, &row.ValorDevido,
+				&row.IcmsDevidoEst, &row.ValorDevido, &row.BasePorDentro,
 			); err != nil {
 				log.Printf("IcmsFronteiraXmlNaoSped[%s] scan error: %v", regime, err)
 				continue
