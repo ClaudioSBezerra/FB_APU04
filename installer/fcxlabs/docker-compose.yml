@@ -18,6 +18,7 @@ services:
       - APP_URL=${APP_URL:-https://simu.fcxlabs.com}
       - APP_MODULE=simulador
       - COOKIE_SECURE=true
+      - ZAI_API_KEY=${ZAI_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
