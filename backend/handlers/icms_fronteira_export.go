@@ -991,17 +991,17 @@ func fetchCteLinksForNFs(db *sql.DB, companyID string, chaves []string) map[stri
 		LEFT JOIN nfe_entradas ne ON ne.company_id = ref.company_id AND ne.chave_nfe = ref.chave_nfe
 		WHERE ref.company_id = $1::uuid
 		  AND ref.chave_nfe IN (%s)
-		  -- Trava de filial (2026-06-03): o destinatário do CT-e tem de ser o MESMO
-		  -- estabelecimento (CNPJ completo) que recebeu a NF. Descarta frete endereçado
-		  -- a outra filial do mesmo grupo (caso NF 9466 — CT-es de outra filial Rolimec).
+		  -- Regra Gilson (2026-06-03, definição final): o CT-e só entra na antecipação
+		  -- quando o TOMADOR do serviço é a empresa (destinatário da NF) — toma=3
+		  -- (destinatário) ou toma=4 com o CNPJ da empresa. A trava de filial garante
+		  -- que o destinatário do CT-e é o mesmo estabelecimento da NF. Operador
+		  -- logístico / redespacho (toma=0 remetente, toma=1 expedidor, toma=4 de
+		  -- terceiro) NÃO entra — não é frete custeado pela empresa. O frete final
+		  -- pendente (ex.: TRANSWINTER ainda sem CT-e) é sinalizado via <receb>.
 		  AND ce.dest_cnpj_cpf = ne.dest_cnpj_cpf
 		  AND (
 		      ce.toma = '3'
 		      OR (ce.toma = '4' AND ce.toma4_cnpj = ce.dest_cnpj_cpf)
-		      -- Dupla validação (Gilson 2026-06-03): quando o tomador do CT-e não é o
-		      -- destinatário (ex.: toma=0/CIF), lê o modFrete da NF. modFrete 1/2/4 =
-		      -- frete por conta do destinatário/terceiros → antecipação do frete se aplica.
-		      OR COALESCE(ne.mod_frete, -1) IN (1, 2, 4)
 		  )
 		ORDER BY ref.chave_nfe, ce.data_emissao
 	`, strings.Join(ph, ","))
