@@ -1598,6 +1598,340 @@ function BlocoHeader({
   )
 }
 
+// ---------------------------------------------------------------------------
+// STItensTab — demonstrativo de ICMS-ST POR ITEM (modelo do contador, 24 colunas),
+// agrupado por nota com subtotais de produtos, CT-es rateados e total geral por NF.
+// ---------------------------------------------------------------------------
+interface STItemRow {
+  chave_nfe: string
+  numero_nfe: string
+  data_emissao: string
+  forn_cnpj: string
+  forn_nome: string
+  forn_uf: string
+  cfop: string
+  bloco: 'mes_atual' | 'mes_anterior' | 'nao_sped'
+  status_xml: string
+  cod_produto: string
+  descricao: string
+  ncm: string
+  cest: string
+  v_prod: number
+  v_ipi: number
+  v_outro: number
+  v_operacao: number
+  tem_regra: boolean
+  mva_original: number
+  mva_ajustado: number
+  aliq_inter: number
+  aliq_interna: number
+  segmento_ok: boolean
+  icms_debitado: number
+  base_calculo: number
+  reducao_bc: number
+  bc_reduzida: number
+  icms_calculado: number
+  icms_retido: number
+  icms_a_pagar: number
+}
+
+interface STItensResponse {
+  rows: STItemRow[]
+  count: number
+  cte_links: Record<string, CteLink[]>
+}
+
+function STItensTab({ token }: { token: string | null }) {
+  const periodoDefault = useFronteiraPeriodoDefault()
+  const [monthInput, setMonthInput] = useState('')
+  useEffect(() => {
+    if (!monthInput && periodoDefault) setMonthInput(periodoDefault)
+  }, [periodoDefault, monthInput])
+  const periodo = monthToPeriodo(monthInput)
+  const uf = useFronteiraUF()
+
+  const { data, isLoading, isError } = useQuery<STItensResponse>({
+    queryKey: ['icms-fronteira/st-itens', periodo, uf],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      params.set('periodo', periodo)
+      if (uf) params.set('uf', uf)
+      const res = await fetch(`/api/icms-fronteira/st-itens?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: !!periodo,
+  })
+
+  const rows = data?.rows ?? []
+  const cteLinks = data?.cte_links ?? {}
+
+  // Agrupa as linhas por chave_nfe mantendo a ordem de chegada.
+  const grupos: { chave: string; itens: STItemRow[] }[] = []
+  const idxByChave = new Map<string, number>()
+  for (const r of rows) {
+    let gi = idxByChave.get(r.chave_nfe)
+    if (gi === undefined) {
+      gi = grupos.length
+      idxByChave.set(r.chave_nfe, gi)
+      grupos.push({ chave: r.chave_nfe, itens: [] })
+    }
+    grupos[gi].itens.push(r)
+  }
+
+  // Total geral de ICMS a Pagar de todas as notas (produtos + CT-es rateados).
+  let totalGeralAPagar = 0
+  for (const g of grupos) {
+    const somaOper = g.itens.reduce((a, it) => a + (it.v_operacao || 0), 0)
+    totalGeralAPagar += g.itens.reduce((a, it) => a + (it.icms_a_pagar || 0), 0)
+    for (const cte of cteLinks[g.chave] ?? []) {
+      for (const it of g.itens) {
+        const fracao = somaOper > 0 ? (cte.v_prest * (it.v_operacao || 0)) / somaOper : 0
+        // TODO confirmar tratamento fiscal do frete na ST com Gilson
+        const c = cteAntecip(fracao, 0, it.aliq_interna, false)
+        totalGeralAPagar += c.aPagar
+      }
+    }
+  }
+
+  const COL_COUNT = 24
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Label htmlFor="st-itens-periodo" className="text-xs whitespace-nowrap">Período:</Label>
+        <Input
+          id="st-itens-periodo"
+          type="text"
+          placeholder="MM/AAAA"
+          maxLength={7}
+          className="w-36 text-xs h-8"
+          value={monthInput}
+          onChange={(e) => setMonthInput(e.target.value)}
+        />
+        {periodo && <span className="text-xs text-muted-foreground">{periodo}{uf ? ` · ${uf}` : ''}</span>}
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+        </div>
+      )}
+
+      {isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Erro ao carregar itens de ST.</AlertDescription>
+        </Alert>
+      )}
+
+      {!isLoading && !isError && periodo && rows.length === 0 && (
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <AlertTriangle className="h-8 w-8 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">Nenhum item de ST encontrado para o período.</p>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="rounded-md border overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-transparent">
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">CFOP</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">NF-e / CT-e</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Chave</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Fornecedor</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Cód. Produto</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Descrição</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">NCM</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">CEST</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide">Status</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Produto</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. IPI</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Demais Acrésc.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">V. Operação</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA Orig.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA Aj.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Inter</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Int.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Debitado</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Base Cálc.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Red. BC</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">BC Reduz.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Calc.</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS Retido</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">ICMS a Pagar</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {grupos.flatMap((g) => {
+                const itens = g.itens
+                const numero = itens[0]?.numero_nfe || '—'
+                const somaOper = itens.reduce((a, it) => a + (it.v_operacao || 0), 0)
+
+                // 1. Linhas de produto.
+                const produtoRows = itens.map((it, i) => (
+                  <TableRow key={`prod-${g.chave}-${i}`}>
+                    <TableCell className="text-xs font-mono">{it.cfop || '—'}</TableCell>
+                    <TableCell className="text-xs font-mono">{it.numero_nfe || '—'}</TableCell>
+                    <TableCell className="text-xs"><ChaveCell chave={it.chave_nfe} label={`NF-e ${it.numero_nfe}`} /></TableCell>
+                    <TableCell className="text-xs max-w-[180px]">
+                      <div className="truncate" title={it.forn_nome}>{it.forn_nome || '—'}</div>
+                      <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(it.forn_cnpj)}</div>
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">{it.cod_produto || '—'}</TableCell>
+                    <TableCell className="text-xs max-w-[220px]"><div className="truncate" title={it.descricao}>{it.descricao || '—'}</div></TableCell>
+                    <TableCell className="text-xs font-mono">{it.ncm || '—'}</TableCell>
+                    <TableCell className="text-xs font-mono">{it.cest || '—'}</TableCell>
+                    <TableCell className="text-xs">{it.status_xml || '—'}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.v_prod)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.v_ipi)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.v_outro)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-medium">{fmtBRL(it.v_operacao)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{it.tem_regra ? fmtPct(it.mva_original) : '—'}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{it.tem_regra ? fmtPct(it.mva_ajustado) : '—'}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(it.aliq_inter)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(it.aliq_interna)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.icms_debitado)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.base_calculo)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtPct(it.reducao_bc)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.bc_reduzida)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.icms_calculado)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.icms_retido)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(it.icms_a_pagar)}</TableCell>
+                  </TableRow>
+                ))
+
+                // 2. Subtotal Produtos.
+                const subProd = {
+                  vProd: itens.reduce((a, it) => a + (it.v_prod || 0), 0),
+                  vIpi: itens.reduce((a, it) => a + (it.v_ipi || 0), 0),
+                  vOper: somaOper,
+                  icmsDeb: itens.reduce((a, it) => a + (it.icms_debitado || 0), 0),
+                  base: itens.reduce((a, it) => a + (it.base_calculo || 0), 0),
+                  icmsCalc: itens.reduce((a, it) => a + (it.icms_calculado || 0), 0),
+                  icmsRet: itens.reduce((a, it) => a + (it.icms_retido || 0), 0),
+                  aPagar: itens.reduce((a, it) => a + (it.icms_a_pagar || 0), 0),
+                }
+                const subtotalProdRow = (
+                  <TableRow key={`subprod-${g.chave}`} className="bg-muted/30 hover:bg-muted/30">
+                    <TableCell colSpan={9} className="text-xs font-semibold">Subtotal Produtos NF {numero}:</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(subProd.vProd)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(subProd.vIpi)}</TableCell>
+                    <TableCell />
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(subProd.vOper)}</TableCell>
+                    <TableCell colSpan={4} />
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(subProd.icmsDeb)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(subProd.base)}</TableCell>
+                    <TableCell />
+                    <TableCell />
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(subProd.icmsCalc)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(subProd.icmsRet)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(subProd.aPagar)}</TableCell>
+                  </TableRow>
+                )
+
+                // 3. Linhas de CT-e (frete rateado por item).
+                const ctes = cteLinks[g.chave] ?? []
+                let cteFreteTotal = 0
+                let cteIcmsTotal = 0
+                const cteRows: JSX.Element[] = []
+                ctes.forEach((cte, ci) => {
+                  itens.forEach((it, ii) => {
+                    const fracao = somaOper > 0 ? (cte.v_prest * (it.v_operacao || 0)) / somaOper : 0
+                    // TODO confirmar tratamento fiscal do frete na ST com Gilson
+                    const c = cteAntecip(fracao, 0, it.aliq_interna, false)
+                    cteFreteTotal += fracao
+                    cteIcmsTotal += c.aPagar
+                    cteRows.push(
+                      <TableRow key={`cte-${g.chave}-${ci}-${ii}`} className="bg-blue-50 hover:bg-blue-100">
+                        <TableCell className="text-xs font-mono font-semibold text-blue-700">CTE</TableCell>
+                        <TableCell className="text-xs font-mono text-blue-700">
+                          <div className="flex items-center gap-1">
+                            <Truck className="h-3 w-3 shrink-0" />
+                            CT-e {cte.numero_cte}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs"><ChaveCell chave={cte.chave_cte} label={`CT-e ${cte.numero_cte}`} /></TableCell>
+                        <TableCell className="text-xs max-w-[180px] text-blue-700">
+                          <div className="truncate" title={cte.emit_nome}>{cte.emit_nome || '—'}</div>
+                          <div className="text-blue-400 text-[10px] font-mono">{formatCNPJ(cte.emit_cnpj)}</div>
+                        </TableCell>
+                        <TableCell className="text-xs font-mono text-blue-700">{it.cod_produto || '—'}</TableCell>
+                        <TableCell className="text-xs max-w-[220px] text-blue-700">
+                          <div className="truncate">Rateio CT-e {cte.numero_cte} s/ Prod. {it.cod_produto}</div>
+                        </TableCell>
+                        <TableCell className="text-xs font-mono text-blue-700">{it.ncm || '—'}</TableCell>
+                        <TableCell className="text-xs font-mono text-blue-700">{it.cest || '—'}</TableCell>
+                        <TableCell className="text-xs text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(fracao)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-600">{fmtPct(it.aliq_interna)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-600">{fmtBRL(c.aPagar)}</TableCell>
+                      </TableRow>
+                    )
+                  })
+                })
+
+                // 4. Subtotal CT-es Vinculados (só quando há CT-e).
+                const subtotalCteRow = ctes.length > 0 ? (
+                  <TableRow key={`subcte-${g.chave}`} className="bg-blue-50 hover:bg-blue-50">
+                    <TableCell colSpan={12} className="text-xs font-semibold text-blue-700">Subtotal CT-es Vinculados:</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-700">{fmtBRL(cteFreteTotal)}</TableCell>
+                    <TableCell colSpan={10} />
+                    <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-700">{fmtBRL(cteIcmsTotal)}</TableCell>
+                  </TableRow>
+                ) : null
+
+                // 5. TOTAL GERAL NF (produtos + CT-es).
+                const totalNfRow = (
+                  <TableRow key={`totalnf-${g.chave}`} className="bg-muted/60 hover:bg-muted/60">
+                    <TableCell colSpan={9} className="text-xs font-bold uppercase">Total Geral NF: {numero}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(subProd.vProd)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(subProd.vIpi)}</TableCell>
+                    <TableCell />
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(subProd.vOper + cteFreteTotal)}</TableCell>
+                    <TableCell colSpan={4} />
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(subProd.icmsDeb)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(subProd.base)}</TableCell>
+                    <TableCell />
+                    <TableCell />
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(subProd.icmsCalc)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(subProd.icmsRet)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(subProd.aPagar + cteIcmsTotal)}</TableCell>
+                  </TableRow>
+                )
+
+                return [...produtoRows, subtotalProdRow, ...cteRows, ...(subtotalCteRow ? [subtotalCteRow] : []), totalNfRow]
+              })}
+            </TableBody>
+            <TableFooter>
+              <TableRow className="bg-muted/60 hover:bg-muted/60">
+                <TableCell colSpan={COL_COUNT - 1} className="text-xs font-bold uppercase text-right">
+                  Total Geral ICMS a Pagar ({grupos.length} nota{grupos.length !== 1 ? 's' : ''})
+                </TableCell>
+                <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(totalGeralAPagar)}</TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NotasTabBlocos({
   endpointSped,
   regime,
@@ -6043,19 +6377,19 @@ export default function IcmsFronteira() {
             <CardHeader>
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-500" />
-                Substituição Tributária
+                Substituição Tributária — demonstrativo por item
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground mb-4">
-                Notas com ICMS-ST. Na aba Planilha de Itens cada nota é detalhada por produto,
-                pois o MVA pode diferir por NCM e uma mesma NF pode ter itens de regimes distintos.
-                Três blocos: meses anteriores no SPED, mês atual no SPED, e XML não lançadas.
+                Demonstrativo de ICMS-ST por item, agrupado por nota com subtotais de produtos,
+                CT-es de frete rateados por item e total geral por NF. O MVA pode diferir por NCM
+                e uma mesma NF pode ter itens de regimes distintos.
               </p>
               <div className="flex justify-end mb-2">
                 <RecalcularButton />
               </div>
-              <NotasTabBlocos endpointSped="/api/icms-fronteira/st" regime="st" token={token} />
+              <STItensTab token={token} />
             </CardContent>
           </Card>
         </TabsContent>
