@@ -3928,7 +3928,10 @@ export function RegrasTab({ token }: { token: string | null }) {
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Segmento</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Regime</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Alíq. Int. %</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA %</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA orig. %</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA aj. 4%</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA aj. 7%</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">MVA aj. 12%</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Redução BC %</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide text-center">Global</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Ações</TableHead>
@@ -3937,7 +3940,7 @@ export function RegrasTab({ token }: { token: string | null }) {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-xs text-muted-foreground py-6">
+                  <TableCell colSpan={13} className="text-center text-xs text-muted-foreground py-6">
                     Nenhuma regra encontrada
                   </TableCell>
                 </TableRow>
@@ -3971,6 +3974,9 @@ export function RegrasTab({ token }: { token: string | null }) {
                     <TableCell><RegimeBadge regime={row.regime} /></TableCell>
                     <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.aliquota_interna)}</TableCell>
                     <TableCell className="text-xs text-right tabular-nums">{row.mva_original != null ? fmtPct(row.mva_original) : '—'}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{row.mva_ajustado_4pct != null ? fmtPct(row.mva_ajustado_4pct) : '—'}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{row.mva_ajustado_7pct != null ? fmtPct(row.mva_ajustado_7pct) : '—'}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{row.mva_ajustado_12pct != null ? fmtPct(row.mva_ajustado_12pct) : '—'}</TableCell>
                     <TableCell className="text-xs text-right tabular-nums">{fmtPct(row.reducao_bc_pct)}</TableCell>
                     <TableCell className="text-center">
                       {row.is_global ? (
