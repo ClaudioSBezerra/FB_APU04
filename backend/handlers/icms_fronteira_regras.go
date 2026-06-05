@@ -526,16 +526,16 @@ func detectFronteiraRegrasColumns(header []string) map[string]int {
 		// porque a coluna "Alíquotas de N%" no padrão SEFAZ é justamente o MVA
 		// ajustado para a alíquota interestadual N).
 		case strings.Contains(n, "mva 4") || strings.Contains(n, "mva4") ||
-			strings.Contains(n, "ajustado 4") || strings.Contains(n, "aliquotas de 4") ||
-			strings.Contains(n, "aliquota de 4"):
+			strings.Contains(n, "ajustado 4") || strings.Contains(n, "aj 4") ||
+			strings.Contains(n, "aliquotas de 4") || strings.Contains(n, "aliquota de 4"):
 			set("mva4", i)
 		case strings.Contains(n, "mva 7") || strings.Contains(n, "mva7") ||
-			strings.Contains(n, "ajustado 7") || strings.Contains(n, "aliquotas de 7") ||
-			strings.Contains(n, "aliquota de 7"):
+			strings.Contains(n, "ajustado 7") || strings.Contains(n, "aj 7") ||
+			strings.Contains(n, "aliquotas de 7") || strings.Contains(n, "aliquota de 7"):
 			set("mva7", i)
 		case strings.Contains(n, "mva 12") || strings.Contains(n, "mva12") ||
-			strings.Contains(n, "ajustado 12") || strings.Contains(n, "aliquotas de 12") ||
-			strings.Contains(n, "aliquota de 12"):
+			strings.Contains(n, "ajustado 12") || strings.Contains(n, "aj 12") ||
+			strings.Contains(n, "aliquotas de 12") || strings.Contains(n, "aliquota de 12"):
 			set("mva12", i)
 		// MVA original (operação interna/importação no padrão SEFAZ).
 		case strings.Contains(n, "mva orig") || strings.Contains(n, "mva original") ||
@@ -571,7 +571,7 @@ func detectFronteiraRegrasColumns(header []string) map[string]int {
 // parsePctOrNull converte string de percentual ("112,04", "85.10", "-", "")
 // em *float64; retorna nil para vazio/traço/zero.
 func parsePctOrNull(s string) interface{} {
-	s = strings.TrimSpace(s)
+	s = strings.TrimSpace(strings.ReplaceAll(s, "%", ""))
 	if s == "" || s == "-" || s == "—" {
 		return nil
 	}
@@ -766,9 +766,21 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Detecta layout pelo cabeçalho. Se não casar NCM por nome, usa fallback
-		// posicional legado (ncm=0, descricao=1, regime=2, aliq=3, mva=4, reducao=5).
+		// Detecta layout pelo cabeçalho. Planilhas SEFAZ trazem 1-2 linhas de título
+		// antes do header real, então procura a primeira linha cujas colunas casem
+		// com "ncm" (até as 15 primeiras). Se nenhuma casar, usa fallback posicional
+		// legado (ncm=0, descricao=1, regime=2, aliq=3, mva=4, reducao=5).
+		headerRow := 0
 		col := detectFronteiraRegrasColumns(records[0])
+		if _, ok := col["ncm"]; !ok {
+			for hr := 1; hr < len(records) && hr < 15; hr++ {
+				c := detectFronteiraRegrasColumns(records[hr])
+				if _, ok := c["ncm"]; ok {
+					headerRow, col = hr, c
+					break
+				}
+			}
+		}
 		legacy := false
 		if _, ok := col["ncm"]; !ok {
 			legacy = true
@@ -784,7 +796,7 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 			return strings.TrimSpace(rec[i])
 		}
 		parseFloatDefault := func(s string, def float64) float64 {
-			s = strings.TrimSpace(s)
+			s = strings.TrimSpace(strings.ReplaceAll(s, "%", ""))
 			if s == "" || s == "-" {
 				return def
 			}
@@ -796,8 +808,8 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 
 		res := importResult{Errors: []string{}}
 		for i, rec := range records {
-			if i == 0 {
-				continue // header
+			if i <= headerRow {
+				continue // título(s) + header
 			}
 			if len(rec) < 1 {
 				res.Skipped++
