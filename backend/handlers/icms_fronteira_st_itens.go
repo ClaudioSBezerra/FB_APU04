@@ -1,0 +1,317 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"log"
+	"net/http"
+	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// ---------------------------------------------------------------------------
+// Demonstrativo de ICMS-ST POR ITEM (nova tela)
+//
+// GET /api/icms-fronteira/st-itens?periodo=MM/YYYY&uf=BA
+//
+// Diferente de /api/icms-fronteira/st (que agrega por NOTA), este endpoint
+// retorna UMA LINHA POR ITEM de NF cujo CFOP é de ST (2403/2409/2651/2652).
+// O cálculo de ST é feito por item, casando o NCM DO ITEM com a regra NCM
+// (mesma LATERAL do fronteiraBaseQuery) e aplicando a trava de segmento.
+//
+// O frontend agrupa por nota (chave_nfe) — aqui só devolvemos os itens com a
+// chave da nota para o agrupamento + os CT-es por nota (fetchCteLinksForNFs).
+//
+// Duas fontes (UNION ALL):
+//  1. SPED        — reg_c170 × reg_0200 × reg_c100 × import_jobs (bloco
+//                   "mes_atual" / "mes_anterior" conforme dt_doc vs período).
+//  2. XML não-SPED — nfe_entradas_itens × nfe_entradas, onde a chave NÃO está
+//                   em nenhum SPED da empresa (bloco "nao_sped").
+// ---------------------------------------------------------------------------
+
+// STItemRow — uma linha por item de NF com CFOP de ST.
+type STItemRow struct {
+	// Campos da NOTA (para o frontend agrupar)
+	ChaveNFe    string `json:"chave_nfe"`
+	NumeroNFe   string `json:"numero_nfe"`
+	DataEmissao string `json:"data_emissao"`
+	FornCNPJ    string `json:"forn_cnpj"`
+	FornNome    string `json:"forn_nome"`
+	FornUF      string `json:"forn_uf"`
+	CFOP        string `json:"cfop"`
+	Bloco       string `json:"bloco"`      // "mes_atual" | "mes_anterior" | "nao_sped"
+	StatusXML   string `json:"status_xml"` // "Encontrado"
+
+	// Campos do ITEM
+	CodProduto string  `json:"cod_produto"`
+	Descricao  string  `json:"descricao"`
+	NCM        string  `json:"ncm"`
+	CEST       string  `json:"cest"`
+	VProd      float64 `json:"v_prod"`
+	VIPI       float64 `json:"v_ipi"`
+	VOutro     float64 `json:"v_outro"`
+	VOperacao  float64 `json:"v_operacao"` // v_prod + v_ipi + v_outro
+
+	// Regra / segmento
+	TemRegra     bool    `json:"tem_regra"`
+	MVAOriginal  float64 `json:"mva_original"`
+	MVAAjustado  float64 `json:"mva_ajustado"` // MVA efetivo calculado
+	AliqInter    float64 `json:"aliq_inter"`   // alíquota interestadual do item
+	AliqInterna  float64 `json:"aliq_interna"` // regra.aliquota_interna (default 20.5)
+	SegmentoOK   bool    `json:"segmento_ok"`
+
+	// Cálculo
+	IcmsDebitado  float64 `json:"icms_debitado"`  // ICMS próprio (vl_icms / v_icms)
+	BaseCalculo   float64 `json:"base_calculo"`   // v_operacao*(1+mva/100) quando aplicável
+	ReducaoBC     float64 `json:"reducao_bc"`     // regra.reducao_bc_pct
+	BCReduzida    float64 `json:"bc_reduzida"`    // base_calculo*(1-reducao_bc/100)
+	IcmsCalculado float64 `json:"icms_calculado"` // bc_reduzida*aliq_interna/100 - icms_debitado (min 0)
+	IcmsRetido    float64 `json:"icms_retido"`    // vl_icms_st / v_st
+	IcmsAPagar    float64 `json:"icms_a_pagar"`   // max(0, icms_calculado - icms_retido)
+}
+
+type STItensResponse struct {
+	Rows     []STItemRow          `json:"rows"`
+	Count    int                  `json:"count"`
+	CteLinks map[string][]CteLink `json:"cte_links"`
+}
+
+// stItensQuery — UNION ALL das duas fontes. Cada item casa a regra via LATERAL
+// (lógica idêntica ao fronteiraBaseQuery, casando o NCM DO ITEM) e expõe os
+// campos crus + o MVA efetivo já calculado. Os campos derivados (base, ICMS
+// calculado, a pagar) são montados em Go a partir das colunas cruas para manter
+// a query legível e o cálculo fiscal auditável em um único lugar.
+//
+// Placeholders: $1 company_id (uuid), $2 periodo "MM/YYYY", $3 uf.
+const stItensQuery = `
+WITH
+sped_itens AS (
+    SELECT
+        c100.chv_nfe                                        AS chave_nfe,
+        COALESCE(c100.num_doc, '')                          AS numero_nfe,
+        c100.dt_doc::text                                   AS data_emissao,
+        COALESCE(part.cnpj, ne.forn_cnpj, '')               AS forn_cnpj,
+        COALESCE(part.nome, ne.forn_nome, '')               AS forn_nome,
+        COALESCE(NULLIF(ne.forn_uf, ''), NULLIF(m_part.uf, ''), '') AS forn_uf,
+        ci.cfop                                             AS cfop,
+        ci.num_item                                         AS num_item,
+        CASE
+            WHEN $2::text = ''
+              OR (EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
+                  AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int)
+            THEN 'mes_atual'
+            ELSE 'mes_anterior'
+        END                                                 AS bloco,
+        COALESCE(ci.cod_item, '')                           AS cod_produto,
+        COALESCE(NULLIF(ci.descr_compl,''), p.descr_item, '') AS descricao,
+        LEFT(regexp_replace(COALESCE(p.cod_ncm,''),'[^0-9]','','g'),8) AS ncm,
+        COALESCE(p.cest, '')                                AS cest,
+        COALESCE(ci.vl_item, 0)                             AS v_prod,
+        COALESCE(ci.vl_ipi, 0)                              AS v_ipi,
+        0::numeric                                          AS v_outro,
+        COALESCE(NULLIF(ci.aliq_icms,0), 12.0)              AS aliq_inter,
+        COALESCE(ci.vl_icms, 0)                             AS icms_debitado,
+        COALESCE(ci.vl_icms_st, 0)                          AS icms_retido,
+        COALESCE(j.uf, 'PE')                                AS uf_filial
+    FROM reg_c170 ci
+    JOIN reg_c100 c100 ON c100.id = ci.c100_id
+    JOIN import_jobs j  ON j.id = c100.job_id
+    LEFT JOIN reg_0200 p ON p.job_id = c100.job_id AND p.cod_item = ci.cod_item
+    LEFT JOIN participants part
+        ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
+    LEFT JOIN municipios_ibge m_part ON m_part.codigo_ibge = part.cod_mun
+    LEFT JOIN nfe_entradas ne ON ne.company_id = j.company_id AND ne.chave_nfe = c100.chv_nfe
+    WHERE j.company_id = $1
+      AND ci.cfop IN ('2403','2409','2651','2652')
+      AND c100.cod_sit NOT IN ('02','03','04','05')
+      AND ($3::text = '' OR COALESCE(j.uf,'PE') = $3)
+      AND ($2::text = '' OR j.mes_ano = $2
+          OR (j.mes_ano IS NULL AND (
+              EXTRACT(MONTH FROM j.dt_ini)::int = SPLIT_PART($2::text,'/',1)::int
+              AND EXTRACT(YEAR  FROM j.dt_ini)::int = SPLIT_PART($2::text,'/',2)::int
+          ))
+      )
+),
+xml_itens AS (
+    SELECT
+        ne.chave_nfe                                        AS chave_nfe,
+        COALESCE(ne.numero_nfe,'')                          AS numero_nfe,
+        ne.data_emissao::text                               AS data_emissao,
+        COALESCE(ne.forn_cnpj,'')                           AS forn_cnpj,
+        COALESCE(ne.forn_nome,'')                           AS forn_nome,
+        COALESCE(ne.forn_uf,'')                             AS forn_uf,
+        nii.cfop                                            AS cfop,
+        nii.n_item                                          AS num_item,
+        'nao_sped'                                          AS bloco,
+        COALESCE(nii.c_prod,'')                             AS cod_produto,
+        COALESCE(nii.x_prod,'')                             AS descricao,
+        LEFT(regexp_replace(COALESCE(nii.ncm,''),'[^0-9]','','g'),8) AS ncm,
+        COALESCE(nii.cest,'')                               AS cest,
+        COALESCE(nii.v_prod, 0)                             AS v_prod,
+        COALESCE(nii.v_ipi, 0)                              AS v_ipi,
+        0::numeric                                          AS v_outro,
+        -- Alíquota interestadual derivada do item: v_icms/v_prod×100, default 12.
+        CASE WHEN COALESCE(nii.v_prod,0) > 0 AND COALESCE(nii.v_icms,0) > 0
+             THEN ROUND((nii.v_icms / nii.v_prod * 100.0)::numeric, 2)
+             ELSE 12.0 END                                  AS aliq_inter,
+        COALESCE(nii.v_icms, 0)                             AS icms_debitado,
+        COALESCE(nii.v_st, 0)                               AS icms_retido,
+        COALESCE(ne.dest_uf,'PE')                           AS uf_filial
+    FROM nfe_entradas_itens nii
+    JOIN nfe_entradas ne ON ne.id = nii.nfe_id
+    WHERE ne.company_id = $1
+      AND nii.cfop IN ('2403','2409','2651','2652')
+      AND EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
+      AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',2)::int
+      AND ($3::text = '' OR COALESCE(ne.dest_uf,'PE') = $3)
+      AND NOT EXISTS (
+          SELECT 1 FROM reg_c100 c100 JOIN import_jobs j ON j.id = c100.job_id
+          WHERE j.company_id = $1 AND c100.chv_nfe = ne.chave_nfe
+      )
+),
+itens AS (
+    SELECT * FROM sped_itens
+    UNION ALL
+    SELECT * FROM xml_itens
+)
+SELECT
+    i.chave_nfe, i.numero_nfe, i.data_emissao,
+    i.forn_cnpj, i.forn_nome, i.forn_uf,
+    i.cfop, i.bloco,
+    i.cod_produto, i.descricao, COALESCE(i.ncm,''), i.cest,
+    i.v_prod, i.v_ipi, i.v_outro,
+    i.aliq_inter,
+    i.icms_debitado, i.icms_retido,
+    (regra.aliquota_interna IS NOT NULL) AS tem_regra,
+    COALESCE(regra.aliquota_interna, 20.5) AS aliq_interna,
+    COALESCE(regra.mva_original, 0)        AS mva_original,
+    COALESCE(regra.reducao_bc_pct, 0)      AS reducao_bc,
+    -- segmento_ok: regra com segmento_codigo E empresa tem o segmento na UF.
+    (regra.segmento_codigo IS NOT NULL
+     AND EXISTS (
+         SELECT 1 FROM company_segmentos cs
+         WHERE cs.company_id = $1::uuid
+           AND cs.segmento_codigo = regra.segmento_codigo
+           AND cs.uf = i.uf_filial
+     )) AS segmento_ok,
+    -- MVA efetivo: ajustado pré-calc por alíq interestadual real, fallback
+    -- Convênio 110/07 a partir do MVA original, fallback MVA original.
+    COALESCE(
+        CASE i.aliq_inter
+            WHEN 4.0  THEN regra.mva_ajustado_4pct
+            WHEN 7.0  THEN regra.mva_ajustado_7pct
+            WHEN 12.0 THEN regra.mva_ajustado_12pct
+        END,
+        CASE WHEN regra.mva_original IS NOT NULL AND COALESCE(regra.aliquota_interna,20.5) < 100 THEN
+            ((1.0 + regra.mva_original/100.0) * (1.0 - i.aliq_inter/100.0)
+             / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0) - 1.0) * 100.0
+        END,
+        regra.mva_original,
+        0
+    ) AS mva_ajustado
+FROM itens i
+LEFT JOIN LATERAL (
+    SELECT r.aliquota_interna, r.mva_original,
+           r.mva_ajustado_4pct, r.mva_ajustado_7pct, r.mva_ajustado_12pct,
+           r.reducao_bc_pct, r.segmento_codigo
+    FROM icms_fronteira_regras_ncm r
+    WHERE (r.company_id = $1 OR r.company_id IS NULL)
+      AND r.uf_estado = i.uf_filial
+      AND NULLIF(i.ncm,'') IS NOT NULL
+      AND LEFT(i.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
+      AND LENGTH(r.ncm_prefixo) >= 4
+    ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
+    LIMIT 1
+) regra ON true
+ORDER BY i.bloco, i.data_emissao, i.chave_nfe, i.num_item
+`
+
+// IcmsFronteiraSTItensHandler — GET /api/icms-fronteira/st-itens
+//
+//	Parâmetros: periodo (MM/YYYY), uf (opcional).
+func IcmsFronteiraSTItensHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa: "+err.Error())
+			return
+		}
+
+		periodo := strings.TrimSpace(r.URL.Query().Get("periodo"))
+		uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+
+		rows, err := db.Query(stItensQuery, companyID, periodo, uf)
+		if err != nil {
+			log.Printf("IcmsFronteiraSTItens error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar itens de ST")
+			return
+		}
+		defer rows.Close()
+
+		result := []STItemRow{}
+		for rows.Next() {
+			var row STItemRow
+			if err := rows.Scan(
+				&row.ChaveNFe, &row.NumeroNFe, &row.DataEmissao,
+				&row.FornCNPJ, &row.FornNome, &row.FornUF,
+				&row.CFOP, &row.Bloco,
+				&row.CodProduto, &row.Descricao, &row.NCM, &row.CEST,
+				&row.VProd, &row.VIPI, &row.VOutro,
+				&row.AliqInter,
+				&row.IcmsDebitado, &row.IcmsRetido,
+				&row.TemRegra, &row.AliqInterna, &row.MVAOriginal, &row.ReducaoBC,
+				&row.SegmentoOK, &row.MVAAjustado,
+			); err != nil {
+				log.Printf("IcmsFronteiraSTItens scan error: %v", err)
+				continue
+			}
+
+			row.StatusXML = "Encontrado"
+			row.VOperacao = row.VProd + row.VIPI + row.VOutro
+
+			// Cálculo de ST por item. Base só existe quando há regra E o segmento
+			// casou; caso contrário a ST não se aplica (zera base e derivados).
+			if row.TemRegra && row.SegmentoOK {
+				row.BaseCalculo = row.VOperacao * (1.0 + row.MVAAjustado/100.0)
+			} else {
+				row.BaseCalculo = 0
+			}
+			row.BCReduzida = row.BaseCalculo * (1.0 - row.ReducaoBC/100.0)
+			row.IcmsCalculado = row.BCReduzida*row.AliqInterna/100.0 - row.IcmsDebitado
+			if row.IcmsCalculado < 0 {
+				row.IcmsCalculado = 0
+			}
+			row.IcmsAPagar = row.IcmsCalculado - row.IcmsRetido
+			if row.IcmsAPagar < 0 {
+				row.IcmsAPagar = 0
+			}
+
+			result = append(result, row)
+		}
+
+		chaves := make([]string, len(result))
+		for i, rw := range result {
+			chaves[i] = rw.ChaveNFe
+		}
+		cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
+
+		json.NewEncoder(w).Encode(STItensResponse{
+			Rows:     result,
+			Count:    len(result),
+			CteLinks: cteLinks,
+		})
+	}
+}
