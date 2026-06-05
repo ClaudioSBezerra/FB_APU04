@@ -112,7 +112,8 @@ sped_itens AS (
         0::numeric                                          AS v_outro,
         COALESCE(NULLIF(ci.aliq_icms,0), 12.0)              AS aliq_inter,
         COALESCE(ci.vl_icms, 0)                             AS icms_debitado,
-        COALESCE(ci.vl_icms_st, 0)                          AS icms_retido,
+        -- ST retido: prioriza o XML por item (v_st), cai pro SPED, senão 0.
+        COALESCE(NULLIF(xi.v_st,0), ci.vl_icms_st, 0)       AS icms_retido,
         COALESCE(j.uf, 'PE')                                AS uf_filial
     FROM reg_c170 ci
     JOIN reg_c100 c100 ON c100.id = ci.c100_id
@@ -122,6 +123,7 @@ sped_itens AS (
         ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
     LEFT JOIN municipios_ibge m_part ON m_part.codigo_ibge = part.cod_mun
     LEFT JOIN nfe_entradas ne ON ne.company_id = j.company_id AND ne.chave_nfe = c100.chv_nfe
+    LEFT JOIN nfe_entradas_itens xi ON xi.nfe_id = ne.id AND xi.n_item = ci.num_item
     WHERE j.company_id = $1
       AND ci.cfop IN ('2403','2409','2651','2652')
       AND c100.cod_sit NOT IN ('02','03','04','05')
@@ -141,7 +143,12 @@ xml_itens AS (
         COALESCE(ne.forn_cnpj,'')                           AS forn_cnpj,
         COALESCE(ne.forn_nome,'')                           AS forn_nome,
         COALESCE(ne.forn_uf,'')                             AS forn_uf,
-        nii.cfop                                            AS cfop,
+        -- Os itens do XML trazem o CFOP do EMITENTE (saída: 6xxx/5xxx).
+        -- Reclassifica para o CFOP de ENTRADA (2xxx/1xxx) para casar com o SPED
+        -- e permitir o filtro de ST. (igual icms_fronteira_incentivo.go)
+        CASE WHEN LEFT(nii.cfop,1)='6' THEN '2'||SUBSTRING(nii.cfop FROM 2)
+             WHEN LEFT(nii.cfop,1)='5' THEN '1'||SUBSTRING(nii.cfop FROM 2)
+             ELSE nii.cfop END                              AS cfop,
         nii.n_item                                          AS num_item,
         'nao_sped'                                          AS bloco,
         COALESCE(nii.c_prod,'')                             AS cod_produto,
@@ -161,7 +168,9 @@ xml_itens AS (
     FROM nfe_entradas_itens nii
     JOIN nfe_entradas ne ON ne.id = nii.nfe_id
     WHERE ne.company_id = $1
-      AND nii.cfop IN ('2403','2409','2651','2652')
+      AND (CASE WHEN LEFT(nii.cfop,1)='6' THEN '2'||SUBSTRING(nii.cfop FROM 2)
+                WHEN LEFT(nii.cfop,1)='5' THEN '1'||SUBSTRING(nii.cfop FROM 2)
+                ELSE nii.cfop END) IN ('2403','2409','2651','2652')
       AND EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
       AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',2)::int
       AND ($3::text = '' OR COALESCE(ne.dest_uf,'PE') = $3)

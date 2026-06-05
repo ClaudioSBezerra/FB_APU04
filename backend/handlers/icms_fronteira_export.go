@@ -998,7 +998,11 @@ func fetchCteLinksForNFs(db *sql.DB, companyID string, chaves []string) map[stri
 		  -- logístico / redespacho (toma=0 remetente, toma=1 expedidor, toma=4 de
 		  -- terceiro) NÃO entra — não é frete custeado pela empresa. O frete final
 		  -- pendente (ex.: TRANSWINTER ainda sem CT-e) é sinalizado via <receb>.
-		  AND ce.dest_cnpj_cpf = ne.dest_cnpj_cpf
+		  -- A trava de filial só se aplica quando a NF tem XML em nfe_entradas;
+		  -- notas só-SPED (sem XML importado) não têm dest_cnpj_cpf para comparar,
+		  -- então caem só na regra de tomador (toma) — senão o LEFT JOIN com ne
+		  -- NULL zeraria o CT-e (= ce.dest_cnpj_cpf = NULL nunca é verdadeiro).
+		  AND (ne.id IS NULL OR ce.dest_cnpj_cpf = ne.dest_cnpj_cpf)
 		  AND (
 		      ce.toma = '3'
 		      OR (ce.toma = '4' AND ce.toma4_cnpj = ce.dest_cnpj_cpf)
