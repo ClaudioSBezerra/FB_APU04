@@ -790,6 +790,22 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraSTItensHandler(database), "")(w, r)
 	})
+	http.HandleFunc("/api/icms-fronteira/st-itens/exportar/xlsx", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraSTItensXLSXHandler(database), "")(w, r)
+	})
+	http.HandleFunc("/api/icms-fronteira/st-itens/exportar/pdf", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraSTItensHTMLHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/ufs", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {

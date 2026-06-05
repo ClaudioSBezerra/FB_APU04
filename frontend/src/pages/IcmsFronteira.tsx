@@ -1698,6 +1698,45 @@ function STItensTab({ token }: { token: string | null }) {
 
   const COL_COUNT = 24
 
+  function exportParams(): string {
+    const p = new URLSearchParams()
+    p.set('periodo', periodo)
+    if (uf) p.set('uf', uf)
+    return p.toString()
+  }
+
+  async function handleExportXLSX() {
+    try {
+      const res = await fetch(`/api/icms-fronteira/st-itens/exportar/xlsx?${exportParams()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const blob = await res.blob()
+      const objUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objUrl
+      a.download = 'st-por-item.xlsx'
+      a.click()
+      URL.revokeObjectURL(objUrl)
+      toast.success('Excel de ST por item gerado')
+    } catch {
+      toast.error('Erro ao exportar Excel')
+    }
+  }
+
+  async function handleExportPDF() {
+    try {
+      const res = await fetch(`/api/icms-fronteira/st-itens/exportar/pdf?${exportParams()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const blob = await res.blob()
+      window.open(URL.createObjectURL(blob))
+    } catch {
+      toast.error('Erro ao exportar PDF')
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
@@ -1712,6 +1751,24 @@ function STItensTab({ token }: { token: string | null }) {
           onChange={(e) => setMonthInput(e.target.value)}
         />
         {periodo && <span className="text-xs text-muted-foreground">{periodo}{uf ? ` · ${uf}` : ''}</span>}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={handleExportXLSX}
+          disabled={rows.length === 0}
+        >
+          <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Excel
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={handleExportPDF}
+          disabled={rows.length === 0}
+        >
+          <FileDown className="h-3.5 w-3.5 mr-1" />PDF
+        </Button>
       </div>
 
       {isLoading && (

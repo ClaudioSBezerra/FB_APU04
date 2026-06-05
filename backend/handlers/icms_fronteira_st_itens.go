@@ -253,53 +253,11 @@ func IcmsFronteiraSTItensHandler(db *sql.DB) http.HandlerFunc {
 		periodo := strings.TrimSpace(r.URL.Query().Get("periodo"))
 		uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
 
-		rows, err := db.Query(stItensQuery, companyID, periodo, uf)
+		result, err := fetchSTItens(db, companyID, periodo, uf)
 		if err != nil {
 			log.Printf("IcmsFronteiraSTItens error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar itens de ST")
 			return
-		}
-		defer rows.Close()
-
-		result := []STItemRow{}
-		for rows.Next() {
-			var row STItemRow
-			if err := rows.Scan(
-				&row.ChaveNFe, &row.NumeroNFe, &row.DataEmissao,
-				&row.FornCNPJ, &row.FornNome, &row.FornUF,
-				&row.CFOP, &row.Bloco,
-				&row.CodProduto, &row.Descricao, &row.NCM, &row.CEST,
-				&row.VProd, &row.VIPI, &row.VOutro,
-				&row.AliqInter,
-				&row.IcmsDebitado, &row.IcmsRetido,
-				&row.TemRegra, &row.AliqInterna, &row.MVAOriginal, &row.ReducaoBC,
-				&row.SegmentoOK, &row.MVAAjustado,
-			); err != nil {
-				log.Printf("IcmsFronteiraSTItens scan error: %v", err)
-				continue
-			}
-
-			row.StatusXML = "Encontrado"
-			row.VOperacao = row.VProd + row.VIPI + row.VOutro
-
-			// Cálculo de ST por item. Base só existe quando há regra E o segmento
-			// casou; caso contrário a ST não se aplica (zera base e derivados).
-			if row.TemRegra && row.SegmentoOK {
-				row.BaseCalculo = row.VOperacao * (1.0 + row.MVAAjustado/100.0)
-			} else {
-				row.BaseCalculo = 0
-			}
-			row.BCReduzida = row.BaseCalculo * (1.0 - row.ReducaoBC/100.0)
-			row.IcmsCalculado = row.BCReduzida*row.AliqInterna/100.0 - row.IcmsDebitado
-			if row.IcmsCalculado < 0 {
-				row.IcmsCalculado = 0
-			}
-			row.IcmsAPagar = row.IcmsCalculado - row.IcmsRetido
-			if row.IcmsAPagar < 0 {
-				row.IcmsAPagar = 0
-			}
-
-			result = append(result, row)
 		}
 
 		chaves := make([]string, len(result))
@@ -314,4 +272,57 @@ func IcmsFronteiraSTItensHandler(db *sql.DB) http.HandlerFunc {
 			CteLinks: cteLinks,
 		})
 	}
+}
+
+// fetchSTItens executa stItensQuery, faz o scan e aplica o cálculo de ST por
+// item (base, BC reduzida, ICMS calculado, ICMS a pagar). Fonte única do cálculo
+// fiscal — reusada pelo handler JSON e pelos exports (XLSX/PDF).
+func fetchSTItens(db *sql.DB, companyID, periodo, uf string) ([]STItemRow, error) {
+	rows, err := db.Query(stItensQuery, companyID, periodo, uf)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := []STItemRow{}
+	for rows.Next() {
+		var row STItemRow
+		if err := rows.Scan(
+			&row.ChaveNFe, &row.NumeroNFe, &row.DataEmissao,
+			&row.FornCNPJ, &row.FornNome, &row.FornUF,
+			&row.CFOP, &row.Bloco,
+			&row.CodProduto, &row.Descricao, &row.NCM, &row.CEST,
+			&row.VProd, &row.VIPI, &row.VOutro,
+			&row.AliqInter,
+			&row.IcmsDebitado, &row.IcmsRetido,
+			&row.TemRegra, &row.AliqInterna, &row.MVAOriginal, &row.ReducaoBC,
+			&row.SegmentoOK, &row.MVAAjustado,
+		); err != nil {
+			log.Printf("fetchSTItens scan error: %v", err)
+			continue
+		}
+
+		row.StatusXML = "Encontrado"
+		row.VOperacao = row.VProd + row.VIPI + row.VOutro
+
+		// Cálculo de ST por item. Base só existe quando há regra E o segmento
+		// casou; caso contrário a ST não se aplica (zera base e derivados).
+		if row.TemRegra && row.SegmentoOK {
+			row.BaseCalculo = row.VOperacao * (1.0 + row.MVAAjustado/100.0)
+		} else {
+			row.BaseCalculo = 0
+		}
+		row.BCReduzida = row.BaseCalculo * (1.0 - row.ReducaoBC/100.0)
+		row.IcmsCalculado = row.BCReduzida*row.AliqInterna/100.0 - row.IcmsDebitado
+		if row.IcmsCalculado < 0 {
+			row.IcmsCalculado = 0
+		}
+		row.IcmsAPagar = row.IcmsCalculado - row.IcmsRetido
+		if row.IcmsAPagar < 0 {
+			row.IcmsAPagar = 0
+		}
+
+		result = append(result, row)
+	}
+	return result, nil
 }
