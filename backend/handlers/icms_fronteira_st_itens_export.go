@@ -94,223 +94,234 @@ func IcmsFronteiraSTItensXLSXHandler(db *sql.DB) http.HandlerFunc {
 		cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
 		grupos := groupSTItens(rows)
 
-		f := excelize.NewFile()
-		sheet := "ST por item"
-		f.SetSheetName("Sheet1", sheet)
-
-		moneyFmt := `"R$" #,##0.00`
-		headerStyle, _ := f.NewStyle(&excelize.Style{
-			Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
-			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"4472C4"}},
-		})
-		boldStyle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
-		subStyle, _ := f.NewStyle(&excelize.Style{
-			Font: &excelize.Font{Bold: true},
-			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2E8F0"}},
-		})
-		totalStyle, _ := f.NewStyle(&excelize.Style{
-			Font: &excelize.Font{Bold: true},
-			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"CBD5E1"}},
-		})
-		moneyStyle, _ := f.NewStyle(&excelize.Style{CustomNumFmt: &moneyFmt})
-		cteStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"DCE6F1"}}})
-
-		// Header
-		letters := make([]string, len(stItensColHeaders))
-		for i := range stItensColHeaders {
-			c, _ := excelize.CoordinatesToCellName(i+1, 1)
-			f.SetCellValue(sheet, c, stItensColHeaders[i])
-			f.SetCellStyle(sheet, c, c, headerStyle)
-			col, _, _ := excelize.SplitCellName(c)
-			letters[i] = col
-		}
-		// money columns: V.Produto(10) V.IPI(11) Demais(12) V.Operação(13)
-		// ICMS Debitado(18) Base Cálc(19) BC Reduz(21) ICMS Calc(22) ICMS Retido(23) ICMS a Pagar(24)
-		moneyCols := []int{10, 11, 12, 13, 18, 19, 21, 22, 23, 24}
-		pct := func(v float64) string { return fmt.Sprintf("%.2f%%", v) }
-
-		er := 2
-		var totalGeralAPagar float64
-		for _, g := range grupos {
-			itens := g.Itens
-			numero := "—"
-			if len(itens) > 0 {
-				if n := itens[0].NumeroNFe; n != "" {
-					numero = n
-				}
-			}
-			var somaOper float64
-			for _, it := range itens {
-				somaOper += it.VOperacao
-			}
-
-			// 1. Linhas de produto.
-			for _, it := range itens {
-				set := func(col int, v interface{}) {
-					c, _ := excelize.CoordinatesToCellName(col, er)
-					f.SetCellValue(sheet, c, v)
-				}
-				set(1, it.CFOP)
-				set(2, it.NumeroNFe)
-				set(3, it.ChaveNFe)
-				set(4, it.FornNome)
-				set(5, it.CodProduto)
-				set(6, it.Descricao)
-				set(7, it.NCM)
-				set(8, it.CEST)
-				set(9, it.StatusXML)
-				set(10, it.VProd)
-				set(11, it.VIPI)
-				set(12, it.VOutro)
-				set(13, it.VOperacao)
-				if it.TemRegra {
-					set(14, pct(it.MVAOriginal))
-					set(15, pct(it.MVAAjustado))
-				}
-				set(16, pct(it.AliqInter))
-				set(17, pct(it.AliqInterna))
-				set(18, it.IcmsDebitado)
-				set(19, it.BaseCalculo)
-				set(20, pct(it.ReducaoBC))
-				set(21, it.BCReduzida)
-				set(22, it.IcmsCalculado)
-				set(23, it.IcmsRetido)
-				set(24, it.IcmsAPagar)
-				for _, mc := range moneyCols {
-					c, _ := excelize.CoordinatesToCellName(mc, er)
-					f.SetCellStyle(sheet, c, c, moneyStyle)
-				}
-				er++
-			}
-
-			// 2. Subtotal Produtos.
-			var subVProd, subVIpi, subVOper, subIcmsDeb, subBase, subIcmsCalc, subIcmsRet, subAPagar float64
-			for _, it := range itens {
-				subVProd += it.VProd
-				subVIpi += it.VIPI
-				subVOper += it.VOperacao
-				subIcmsDeb += it.IcmsDebitado
-				subBase += it.BaseCalculo
-				subIcmsCalc += it.IcmsCalculado
-				subIcmsRet += it.IcmsRetido
-				subAPagar += it.IcmsAPagar
-			}
-			setSub := func(col int, v interface{}) {
-				c, _ := excelize.CoordinatesToCellName(col, er)
-				f.SetCellValue(sheet, c, v)
-			}
-			setSub(1, fmt.Sprintf("Subtotal Produtos NF %s:", numero))
-			setSub(10, subVProd)
-			setSub(11, subVIpi)
-			setSub(13, subVOper)
-			setSub(18, subIcmsDeb)
-			setSub(19, subBase)
-			setSub(22, subIcmsCalc)
-			setSub(23, subIcmsRet)
-			setSub(24, subAPagar)
-			firstC, _ := excelize.CoordinatesToCellName(1, er)
-			lastC, _ := excelize.CoordinatesToCellName(24, er)
-			f.SetCellStyle(sheet, firstC, lastC, subStyle)
-			er++
-
-			// 3. Linhas de CT-e (frete rateado por item).
-			ctes := cteLinks[g.Chave]
-			var cteFreteTotal, cteIcmsTotal float64
-			for _, cte := range ctes {
-				for _, it := range itens {
-					fracao := 0.0
-					if somaOper > 0 {
-						fracao = cte.VPrest * it.VOperacao / somaOper
-					}
-					// TODO confirmar tratamento fiscal do frete na ST com Gilson
-					_, aPagar := cteAntecip(fracao, 0, it.AliqInterna, false)
-					cteFreteTotal += fracao
-					cteIcmsTotal += aPagar
-					set := func(col int, v interface{}) {
-						c, _ := excelize.CoordinatesToCellName(col, er)
-						f.SetCellValue(sheet, c, v)
-					}
-					set(1, "CTE")
-					set(2, "CT-e "+cte.NumeroCTe)
-					set(3, cte.ChaveCTe)
-					set(4, cte.EmitNome)
-					set(5, it.CodProduto)
-					set(6, fmt.Sprintf("Rateio CT-e %s s/ Prod. %s", cte.NumeroCTe, it.CodProduto))
-					set(7, it.NCM)
-					set(8, it.CEST)
-					set(13, fracao)
-					set(17, pct(it.AliqInterna))
-					set(24, aPagar)
-					firstC, _ := excelize.CoordinatesToCellName(1, er)
-					lastC, _ := excelize.CoordinatesToCellName(24, er)
-					f.SetCellStyle(sheet, firstC, lastC, cteStyle)
-					er++
-				}
-			}
-
-			// 4. Subtotal CT-es Vinculados (só quando há CT-e).
-			if len(ctes) > 0 {
-				setSC := func(col int, v interface{}) {
-					c, _ := excelize.CoordinatesToCellName(col, er)
-					f.SetCellValue(sheet, c, v)
-				}
-				setSC(1, "Subtotal CT-es Vinculados:")
-				setSC(13, cteFreteTotal)
-				setSC(24, cteIcmsTotal)
-				firstC, _ := excelize.CoordinatesToCellName(1, er)
-				lastC, _ := excelize.CoordinatesToCellName(24, er)
-				f.SetCellStyle(sheet, firstC, lastC, subStyle)
-				er++
-			}
-
-			// 5. TOTAL GERAL NF (produtos + CT-es).
-			setT := func(col int, v interface{}) {
-				c, _ := excelize.CoordinatesToCellName(col, er)
-				f.SetCellValue(sheet, c, v)
-			}
-			setT(1, fmt.Sprintf("TOTAL GERAL NF: %s", numero))
-			setT(10, subVProd)
-			setT(11, subVIpi)
-			setT(13, subVOper+cteFreteTotal)
-			setT(18, subIcmsDeb)
-			setT(19, subBase)
-			setT(22, subIcmsCalc)
-			setT(23, subIcmsRet)
-			setT(24, subAPagar+cteIcmsTotal)
-			firstC, _ = excelize.CoordinatesToCellName(1, er)
-			lastC, _ = excelize.CoordinatesToCellName(24, er)
-			f.SetCellStyle(sheet, firstC, lastC, totalStyle)
-			er++
-
-			totalGeralAPagar += subAPagar + cteIcmsTotal
-		}
-
-		// Rodapé — total geral de ICMS a pagar.
-		setF := func(col int, v interface{}) {
-			c, _ := excelize.CoordinatesToCellName(col, er)
-			f.SetCellValue(sheet, c, v)
-		}
-		notaLbl := fmt.Sprintf("Total Geral ICMS a Pagar (%d nota", len(grupos))
-		if len(grupos) != 1 {
-			notaLbl += "s"
-		}
-		notaLbl += ")"
-		setF(1, notaLbl)
-		setF(24, totalGeralAPagar)
-		firstC, _ := excelize.CoordinatesToCellName(1, er)
-		lastC, _ := excelize.CoordinatesToCellName(24, er)
-		f.SetCellStyle(sheet, firstC, lastC, boldStyle)
-
-		var buf bytes.Buffer
-		if err := f.Write(&buf); err != nil {
+		data, err := buildSTItensXLSX(grupos, cteLinks)
+		if err != nil {
 			log.Printf("IcmsFronteiraSTItensXLSX write error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao gerar arquivo XLSX")
 			return
 		}
 		w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 		w.Header().Set("Content-Disposition", `attachment; filename="st-por-item.xlsx"`)
-		w.Write(buf.Bytes())
+		w.Write(data)
 	}
+}
+
+// buildSTItensXLSX gera o arquivo XLSX do demonstrativo de ST por item a partir
+// dos grupos (já agrupados por nota) e dos links de CT-e por chave. Função PURA
+// — não depende de banco de dados nem de HTTP.
+func buildSTItensXLSX(grupos []stItemGrupo, cteLinks map[string][]CteLink) ([]byte, error) {
+	f := excelize.NewFile()
+	sheet := "ST por item"
+	f.SetSheetName("Sheet1", sheet)
+
+	moneyFmt := `"R$" #,##0.00`
+	headerStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"4472C4"}},
+	})
+	boldStyle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	subStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true},
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2E8F0"}},
+	})
+	totalStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true},
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"CBD5E1"}},
+	})
+	moneyStyle, _ := f.NewStyle(&excelize.Style{CustomNumFmt: &moneyFmt})
+	cteStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"DCE6F1"}}})
+
+	// Header
+	letters := make([]string, len(stItensColHeaders))
+	for i := range stItensColHeaders {
+		c, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, c, stItensColHeaders[i])
+		f.SetCellStyle(sheet, c, c, headerStyle)
+		col, _, _ := excelize.SplitCellName(c)
+		letters[i] = col
+	}
+	// money columns: V.Produto(10) V.IPI(11) Demais(12) V.Operação(13)
+	// ICMS Debitado(18) Base Cálc(19) BC Reduz(21) ICMS Calc(22) ICMS Retido(23) ICMS a Pagar(24)
+	moneyCols := []int{10, 11, 12, 13, 18, 19, 21, 22, 23, 24}
+	pct := func(v float64) string { return fmt.Sprintf("%.2f%%", v) }
+
+	er := 2
+	var totalGeralAPagar float64
+	for _, g := range grupos {
+		itens := g.Itens
+		numero := "—"
+		if len(itens) > 0 {
+			if n := itens[0].NumeroNFe; n != "" {
+				numero = n
+			}
+		}
+		var somaOper float64
+		for _, it := range itens {
+			somaOper += it.VOperacao
+		}
+
+		// 1. Linhas de produto.
+		for _, it := range itens {
+			set := func(col int, v interface{}) {
+				c, _ := excelize.CoordinatesToCellName(col, er)
+				f.SetCellValue(sheet, c, v)
+			}
+			set(1, it.CFOP)
+			set(2, it.NumeroNFe)
+			set(3, it.ChaveNFe)
+			set(4, it.FornNome)
+			set(5, it.CodProduto)
+			set(6, it.Descricao)
+			set(7, it.NCM)
+			set(8, it.CEST)
+			set(9, it.StatusXML)
+			set(10, it.VProd)
+			set(11, it.VIPI)
+			set(12, it.VOutro)
+			set(13, it.VOperacao)
+			if it.TemRegra {
+				set(14, pct(it.MVAOriginal))
+				set(15, pct(it.MVAAjustado))
+			}
+			set(16, pct(it.AliqInter))
+			set(17, pct(it.AliqInterna))
+			set(18, it.IcmsDebitado)
+			set(19, it.BaseCalculo)
+			set(20, pct(it.ReducaoBC))
+			set(21, it.BCReduzida)
+			set(22, it.IcmsCalculado)
+			set(23, it.IcmsRetido)
+			set(24, it.IcmsAPagar)
+			for _, mc := range moneyCols {
+				c, _ := excelize.CoordinatesToCellName(mc, er)
+				f.SetCellStyle(sheet, c, c, moneyStyle)
+			}
+			er++
+		}
+
+		// 2. Subtotal Produtos.
+		var subVProd, subVIpi, subVOper, subIcmsDeb, subBase, subIcmsCalc, subIcmsRet, subAPagar float64
+		for _, it := range itens {
+			subVProd += it.VProd
+			subVIpi += it.VIPI
+			subVOper += it.VOperacao
+			subIcmsDeb += it.IcmsDebitado
+			subBase += it.BaseCalculo
+			subIcmsCalc += it.IcmsCalculado
+			subIcmsRet += it.IcmsRetido
+			subAPagar += it.IcmsAPagar
+		}
+		setSub := func(col int, v interface{}) {
+			c, _ := excelize.CoordinatesToCellName(col, er)
+			f.SetCellValue(sheet, c, v)
+		}
+		setSub(1, fmt.Sprintf("Subtotal Produtos NF %s:", numero))
+		setSub(10, subVProd)
+		setSub(11, subVIpi)
+		setSub(13, subVOper)
+		setSub(18, subIcmsDeb)
+		setSub(19, subBase)
+		setSub(22, subIcmsCalc)
+		setSub(23, subIcmsRet)
+		setSub(24, subAPagar)
+		firstC, _ := excelize.CoordinatesToCellName(1, er)
+		lastC, _ := excelize.CoordinatesToCellName(24, er)
+		f.SetCellStyle(sheet, firstC, lastC, subStyle)
+		er++
+
+		// 3. Linhas de CT-e (frete rateado por item).
+		ctes := cteLinks[g.Chave]
+		var cteFreteTotal, cteIcmsTotal float64
+		for _, cte := range ctes {
+			for _, it := range itens {
+				fracao := 0.0
+				if somaOper > 0 {
+					fracao = cte.VPrest * it.VOperacao / somaOper
+				}
+				// TODO confirmar tratamento fiscal do frete na ST com Gilson
+				_, aPagar := cteAntecip(fracao, 0, it.AliqInterna, false)
+				cteFreteTotal += fracao
+				cteIcmsTotal += aPagar
+				set := func(col int, v interface{}) {
+					c, _ := excelize.CoordinatesToCellName(col, er)
+					f.SetCellValue(sheet, c, v)
+				}
+				set(1, "CTE")
+				set(2, "CT-e "+cte.NumeroCTe)
+				set(3, cte.ChaveCTe)
+				set(4, cte.EmitNome)
+				set(5, it.CodProduto)
+				set(6, fmt.Sprintf("Rateio CT-e %s s/ Prod. %s", cte.NumeroCTe, it.CodProduto))
+				set(7, it.NCM)
+				set(8, it.CEST)
+				set(13, fracao)
+				set(17, pct(it.AliqInterna))
+				set(24, aPagar)
+				firstC, _ := excelize.CoordinatesToCellName(1, er)
+				lastC, _ := excelize.CoordinatesToCellName(24, er)
+				f.SetCellStyle(sheet, firstC, lastC, cteStyle)
+				er++
+			}
+		}
+
+		// 4. Subtotal CT-es Vinculados (só quando há CT-e).
+		if len(ctes) > 0 {
+			setSC := func(col int, v interface{}) {
+				c, _ := excelize.CoordinatesToCellName(col, er)
+				f.SetCellValue(sheet, c, v)
+			}
+			setSC(1, "Subtotal CT-es Vinculados:")
+			setSC(13, cteFreteTotal)
+			setSC(24, cteIcmsTotal)
+			firstC, _ := excelize.CoordinatesToCellName(1, er)
+			lastC, _ := excelize.CoordinatesToCellName(24, er)
+			f.SetCellStyle(sheet, firstC, lastC, subStyle)
+			er++
+		}
+
+		// 5. TOTAL GERAL NF (produtos + CT-es).
+		setT := func(col int, v interface{}) {
+			c, _ := excelize.CoordinatesToCellName(col, er)
+			f.SetCellValue(sheet, c, v)
+		}
+		setT(1, fmt.Sprintf("TOTAL GERAL NF: %s", numero))
+		setT(10, subVProd)
+		setT(11, subVIpi)
+		setT(13, subVOper+cteFreteTotal)
+		setT(18, subIcmsDeb)
+		setT(19, subBase)
+		setT(22, subIcmsCalc)
+		setT(23, subIcmsRet)
+		setT(24, subAPagar+cteIcmsTotal)
+		firstC, _ = excelize.CoordinatesToCellName(1, er)
+		lastC, _ = excelize.CoordinatesToCellName(24, er)
+		f.SetCellStyle(sheet, firstC, lastC, totalStyle)
+		er++
+
+		totalGeralAPagar += subAPagar + cteIcmsTotal
+	}
+
+	// Rodapé — total geral de ICMS a pagar.
+	setF := func(col int, v interface{}) {
+		c, _ := excelize.CoordinatesToCellName(col, er)
+		f.SetCellValue(sheet, c, v)
+	}
+	notaLbl := fmt.Sprintf("Total Geral ICMS a Pagar (%d nota", len(grupos))
+	if len(grupos) != 1 {
+		notaLbl += "s"
+	}
+	notaLbl += ")"
+	setF(1, notaLbl)
+	setF(24, totalGeralAPagar)
+	firstC, _ := excelize.CoordinatesToCellName(1, er)
+	lastC, _ := excelize.CoordinatesToCellName(24, er)
+	f.SetCellStyle(sheet, firstC, lastC, boldStyle)
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -358,11 +369,6 @@ func IcmsFronteiraSTItensHTMLHandler(db *sql.DB) http.HandlerFunc {
 			FROM companies c LEFT JOIN enterprise_groups eg ON c.group_id = eg.id
 			WHERE c.id = $1::uuid`, companyID).Scan(&companyName, &groupName)
 		today := time.Now().Format("02/01/2006")
-		pct := func(v float64) string { return fmt.Sprintf("%.2f%%", v) }
-		td := func(v string) string { return "<td>" + htmlEscape(v) + "</td>" }
-		tdR := func(v float64) string { return fmt.Sprintf(`<td style="text-align:right">%s</td>`, brl(v)) }
-		tdRs := func(s string) string { return fmt.Sprintf(`<td style="text-align:right">%s</td>`, htmlEscape(s)) }
-		empty := func(n int) string { return strings.Repeat("<td></td>", n) }
 
 		var sb strings.Builder
 		sb.WriteString(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">`)
@@ -379,126 +385,7 @@ func IcmsFronteiraSTItensHTMLHandler(db *sql.DB) http.HandlerFunc {
 			htmlEscape(periodo), htmlEscape(uf), htmlEscape(companyName), today))
 		sb.WriteString(`</div></div>`)
 
-		if len(grupos) == 0 {
-			sb.WriteString(`<div class="empty">Nenhum item de ST encontrado para o período.</div>`)
-		}
-
-		sb.WriteString(`<table class="nf-tbl"><thead><tr>`)
-		for _, h := range stItensColHeaders {
-			sb.WriteString(fmt.Sprintf(`<th>%s</th>`, h))
-		}
-		sb.WriteString(`</tr></thead><tbody>`)
-
-		var totalGeralAPagar float64
-		for _, g := range grupos {
-			itens := g.Itens
-			numero := "—"
-			if len(itens) > 0 && itens[0].NumeroNFe != "" {
-				numero = itens[0].NumeroNFe
-			}
-			var somaOper float64
-			for _, it := range itens {
-				somaOper += it.VOperacao
-			}
-
-			// 1. Produtos.
-			for _, it := range itens {
-				sb.WriteString(`<tr>`)
-				sb.WriteString(td(it.CFOP) + td(it.NumeroNFe) + td(it.ChaveNFe) + td(it.FornNome))
-				sb.WriteString(td(it.CodProduto) + td(it.Descricao) + td(it.NCM) + td(it.CEST) + td(it.StatusXML))
-				sb.WriteString(tdR(it.VProd) + tdR(it.VIPI) + tdR(it.VOutro) + tdR(it.VOperacao))
-				if it.TemRegra {
-					sb.WriteString(tdRs(pct(it.MVAOriginal)) + tdRs(pct(it.MVAAjustado)))
-				} else {
-					sb.WriteString(tdRs("—") + tdRs("—"))
-				}
-				sb.WriteString(tdRs(pct(it.AliqInter)) + tdRs(pct(it.AliqInterna)))
-				sb.WriteString(tdR(it.IcmsDebitado) + tdR(it.BaseCalculo) + tdRs(pct(it.ReducaoBC)))
-				sb.WriteString(tdR(it.BCReduzida) + tdR(it.IcmsCalculado) + tdR(it.IcmsRetido) + tdR(it.IcmsAPagar))
-				sb.WriteString(`</tr>`)
-			}
-
-			// 2. Subtotal Produtos.
-			var subVProd, subVIpi, subVOper, subIcmsDeb, subBase, subIcmsCalc, subIcmsRet, subAPagar float64
-			for _, it := range itens {
-				subVProd += it.VProd
-				subVIpi += it.VIPI
-				subVOper += it.VOperacao
-				subIcmsDeb += it.IcmsDebitado
-				subBase += it.BaseCalculo
-				subIcmsCalc += it.IcmsCalculado
-				subIcmsRet += it.IcmsRetido
-				subAPagar += it.IcmsAPagar
-			}
-			sb.WriteString(`<tr class="tot-row">`)
-			sb.WriteString(fmt.Sprintf(`<td colspan="9">Subtotal Produtos NF %s:</td>`, htmlEscape(numero)))
-			sb.WriteString(tdR(subVProd) + tdR(subVIpi) + `<td></td>` + tdR(subVOper))
-			sb.WriteString(empty(4))
-			sb.WriteString(tdR(subIcmsDeb) + tdR(subBase) + `<td></td><td></td>`)
-			sb.WriteString(tdR(subIcmsCalc) + tdR(subIcmsRet) + tdR(subAPagar))
-			sb.WriteString(`</tr>`)
-
-			// 3. CT-es rateados.
-			ctes := cteLinks[g.Chave]
-			var cteFreteTotal, cteIcmsTotal float64
-			for _, cte := range ctes {
-				for _, it := range itens {
-					fracao := 0.0
-					if somaOper > 0 {
-						fracao = cte.VPrest * it.VOperacao / somaOper
-					}
-					// TODO confirmar tratamento fiscal do frete na ST com Gilson
-					_, aPagar := cteAntecip(fracao, 0, it.AliqInterna, false)
-					cteFreteTotal += fracao
-					cteIcmsTotal += aPagar
-					sb.WriteString(`<tr style="background:#dce6f1">`)
-					sb.WriteString(td("CTE") + td("CT-e "+cte.NumeroCTe) + td(cte.ChaveCTe) + td(cte.EmitNome))
-					sb.WriteString(td(it.CodProduto) + td(fmt.Sprintf("Rateio CT-e %s s/ Prod. %s", cte.NumeroCTe, it.CodProduto)))
-					sb.WriteString(td(it.NCM) + td(it.CEST) + td("—"))
-					sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>`)
-					sb.WriteString(tdR(fracao))
-					sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>`)
-					sb.WriteString(tdRs(pct(it.AliqInterna)))
-					sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>`)
-					sb.WriteString(tdR(aPagar))
-					sb.WriteString(`</tr>`)
-				}
-			}
-
-			// 4. Subtotal CT-es.
-			if len(ctes) > 0 {
-				sb.WriteString(`<tr class="tot-row" style="background:#dce6f1!important">`)
-				sb.WriteString(`<td colspan="12">Subtotal CT-es Vinculados:</td>`)
-				sb.WriteString(tdR(cteFreteTotal))
-				sb.WriteString(empty(10))
-				sb.WriteString(tdR(cteIcmsTotal))
-				sb.WriteString(`</tr>`)
-			}
-
-			// 5. TOTAL GERAL NF.
-			sb.WriteString(`<tr class="tot-row">`)
-			sb.WriteString(fmt.Sprintf(`<td colspan="9">TOTAL GERAL NF: %s</td>`, htmlEscape(numero)))
-			sb.WriteString(tdR(subVProd) + tdR(subVIpi) + `<td></td>` + tdR(subVOper+cteFreteTotal))
-			sb.WriteString(empty(4))
-			sb.WriteString(tdR(subIcmsDeb) + tdR(subBase) + `<td></td><td></td>`)
-			sb.WriteString(tdR(subIcmsCalc) + tdR(subIcmsRet) + tdR(subAPagar+cteIcmsTotal))
-			sb.WriteString(`</tr>`)
-
-			totalGeralAPagar += subAPagar + cteIcmsTotal
-		}
-		sb.WriteString(`</tbody>`)
-
-		if len(grupos) > 0 {
-			notaS := "s"
-			if len(grupos) == 1 {
-				notaS = ""
-			}
-			sb.WriteString(`<tfoot><tr class="tot-row">`)
-			sb.WriteString(fmt.Sprintf(`<td colspan="23" style="text-align:right">Total Geral ICMS a Pagar (%d nota%s)</td>`, len(grupos), notaS))
-			sb.WriteString(tdR(totalGeralAPagar))
-			sb.WriteString(`</tr></tfoot>`)
-		}
-		sb.WriteString(`</table>`)
+		sb.WriteString(buildSTItensHTML(grupos, cteLinks))
 
 		sb.WriteString(`<script>window.onload=function(){window.print()}</script>`)
 		sb.WriteString(`</body></html>`)
@@ -506,4 +393,140 @@ func IcmsFronteiraSTItensHTMLHandler(db *sql.DB) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(sb.String()))
 	}
+}
+
+// buildSTItensHTML gera o corpo HTML (mensagem de vazio + tabela completa) do
+// demonstrativo de ST por item a partir dos grupos e dos links de CT-e por
+// chave. Função PURA — não depende de banco de dados nem de HTTP.
+func buildSTItensHTML(grupos []stItemGrupo, cteLinks map[string][]CteLink) string {
+	pct := func(v float64) string { return fmt.Sprintf("%.2f%%", v) }
+	td := func(v string) string { return "<td>" + htmlEscape(v) + "</td>" }
+	tdR := func(v float64) string { return fmt.Sprintf(`<td style="text-align:right">%s</td>`, brl(v)) }
+	tdRs := func(s string) string { return fmt.Sprintf(`<td style="text-align:right">%s</td>`, htmlEscape(s)) }
+	empty := func(n int) string { return strings.Repeat("<td></td>", n) }
+
+	var sb strings.Builder
+
+	if len(grupos) == 0 {
+		sb.WriteString(`<div class="empty">Nenhum item de ST encontrado para o período.</div>`)
+	}
+
+	sb.WriteString(`<table class="nf-tbl"><thead><tr>`)
+	for _, h := range stItensColHeaders {
+		sb.WriteString(fmt.Sprintf(`<th>%s</th>`, h))
+	}
+	sb.WriteString(`</tr></thead><tbody>`)
+
+	var totalGeralAPagar float64
+	for _, g := range grupos {
+		itens := g.Itens
+		numero := "—"
+		if len(itens) > 0 && itens[0].NumeroNFe != "" {
+			numero = itens[0].NumeroNFe
+		}
+		var somaOper float64
+		for _, it := range itens {
+			somaOper += it.VOperacao
+		}
+
+		// 1. Produtos.
+		for _, it := range itens {
+			sb.WriteString(`<tr>`)
+			sb.WriteString(td(it.CFOP) + td(it.NumeroNFe) + td(it.ChaveNFe) + td(it.FornNome))
+			sb.WriteString(td(it.CodProduto) + td(it.Descricao) + td(it.NCM) + td(it.CEST) + td(it.StatusXML))
+			sb.WriteString(tdR(it.VProd) + tdR(it.VIPI) + tdR(it.VOutro) + tdR(it.VOperacao))
+			if it.TemRegra {
+				sb.WriteString(tdRs(pct(it.MVAOriginal)) + tdRs(pct(it.MVAAjustado)))
+			} else {
+				sb.WriteString(tdRs("—") + tdRs("—"))
+			}
+			sb.WriteString(tdRs(pct(it.AliqInter)) + tdRs(pct(it.AliqInterna)))
+			sb.WriteString(tdR(it.IcmsDebitado) + tdR(it.BaseCalculo) + tdRs(pct(it.ReducaoBC)))
+			sb.WriteString(tdR(it.BCReduzida) + tdR(it.IcmsCalculado) + tdR(it.IcmsRetido) + tdR(it.IcmsAPagar))
+			sb.WriteString(`</tr>`)
+		}
+
+		// 2. Subtotal Produtos.
+		var subVProd, subVIpi, subVOper, subIcmsDeb, subBase, subIcmsCalc, subIcmsRet, subAPagar float64
+		for _, it := range itens {
+			subVProd += it.VProd
+			subVIpi += it.VIPI
+			subVOper += it.VOperacao
+			subIcmsDeb += it.IcmsDebitado
+			subBase += it.BaseCalculo
+			subIcmsCalc += it.IcmsCalculado
+			subIcmsRet += it.IcmsRetido
+			subAPagar += it.IcmsAPagar
+		}
+		sb.WriteString(`<tr class="tot-row">`)
+		sb.WriteString(fmt.Sprintf(`<td colspan="9">Subtotal Produtos NF %s:</td>`, htmlEscape(numero)))
+		sb.WriteString(tdR(subVProd) + tdR(subVIpi) + `<td></td>` + tdR(subVOper))
+		sb.WriteString(empty(4))
+		sb.WriteString(tdR(subIcmsDeb) + tdR(subBase) + `<td></td><td></td>`)
+		sb.WriteString(tdR(subIcmsCalc) + tdR(subIcmsRet) + tdR(subAPagar))
+		sb.WriteString(`</tr>`)
+
+		// 3. CT-es rateados.
+		ctes := cteLinks[g.Chave]
+		var cteFreteTotal, cteIcmsTotal float64
+		for _, cte := range ctes {
+			for _, it := range itens {
+				fracao := 0.0
+				if somaOper > 0 {
+					fracao = cte.VPrest * it.VOperacao / somaOper
+				}
+				// TODO confirmar tratamento fiscal do frete na ST com Gilson
+				_, aPagar := cteAntecip(fracao, 0, it.AliqInterna, false)
+				cteFreteTotal += fracao
+				cteIcmsTotal += aPagar
+				sb.WriteString(`<tr style="background:#dce6f1">`)
+				sb.WriteString(td("CTE") + td("CT-e "+cte.NumeroCTe) + td(cte.ChaveCTe) + td(cte.EmitNome))
+				sb.WriteString(td(it.CodProduto) + td(fmt.Sprintf("Rateio CT-e %s s/ Prod. %s", cte.NumeroCTe, it.CodProduto)))
+				sb.WriteString(td(it.NCM) + td(it.CEST) + td("—"))
+				sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>`)
+				sb.WriteString(tdR(fracao))
+				sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>`)
+				sb.WriteString(tdRs(pct(it.AliqInterna)))
+				sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>`)
+				sb.WriteString(tdR(aPagar))
+				sb.WriteString(`</tr>`)
+			}
+		}
+
+		// 4. Subtotal CT-es.
+		if len(ctes) > 0 {
+			sb.WriteString(`<tr class="tot-row" style="background:#dce6f1!important">`)
+			sb.WriteString(`<td colspan="12">Subtotal CT-es Vinculados:</td>`)
+			sb.WriteString(tdR(cteFreteTotal))
+			sb.WriteString(empty(10))
+			sb.WriteString(tdR(cteIcmsTotal))
+			sb.WriteString(`</tr>`)
+		}
+
+		// 5. TOTAL GERAL NF.
+		sb.WriteString(`<tr class="tot-row">`)
+		sb.WriteString(fmt.Sprintf(`<td colspan="9">TOTAL GERAL NF: %s</td>`, htmlEscape(numero)))
+		sb.WriteString(tdR(subVProd) + tdR(subVIpi) + `<td></td>` + tdR(subVOper+cteFreteTotal))
+		sb.WriteString(empty(4))
+		sb.WriteString(tdR(subIcmsDeb) + tdR(subBase) + `<td></td><td></td>`)
+		sb.WriteString(tdR(subIcmsCalc) + tdR(subIcmsRet) + tdR(subAPagar+cteIcmsTotal))
+		sb.WriteString(`</tr>`)
+
+		totalGeralAPagar += subAPagar + cteIcmsTotal
+	}
+	sb.WriteString(`</tbody>`)
+
+	if len(grupos) > 0 {
+		notaS := "s"
+		if len(grupos) == 1 {
+			notaS = ""
+		}
+		sb.WriteString(`<tfoot><tr class="tot-row">`)
+		sb.WriteString(fmt.Sprintf(`<td colspan="23" style="text-align:right">Total Geral ICMS a Pagar (%d nota%s)</td>`, len(grupos), notaS))
+		sb.WriteString(tdR(totalGeralAPagar))
+		sb.WriteString(`</tr></tfoot>`)
+	}
+	sb.WriteString(`</table>`)
+
+	return sb.String()
 }
