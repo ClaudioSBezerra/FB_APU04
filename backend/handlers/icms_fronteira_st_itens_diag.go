@@ -201,5 +201,55 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 		}
 	}
 
+	// (5) Cobertura de REGRA de MVA por UF: dos itens de ST do SPED, quantos
+	//     casam uma regra por NCM na UF da filial. Fecha o ponto 1 do Gilson
+	//     (MVA não casa) — distingue "falta regra" de "regra não bate NCM".
+	dl("---- (5) Cobertura de regra de MVA por UF (itens de ST do SPED) ----")
+	if rows, err := db.Query(`
+		WITH itens AS (
+			SELECT j.uf AS uf_filial,
+			       LEFT(regexp_replace(COALESCE(p.cod_ncm,''),'[^0-9]','','g'),8) AS ncm
+			FROM reg_c170 ci
+			JOIN reg_c100 c100 ON c100.id = ci.c100_id
+			JOIN import_jobs j ON j.id = c100.job_id
+			LEFT JOIN reg_0200 p ON p.job_id = c100.job_id AND p.cod_item = ci.cod_item
+			WHERE j.company_id = $1
+			  AND ci.cfop IN ('2403','2409','2651','2652')
+			  AND c100.cod_sit NOT IN ('02','03','04','05')
+			  AND (j.mes_ano = $2
+			       OR (j.mes_ano IS NULL
+			           AND EXTRACT(MONTH FROM j.dt_ini)::int = SPLIT_PART($2,'/',1)::int
+			           AND EXTRACT(YEAR  FROM j.dt_ini)::int = SPLIT_PART($2,'/',2)::int))
+		)
+		SELECT i.uf_filial, count(*) AS itens,
+		       count(*) FILTER (WHERE i.ncm = '' OR i.ncm IS NULL) AS sem_ncm,
+		       count(*) FILTER (WHERE EXISTS (
+		           SELECT 1 FROM icms_fronteira_regras_ncm r
+		           WHERE (r.company_id = $1 OR r.company_id IS NULL) AND r.uf_estado = i.uf_filial
+		             AND NULLIF(i.ncm,'') IS NOT NULL
+		             AND LEFT(i.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
+		             AND LENGTH(r.ncm_prefixo) >= 4
+		       )) AS com_regra
+		FROM itens i GROUP BY i.uf_filial ORDER BY i.uf_filial`, companyID, periodo); err != nil {
+		dl("(5) ERRO: %v", err)
+	} else {
+		n := 0
+		for rows.Next() {
+			var uf string
+			var itens, semNCM, comRegra int
+			if err := rows.Scan(&uf, &itens, &semNCM, &comRegra); err == nil {
+				dl("(5) uf=%-4s itens=%d  sem_NCM=%d  casam_regra=%d", uf, itens, semNCM, comRegra)
+				if comRegra == 0 && itens > 0 {
+					dl("(5) >>> uf=%s: NENHUM item casou regra (sem_NCM=%d). Se sem_NCM alto -> produto sem NCM no SPED; senão -> prefixo NCM da regra não bate.", uf, semNCM)
+				}
+				n++
+			}
+		}
+		rows.Close()
+		if n == 0 {
+			dl("(5) Nenhum item de ST no SPED do período.")
+		}
+	}
+
 	dl("================ FIM ================")
 }

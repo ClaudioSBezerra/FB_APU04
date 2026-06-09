@@ -43,17 +43,23 @@ func mkSTItemBloco(bloco, chave, numero, cod, ncm string, vProd, vIpi, mvaAj, al
 	return row
 }
 
-// fabricaRows monta notas em blocos distintos para cobrir o particionamento A/B/C:
+// fabricaRows monta notas em blocos distintos para cobrir o particionamento A/B/C
+// e o Bloco D (SPED sem XML):
 //   - NF 1001 (Bloco B / mes_atual): 2 itens com regra+segmento OK, reducao_bc 0 e 33,33
 //   - NF 1002 (Bloco A / mes_anterior): 1 item SEM regra (TemRegra=false)
 //   - NF 1003 (Bloco C / nao_sped): 1 item com regra mas segmento NÃO casou (SegmentoOK=false)
+//   - NF 1004 (Bloco B / mes_atual, StatusXML=Faltante): vai p/ Bloco D (pendência)
 func fabricaRows() []STItemRow {
-	return []STItemRow{
+	rows := []STItemRow{
 		mkSTItemBloco("mes_atual", "CHAVE1001", "1001", "P1", "30049099", 1000, 100, 40, 12, 20.5, 0, 120, 0, true, true),
 		mkSTItemBloco("mes_atual", "CHAVE1001", "1001", "P2", "30049099", 500, 0, 40, 12, 20.5, 33.33, 60, 10, true, true),
 		mkSTItemBloco("mes_anterior", "CHAVE1002", "1002", "P3", "21069090", 800, 0, 0, 12, 20.5, 0, 96, 0, false, false),
 		mkSTItemBloco("nao_sped", "CHAVE1003", "1003", "P4", "22021000", 700, 50, 50, 7, 18, 0, 84, 0, true, false),
 	}
+	// NF 1004: nota do SPED (mes_atual) SEM XML -> Bloco D (pendência, fora do total).
+	d := mkSTItemBloco("mes_atual", "CHAVE1004", "1004", "P5", "30049099", 200, 0, 40, 12, 20.5, 0, 24, 0, true, true)
+	d.StatusXML = "Faltante"
+	return append(rows, d)
 }
 
 func fabricaCteLinks() map[string][]CteLink {
@@ -117,7 +123,7 @@ func TestBuildSTItensXLSX(t *testing.T) {
 		all.WriteString("\n")
 	}
 	body := all.String()
-	for _, want := range []string{"Subtotal Produtos NF 1001:", "TOTAL GERAL NF: 1001", "Subtotal CT-es Vinculados:", "CTECHAVE1", "30049099"} {
+	for _, want := range []string{"Subtotal Produtos NF 1001:", "TOTAL GERAL NF: 1001", "Subtotal CT-es Vinculados:", "CTECHAVE1", "30049099", "Bloco D — SPED sem XML", "XML faltante"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("XLSX não contém marcador esperado %q", want)
 		}
@@ -173,6 +179,8 @@ func TestBuildSTItensHTML(t *testing.T) {
 		"30049099",
 		"CTECHAVE1",
 		"Rateio CT-e 9001",
+		"Bloco D — SPED sem XML",
+		"XML faltante",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("HTML não contém marcador esperado %q", want)

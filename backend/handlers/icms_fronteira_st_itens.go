@@ -114,7 +114,10 @@ sped_itens AS (
         COALESCE(ci.vl_icms, 0)                             AS icms_debitado,
         -- ST retido: prioriza o XML por item (v_st), cai pro SPED, senão 0.
         COALESCE(NULLIF(xi.v_st,0), ci.vl_icms_st, 0)       AS icms_retido,
-        COALESCE(j.uf, 'PE')                                AS uf_filial
+        COALESCE(j.uf, 'PE')                                AS uf_filial,
+        -- tem_xml: a NOTA do SPED possui XML importado nesta empresa? Usado para
+        -- o Bloco D (SPED sem XML / "Faltante"). Nível NOTA (ne.id), não item.
+        (ne.id IS NOT NULL)                                 AS tem_xml
     FROM reg_c170 ci
     JOIN reg_c100 c100 ON c100.id = ci.c100_id
     JOIN import_jobs j  ON j.id = c100.job_id
@@ -164,7 +167,8 @@ xml_itens AS (
              ELSE 12.0 END                                  AS aliq_inter,
         COALESCE(nii.v_icms, 0)                             AS icms_debitado,
         COALESCE(nii.v_st, 0)                               AS icms_retido,
-        COALESCE(ne.dest_uf,'PE')                           AS uf_filial
+        COALESCE(ne.dest_uf,'PE')                           AS uf_filial,
+        true                                                AS tem_xml
     FROM nfe_entradas_itens nii
     JOIN nfe_entradas ne ON ne.id = nii.nfe_id
     WHERE ne.company_id = $1
@@ -218,7 +222,8 @@ SELECT
         END,
         regra.mva_original,
         0
-    ) AS mva_ajustado
+    ) AS mva_ajustado,
+    i.tem_xml
 FROM itens i
 LEFT JOIN LATERAL (
     SELECT r.aliquota_interna, r.mva_original,
@@ -318,6 +323,7 @@ func fetchSTItens(db *sql.DB, companyID, periodo, uf string) ([]STItemRow, error
 	result := []STItemRow{}
 	for rows.Next() {
 		var row STItemRow
+		var temXML bool
 		if err := rows.Scan(
 			&row.ChaveNFe, &row.NumeroNFe, &row.DataEmissao,
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
@@ -328,12 +334,17 @@ func fetchSTItens(db *sql.DB, companyID, periodo, uf string) ([]STItemRow, error
 			&row.IcmsDebitado, &row.IcmsRetido,
 			&row.TemRegra, &row.AliqInterna, &row.MVAOriginal, &row.ReducaoBC,
 			&row.SegmentoOK, &row.MVAAjustado,
+			&temXML,
 		); err != nil {
 			log.Printf("fetchSTItens scan error: %v", err)
 			continue
 		}
 
-		row.StatusXML = "Encontrado"
+		if temXML {
+			row.StatusXML = "Encontrado"
+		} else {
+			row.StatusXML = "Faltante"
+		}
 		row.computeST()
 		result = append(result, row)
 	}

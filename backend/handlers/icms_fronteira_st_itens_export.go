@@ -96,6 +96,31 @@ func blocoLetraST(label string) string {
 	return strings.TrimSpace(s)
 }
 
+// stBlocoDFaltantes retorna as notas do SPED (Bloco A/B) sem XML importado
+// (StatusXML="Faltante"), agrupadas por nota. É o Bloco D — seção informativa de
+// pendências (repete notas de A/B); NÃO entra no total geral, para não duplicar.
+func stBlocoDFaltantes(rows []STItemRow) []stItemGrupo {
+	var sub []STItemRow
+	for _, r := range rows {
+		if (r.Bloco == "mes_atual" || r.Bloco == "mes_anterior") && r.StatusXML == "Faltante" {
+			sub = append(sub, r)
+		}
+	}
+	if len(sub) == 0 {
+		return nil
+	}
+	return groupSTItens(sub)
+}
+
+// sumST soma um campo float dos itens de um grupo.
+func sumST(itens []STItemRow, sel func(STItemRow) float64) float64 {
+	var t float64
+	for _, it := range itens {
+		t += sel(it)
+	}
+	return t
+}
+
 // ---------------------------------------------------------------------------
 // XLSX
 // ---------------------------------------------------------------------------
@@ -403,6 +428,40 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 	lastC, _ := excelize.CoordinatesToCellName(24, er)
 	f.SetCellStyle(sheet, firstC, lastC, boldStyle)
 
+	// Bloco D — SPED sem XML (pendências). Informativo: repete notas de A/B sem
+	// XML; NÃO soma no total geral. Lista o que falta importar.
+	if dnotas := stBlocoDFaltantes(rows); len(dnotas) > 0 {
+		er += 2 // linha em branco + cabeçalho de seção
+		dPlural := ""
+		if len(dnotas) != 1 {
+			dPlural = "s"
+		}
+		hc, _ := excelize.CoordinatesToCellName(1, er)
+		f.SetCellValue(sheet, hc, fmt.Sprintf("Bloco D — SPED sem XML · %d nota%s (importe o XML para capturar o ICMS-ST retido · não somado no total geral)", len(dnotas), dPlural))
+		hf, _ := excelize.CoordinatesToCellName(1, er)
+		hl, _ := excelize.CoordinatesToCellName(24, er)
+		f.SetCellStyle(sheet, hf, hl, blocoStyle)
+		er++
+		for _, g := range dnotas {
+			it0 := g.Itens[0]
+			setD := func(col int, v interface{}) {
+				c, _ := excelize.CoordinatesToCellName(col, er)
+				f.SetCellValue(sheet, c, v)
+			}
+			setD(1, it0.CFOP)
+			setD(2, it0.NumeroNFe)
+			setD(3, g.Chave)
+			setD(4, it0.FornNome)
+			setD(5, "XML faltante")
+			setD(10, sumST(g.Itens, func(it STItemRow) float64 { return it.VProd }))
+			setD(11, sumST(g.Itens, func(it STItemRow) float64 { return it.VIPI }))
+			setD(13, sumST(g.Itens, func(it STItemRow) float64 { return it.VOperacao }))
+			setD(18, sumST(g.Itens, func(it STItemRow) float64 { return it.IcmsDebitado }))
+			setD(23, sumST(g.Itens, func(it STItemRow) float64 { return it.IcmsRetido }))
+			er++
+		}
+	}
+
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
 		return nil, err
@@ -628,6 +687,34 @@ func buildSTItensHTML(rows []STItemRow, cteLinks map[string][]CteLink) string {
 		sb.WriteString(tdR(blIcmsDeb) + tdR(blBase) + `<td></td><td></td>`)
 		sb.WriteString(tdR(blIcmsCalc) + tdR(blIcmsRet) + tdR(blAPagar))
 		sb.WriteString(`</tr>`)
+	}
+
+	// Bloco D — SPED sem XML (pendências). Informativo: repete notas de A/B sem
+	// XML; NÃO soma no total geral.
+	if dnotas := stBlocoDFaltantes(rows); len(dnotas) > 0 {
+		dPlural := "s"
+		if len(dnotas) == 1 {
+			dPlural = ""
+		}
+		sb.WriteString(`<tr class="tot-row" style="background:#fde68a!important">`)
+		sb.WriteString(fmt.Sprintf(`<td colspan="24"><strong>Bloco D — SPED sem XML · %d nota%s</strong> (importe o XML para capturar o ICMS-ST retido · não somado no total geral)</td>`, len(dnotas), dPlural))
+		sb.WriteString(`</tr>`)
+		for _, g := range dnotas {
+			it0 := g.Itens[0]
+			sb.WriteString(`<tr style="background:#fffbeb">`)
+			sb.WriteString(td(it0.CFOP) + td(it0.NumeroNFe) + td(g.Chave) + td(it0.FornNome))
+			sb.WriteString(`<td colspan="5">XML faltante</td>`)
+			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.VProd })))
+			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.VIPI })))
+			sb.WriteString(`<td></td>`)
+			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.VOperacao })))
+			sb.WriteString(empty(4))
+			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.IcmsDebitado })))
+			sb.WriteString(`<td></td><td></td><td></td><td></td>`)
+			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.IcmsRetido })))
+			sb.WriteString(`<td></td>`)
+			sb.WriteString(`</tr>`)
+		}
 	}
 	sb.WriteString(`</tbody>`)
 

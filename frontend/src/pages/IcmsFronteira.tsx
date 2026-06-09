@@ -1695,6 +1695,14 @@ function STItensTab({ token }: { token: string | null }) {
     .map(def => ({ ...def, grupos: groupByChave(rows.filter(r => r.bloco === def.key)) }))
     .filter(b => b.grupos.length > 0)
 
+  // Bloco D — pendências: notas do SPED (A/B) sem XML importado. Seção
+  // informativa (repete notas que já aparecem em A/B); NÃO entra no Total Geral,
+  // para não duplicar. Sinaliza ao usuário quais XML faltam importar para
+  // capturar o ICMS-ST retido.
+  const blocoDNotas = groupByChave(
+    rows.filter(r => (r.bloco === 'mes_atual' || r.bloco === 'mes_anterior') && r.status_xml === 'Faltante'),
+  )
+
   // Total geral de ICMS a Pagar de todas as notas (produtos + CT-es rateados).
   const grupos = blocos.flatMap(b => b.grupos)
   let totalGeralAPagar = 0
@@ -2072,6 +2080,40 @@ function STItensTab({ token }: { token: string | null }) {
 
                 return [headerRow, ...grupoRows, subtotalBlocoRow]
               })}
+
+              {/* Bloco D — SPED sem XML (pendências). Seção informativa: repete
+                  notas de A/B que não têm XML importado. NÃO entra no Total Geral. */}
+              {blocoDNotas.length > 0 && (
+                <>
+                  <TableRow className="bg-amber-100 hover:bg-amber-100">
+                    <TableCell colSpan={COL_COUNT} className="text-xs font-bold uppercase tracking-wide text-amber-800">
+                      Bloco D — SPED sem XML · {blocoDNotas.length} nota{blocoDNotas.length !== 1 ? 's' : ''} (importe o XML para capturar o ICMS-ST retido · não somado no total geral)
+                    </TableCell>
+                  </TableRow>
+                  {blocoDNotas.map((g) => {
+                    const it0 = g.itens[0]
+                    const sum = (sel: (it: STItemRow) => number) => g.itens.reduce((a, it) => a + (sel(it) || 0), 0)
+                    return (
+                      <TableRow key={`blocoD-${g.chave}`} className="bg-amber-50 hover:bg-amber-50">
+                        <TableCell className="text-xs">{it0?.cfop || '—'}</TableCell>
+                        <TableCell className="text-xs">{it0?.numero_nfe || '—'}</TableCell>
+                        <TableCell className="text-xs font-mono">{g.chave}</TableCell>
+                        <TableCell className="text-xs">{it0?.forn_nome || '—'}</TableCell>
+                        <TableCell colSpan={5} className="text-xs text-amber-700">XML faltante</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(sum(it => it.v_prod))}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(sum(it => it.v_ipi))}</TableCell>
+                        <TableCell />
+                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(sum(it => it.v_operacao))}</TableCell>
+                        <TableCell colSpan={4} />
+                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(sum(it => it.icms_debitado))}</TableCell>
+                        <TableCell colSpan={4} />
+                        <TableCell className="text-xs text-right tabular-nums text-amber-700">{fmtBRL(sum(it => it.icms_retido))}</TableCell>
+                        <TableCell />
+                      </TableRow>
+                    )
+                  })}
+                </>
+              )}
             </TableBody>
             <TableFooter>
               <TableRow className="bg-muted/60 hover:bg-muted/60">
