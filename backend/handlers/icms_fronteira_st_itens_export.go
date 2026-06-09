@@ -56,6 +56,46 @@ func groupSTItens(rows []STItemRow) []stItemGrupo {
 	return grupos
 }
 
+// stBlocoGrupo agrupa as notas (stItemGrupo) de um mesmo bloco A/B/C.
+type stBlocoGrupo struct {
+	Bloco  string // "mes_anterior" | "mes_atual" | "nao_sped"
+	Label  string // rótulo de seção
+	Grupos []stItemGrupo
+}
+
+// groupSTItensByBloco particiona as linhas por bloco na ordem A/B/C, reusando
+// groupSTItens dentro de cada partição. Só inclui blocos com itens.
+func groupSTItensByBloco(rows []STItemRow) []stBlocoGrupo {
+	defs := []struct{ key, label string }{
+		{"mes_anterior", "Bloco A — Mês anterior (SPED)"},
+		{"mes_atual", "Bloco B — Mês atual (SPED)"},
+		{"nao_sped", "Bloco C — Notas fora do SPED (XML)"},
+	}
+	var out []stBlocoGrupo
+	for _, d := range defs {
+		var sub []STItemRow
+		for _, r := range rows {
+			if r.Bloco == d.key {
+				sub = append(sub, r)
+			}
+		}
+		if len(sub) == 0 {
+			continue
+		}
+		out = append(out, stBlocoGrupo{Bloco: d.key, Label: d.label, Grupos: groupSTItens(sub)})
+	}
+	return out
+}
+
+// blocoLetraST extrai a letra (A/B/C) do rótulo "Bloco X — ...".
+func blocoLetraST(label string) string {
+	s := strings.TrimSpace(strings.TrimPrefix(label, "Bloco"))
+	if i := strings.IndexAny(s, " —-"); i > 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return strings.TrimSpace(s)
+}
+
 // ---------------------------------------------------------------------------
 // XLSX
 // ---------------------------------------------------------------------------
@@ -92,9 +132,8 @@ func IcmsFronteiraSTItensXLSXHandler(db *sql.DB) http.HandlerFunc {
 			chaves[i] = rw.ChaveNFe
 		}
 		cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
-		grupos := groupSTItens(rows)
 
-		data, err := buildSTItensXLSX(grupos, cteLinks)
+		data, err := buildSTItensXLSX(rows, cteLinks)
 		if err != nil {
 			log.Printf("IcmsFronteiraSTItensXLSX write error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao gerar arquivo XLSX")
@@ -109,7 +148,8 @@ func IcmsFronteiraSTItensXLSXHandler(db *sql.DB) http.HandlerFunc {
 // buildSTItensXLSX gera o arquivo XLSX do demonstrativo de ST por item a partir
 // dos grupos (já agrupados por nota) e dos links de CT-e por chave. Função PURA
 // — não depende de banco de dados nem de HTTP.
-func buildSTItensXLSX(grupos []stItemGrupo, cteLinks map[string][]CteLink) ([]byte, error) {
+func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, error) {
+	blocos := groupSTItensByBloco(rows)
 	f := excelize.NewFile()
 	sheet := "ST por item"
 	f.SetSheetName("Sheet1", sheet)
@@ -125,6 +165,10 @@ func buildSTItensXLSX(grupos []stItemGrupo, cteLinks map[string][]CteLink) ([]by
 		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2E8F0"}},
 	})
 	totalStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true},
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"CBD5E1"}},
+	})
+	blocoStyle, _ := f.NewStyle(&excelize.Style{
 		Font: &excelize.Font{Bold: true},
 		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"CBD5E1"}},
 	})
@@ -147,7 +191,20 @@ func buildSTItensXLSX(grupos []stItemGrupo, cteLinks map[string][]CteLink) ([]by
 
 	er := 2
 	var totalGeralAPagar float64
-	for _, g := range grupos {
+	var totalGrupos int
+	for _, bl := range blocos {
+		// Cabeçalho de seção do bloco.
+		hc, _ := excelize.CoordinatesToCellName(1, er)
+		f.SetCellValue(sheet, hc, bl.Label)
+		hf, _ := excelize.CoordinatesToCellName(1, er)
+		hl, _ := excelize.CoordinatesToCellName(24, er)
+		f.SetCellStyle(sheet, hf, hl, blocoStyle)
+		er++
+
+		var blVProd, blVIpi, blVOper, blIcmsDeb, blBase, blIcmsCalc, blIcmsRet, blAPagar float64
+
+	for _, g := range bl.Grupos {
+		totalGrupos++
 		itens := g.Itens
 		numero := "—"
 		if len(itens) > 0 {
@@ -299,6 +356,35 @@ func buildSTItensXLSX(grupos []stItemGrupo, cteLinks map[string][]CteLink) ([]by
 		er++
 
 		totalGeralAPagar += subAPagar + cteIcmsTotal
+
+		blVProd += subVProd
+		blVIpi += subVIpi
+		blVOper += subVOper + cteFreteTotal
+		blIcmsDeb += subIcmsDeb
+		blBase += subBase
+		blIcmsCalc += subIcmsCalc
+		blIcmsRet += subIcmsRet
+		blAPagar += subAPagar + cteIcmsTotal
+	}
+
+		// Subtotal do bloco (todos os itens + CT-es do bloco).
+		setBl := func(col int, v interface{}) {
+			c, _ := excelize.CoordinatesToCellName(col, er)
+			f.SetCellValue(sheet, c, v)
+		}
+		setBl(1, fmt.Sprintf("Subtotal Bloco %s", blocoLetraST(bl.Label)))
+		setBl(10, blVProd)
+		setBl(11, blVIpi)
+		setBl(13, blVOper)
+		setBl(18, blIcmsDeb)
+		setBl(19, blBase)
+		setBl(22, blIcmsCalc)
+		setBl(23, blIcmsRet)
+		setBl(24, blAPagar)
+		blF, _ := excelize.CoordinatesToCellName(1, er)
+		blL, _ := excelize.CoordinatesToCellName(24, er)
+		f.SetCellStyle(sheet, blF, blL, blocoStyle)
+		er++
 	}
 
 	// Rodapé — total geral de ICMS a pagar.
@@ -306,8 +392,8 @@ func buildSTItensXLSX(grupos []stItemGrupo, cteLinks map[string][]CteLink) ([]by
 		c, _ := excelize.CoordinatesToCellName(col, er)
 		f.SetCellValue(sheet, c, v)
 	}
-	notaLbl := fmt.Sprintf("Total Geral ICMS a Pagar (%d nota", len(grupos))
-	if len(grupos) != 1 {
+	notaLbl := fmt.Sprintf("Total Geral ICMS a Pagar (%d nota", totalGrupos)
+	if totalGrupos != 1 {
 		notaLbl += "s"
 	}
 	notaLbl += ")"
@@ -362,7 +448,6 @@ func IcmsFronteiraSTItensHTMLHandler(db *sql.DB) http.HandlerFunc {
 			chaves[i] = rw.ChaveNFe
 		}
 		cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
-		grupos := groupSTItens(rows)
 
 		var companyName, groupName string
 		_ = db.QueryRow(`SELECT COALESCE(NULLIF(c.trade_name,''), c.name, ''), COALESCE(eg.name,'')
@@ -385,7 +470,7 @@ func IcmsFronteiraSTItensHTMLHandler(db *sql.DB) http.HandlerFunc {
 			htmlEscape(periodo), htmlEscape(uf), htmlEscape(companyName), today))
 		sb.WriteString(`</div></div>`)
 
-		sb.WriteString(buildSTItensHTML(grupos, cteLinks))
+		sb.WriteString(buildSTItensHTML(rows, cteLinks))
 
 		sb.WriteString(`<script>window.onload=function(){window.print()}</script>`)
 		sb.WriteString(`</body></html>`)
@@ -398,7 +483,8 @@ func IcmsFronteiraSTItensHTMLHandler(db *sql.DB) http.HandlerFunc {
 // buildSTItensHTML gera o corpo HTML (mensagem de vazio + tabela completa) do
 // demonstrativo de ST por item a partir dos grupos e dos links de CT-e por
 // chave. Função PURA — não depende de banco de dados nem de HTTP.
-func buildSTItensHTML(grupos []stItemGrupo, cteLinks map[string][]CteLink) string {
+func buildSTItensHTML(rows []STItemRow, cteLinks map[string][]CteLink) string {
+	blocos := groupSTItensByBloco(rows)
 	pct := func(v float64) string { return fmt.Sprintf("%.2f%%", v) }
 	td := func(v string) string { return "<td>" + htmlEscape(v) + "</td>" }
 	tdR := func(v float64) string { return fmt.Sprintf(`<td style="text-align:right">%s</td>`, brl(v)) }
@@ -407,7 +493,7 @@ func buildSTItensHTML(grupos []stItemGrupo, cteLinks map[string][]CteLink) strin
 
 	var sb strings.Builder
 
-	if len(grupos) == 0 {
+	if len(blocos) == 0 {
 		sb.WriteString(`<div class="empty">Nenhum item de ST encontrado para o período.</div>`)
 	}
 
@@ -418,7 +504,17 @@ func buildSTItensHTML(grupos []stItemGrupo, cteLinks map[string][]CteLink) strin
 	sb.WriteString(`</tr></thead><tbody>`)
 
 	var totalGeralAPagar float64
-	for _, g := range grupos {
+	var totalGrupos int
+	for _, bl := range blocos {
+		// Cabeçalho de seção do bloco.
+		sb.WriteString(`<tr class="tot-row" style="background:#cbd5e1!important">`)
+		sb.WriteString(fmt.Sprintf(`<td colspan="24"><strong>%s</strong></td>`, htmlEscape(bl.Label)))
+		sb.WriteString(`</tr>`)
+
+		var blVProd, blVIpi, blVOper, blIcmsDeb, blBase, blIcmsCalc, blIcmsRet, blAPagar float64
+
+	for _, g := range bl.Grupos {
+		totalGrupos++
 		itens := g.Itens
 		numero := "—"
 		if len(itens) > 0 && itens[0].NumeroNFe != "" {
@@ -513,16 +609,35 @@ func buildSTItensHTML(grupos []stItemGrupo, cteLinks map[string][]CteLink) strin
 		sb.WriteString(`</tr>`)
 
 		totalGeralAPagar += subAPagar + cteIcmsTotal
+
+		blVProd += subVProd
+		blVIpi += subVIpi
+		blVOper += subVOper + cteFreteTotal
+		blIcmsDeb += subIcmsDeb
+		blBase += subBase
+		blIcmsCalc += subIcmsCalc
+		blIcmsRet += subIcmsRet
+		blAPagar += subAPagar + cteIcmsTotal
+	}
+
+		// Subtotal do bloco.
+		sb.WriteString(`<tr class="tot-row" style="background:#cbd5e1!important">`)
+		sb.WriteString(fmt.Sprintf(`<td colspan="9"><strong>Subtotal Bloco %s</strong></td>`, htmlEscape(blocoLetraST(bl.Label))))
+		sb.WriteString(tdR(blVProd) + tdR(blVIpi) + `<td></td>` + tdR(blVOper))
+		sb.WriteString(empty(4))
+		sb.WriteString(tdR(blIcmsDeb) + tdR(blBase) + `<td></td><td></td>`)
+		sb.WriteString(tdR(blIcmsCalc) + tdR(blIcmsRet) + tdR(blAPagar))
+		sb.WriteString(`</tr>`)
 	}
 	sb.WriteString(`</tbody>`)
 
-	if len(grupos) > 0 {
+	if totalGrupos > 0 {
 		notaS := "s"
-		if len(grupos) == 1 {
+		if totalGrupos == 1 {
 			notaS = ""
 		}
 		sb.WriteString(`<tfoot><tr class="tot-row">`)
-		sb.WriteString(fmt.Sprintf(`<td colspan="23" style="text-align:right">Total Geral ICMS a Pagar (%d nota%s)</td>`, len(grupos), notaS))
+		sb.WriteString(fmt.Sprintf(`<td colspan="23" style="text-align:right">Total Geral ICMS a Pagar (%d nota%s)</td>`, totalGrupos, notaS))
 		sb.WriteString(tdR(totalGeralAPagar))
 		sb.WriteString(`</tr></tfoot>`)
 	}

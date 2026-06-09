@@ -1669,19 +1669,33 @@ function STItensTab({ token }: { token: string | null }) {
   const cteLinks = data?.cte_links ?? {}
 
   // Agrupa as linhas por chave_nfe mantendo a ordem de chegada.
-  const grupos: { chave: string; itens: STItemRow[] }[] = []
-  const idxByChave = new Map<string, number>()
-  for (const r of rows) {
-    let gi = idxByChave.get(r.chave_nfe)
-    if (gi === undefined) {
-      gi = grupos.length
-      idxByChave.set(r.chave_nfe, gi)
-      grupos.push({ chave: r.chave_nfe, itens: [] })
+  function groupByChave(rs: STItemRow[]): { chave: string; itens: STItemRow[] }[] {
+    const out: { chave: string; itens: STItemRow[] }[] = []
+    const idxByChave = new Map<string, number>()
+    for (const r of rs) {
+      let gi = idxByChave.get(r.chave_nfe)
+      if (gi === undefined) {
+        gi = out.length
+        idxByChave.set(r.chave_nfe, gi)
+        out.push({ chave: r.chave_nfe, itens: [] })
+      }
+      out[gi].itens.push(r)
     }
-    grupos[gi].itens.push(r)
+    return out
   }
 
+  // Particiona as linhas por bloco na ordem A/B/C, agrupando por nota dentro de cada bloco.
+  const BLOCO_DEFS: { key: STItemRow['bloco']; label: string }[] = [
+    { key: 'mes_anterior', label: 'Bloco A — Mês anterior (SPED)' },
+    { key: 'mes_atual', label: 'Bloco B — Mês atual (SPED)' },
+    { key: 'nao_sped', label: 'Bloco C — Notas fora do SPED (XML)' },
+  ]
+  const blocos = BLOCO_DEFS
+    .map(def => ({ ...def, grupos: groupByChave(rows.filter(r => r.bloco === def.key)) }))
+    .filter(b => b.grupos.length > 0)
+
   // Total geral de ICMS a Pagar de todas as notas (produtos + CT-es rateados).
+  const grupos = blocos.flatMap(b => b.grupos)
   let totalGeralAPagar = 0
   for (const g of grupos) {
     const somaOper = g.itens.reduce((a, it) => a + (it.v_operacao || 0), 0)
@@ -1822,7 +1836,45 @@ function STItensTab({ token }: { token: string | null }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {grupos.flatMap((g) => {
+              {blocos.flatMap((bloco) => {
+                // Subtotal do bloco (todos os itens + CT-es rateados do bloco).
+                const blocoSub = {
+                  vProd: 0, vIpi: 0, vOper: 0, icmsDeb: 0,
+                  base: 0, icmsCalc: 0, icmsRet: 0, aPagar: 0,
+                }
+                for (const g of bloco.grupos) {
+                  const somaOper = g.itens.reduce((a, it) => a + (it.v_operacao || 0), 0)
+                  for (const it of g.itens) {
+                    blocoSub.vProd += it.v_prod || 0
+                    blocoSub.vIpi += it.v_ipi || 0
+                    blocoSub.vOper += it.v_operacao || 0
+                    blocoSub.icmsDeb += it.icms_debitado || 0
+                    blocoSub.base += it.base_calculo || 0
+                    blocoSub.icmsCalc += it.icms_calculado || 0
+                    blocoSub.icmsRet += it.icms_retido || 0
+                    blocoSub.aPagar += it.icms_a_pagar || 0
+                  }
+                  for (const cte of cteLinks[g.chave] ?? []) {
+                    for (const it of g.itens) {
+                      const fracao = somaOper > 0 ? (cte.v_prest * (it.v_operacao || 0)) / somaOper : 0
+                      // TODO confirmar tratamento fiscal do frete na ST com Gilson
+                      const c = cteAntecip(fracao, 0, it.aliq_interna, false)
+                      blocoSub.vOper += fracao
+                      blocoSub.aPagar += c.aPagar
+                    }
+                  }
+                }
+
+                const blocoLetra = bloco.label.split('—')[0].replace('Bloco', '').trim()
+                const headerRow = (
+                  <TableRow key={`bloco-h-${bloco.key}`} className="bg-slate-200 hover:bg-slate-200">
+                    <TableCell colSpan={COL_COUNT} className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                      {bloco.label}
+                    </TableCell>
+                  </TableRow>
+                )
+
+                const grupoRows = bloco.grupos.flatMap((g) => {
                 const itens = g.itens
                 const numero = itens[0]?.numero_nfe || '—'
                 const somaOper = itens.reduce((a, it) => a + (it.v_operacao || 0), 0)
@@ -1972,6 +2024,27 @@ function STItensTab({ token }: { token: string | null }) {
                 )
 
                 return [...produtoRows, subtotalProdRow, ...cteRows, ...(subtotalCteRow ? [subtotalCteRow] : []), totalNfRow]
+                })
+
+                const subtotalBlocoRow = (
+                  <TableRow key={`bloco-sub-${bloco.key}`} className="bg-slate-200 hover:bg-slate-200">
+                    <TableCell colSpan={9} className="text-xs font-bold uppercase tracking-wide text-slate-700">Subtotal Bloco {blocoLetra}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(blocoSub.vProd)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(blocoSub.vIpi)}</TableCell>
+                    <TableCell />
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(blocoSub.vOper)}</TableCell>
+                    <TableCell colSpan={4} />
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(blocoSub.icmsDeb)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(blocoSub.base)}</TableCell>
+                    <TableCell />
+                    <TableCell />
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(blocoSub.icmsCalc)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(blocoSub.icmsRet)}</TableCell>
+                    <TableCell className="text-xs text-right tabular-nums font-bold">{fmtBRL(blocoSub.aPagar)}</TableCell>
+                  </TableRow>
+                )
+
+                return [headerRow, ...grupoRows, subtotalBlocoRow]
               })}
             </TableBody>
             <TableFooter>
