@@ -806,6 +806,15 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraSTItensHTMLHandler(database), "")(w, r)
 	})
+	// Diagnóstico ST por item — grava no log da API (filtre por [ST-DIAG] no Coolify).
+	http.HandleFunc("/api/icms-fronteira/st-itens/diagnostico", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraSTItensDiagHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/ufs", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {
