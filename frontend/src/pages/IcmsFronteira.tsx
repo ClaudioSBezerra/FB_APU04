@@ -2090,28 +2090,28 @@ function STItensTab({ token }: { token: string | null }) {
                       Bloco D — SPED sem XML · {blocoDNotas.length} nota{blocoDNotas.length !== 1 ? 's' : ''} (importe o XML para capturar o ICMS-ST retido · não somado no total geral)
                     </TableCell>
                   </TableRow>
-                  {blocoDNotas.map((g) => {
-                    const it0 = g.itens[0]
-                    const sum = (sel: (it: STItemRow) => number) => g.itens.reduce((a, it) => a + (sel(it) || 0), 0)
-                    return (
-                      <TableRow key={`blocoD-${g.chave}`} className="bg-amber-50 hover:bg-amber-50">
-                        <TableCell className="text-xs">{it0?.cfop || '—'}</TableCell>
-                        <TableCell className="text-xs">{it0?.numero_nfe || '—'}</TableCell>
+                  {blocoDNotas.flatMap((g) => g.itens.map((it, idx) => (
+                      <TableRow key={`blocoD-${g.chave}-${idx}`} className="bg-amber-50 hover:bg-amber-50">
+                        <TableCell className="text-xs">{it.cfop || '—'}</TableCell>
+                        <TableCell className="text-xs">{it.numero_nfe || '—'}</TableCell>
                         <TableCell className="text-xs font-mono">{g.chave}</TableCell>
-                        <TableCell className="text-xs">{it0?.forn_nome || '—'}</TableCell>
-                        <TableCell colSpan={5} className="text-xs text-amber-700">XML faltante</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(sum(it => it.v_prod))}</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(sum(it => it.v_ipi))}</TableCell>
+                        <TableCell className="text-xs">{it.forn_nome || '—'}</TableCell>
+                        <TableCell className="text-xs">{it.cod_produto || '—'}</TableCell>
+                        <TableCell className="text-xs">{it.descricao || '—'}</TableCell>
+                        <TableCell className="text-xs">{it.ncm || '—'}</TableCell>
+                        <TableCell className="text-xs">{it.cest || '—'}</TableCell>
+                        <TableCell className="text-xs text-amber-700">Faltante</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.v_prod)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.v_ipi)}</TableCell>
                         <TableCell />
-                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(sum(it => it.v_operacao))}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.v_operacao)}</TableCell>
                         <TableCell colSpan={4} />
-                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(sum(it => it.icms_debitado))}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.icms_debitado)}</TableCell>
                         <TableCell colSpan={4} />
-                        <TableCell className="text-xs text-right tabular-nums text-amber-700">{fmtBRL(sum(it => it.icms_retido))}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-amber-700">{fmtBRL(it.icms_retido)}</TableCell>
                         <TableCell />
                       </TableRow>
-                    )
-                  })}
+                    )))}
                 </>
               )}
             </TableBody>

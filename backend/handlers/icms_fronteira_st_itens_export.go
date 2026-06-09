@@ -112,15 +112,6 @@ func stBlocoDFaltantes(rows []STItemRow) []stItemGrupo {
 	return groupSTItens(sub)
 }
 
-// sumST soma um campo float dos itens de um grupo.
-func sumST(itens []STItemRow, sel func(STItemRow) float64) float64 {
-	var t float64
-	for _, it := range itens {
-		t += sel(it)
-	}
-	return t
-}
-
 // ---------------------------------------------------------------------------
 // XLSX
 // ---------------------------------------------------------------------------
@@ -443,22 +434,27 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 		f.SetCellStyle(sheet, hf, hl, blocoStyle)
 		er++
 		for _, g := range dnotas {
-			it0 := g.Itens[0]
-			setD := func(col int, v interface{}) {
-				c, _ := excelize.CoordinatesToCellName(col, er)
-				f.SetCellValue(sheet, c, v)
+			for _, it := range g.Itens {
+				setD := func(col int, v interface{}) {
+					c, _ := excelize.CoordinatesToCellName(col, er)
+					f.SetCellValue(sheet, c, v)
+				}
+				setD(1, it.CFOP)
+				setD(2, it.NumeroNFe)
+				setD(3, g.Chave)
+				setD(4, it.FornNome)
+				setD(5, it.CodProduto)
+				setD(6, it.Descricao)
+				setD(7, it.NCM)
+				setD(8, it.CEST)
+				setD(9, "Faltante")
+				setD(10, it.VProd)
+				setD(11, it.VIPI)
+				setD(13, it.VOperacao)
+				setD(18, it.IcmsDebitado)
+				setD(23, it.IcmsRetido)
+				er++
 			}
-			setD(1, it0.CFOP)
-			setD(2, it0.NumeroNFe)
-			setD(3, g.Chave)
-			setD(4, it0.FornNome)
-			setD(5, "XML faltante")
-			setD(10, sumST(g.Itens, func(it STItemRow) float64 { return it.VProd }))
-			setD(11, sumST(g.Itens, func(it STItemRow) float64 { return it.VIPI }))
-			setD(13, sumST(g.Itens, func(it STItemRow) float64 { return it.VOperacao }))
-			setD(18, sumST(g.Itens, func(it STItemRow) float64 { return it.IcmsDebitado }))
-			setD(23, sumST(g.Itens, func(it STItemRow) float64 { return it.IcmsRetido }))
-			er++
 		}
 	}
 
@@ -700,20 +696,19 @@ func buildSTItensHTML(rows []STItemRow, cteLinks map[string][]CteLink) string {
 		sb.WriteString(fmt.Sprintf(`<td colspan="24"><strong>Bloco D — SPED sem XML · %d nota%s</strong> (importe o XML para capturar o ICMS-ST retido · não somado no total geral)</td>`, len(dnotas), dPlural))
 		sb.WriteString(`</tr>`)
 		for _, g := range dnotas {
-			it0 := g.Itens[0]
-			sb.WriteString(`<tr style="background:#fffbeb">`)
-			sb.WriteString(td(it0.CFOP) + td(it0.NumeroNFe) + td(g.Chave) + td(it0.FornNome))
-			sb.WriteString(`<td colspan="5">XML faltante</td>`)
-			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.VProd })))
-			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.VIPI })))
-			sb.WriteString(`<td></td>`)
-			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.VOperacao })))
-			sb.WriteString(empty(4))
-			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.IcmsDebitado })))
-			sb.WriteString(`<td></td><td></td><td></td><td></td>`)
-			sb.WriteString(tdR(sumST(g.Itens, func(it STItemRow) float64 { return it.IcmsRetido })))
-			sb.WriteString(`<td></td>`)
-			sb.WriteString(`</tr>`)
+			for _, it := range g.Itens {
+				sb.WriteString(`<tr style="background:#fffbeb">`)
+				sb.WriteString(td(it.CFOP) + td(it.NumeroNFe) + td(g.Chave) + td(it.FornNome))
+				sb.WriteString(td(it.CodProduto) + td(it.Descricao) + td(it.NCM) + td(it.CEST))
+				sb.WriteString(td("Faltante"))
+				sb.WriteString(tdR(it.VProd) + tdR(it.VIPI) + `<td></td>` + tdR(it.VOperacao))
+				sb.WriteString(empty(4))
+				sb.WriteString(tdR(it.IcmsDebitado))
+				sb.WriteString(`<td></td><td></td><td></td><td></td>`)
+				sb.WriteString(tdR(it.IcmsRetido))
+				sb.WriteString(`<td></td>`)
+				sb.WriteString(`</tr>`)
+			}
 		}
 	}
 	sb.WriteString(`</tbody>`)

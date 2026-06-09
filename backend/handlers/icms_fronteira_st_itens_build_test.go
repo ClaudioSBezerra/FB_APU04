@@ -123,7 +123,7 @@ func TestBuildSTItensXLSX(t *testing.T) {
 		all.WriteString("\n")
 	}
 	body := all.String()
-	for _, want := range []string{"Subtotal Produtos NF 1001:", "TOTAL GERAL NF: 1001", "Subtotal CT-es Vinculados:", "CTECHAVE1", "30049099", "Bloco D — SPED sem XML", "XML faltante"} {
+	for _, want := range []string{"Subtotal Produtos NF 1001:", "TOTAL GERAL NF: 1001", "Subtotal CT-es Vinculados:", "CTECHAVE1", "30049099", "Bloco D — SPED sem XML", "Faltante"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("XLSX não contém marcador esperado %q", want)
 		}
@@ -180,7 +180,7 @@ func TestBuildSTItensHTML(t *testing.T) {
 		"CTECHAVE1",
 		"Rateio CT-e 9001",
 		"Bloco D — SPED sem XML",
-		"XML faltante",
+		"Faltante",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("HTML não contém marcador esperado %q", want)
