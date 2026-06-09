@@ -69,6 +69,7 @@ import {
   Pencil,
   ShieldCheck,
   BadgePercent,
+  Stethoscope,
 } from 'lucide-react'
 import {
   BarChart,
@@ -1751,6 +1752,21 @@ function STItensTab({ token }: { token: string | null }) {
     }
   }
 
+  // Dispara o diagnóstico de ST por item no backend. O resultado é gravado no
+  // log da API (filtrar por [ST-DIAG] no Coolify) — confirma MVA/UF, v_st por
+  // item e o casamento do retido após o reimport.
+  async function handleDiagnostico() {
+    try {
+      const res = await fetch(`/api/icms-fronteira/st-itens/diagnostico?${exportParams()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      toast.success('Diagnóstico gravado no log da API (filtre por [ST-DIAG])')
+    } catch {
+      toast.error('Erro ao rodar diagnóstico')
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
@@ -1782,6 +1798,16 @@ function STItensTab({ token }: { token: string | null }) {
           disabled={rows.length === 0}
         >
           <FileDown className="h-3.5 w-3.5 mr-1" />PDF
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={handleDiagnostico}
+          disabled={!periodo}
+          title="Roda o diagnóstico e grava o resultado no log da API (filtre por [ST-DIAG] no Coolify)"
+        >
+          <Stethoscope className="h-3.5 w-3.5 mr-1" />Diagnóstico
         </Button>
       </div>
 
