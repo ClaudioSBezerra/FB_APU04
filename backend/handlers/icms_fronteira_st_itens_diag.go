@@ -293,5 +293,68 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 		}
 	}
 
+	// (7) Trava de segmento: o que a empresa TEM cadastrado (company_segmentos)
+	//     vs o segmento_codigo das REGRAS que casam os itens de ST. Distingue
+	//     "empresa sem segmento" de "regra sem segmento_codigo" (trava nunca casa).
+	dl("---- (7) Segmento: cadastro da empresa vs segmento_codigo das regras ----")
+	if rows, err := db.Query(`
+		SELECT uf, COALESCE(segmento_codigo::text,'(NULL)')
+		FROM company_segmentos WHERE company_id = $1 ORDER BY uf, segmento_codigo`, companyID); err != nil {
+		dl("(7) ERRO company_segmentos: %v", err)
+	} else {
+		n := 0
+		for rows.Next() {
+			var uf, seg string
+			if err := rows.Scan(&uf, &seg); err == nil {
+				dl("(7) empresa cadastrou: uf=%s segmento=%s", uf, seg)
+				n++
+			}
+		}
+		rows.Close()
+		if n == 0 {
+			dl("(7) >>> empresa NÃO tem NENHUM segmento cadastrado (company_segmentos vazio p/ esta empresa).")
+		}
+	}
+	if rows, err := db.Query(`
+		WITH itens AS (
+			SELECT j.uf AS uf_filial,
+			       LEFT(regexp_replace(COALESCE(p.cod_ncm,''),'[^0-9]','','g'),8) AS ncm
+			FROM reg_c170 ci
+			JOIN reg_c100 c100 ON c100.id = ci.c100_id
+			JOIN import_jobs j ON j.id = c100.job_id
+			LEFT JOIN reg_0200 p ON p.job_id = c100.job_id AND p.cod_item = ci.cod_item
+			WHERE j.company_id = $1
+			  AND ci.cfop IN ('2403','2409','2651','2652')
+			  AND c100.cod_sit NOT IN ('02','03','04','05')
+			  AND (j.mes_ano = $2
+			       OR (j.mes_ano IS NULL
+			           AND EXTRACT(MONTH FROM j.dt_ini)::int = SPLIT_PART($2,'/',1)::int
+			           AND EXTRACT(YEAR  FROM j.dt_ini)::int = SPLIT_PART($2,'/',2)::int))
+		)
+		SELECT COALESCE(regra.segmento_codigo::text,'(NULL)') AS seg, count(*)
+		FROM itens i
+		LEFT JOIN LATERAL (
+			SELECT r.segmento_codigo
+			FROM icms_fronteira_regras_ncm r
+			WHERE (r.company_id = $1 OR r.company_id IS NULL) AND r.uf_estado = i.uf_filial
+			  AND NULLIF(i.ncm,'') IS NOT NULL
+			  AND LEFT(i.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
+			  AND LENGTH(r.ncm_prefixo) >= 4
+			ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC LIMIT 1
+		) regra ON true
+		GROUP BY 1 ORDER BY 2 DESC`, companyID, periodo); err != nil {
+		dl("(7) ERRO regras: %v", err)
+	} else {
+		for rows.Next() {
+			var seg string
+			var qtd int
+			if err := rows.Scan(&seg, &qtd); err == nil {
+				dl("(7) itens_ST por segmento_codigo da regra: segmento=%s → %d itens", seg, qtd)
+			}
+		}
+		rows.Close()
+		dl("(7) >>> se as regras vierem segmento=(NULL), a trava NUNCA casa (cadastrar segmento na empresa não adianta) — a regra precisa ter segmento_codigo. Se vier um número (ex.: 6), a empresa precisa ter ESSE código cadastrado na UF.")
+	}
+
 	dl("================ FIM ================")
 }
