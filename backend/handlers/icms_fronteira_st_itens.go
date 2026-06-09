@@ -41,7 +41,8 @@ type STItemRow struct {
 	FornUF      string `json:"forn_uf"`
 	CFOP        string `json:"cfop"`
 	Bloco       string `json:"bloco"`      // "mes_atual" | "mes_anterior" | "nao_sped"
-	StatusXML   string `json:"status_xml"` // "Encontrado"
+	UFFilial    string `json:"uf_filial"`  // UF do estabelecimento (BA/PE) — define a regra aplicável
+	StatusXML   string `json:"status_xml"` // "Encontrado" | "Faltante"
 
 	// Campos do ITEM
 	CodProduto string  `json:"cod_produto"`
@@ -223,7 +224,8 @@ SELECT
         regra.mva_original,
         0
     ) AS mva_ajustado,
-    i.tem_xml
+    i.tem_xml,
+    i.uf_filial
 FROM itens i
 LEFT JOIN LATERAL (
     SELECT r.aliquota_interna, r.mva_original,
@@ -334,7 +336,7 @@ func fetchSTItens(db *sql.DB, companyID, periodo, uf string) ([]STItemRow, error
 			&row.IcmsDebitado, &row.IcmsRetido,
 			&row.TemRegra, &row.AliqInterna, &row.MVAOriginal, &row.ReducaoBC,
 			&row.SegmentoOK, &row.MVAAjustado,
-			&temXML,
+			&temXML, &row.UFFilial,
 		); err != nil {
 			log.Printf("fetchSTItens scan error: %v", err)
 			continue

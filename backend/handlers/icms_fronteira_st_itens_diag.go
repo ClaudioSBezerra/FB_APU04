@@ -279,17 +279,33 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 		}
 		dl("(6) itens=%d  tem_regra=%d  segmento_ok=%d  mva_aj>0=%d  base>0=%d  retido>0=%d",
 			len(sample), comRegra, comSeg, comMVA, comBase, comRetido)
-		if comRegra > 0 && comSeg == 0 {
-			dl("(6) >>> ATENÇÃO: %d itens com regra mas segmento_ok=0 em TODOS → base de ST zera (cálculo 0). Falta cadastrar o SEGMENTO da empresa na UF (company_segmentos) p/ casar o segmento da regra.", comRegra)
+
+		// Breakdown por UF: itens e quantos casam segmento (regra é por UF).
+		ufTot := map[string]int{}
+		ufSeg := map[string]int{}
+		for _, it := range sample {
+			ufTot[it.UFFilial]++
+			if it.SegmentoOK {
+				ufSeg[it.UFFilial]++
+			}
 		}
+		for uf, tot := range ufTot {
+			dl("(6) UF %s: itens=%d  segmento_ok=%d", uf, tot, ufSeg[uf])
+		}
+
+		// Amostra dos itens que CALCULAM (base>0) — confirma os números por UF.
+		dl("(6) amostra de itens com cálculo (base>0):")
 		n := 0
 		for _, it := range sample {
-			if n >= 8 {
-				break
+			if it.BaseCalculo <= 0 || n >= 8 {
+				continue
 			}
-			dl("(6) NF %s NCM %s uf? | regra=%v seg=%v mva=%.2f aliqInt=%.1f base=%.2f calc=%.2f ret=%.2f xml=%s",
-				it.NumeroNFe, it.NCM, it.TemRegra, it.SegmentoOK, it.MVAAjustado, it.AliqInterna, it.BaseCalculo, it.IcmsCalculado, it.IcmsRetido, it.StatusXML)
+			dl("(6) [%s] NF %s NCM %s | seg=%v mva=%.2f aliqInt=%.1f vOper=%.2f base=%.2f calc=%.2f ret=%.2f xml=%s",
+				it.UFFilial, it.NumeroNFe, it.NCM, it.SegmentoOK, it.MVAAjustado, it.AliqInterna, it.VOperacao, it.BaseCalculo, it.IcmsCalculado, it.IcmsRetido, it.StatusXML)
 			n++
+		}
+		if n == 0 {
+			dl("(6) >>> NENHUM item com base>0 — todos zerados (segmento não casa em nenhuma UF).")
 		}
 	}
 
