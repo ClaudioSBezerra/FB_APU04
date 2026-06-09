@@ -157,13 +157,13 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 	// (4) PRÉVIA do retido por item (Blocos A/B): casa SPED x XML por n_item.
 	//     Mostra um RESUMO (quantos casam / quantos teriam retido) — não loga linha
 	//     a linha para não poluir; conta agregada já responde a dúvida.
-	dl("---- (4) Casamento SPED x XML por item (retido Bloco A/B) ----")
+	dl("---- (4) Retido Bloco A/B: a NOTA do SPED tem XML? o item casa por n_item? ----")
 	{
-		var itensST, comXML, retidoOK int
+		var itensST, notaComXML, itemCasa, retidoOK int
 		var somaRetido float64
 		err := db.QueryRow(`
 			WITH base AS (
-				SELECT ci.num_item, ci.vl_icms_st, xi.v_st AS v_st_xml, xi.nfe_id AS xid,
+				SELECT ne.id AS ne_id, xi.nfe_id AS xid,
 				       COALESCE(NULLIF(xi.v_st,0), ci.vl_icms_st, 0) AS retido_final
 				FROM reg_c170 ci
 				JOIN reg_c100 c100 ON c100.id = ci.c100_id
@@ -179,24 +179,25 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 				           AND EXTRACT(YEAR  FROM j.dt_ini)::int = SPLIT_PART($2,'/',2)::int))
 			)
 			SELECT count(*),
+			       count(*) FILTER (WHERE ne_id IS NOT NULL),
 			       count(*) FILTER (WHERE xid IS NOT NULL),
 			       count(*) FILTER (WHERE retido_final > 0),
 			       COALESCE(sum(retido_final),0)
-			FROM base`, companyID, periodo).Scan(&itensST, &comXML, &retidoOK, &somaRetido)
+			FROM base`, companyID, periodo).Scan(&itensST, &notaComXML, &itemCasa, &retidoOK, &somaRetido)
 		if err != nil {
 			dl("(4) ERRO: %v", err)
 		} else {
-			dl("(4) itens_ST_SPED=%d  casaram_XML(n_item)=%d  com_retido>0=%d  soma_retido=%.2f",
-				itensST, comXML, retidoOK, somaRetido)
+			dl("(4) itens_ST_SPED=%d  nota_TEM_xml=%d  nota_SEM_xml=%d  item_casa_nitem=%d  com_retido>0=%d  soma_retido=%.2f",
+				itensST, notaComXML, itensST-notaComXML, itemCasa, retidoOK, somaRetido)
 			switch {
 			case itensST == 0:
 				dl("(4) >>> 0 itens de ST no SPED do período — confira período/SPED importado.")
-			case comXML == 0:
-				dl("(4) >>> NENHUM item casou com o XML por n_item. O retido NÃO vai aparecer mesmo com v_st no XML — junção (chave,n_item) falha.")
-			case comXML < itensST:
-				dl("(4) >>> Apenas %d/%d casaram por n_item — os demais ficarão sem retido (verificar numeração de item XML vs SPED).", comXML, itensST)
+			case notaComXML < itensST:
+				dl("(4) >>> CAUSA REAL: %d/%d itens estão em notas SEM XML importado. NÃO é problema de numeração — das notas COM XML, %d/%d itens casam por n_item. AÇÃO: importar os XML dessas notas (ver Bloco D na tela).", itensST-notaComXML, itensST, itemCasa, notaComXML)
+			case itemCasa < notaComXML:
+				dl("(4) >>> Notas têm XML, mas %d/%d itens não casam por n_item — aí sim investigar numeração de item XML vs SPED.", notaComXML-itemCasa, notaComXML)
 			default:
-				dl("(4) OK: todos os itens de ST casaram com o XML por n_item.")
+				dl("(4) OK: todos os itens de ST estão em notas com XML e casam por n_item.")
 			}
 		}
 	}
