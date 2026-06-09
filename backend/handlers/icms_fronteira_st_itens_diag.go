@@ -252,5 +252,46 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 		}
 	}
 
+	// (6) RESULTADO REAL do relatório: chama fetchSTItens (a mesma query/cálculo
+	//     da tela) e loga amostra + agregados. Prova o que o motor produz —
+	//     distingue "MVA não casa" de "segmento zera a base" de "tela desatualizada".
+	dl("---- (6) Cálculo real (fetchSTItens, todas as UFs) ----")
+	if sample, err := fetchSTItens(db, companyID, periodo, ""); err != nil {
+		dl("(6) ERRO: %v", err)
+	} else {
+		var comRegra, comSeg, comMVA, comBase, comRetido int
+		for _, it := range sample {
+			if it.TemRegra {
+				comRegra++
+			}
+			if it.SegmentoOK {
+				comSeg++
+			}
+			if it.MVAAjustado > 0 {
+				comMVA++
+			}
+			if it.BaseCalculo > 0 {
+				comBase++
+			}
+			if it.IcmsRetido > 0 {
+				comRetido++
+			}
+		}
+		dl("(6) itens=%d  tem_regra=%d  segmento_ok=%d  mva_aj>0=%d  base>0=%d  retido>0=%d",
+			len(sample), comRegra, comSeg, comMVA, comBase, comRetido)
+		if comRegra > 0 && comSeg == 0 {
+			dl("(6) >>> ATENÇÃO: %d itens com regra mas segmento_ok=0 em TODOS → base de ST zera (cálculo 0). Falta cadastrar o SEGMENTO da empresa na UF (company_segmentos) p/ casar o segmento da regra.", comRegra)
+		}
+		n := 0
+		for _, it := range sample {
+			if n >= 8 {
+				break
+			}
+			dl("(6) NF %s NCM %s uf? | regra=%v seg=%v mva=%.2f aliqInt=%.1f base=%.2f calc=%.2f ret=%.2f xml=%s",
+				it.NumeroNFe, it.NCM, it.TemRegra, it.SegmentoOK, it.MVAAjustado, it.AliqInterna, it.BaseCalculo, it.IcmsCalculado, it.IcmsRetido, it.StatusXML)
+			n++
+		}
+	}
+
 	dl("================ FIM ================")
 }

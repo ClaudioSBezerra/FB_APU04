@@ -116,6 +116,107 @@ func stBlocoDFaltantes(rows []STItemRow) []stItemGrupo {
 // XLSX
 // ---------------------------------------------------------------------------
 
+// IcmsFronteiraSTItensFaltantesXLSXHandler — GET /api/icms-fronteira/st-itens/faltantes/xlsx
+// Planilha enxuta com as notas de ST do SPED SEM XML importado (todas as UFs),
+// uma linha por nota, com a Chave de Acesso — para o contador baixar os XML na
+// SEFAZ. Ignora o filtro de UF de propósito (lista completa BA+PE).
+func IcmsFronteiraSTItensFaltantesXLSXHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa: "+err.Error())
+			return
+		}
+		periodo := strings.TrimSpace(r.URL.Query().Get("periodo"))
+
+		rows, err := fetchSTItens(db, companyID, periodo, "") // uf="" → todas as filiais
+		if err != nil {
+			log.Printf("IcmsFronteiraSTItensFaltantesXLSX error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao gerar Excel de notas faltantes")
+			return
+		}
+		data, err := buildSTFaltantesXLSX(rows)
+		if err != nil {
+			log.Printf("IcmsFronteiraSTItensFaltantesXLSX write error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao gerar arquivo XLSX")
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+		w.Header().Set("Content-Disposition", `attachment; filename="st-notas-sem-xml.xlsx"`)
+		w.Write(data)
+	}
+}
+
+// buildSTFaltantesXLSX gera a planilha das notas de ST sem XML (Bloco D), uma
+// linha por nota, com a Chave de Acesso para download na SEFAZ. Função PURA.
+func buildSTFaltantesXLSX(rows []STItemRow) ([]byte, error) {
+	grupos := stBlocoDFaltantes(rows)
+	f := excelize.NewFile()
+	sheet := "Notas sem XML"
+	f.SetSheetName("Sheet1", sheet)
+
+	headers := []string{"Número NF", "Chave de Acesso", "Fornecedor", "CNPJ Forn.", "UF Forn.", "Qtd. Itens", "V. Produtos", "ICMS-ST Retido (SPED)"}
+	headStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true},
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"CBD5E1"}},
+	})
+	moneyFmt := "#,##0.00"
+	moneyStyle, _ := f.NewStyle(&excelize.Style{CustomNumFmt: &moneyFmt})
+	for i, h := range headers {
+		c, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, c, h)
+	}
+	hl, _ := excelize.CoordinatesToCellName(len(headers), 1)
+	f.SetCellStyle(sheet, "A1", hl, headStyle)
+
+	er := 2
+	for _, g := range grupos {
+		it0 := g.Itens[0]
+		var vProd, icmsRet float64
+		for _, it := range g.Itens {
+			vProd += it.VProd
+			icmsRet += it.IcmsRetido
+		}
+		set := func(col int, v interface{}) {
+			c, _ := excelize.CoordinatesToCellName(col, er)
+			f.SetCellValue(sheet, c, v)
+		}
+		set(1, it0.NumeroNFe)
+		set(2, g.Chave)
+		set(3, it0.FornNome)
+		set(4, it0.FornCNPJ)
+		set(5, it0.FornUF)
+		set(6, len(g.Itens))
+		set(7, vProd)
+		set(8, icmsRet)
+		vc, _ := excelize.CoordinatesToCellName(7, er)
+		rc, _ := excelize.CoordinatesToCellName(8, er)
+		f.SetCellStyle(sheet, vc, rc, moneyStyle)
+		er++
+	}
+
+	_ = f.SetColWidth(sheet, "A", "A", 14)
+	_ = f.SetColWidth(sheet, "B", "B", 46)
+	_ = f.SetColWidth(sheet, "C", "C", 36)
+	_ = f.SetColWidth(sheet, "D", "E", 16)
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 // IcmsFronteiraSTItensXLSXHandler — GET /api/icms-fronteira/st-itens/exportar/xlsx
 func IcmsFronteiraSTItensXLSXHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -815,6 +815,15 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraSTItensDiagHandler(database), "")(w, r)
 	})
+	// Notas de ST sem XML (Bloco D) — Excel enxuto p/ o contador baixar os XML.
+	http.HandleFunc("/api/icms-fronteira/st-itens/faltantes/xlsx", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraSTItensFaltantesXLSXHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/ufs", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {

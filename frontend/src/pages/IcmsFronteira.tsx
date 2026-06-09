@@ -1760,6 +1760,29 @@ function STItensTab({ token }: { token: string | null }) {
     }
   }
 
+  // Baixa o Excel enxuto das notas de ST sem XML (Bloco D, todas as filiais) —
+  // lista com Chave de Acesso para o contador baixar os XML na SEFAZ.
+  async function handleExportFaltantes() {
+    try {
+      const p = new URLSearchParams()
+      p.set('periodo', periodo)
+      const res = await fetch(`/api/icms-fronteira/st-itens/faltantes/xlsx?${p.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const blob = await res.blob()
+      const objUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objUrl
+      a.download = 'st-notas-sem-xml.xlsx'
+      a.click()
+      URL.revokeObjectURL(objUrl)
+      toast.success('Excel de notas sem XML gerado')
+    } catch {
+      toast.error('Erro ao gerar Excel de notas sem XML')
+    }
+  }
+
   // Dispara o diagnóstico de ST por item no backend. O resultado é gravado no
   // log da API (filtrar por [ST-DIAG] no Coolify) — confirma MVA/UF, v_st por
   // item e o casamento do retido após o reimport.
@@ -1816,6 +1839,16 @@ function STItensTab({ token }: { token: string | null }) {
           title="Roda o diagnóstico e grava o resultado no log da API (filtre por [ST-DIAG] no Coolify)"
         >
           <Stethoscope className="h-3.5 w-3.5 mr-1" />Diagnóstico
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={handleExportFaltantes}
+          disabled={!periodo}
+          title="Excel com as notas de ST sem XML (Bloco D, todas as filiais) — lista com chave de acesso para baixar os XML na SEFAZ"
+        >
+          <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Notas sem XML
         </Button>
       </div>
 
