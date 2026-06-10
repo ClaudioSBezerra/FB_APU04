@@ -102,12 +102,13 @@ func fabricaCteLinks() map[string][]CteLink {
 	return map[string][]CteLink{
 		"CHAVE1001": {
 			{
-				ChaveCTe:  "CTECHAVE1",
-				NumeroCTe: "9001",
-				EmitNome:  "Transportadora X",
-				EmitCNPJ:  "00000000000191",
-				VPrest:    300,
-				VIcmsCTe:  36,
+				ChaveCTe:    "CTECHAVE1",
+				NumeroCTe:   "9001",
+				DataEmissao: "2026-04-24",
+				EmitNome:    "Transportadora X",
+				EmitCNPJ:    "00000000000191",
+				VPrest:      300,
+				VIcmsCTe:    36,
 			},
 		},
 	}
@@ -163,6 +164,28 @@ func TestBuildSTItensXLSX(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("XLSX não contém marcador esperado %q", want)
 		}
+	}
+
+	// A data de emissão do CT-e deve aparecer (DD/MM/AAAA) na linha do frete.
+	if !strings.Contains(body, "24/04/2026") {
+		t.Error("XLSX: data de emissão do CT-e (24/04/2026) ausente na linha de frete")
+	}
+	// A célula de valor do frete (V.Operação, col 13) deve ter máscara de moeda.
+	var cteRow int
+	for i, r := range xlRows {
+		if len(r) > 0 && r[0] == "CTE" {
+			cteRow = i + 1
+			break
+		}
+	}
+	if cteRow == 0 {
+		t.Fatal("XLSX: nenhuma linha de CT-e encontrada")
+	}
+	cell, _ := excelize.CoordinatesToCellName(13, cteRow)
+	styleID, _ := f.GetCellStyle(sheet, cell)
+	st, _ := f.GetStyle(styleID)
+	if st == nil || st.CustomNumFmt == nil || !strings.Contains(*st.CustomNumFmt, "R$") {
+		t.Errorf("XLSX: célula de valor do CT-e (%s) sem máscara R$ (style=%+v)", cell, st)
 	}
 }
 

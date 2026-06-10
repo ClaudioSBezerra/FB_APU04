@@ -320,6 +320,32 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 	})
 	moneyStyle, _ := f.NewStyle(&excelize.Style{CustomNumFmt: &moneyFmt})
 	cteStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"DCE6F1"}}})
+	// cteMoneyStyle: fundo do CT-e + máscara de moeda (R$). As linhas de CT-e
+	// pintam todas as 24 colunas com cteStyle (só fill); sem isto, as células de
+	// valor do frete sairiam sem máscara monetária.
+	cteMoneyStyle, _ := f.NewStyle(&excelize.Style{
+		Fill:         excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"DCE6F1"}},
+		CustomNumFmt: &moneyFmt,
+	})
+	// Variantes com máscara de moeda (R$) para subtotais/totais — os estilos
+	// base (subStyle/totalStyle/blocoStyle/boldStyle) só têm fill+bold, então
+	// sem isto os valores somados sairiam sem máscara monetária.
+	subMoneyStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true},
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2E8F0"}}, CustomNumFmt: &moneyFmt,
+	})
+	totalMoneyStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true},
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"CBD5E1"}}, CustomNumFmt: &moneyFmt,
+	})
+	boldMoneyStyle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}, CustomNumFmt: &moneyFmt})
+	// applyMoney pinta as colunas monetárias de uma linha com o estilo money dado.
+	applyMoney := func(row int, style int) {
+		for _, mc := range []int{10, 11, 12, 13, 18, 19, 21, 22, 23, 24} {
+			c, _ := excelize.CoordinatesToCellName(mc, row)
+			f.SetCellStyle(sheet, c, c, style)
+		}
+	}
 
 	// Header
 	letters := make([]string, len(stItensColHeaders))
@@ -430,6 +456,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 		firstC, _ := excelize.CoordinatesToCellName(1, er)
 		lastC, _ := excelize.CoordinatesToCellName(24, er)
 		f.SetCellStyle(sheet, firstC, lastC, subStyle)
+		applyMoney(er, subMoneyStyle)
 		er++
 
 		// 3. Linhas de CT-e (frete rateado por item).
@@ -470,6 +497,11 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 				firstC, _ := excelize.CoordinatesToCellName(1, er)
 				lastC, _ := excelize.CoordinatesToCellName(24, er)
 				f.SetCellStyle(sheet, firstC, lastC, cteStyle)
+				// Máscara de moeda (R$) nas colunas de valor do frete.
+				for _, mc := range []int{13, 18, 19, 22, 24} {
+					c, _ := excelize.CoordinatesToCellName(mc, er)
+					f.SetCellStyle(sheet, c, c, cteMoneyStyle)
+				}
 				er++
 			}
 		}
@@ -486,6 +518,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 			firstC, _ := excelize.CoordinatesToCellName(1, er)
 			lastC, _ := excelize.CoordinatesToCellName(24, er)
 			f.SetCellStyle(sheet, firstC, lastC, subStyle)
+			applyMoney(er, subMoneyStyle)
 			er++
 		}
 
@@ -506,6 +539,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 		firstC, _ = excelize.CoordinatesToCellName(1, er)
 		lastC, _ = excelize.CoordinatesToCellName(24, er)
 		f.SetCellStyle(sheet, firstC, lastC, totalStyle)
+		applyMoney(er, totalMoneyStyle)
 		er++
 
 		totalGeralAPagar += subAPagar + cteIcmsTotal
@@ -537,6 +571,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 		blF, _ := excelize.CoordinatesToCellName(1, er)
 		blL, _ := excelize.CoordinatesToCellName(24, er)
 		f.SetCellStyle(sheet, blF, blL, blocoStyle)
+		applyMoney(er, totalMoneyStyle)
 		er++
 	}
 
@@ -555,6 +590,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 	firstC, _ := excelize.CoordinatesToCellName(1, er)
 	lastC, _ := excelize.CoordinatesToCellName(24, er)
 	f.SetCellStyle(sheet, firstC, lastC, boldStyle)
+	applyMoney(er, boldMoneyStyle)
 
 	// Bloco D — SPED sem XML (pendências). Informativo: repete notas de A/B sem
 	// XML; NÃO soma no total geral. Lista o que falta importar.
@@ -577,7 +613,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 					f.SetCellValue(sheet, c, v)
 				}
 				setD(1, it.CFOP)
-				setD(2, it.NumeroNFe)
+				setD(2, it.NumeroNFe+" · "+fmtDateBRGo(it.DataEmissao))
 				setD(3, g.Chave)
 				setD(4, it.FornNome)
 				setD(5, it.CodProduto)
@@ -590,6 +626,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 				setD(13, it.VOperacao)
 				setD(18, it.IcmsDebitado)
 				setD(23, it.IcmsRetido)
+				applyMoney(er, moneyStyle)
 				er++
 			}
 		}
