@@ -96,6 +96,35 @@ func blocoLetraST(label string) string {
 	return strings.TrimSpace(s)
 }
 
+// cteSTItem — frete (CT-e) na Substituição Tributária (regra Gilson 2026-06-10):
+// aplica a MVA do produto à fração do frete e calcula a ST, abatendo o ICMS do
+// CT-e rateado. Espelha cteST do frontend. Só aplica quando o item tem
+// regra+segmento (mesma trava do produto).
+func cteSTItem(fracaoFrete, mvaAjustado, aliqInterna, icmsCteRateado float64, aplica bool) (base, calc, aPagar float64) {
+	if !aplica {
+		return 0, 0, 0
+	}
+	base = fracaoFrete * (1 + mvaAjustado/100)
+	calc = base * aliqInterna / 100
+	aPagar = calc - icmsCteRateado
+	if aPagar < 0 {
+		aPagar = 0
+	}
+	return
+}
+
+// fmtDateBRGo converte data ISO (YYYY-MM-DD / timestamp) para DD/MM/AAAA.
+func fmtDateBRGo(v string) string {
+	if len(v) < 10 {
+		return v
+	}
+	s := v[:10]
+	if len(s) == 10 && s[4] == '-' && s[7] == '-' {
+		return s[8:10] + "/" + s[5:7] + "/" + s[0:4]
+	}
+	return s
+}
+
 // stBlocoDFaltantes retorna as notas do SPED (Bloco A/B) sem XML importado
 // (StatusXML="Faltante"), agrupadas por nota. É o Bloco D — seção informativa de
 // pendências (repete notas de A/B); NÃO entra no total geral, para não duplicar.
@@ -170,7 +199,7 @@ func buildSTFaltantesXLSX(rows []STItemRow) ([]byte, error) {
 		Font: &excelize.Font{Bold: true},
 		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"CBD5E1"}},
 	})
-	moneyFmt := "#,##0.00"
+	moneyFmt := `"R$" #,##0.00`
 	moneyStyle, _ := f.NewStyle(&excelize.Style{CustomNumFmt: &moneyFmt})
 	for i, h := range headers {
 		c, _ := excelize.CoordinatesToCellName(i+1, 1)
@@ -341,7 +370,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 				f.SetCellValue(sheet, c, v)
 			}
 			set(1, it.CFOP)
-			set(2, it.NumeroNFe)
+			set(2, it.NumeroNFe+" · "+fmtDateBRGo(it.DataEmissao))
 			set(3, it.ChaveNFe)
 			set(4, it.FornNome)
 			set(5, it.CodProduto)
@@ -408,12 +437,13 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 		var cteFreteTotal, cteIcmsTotal float64
 		for _, cte := range ctes {
 			for _, it := range itens {
-				fracao := 0.0
+				fracao, icmsCteR := 0.0, 0.0
 				if somaOper > 0 {
 					fracao = cte.VPrest * it.VOperacao / somaOper
+					icmsCteR = cte.VIcmsCTe * it.VOperacao / somaOper
 				}
-				// TODO confirmar tratamento fiscal do frete na ST com Gilson
-				_, aPagar := cteAntecip(fracao, 0, it.AliqInterna, false)
+				aplica := it.TemRegra && it.SegmentoOK
+				base, calc, aPagar := cteSTItem(fracao, it.MVAAjustado, it.AliqInterna, icmsCteR, aplica)
 				cteFreteTotal += fracao
 				cteIcmsTotal += aPagar
 				set := func(col int, v interface{}) {
@@ -421,7 +451,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 					f.SetCellValue(sheet, c, v)
 				}
 				set(1, "CTE")
-				set(2, "CT-e "+cte.NumeroCTe)
+				set(2, "CT-e "+cte.NumeroCTe+" · "+fmtDateBRGo(cte.DataEmissao))
 				set(3, cte.ChaveCTe)
 				set(4, cte.EmitNome)
 				set(5, it.CodProduto)
@@ -429,7 +459,13 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 				set(7, it.NCM)
 				set(8, it.CEST)
 				set(13, fracao)
+				if aplica {
+					set(15, pct(it.MVAAjustado))
+					set(19, base)
+					set(22, calc)
+				}
 				set(17, pct(it.AliqInterna))
+				set(18, icmsCteR)
 				set(24, aPagar)
 				firstC, _ := excelize.CoordinatesToCellName(1, er)
 				lastC, _ := excelize.CoordinatesToCellName(24, er)
@@ -684,7 +720,7 @@ func buildSTItensHTML(rows []STItemRow, cteLinks map[string][]CteLink) string {
 		// 1. Produtos.
 		for _, it := range itens {
 			sb.WriteString(`<tr>`)
-			sb.WriteString(td(it.CFOP) + td(it.NumeroNFe) + td(it.ChaveNFe) + td(it.FornNome))
+			sb.WriteString(td(it.CFOP) + td(it.NumeroNFe+" · "+fmtDateBRGo(it.DataEmissao)) + td(it.ChaveNFe) + td(it.FornNome))
 			sb.WriteString(td(it.CodProduto) + td(it.Descricao) + td(it.NCM) + td(it.CEST) + td(it.StatusXML))
 			sb.WriteString(tdR(it.VProd) + tdR(it.VIPI) + tdR(it.VOutro) + tdR(it.VOperacao))
 			if it.TemRegra {
@@ -723,24 +759,34 @@ func buildSTItensHTML(rows []STItemRow, cteLinks map[string][]CteLink) string {
 		var cteFreteTotal, cteIcmsTotal float64
 		for _, cte := range ctes {
 			for _, it := range itens {
-				fracao := 0.0
+				fracao, icmsCteR := 0.0, 0.0
 				if somaOper > 0 {
 					fracao = cte.VPrest * it.VOperacao / somaOper
+					icmsCteR = cte.VIcmsCTe * it.VOperacao / somaOper
 				}
-				// TODO confirmar tratamento fiscal do frete na ST com Gilson
-				_, aPagar := cteAntecip(fracao, 0, it.AliqInterna, false)
+				aplica := it.TemRegra && it.SegmentoOK
+				base, calc, aPagar := cteSTItem(fracao, it.MVAAjustado, it.AliqInterna, icmsCteR, aplica)
 				cteFreteTotal += fracao
 				cteIcmsTotal += aPagar
+				mvaCell, baseCell, calcCell := tdRs("—"), tdRs("—"), tdRs("—")
+				if aplica {
+					mvaCell = tdRs(pct(it.MVAAjustado))
+					baseCell = tdR(base)
+					calcCell = tdR(calc)
+				}
 				sb.WriteString(`<tr style="background:#dce6f1">`)
-				sb.WriteString(td("CTE") + td("CT-e "+cte.NumeroCTe) + td(cte.ChaveCTe) + td(cte.EmitNome))
+				sb.WriteString(td("CTE") + td("CT-e "+cte.NumeroCTe+" · "+fmtDateBRGo(cte.DataEmissao)) + td(cte.ChaveCTe) + td(cte.EmitNome))
 				sb.WriteString(td(it.CodProduto) + td(fmt.Sprintf("Rateio CT-e %s s/ Prod. %s", cte.NumeroCTe, it.CodProduto)))
 				sb.WriteString(td(it.NCM) + td(it.CEST) + td("—"))
 				sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>`)
-				sb.WriteString(tdR(fracao))
-				sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>`)
-				sb.WriteString(tdRs(pct(it.AliqInterna)))
-				sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>`)
-				sb.WriteString(tdR(aPagar))
+				sb.WriteString(tdR(fracao))                  // 13 V.Operação (frete)
+				sb.WriteString(tdRs("—") + mvaCell + tdRs("—")) // 14 MVA orig · 15 MVA aj · 16 alíq inter
+				sb.WriteString(tdRs(pct(it.AliqInterna)))    // 17 alíq interna
+				sb.WriteString(tdR(icmsCteR) + baseCell)     // 18 ICMS deb (CT-e) · 19 base
+				sb.WriteString(`<td style="text-align:right">—</td><td style="text-align:right">—</td>`) // 20 red BC · 21 BC reduz
+				sb.WriteString(calcCell)                     // 22 ICMS calc
+				sb.WriteString(`<td style="text-align:right">—</td>`) // 23 ICMS retido
+				sb.WriteString(tdR(aPagar))                  // 24 ICMS a pagar
 				sb.WriteString(`</tr>`)
 			}
 		}

@@ -406,6 +406,14 @@ function fmtPct(v: number | null | undefined): string {
   return v.toFixed(1) + '%'
 }
 
+// fmtDateBR — converte data ISO (YYYY-MM-DD ou timestamp) para DD/MM/AAAA.
+function fmtDateBR(v: string | null | undefined): string {
+  if (!v) return '—'
+  const s = String(v).slice(0, 10)
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : s
+}
+
 // Normaliza o período para MM/YYYY. Aceita MM/YYYY (digitado direto) e o legado
 // YYYY-MM do <input type="month">. Retorna '' se inválido (não dispara query).
 function monthToPeriodo(m: string): string {
@@ -987,6 +995,18 @@ function cteAntecip(vPrest: number, vIcmsCte: number, aliqInterna: number, porDe
   const aPagar = Math.max(0, devido - vIcmsCte)
   const aliqInter = vPrest > 0 ? (vIcmsCte / vPrest) * 100 : 0
   return { devido, aPagar, aliqInter }
+}
+
+// cteST — frete (CT-e) na Substituição Tributária (regra Gilson 2026-06-10):
+// aplica a MESMA MVA do produto à fração do frete rateada e calcula a ST. Abate
+// o ICMS destacado no CT-e (rateado por item), igual o produto abate o ICMS
+// próprio. Só aplica quando o item tem regra+segmento (mesma trava do produto).
+function cteST(fracaoFrete: number, mvaAjustado: number, aliqInterna: number, icmsCteRateado: number, aplica: boolean) {
+  if (!aplica) return { base: 0, calc: 0, aPagar: 0 }
+  const base = fracaoFrete * (1 + (mvaAjustado || 0) / 100)
+  const calc = (base * (aliqInterna || 20.5)) / 100
+  const aPagar = Math.max(0, calc - (icmsCteRateado || 0))
+  return { base, calc, aPagar }
 }
 
 // TabelaNotasSpedAntecip — Blocos A/B do regime ANTECIPAÇÃO com a cadeia de cálculo
@@ -1712,8 +1732,8 @@ function STItensTab({ token }: { token: string | null }) {
     for (const cte of cteLinks[g.chave] ?? []) {
       for (const it of g.itens) {
         const fracao = somaOper > 0 ? (cte.v_prest * (it.v_operacao || 0)) / somaOper : 0
-        // TODO confirmar tratamento fiscal do frete na ST com Gilson
-        const c = cteAntecip(fracao, 0, it.aliq_interna, false)
+        const icmsCteR = somaOper > 0 ? (cte.v_icms_cte * (it.v_operacao || 0)) / somaOper : 0
+        const c = cteST(fracao, it.mva_ajustado, it.aliq_interna, icmsCteR, it.tem_regra && it.segmento_ok)
         totalGeralAPagar += c.aPagar
       }
     }
@@ -1924,8 +1944,8 @@ function STItensTab({ token }: { token: string | null }) {
                   for (const cte of cteLinks[g.chave] ?? []) {
                     for (const it of g.itens) {
                       const fracao = somaOper > 0 ? (cte.v_prest * (it.v_operacao || 0)) / somaOper : 0
-                      // TODO confirmar tratamento fiscal do frete na ST com Gilson
-                      const c = cteAntecip(fracao, 0, it.aliq_interna, false)
+                      const icmsCteR = somaOper > 0 ? (cte.v_icms_cte * (it.v_operacao || 0)) / somaOper : 0
+                      const c = cteST(fracao, it.mva_ajustado, it.aliq_interna, icmsCteR, it.tem_regra && it.segmento_ok)
                       blocoSub.vOper += fracao
                       blocoSub.aPagar += c.aPagar
                     }
@@ -1950,7 +1970,10 @@ function STItensTab({ token }: { token: string | null }) {
                 const produtoRows = itens.map((it, i) => (
                   <TableRow key={`prod-${g.chave}-${i}`}>
                     <TableCell className="text-xs font-mono">{it.cfop || '—'}</TableCell>
-                    <TableCell className="text-xs font-mono">{it.numero_nfe || '—'}</TableCell>
+                    <TableCell className="text-xs font-mono">
+                      {it.numero_nfe || '—'}
+                      <div className="text-muted-foreground text-[10px]">{fmtDateBR(it.data_emissao)}</div>
+                    </TableCell>
                     <TableCell className="text-xs"><ChaveCell chave={it.chave_nfe} label={`NF-e ${it.numero_nfe}`} /></TableCell>
                     <TableCell className="text-xs max-w-[180px]">
                       <div className="truncate" title={it.forn_nome}>{it.forn_nome || '—'}</div>
@@ -2016,10 +2039,12 @@ function STItensTab({ token }: { token: string | null }) {
                 ctes.forEach((cte, ci) => {
                   itens.forEach((it, ii) => {
                     const fracao = somaOper > 0 ? (cte.v_prest * (it.v_operacao || 0)) / somaOper : 0
-                    // TODO confirmar tratamento fiscal do frete na ST com Gilson
-                    const c = cteAntecip(fracao, 0, it.aliq_interna, false)
+                    const icmsCteR = somaOper > 0 ? (cte.v_icms_cte * (it.v_operacao || 0)) / somaOper : 0
+                    const aplica = it.tem_regra && it.segmento_ok
+                    const c = cteST(fracao, it.mva_ajustado, it.aliq_interna, icmsCteR, aplica)
                     cteFreteTotal += fracao
                     cteIcmsTotal += c.aPagar
+                    const dash = <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
                     cteRows.push(
                       <TableRow key={`cte-${g.chave}-${ci}-${ii}`} className="bg-blue-50 hover:bg-blue-100">
                         <TableCell className="text-xs font-mono font-semibold text-blue-700">CTE</TableCell>
@@ -2028,6 +2053,7 @@ function STItensTab({ token }: { token: string | null }) {
                             <Truck className="h-3 w-3 shrink-0" />
                             CT-e {cte.numero_cte}
                           </div>
+                          <div className="text-blue-400 text-[10px]">{fmtDateBR(cte.data_emissao)}</div>
                         </TableCell>
                         <TableCell className="text-xs"><ChaveCell chave={cte.chave_cte} label={`CT-e ${cte.numero_cte}`} /></TableCell>
                         <TableCell className="text-xs max-w-[180px] text-blue-700">
@@ -2041,20 +2067,20 @@ function STItensTab({ token }: { token: string | null }) {
                         <TableCell className="text-xs font-mono text-blue-700">{it.ncm || '—'}</TableCell>
                         <TableCell className="text-xs font-mono text-blue-700">{it.cest || '—'}</TableCell>
                         <TableCell className="text-xs text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        {dash}
+                        {dash}
+                        {dash}
                         <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(fracao)}</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-600">{aplica ? fmtPct(it.mva_original) : '—'}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-600">{aplica ? fmtPct(it.mva_ajustado) : '—'}</TableCell>
+                        {dash}
                         <TableCell className="text-xs text-right tabular-nums text-blue-600">{fmtPct(it.aliq_interna)}</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-blue-400">—</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-700">{fmtBRL(icmsCteR)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums text-blue-700">{aplica ? fmtBRL(c.base) : '—'}</TableCell>
+                        {dash}
+                        {dash}
+                        <TableCell className="text-xs text-right tabular-nums text-blue-700">{aplica ? fmtBRL(c.calc) : '—'}</TableCell>
+                        {dash}
                         <TableCell className="text-xs text-right tabular-nums font-semibold text-blue-600">{fmtBRL(c.aPagar)}</TableCell>
                       </TableRow>
                     )

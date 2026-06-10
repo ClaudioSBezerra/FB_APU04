@@ -2,11 +2,47 @@ package handlers
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
 )
+
+// TestCteSTItem valida o cálculo do ST do frete (CT-e): base = frete×(1+MVA),
+// ST = base×alíq − ICMS do CT-e rateado, piso 0, e a trava de "aplica".
+func TestCteSTItem(t *testing.T) {
+	base, calc, aPagar := cteSTItem(206.25, 40, 20.5, 24.75, true)
+	if math.Abs(base-288.75) > 0.01 {
+		t.Errorf("base=%.4f, quer 288.75", base)
+	}
+	if math.Abs(calc-59.19) > 0.01 {
+		t.Errorf("calc=%.4f, quer ~59.19", calc)
+	}
+	if math.Abs(aPagar-34.44) > 0.01 {
+		t.Errorf("aPagar=%.4f, quer ~34.44", aPagar)
+	}
+	if b, c, a := cteSTItem(206.25, 40, 20.5, 24.75, false); b != 0 || c != 0 || a != 0 {
+		t.Errorf("sem aplicar deveria zerar, obtido base=%.2f calc=%.2f aPagar=%.2f", b, c, a)
+	}
+	if _, _, a := cteSTItem(10, 0, 20.5, 100, true); a != 0 {
+		t.Errorf("aPagar deveria ter piso 0, obtido %.2f", a)
+	}
+}
+
+func TestFmtDateBRGo(t *testing.T) {
+	cases := map[string]string{
+		"2026-04-10":           "10/04/2026",
+		"2026-04-10T00:00:00Z": "10/04/2026",
+		"":                     "",
+		"10/04/2026":           "10/04/2026",
+	}
+	for in, want := range cases {
+		if got := fmtDateBRGo(in); got != want {
+			t.Errorf("fmtDateBRGo(%q)=%q, quer %q", in, got, want)
+		}
+	}
+}
 
 // mkSTItem cria uma STItemRow já com os derivados calculados via computeST.
 func mkSTItem(chave, numero, cod, ncm string, vProd, vIpi, mvaAj, aliqInter, aliqInt, redBC, icmsDeb, icmsRet float64, temRegra, segOK bool) STItemRow {
