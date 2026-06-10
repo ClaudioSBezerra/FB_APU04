@@ -300,8 +300,8 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 			if it.BaseCalculo <= 0 || n >= 8 {
 				continue
 			}
-			dl("(6) [%s] NF %s NCM %s | seg=%v mva=%.2f aliqInt=%.1f vOper=%.2f base=%.2f calc=%.2f ret=%.2f xml=%s",
-				it.UFFilial, it.NumeroNFe, it.NCM, it.SegmentoOK, it.MVAAjustado, it.AliqInterna, it.VOperacao, it.BaseCalculo, it.IcmsCalculado, it.IcmsRetido, it.StatusXML)
+			dl("(6) [%s] NF %s NCM %s | seg=%v mva=%.2f aliqInt=%.1f vOper=%.2f base=%.2f icmsDeb=%.2f calc=%.2f ret=%.2f xml=%s",
+				it.UFFilial, it.NumeroNFe, it.NCM, it.SegmentoOK, it.MVAAjustado, it.AliqInterna, it.VOperacao, it.BaseCalculo, it.IcmsDebitado, it.IcmsCalculado, it.IcmsRetido, it.StatusXML)
 			n++
 		}
 		if n == 0 {
