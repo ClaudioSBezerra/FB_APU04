@@ -89,7 +89,6 @@ const sections: NavSection[] = [
     sectionIcon: TrendingUp,
     items: [
       { title: "Importar SPEDs",            url: "/importar-efd",                  icon: FileSpreadsheet },
-      { title: "Auditoria EFD × Guias",     url: "/auditoria-efd",                 icon: ShieldCheck },
       { title: "Operações Comerciais",      url: "/mercadorias",                   icon: ShoppingCart },
       { title: "Operações Comerciais (XMLs)", url: "/mercadorias/xml",             icon: ShoppingCart },
       { title: "Operações Simples Nacional",url: "/operacoes/simples",             icon: Store },
@@ -146,6 +145,14 @@ const sections: NavSection[] = [
       { title: "Regras NCM",         url: "/icms-fronteira/regras",         icon: Table },
       { title: "Extrato SEFAZ",      url: "/icms-fronteira/extrato",        icon: FileSpreadsheet },
       { title: "Contestações",       url: "/icms-fronteira/contestacoes",   icon: Scale },
+    ],
+  },
+  {
+    id: "auditoria",
+    title: "Auditoria Fiscal",
+    sectionIcon: ShieldCheck,
+    items: [
+      { title: "EFD ICMS/IPI × Guias", url: "/auditoria-efd", icon: ShieldCheck },
     ],
   },
   {

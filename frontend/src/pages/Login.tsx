@@ -160,7 +160,7 @@ const Login = () => {
 
               <form onSubmit={handleLogin} className="space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor="email" className="text-sm">E-mail</Label>
+                <Label htmlFor="email" className="text-xl">E-mail</Label>
                 <Input
                   id="email"
                   type="email"
@@ -168,18 +168,18 @@ const Login = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="seu@email.com"
-                  className="text-sm"
+                  className="text-xl h-12"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="password" className="text-sm">Senha</Label>
+                <Label htmlFor="password" className="text-xl">Senha</Label>
                 <Input
                   id="password"
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="text-sm"
+                  className="text-xl h-12"
                 />
               </div>
               <div className="flex justify-end">
