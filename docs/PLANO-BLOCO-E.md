@@ -126,13 +126,17 @@ Demanda real (prompt de auditoria do contador, 2026-06-10). O **novo cliente é 
 | **Conciliação EFD × Guia** (regras 108/4014/4146) | ❌ **NOVO** — painel previa EFD×docs, não EFD×guia recolhida |
 | **Relatório executivo 1 página** | ⚙️ reusa o padrão export HTML→PDF já existente |
 
-**Como ingerir as Guias (decisão técnica — não há parser de PDF hoje):**
-- (a) **Entrada manual** dos campos (referência, receita, valor original, vencimento) — simples e robusto, porém trabalhoso.
-- (b) **Extração por IA** — o projeto já tem [services/ai.go](../backend/services/ai.go); enviar o PDF/texto da guia e extrair os campos em JSON. Alinha com o prompt (IA-first); exige revisão humana.
-- (c) **Parser de texto de PDF** (lib Go, ex. `ledongthuc/pdf`) + regex — funciona se o DARE for PDF de texto (não imagem).
-- **Recomendado:** (b) ou (c) com **conferência humana** antes de conciliar.
+**Como ingerir as Guias — DECISÃO (Claudio 2026-06-10): opção (c) parser de texto de PDF.**
+- Lib Go (ex. `ledongthuc/pdf` ou `pdfcpu`) extrai o **texto** do PDF (genérico p/ qualquer PDF de texto), depois **templates/regex por layout** isolam os campos (referência, receita, valor original, vencimento).
+- ⚠️ **Nuance das 27 UFs:** cada UF tem sua própria guia (DARE-GO, GARE-SP, DAE-BA, …) com **layout diferente** → o parser de texto precisa de **um template de extração por layout** (não é um regex único). Estratégia:
+  1. **Etapa comum:** extrair texto do PDF (uma vez, vale pra todos).
+  2. **Detecção de layout:** identificar a UF/tipo da guia (por marcadores no texto).
+  3. **Template por layout:** regex/âncoras específicas por guia. Começar pelo **DARE-GO** (cliente atual) e crescer UF a UF conforme chegam PDFs reais.
+  4. **GNRE** (Guia Nacional, padrão unificado): se o cliente recolher via GNRE, **um único template** cobre várias UFs — priorizar se aplicável.
+  5. **Fallback:** quando o template não casar (layout novo/PDF imagem), cair para **revisão/entrada manual** (e, opcionalmente, IA via [services/ai.go](../backend/services/ai.go) como auxílio). Sempre com **conferência humana** antes de conciliar.
+- Pré-requisito: **coletar PDFs reais por UF** para montar/validar cada template. (Claudio: temos os PDFs do cliente GO.)
 
-**Decisão de escopo (GO vs genérico):** implementar um **motor de conciliação configurável por código de receita/obrigação** (tabela: código → registro/campo EFD de origem → guia), começando pelos 3 de GO (108, 4014, 4146). Escala pra outras UFs/tributos sem recodificar.
+**Decisão de escopo: motor genérico, escalável p/ as 27 UFs.** Conciliação **configurável por (UF × código de receita/obrigação)** numa tabela de regras: `uf | cod_receita | descricao | registro_efd_origem | campo_efd | observação`. Começar com GO (108, 4014, 4146) e adicionar linhas por UF/tributo sem recodificar. O parser de guias e o motor de conciliação são **dirigidos por configuração**, não por código hardcoded de UF.
 
 > Impacto no épico: a importação do Bloco E entrega o **lado EFD** da auditoria. O painel de validações ganha uma **4ª dimensão — EFD × Guia recolhida** — além das V1–V7 (declarado × apurado × calculado). Ingestão de guias + relatório 1 página viram itens próprios do épico do painel.
 
