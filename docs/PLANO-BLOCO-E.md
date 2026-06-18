@@ -100,6 +100,52 @@ Cada validação vira um "card" no painel com status OK / Divergência / Atenç�
 4. **Duplicidade/reimport:** definir fluxo de "reimportar substituindo" (apagar job antigo via cascade) para os SPEDs que já estão sem o Bloco E.
 5. **Multi-UF:** E200/E300 são por UF (a empresa tem BA+PE) — as tabelas já terão a coluna UF do registro; o painel filtra pela UF de trabalho.
 
+## 7-bis. Caso concreto que motiva o épico: Auditoria EFD × Guias (DARE) — JC Distribuição / GO
+
+Demanda real (prompt de auditoria do contador, 2026-06-10). O **novo cliente é a JC Distribuição (Goiás)** — daí a relevância do Bloco E (PROTEGE GOIÁS, FECOP). A auditoria cruza **3 fontes**: EFD (TXT) × **Guias de recolhimento (DARE em PDF)** × regras de amarração, e emite um relatório executivo de 1 página.
+
+**Registros/campos que a auditoria usa (confirmam o que importar):**
+- **0000** → CNPJ, razão social, competência (campo 04 = dt_ini). ✅ já em `import_jobs`.
+- **E110 campo 13** = Valor total do ICMS a recolher. → `reg_e110.vl_icms_recolher`
+- **E115 campos 2 e 3** = código do informativo + valor. PROTEGE = soma de `GO000076` + `GO000082`. → `reg_e115.cod_inf_adic, vl_inf_adic`
+- **E116 campos 2,3,4,5** = cód. receita, valor, vencimento, cód. obrigação. ICMS normal = obrigação `108`; FECOP/adicional 2% = obrigação `045`. → `reg_e116.cod_or(?), vl_or, dt_vcto, cod_obrigacao`
+
+**Validações da auditoria (3 blocos + cadastro):**
+1. **Cadastro/competência:** referência da guia começa com `300` (mensal) + mês/ano = competência do 0000.
+2. **ICMS Normal (108):** `E110.c13 == E116(108).valor == Guia108.ValorOriginal`; amarrações internas E116 (receita `000`, vencimento começa com `20`).
+3. **PROTEGE (4014):** `Σ E115(GO000076+GO000082) == Guia4014.ValorOriginal`.
+4. **FECOP/Adicional 2% (4146):** `E116(045).valor == Guia4146.ValorOriginal` e vencimentos batem.
+
+**Mapeamento com o plano:**
+
+| Peça | Status no plano |
+|---|---|
+| Importar E110/E115/E116 (lado EFD) | ✅ Fase 1/2 já cobrem |
+| Coerência E110, Σ E116 (V1, V3) | ✅ painel já previa |
+| **Ingestão das Guias (DARE/PDF)** | ❌ **NOVO** — fonte de dados inexistente |
+| **Conciliação EFD × Guia** (regras 108/4014/4146) | ❌ **NOVO** — painel previa EFD×docs, não EFD×guia recolhida |
+| **Relatório executivo 1 página** | ⚙️ reusa o padrão export HTML→PDF já existente |
+
+**Como ingerir as Guias (decisão técnica — não há parser de PDF hoje):**
+- (a) **Entrada manual** dos campos (referência, receita, valor original, vencimento) — simples e robusto, porém trabalhoso.
+- (b) **Extração por IA** — o projeto já tem [services/ai.go](../backend/services/ai.go); enviar o PDF/texto da guia e extrair os campos em JSON. Alinha com o prompt (IA-first); exige revisão humana.
+- (c) **Parser de texto de PDF** (lib Go, ex. `ledongthuc/pdf`) + regex — funciona se o DARE for PDF de texto (não imagem).
+- **Recomendado:** (b) ou (c) com **conferência humana** antes de conciliar.
+
+**Decisão de escopo (GO vs genérico):** implementar um **motor de conciliação configurável por código de receita/obrigação** (tabela: código → registro/campo EFD de origem → guia), começando pelos 3 de GO (108, 4014, 4146). Escala pra outras UFs/tributos sem recodificar.
+
+> Impacto no épico: a importação do Bloco E entrega o **lado EFD** da auditoria. O painel de validações ganha uma **4ª dimensão — EFD × Guia recolhida** — além das V1–V7 (declarado × apurado × calculado). Ingestão de guias + relatório 1 página viram itens próprios do épico do painel.
+
+## 7-ter. Validações adicionais do painel (derivadas da auditoria)
+
+| # | Validação | Fontes |
+|---|-----------|--------|
+| V8 | Referência da guia = `300` + competência = 0000 | guia × import_jobs |
+| V9 | ICMS Normal: E110.c13 = E116(108) = Guia(108) | reg_e110 × reg_e116 × guia |
+| V10 | E116(108): receita=`000`, vencimento começa `20` (amarração interna) | reg_e116 |
+| V11 | PROTEGE: Σ E115(GO000076+082) = Guia(4014) | reg_e115 × guia |
+| V12 | FECOP: E116(045).valor+vcto = Guia(4146) | reg_e116 × guia |
+
 ## 7. Ordem sugerida de execução
 
 1. Fase 1 (schema) + Fase 2 (parser) podem ir juntas, sub-bloco a sub-bloco, começando por **ICMS (E100–E116)** que é o núcleo.
