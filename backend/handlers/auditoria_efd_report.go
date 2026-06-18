@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -22,7 +23,8 @@ func statusBadge(ok bool) string {
 }
 
 // renderAuditoriaHTML gera o dashboard de auditoria fiscal (1 página).
-func renderAuditoriaHTML(s auditoriaSaida) string {
+// logoDataURI: logo da empresa em data URI (base64); vazio = sem logo.
+func renderAuditoriaHTML(s auditoriaSaida, logoDataURI string) string {
 	a := s.A
 	var sb strings.Builder
 	sb.WriteString(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">`)
@@ -47,13 +49,27 @@ tr.bad td { background:#fef2f2; }
 .box.err { border-left-color:#dc2626; }
 ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 .foot { margin-top:10px; color:#94a3b8; font-size:9px; text-align:center; }
+.hd-row { display:flex; align-items:center; gap:14px; }
+.logo { max-height:52px; max-width:160px; object-fit:contain; background:#fff; border-radius:6px; padding:3px; }
+.toolbar { text-align:right; margin-bottom:10px; }
+.btnpdf { background:#1e3a8a; color:#fff; border:none; padding:9px 18px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; }
+.btnpdf:hover { background:#1e40af; }
+@media print { .no-print { display:none !important; } body { margin:0; } }
 </style></head><body>`)
 
-	// Cabeçalho
-	sb.WriteString(`<div class="hd"><h1>JC DISTRIBUIÇÃO — DASHBOARD DE AUDITORIA FISCAL</h1>`)
+	// Barra de ação (não sai na impressão/PDF).
+	sb.WriteString(`<div class="toolbar no-print"><button class="btnpdf" onclick="window.print()">⬇ Exportar / Salvar em PDF</button></div>`)
+
+	// Cabeçalho (logo da empresa + título)
+	sb.WriteString(`<div class="hd"><div class="hd-row">`)
+	if logoDataURI != "" {
+		sb.WriteString(`<img class="logo" src="` + logoDataURI + `" alt="Logo">`)
+	}
+	sb.WriteString(`<div><h1>DASHBOARD DE AUDITORIA FISCAL</h1>`)
 	sb.WriteString(`<div class="meta"><b>Empresa:</b> ` + htmlEscape(a.RazaoSocial) +
 		` &nbsp;|&nbsp; <b>CNPJ:</b> ` + htmlEscape(fmtCNPJ14(a.CNPJ)) +
-		` &nbsp;|&nbsp; <b>Competência:</b> ` + htmlEscape(a.Competencia) + `</div></div>`)
+		` &nbsp;|&nbsp; <b>Competência:</b> ` + htmlEscape(a.Competencia) + `</div>`)
+	sb.WriteString(`</div></div></div>`)
 
 	// Seção 1 — Cadastro/competência
 	sb.WriteString(`<h2>1. Validação de cadastro e competência</h2>`)
@@ -113,7 +129,7 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 	}
 	sb.WriteString(strings.Join(gs, " &nbsp;·&nbsp; ") + `</div>`)
 
-	sb.WriteString(`<div class="foot">Gerado por FB_APU04 — Auditoria EFD ICMS/IPI × Guias. Documento de conferência interna.</div>`)
+	sb.WriteString(`<div class="foot">Gerado por IA da Fortes Bezerra Tecnologia — Auditoria EFD ICMS/IPI × Guias. Documento de conferência interna.</div>`)
 	sb.WriteString(`<script>window.onload=function(){if(location.search.indexOf('print')>=0)window.print()}</script>`)
 	sb.WriteString(`</body></html>`)
 	return sb.String()
@@ -142,10 +158,13 @@ func IcmsAuditoriaEFDHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
-		if _, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims); !ok {
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
 			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
+		userID, _ := claims["user_id"].(string)
+		companyID, _ := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
 		if err := r.ParseMultipartForm(64 << 20); err != nil {
 			jsonErr(w, http.StatusBadRequest, "Erro ao ler upload: "+err.Error())
 			return
@@ -186,8 +205,22 @@ func IcmsAuditoriaEFDHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
+		// Logo da empresa (data URI base64) para o cabeçalho do relatório.
+		logoURI := ""
+		if companyID != "" {
+			var logoData []byte
+			var logoMime string
+			if err := db.QueryRow(`SELECT logo_data, COALESCE(logo_mime,'') FROM companies WHERE id = $1`, companyID).
+				Scan(&logoData, &logoMime); err == nil && len(logoData) > 0 {
+				if logoMime == "" {
+					logoMime = "image/png"
+				}
+				logoURI = "data:" + logoMime + ";base64," + base64.StdEncoding.EncodeToString(logoData)
+			}
+		}
+
 		out := auditar(a)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(renderAuditoriaHTML(out)))
+		w.Write([]byte(renderAuditoriaHTML(out, logoURI)))
 	}
 }

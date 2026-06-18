@@ -68,8 +68,8 @@ func TestAuditoriaReal(t *testing.T) {
 	}
 
 	// Render não vazio e contém marcadores-chave.
-	html := renderAuditoriaHTML(out)
-	for _, want := range []string{"DASHBOARD DE AUDITORIA", "ICMS Normal (108)", "PROTEGE", "Adicional ICMS 2%", "06.314.327/0002-03"} {
+	html := renderAuditoriaHTML(out, "")
+	for _, want := range []string{"DASHBOARD DE AUDITORIA", "ICMS Normal (108)", "PROTEGE", "Adicional ICMS 2%", "06.314.327/0002-03", "Fortes Bezerra", "Exportar / Salvar em PDF"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("HTML sem marcador %q", want)
 		}

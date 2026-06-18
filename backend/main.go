@@ -26,7 +26,7 @@ import (
 
 // Version information for backend deployment validation
 const (
-	BackendVersion = "2.0.2"
+	BackendVersion = "2.0.3"
 	FeatureSet     = "Escrituração de Entradas EFD, Importação ERP Bridge, NF-e Entradas, CT-e Entradas, Enriquecimento PIS/COFINS/IPI, Malha Fina, Apuração IBS/CBS, Créditos em Risco, SPED layout 020"
 )
 
