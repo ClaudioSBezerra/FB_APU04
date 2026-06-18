@@ -824,6 +824,15 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraSTItensFaltantesXLSXHandler(database), "")(w, r)
 	})
+	// Auditoria EFD ICMS/IPI × Guias (DARE) — upload SPED + PDFs → relatório HTML.
+	http.HandleFunc("/api/auditoria-efd", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsAuditoriaEFDHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/ufs", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {

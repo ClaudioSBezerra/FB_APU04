@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/sonner'
 import ImportarEFD from './pages/ImportarEFD'
+import AuditoriaEFD from './pages/AuditoriaEFD'
 import Mercadorias from './pages/Mercadorias'
 import MercadoriasXML from './pages/MercadoriasXML'
 import OperacoesSimplesNacional from './pages/OperacoesSimplesNacional'
@@ -179,6 +180,7 @@ function AppLayout() {
 
               {/* Simulador da Reforma Tributária - SPED */}
               <Route path="/importar-efd"                      element={<ImportarEFD />} />
+              <Route path="/auditoria-efd"                     element={<AuditoriaEFD />} />
               <Route path="/mercadorias/xml"                   element={<MercadoriasXML />} />
               <Route path="/mercadorias"                       element={<Mercadorias />} />
               <Route path="/operacoes/simples"                 element={<OperacoesSimplesNacional />} />
