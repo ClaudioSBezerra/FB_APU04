@@ -16,6 +16,19 @@ import (
 
 const maxLogoSize = 5 << 20 // 5 MB
 
+// resolveCompanyIDParam resolve a empresa-alvo priorizando o query param
+// ?company_id (usado pelo Administrativo para gerenciar empresa específica) e,
+// na ausência, o header X-Company-ID (empresa ativa). GetEffectiveCompanyID
+// valida a permissão (admin acessa qualquer empresa; demais só as suas). Sem
+// isto, um admin com OUTRA empresa ativa salvava/lia a logo na empresa errada.
+func resolveCompanyIDParam(db *sql.DB, userID string, r *http.Request) (string, error) {
+	requested := r.URL.Query().Get("company_id")
+	if requested == "" {
+		requested = r.Header.Get("X-Company-ID")
+	}
+	return GetEffectiveCompanyID(db, userID, requested)
+}
+
 type EmpresaParametrosInfo struct {
 	TemLogo  bool   `json:"tem_logo"`
 	LogoMime string `json:"logo_mime,omitempty"`
@@ -37,7 +50,7 @@ func GetEmpresaParametrosHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		userID, _ := claims["user_id"].(string)
-		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		companyID, err := resolveCompanyIDParam(db, userID, r)
 		if err != nil {
 			jsonErr(w, http.StatusInternalServerError, err.Error())
 			return
@@ -73,7 +86,7 @@ func ServeEmpresaLogoHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		userID, _ := claims["user_id"].(string)
-		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		companyID, err := resolveCompanyIDParam(db, userID, r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -107,7 +120,7 @@ func UploadEmpresaLogoHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		userID, _ := claims["user_id"].(string)
-		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		companyID, err := resolveCompanyIDParam(db, userID, r)
 		if err != nil {
 			jsonErr(w, http.StatusInternalServerError, err.Error())
 			return
