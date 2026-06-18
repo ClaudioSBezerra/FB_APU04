@@ -143,13 +143,13 @@ const Login = () => {
 
       {/* ── Painel direito — formulário de login (inalterado) ── */}
       <div className="flex-1 flex items-center justify-center bg-gray-100 px-4">
-        <div className="w-full max-w-[560px]">
+        <div className="w-full max-w-[768px]">
           <Card className="w-full shadow-lg">
-            <CardHeader className="flex flex-col items-center gap-2 space-y-0 pt-8 pb-6">
-              <CardTitle className="text-3xl font-bold">Acesse sua conta</CardTitle>
-              <CardDescription className="text-base">Entre com suas credenciais para continuar</CardDescription>
+            <CardHeader className="flex flex-col items-center gap-2 space-y-0 pt-10 pb-8">
+              <CardTitle className="text-4xl font-bold">Acesse sua conta</CardTitle>
+              <CardDescription className="text-lg">Entre com suas credenciais para continuar</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-10 pb-10">
               {errorMsg && (
                 <Alert variant="destructive" className="mb-4">
                   <AlertCircle className="h-4 w-4" />
@@ -158,9 +158,9 @@ const Login = () => {
                 </Alert>
               )}
 
-              <form onSubmit={handleLogin} className="space-y-5">
+              <form onSubmit={handleLogin} className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-xl">E-mail</Label>
+                <Label htmlFor="email" className="text-2xl">E-mail</Label>
                 <Input
                   id="email"
                   type="email"
@@ -168,29 +168,29 @@ const Login = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="seu@email.com"
-                  className="text-xl h-14"
+                  className="text-2xl h-16"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-xl">Senha</Label>
+                <Label htmlFor="password" className="text-2xl">Senha</Label>
                 <Input
                   id="password"
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="text-xl h-14"
+                  className="text-2xl h-16"
                 />
               </div>
               <div className="flex justify-end">
-                <Link to="/forgot-password" className="text-base text-blue-600 hover:underline">
+                <Link to="/forgot-password" className="text-lg text-blue-600 hover:underline">
                   Esqueci minha senha
                 </Link>
               </div>
-              <Button type="submit" className="w-full text-lg h-12" disabled={isLoading}>
+              <Button type="submit" className="w-full text-2xl h-16" disabled={isLoading}>
                 {isLoading ? "Entrando..." : "Entrar"}
               </Button>
-              <div className="text-center text-base text-gray-500 mt-2">
+              <div className="text-center text-lg text-gray-500 mt-2">
                 Não tem uma conta?{" "}
                 <Link to="/register" className="text-blue-600 hover:underline">
                   Crie grátis
