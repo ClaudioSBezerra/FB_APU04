@@ -150,6 +150,34 @@ Demanda real (prompt de auditoria do contador, 2026-06-10). O **novo cliente é 
 | V11 | PROTEGE: Σ E115(GO000076+082) = Guia(4014) | reg_e115 × guia |
 | V12 | FECOP: E116(045).valor+vcto = Guia(4146) | reg_e116 × guia |
 
+## Apêndice A — Layouts confirmados nos arquivos de teste (2026-06-18)
+
+Arquivo real do cliente: **JC DIST LOG IMP E EXP PROD IND S/A**, CNPJ `06314327000203`, IE GO `103.74235-2`, competência **05/2026**, **COD_VER=020**. Bloco E presente: E001×2, E100×2, E110×2, E111×28, E112×16, E113×16, E115×8, E116×5, E200×8, E210×8, E220×3, E250×18, E300×7, E310×7, E500×2, E510×89, E520×2, E990×2. (Não vieram E230/E240/E311-E316/E530 neste mês — schema deve suportar mesmo assim.)
+
+**Extração de PDF validada:** `github.com/ledongthuc/pdf` (já no go.mod, indirect) extraiu o texto dos DAREs-GO (DARE 5.1, PDF de texto) com `pdf.Open` + `GetPlainText()`. Campos saem por âncoras: `Receita` (ex.: "108 - NORMAL"), `Valor Original (...)`, `Referência` ("300-Mensal - 05/2026"), `Data de Vencimento`/`Validade do DARE`, `Contribuinte`, `Inscrição Estadual`, `UF`.
+
+**Layout campo-a-campo (índice = posição após split por `|`; campo 1 = REG):**
+
+- **E110** (apuração ICMS): 2 VL_TOT_DEBITOS, 3 VL_AJ_DEBITOS, 4 VL_TOT_AJ_DEBITOS, 5 VL_ESTORNOS_CRED, 6 VL_TOT_CREDITOS, 7 VL_AJ_CREDITOS, 8 VL_TOT_AJ_CREDITOS, 9 VL_ESTORNOS_DEB, 10 VL_SLD_CREDOR_ANT, 11 VL_SLD_APURADO, 12 VL_TOT_DED, **13 VL_ICMS_RECOLHER**, 14 VL_SLD_CREDOR_TRANSPORTAR, 15 DEB_ESP. *(ex.: c13=5.807.361,65)*
+- **E111** (ajuste): 2 COD_AJ_APUR, 3 DESCR_COMPL_AJ, 4 VL_AJ_APUR.
+- **E112**: 2 NUM_DA, 3 NUM_PROC, 4 IND_PROC, 5 PROC, 6 TXT_COMPL.
+- **E113**: 2 COD_PART, 3 COD_MOD, 4 SER, 5 SUB, 6 NUM_DOC, 7 DT_DOC, 8 COD_ITEM, 9 VL_AJ_ITEM, 10 CHV_DOCe.
+- **E115** (valores declaratórios): 2 COD_INF_ADIC, 3 VL_INF_ADIC, 4 DESCR_COMPL_AJ. *(PROTEGE = soma de GO000076+GO000082)*
+- **E116** (obrigações ICMS): **2 COD_OR** (cód. receita, ex. "000"), **3 VL_OR**, **4 DT_VCTO**, **5 COD_REC** (cód. obrigação, ex. "108"/"045"), 6 NUM_PROC, 7 IND_PROC, 8 PROC, 9 TXT_COMPL, 10 MES_REF. *(ex.: 108 → VL_OR=5.805.606,05, DT_VCTO=20062026)*
+- **E200** (período ST/UF): 2 UF, 3 DT_INI, 4 DT_FIN.
+- **E210** (apuração ST): 2 IND_MOV_ST, 3 VL_SLD_CRED_ANT_ST, 4 VL_DEVOL_ST, 5 VL_RESSARC_ST, 6 VL_OUT_CRED_ST, 7 VL_AJ_CREDITOS_ST, 8 VL_RETENCAO_ST, 9 VL_OUT_DEB_ST, 10 VL_AJ_DEBITOS_ST, 11 VL_SLD_DEV_ANT_ST, 12 VL_DEDUCOES_ST, 13 VL_ICMS_RECOL_ST, 14 VL_SLD_CRED_ST_TRANSPORTAR, 15 DEB_ESP_ST.
+- **E220** (ajuste ST): 2 COD_AJ_APUR, 3 DESCR_COMPL_AJ, 4 VL_AJ_APUR. (filhos E230/E240 quando houver)
+- **E250** (obrigações ST): 2 COD_OR, 3 VL_OR, 4 DT_VCTO, 5 COD_REC, 6-8 proc, 9 TXT_COMPL, 10 MES_REF.
+- **E300** (período FCP/DIFAL/UF): 2 UF, 3 DT_INI, 4 DT_FIN.
+- **E310** (apuração FCP/DIFAL): 2 IND_MOV_FCP + ~20 campos de valores (mapear pelo guia 020; filhos E311/E312/E313/E316 quando houver).
+- **E500** (período IPI): 2 IND_APUR, 3 DT_INI, 4 DT_FIN.
+- **E510** (consolidação IPI): 2 CFOP, 3 CST_IPI, 4 VL_CONT_IPI, 5 VL_BC_IPI, 6 VL_IPI.
+- **E520** (apuração IPI): 2 VL_SD_ANT_IPI, 3 VL_DEB_IPI, 4 VL_CRED_IPI, 5 VL_OD_IPI, 6 VL_OC_IPI, 7 VL_SC_IPI, 8 VL_SD_IPI. (filho E530 quando houver)
+
+**DARE-GO (DARE 5.1) — campos a parsear:** Contribuinte, Inscrição Estadual, UF, Receita (`NNN - DESCRIÇÃO`), Valor Original, Total a recolher, Referência (`300-Mensal - MM/AAAA`), Data de Vencimento (= Validade do DARE), Nº do documento, Informações complementares.
+
+> ✅ Validação de viabilidade concluída: layouts EFD do Bloco E e extração dos DAREs **confirmados com arquivos reais**. Implementação pode seguir o plano sem incógnitas de layout.
+
 ## 7. Ordem sugerida de execução
 
 1. Fase 1 (schema) + Fase 2 (parser) podem ir juntas, sub-bloco a sub-bloco, começando por **ICMS (E100–E116)** que é o núcleo.
