@@ -75,13 +75,29 @@ func StartWorker(db *sql.DB) {
 		}
 	}()
 
-	// CRASH RECOVERY: Reset any 'processing' jobs to 'pending' on startup
-	// This ensures that if the server crashed, interrupted jobs are resumed automatically
-	res, err := db.Exec("UPDATE import_jobs SET status = 'pending', message = message || ' [Recovered]' WHERE status = 'processing'")
+	// CRASH RECOVERY: jobs interrompidos em 'processing' (ex.: deploy/restart no
+	// meio do parse ou da agregação) são reprocessados DO ZERO. Antes limpamos os
+	// dados parciais já inseridos e zeramos o checkpoint — senão o resume retomaria
+	// do meio do arquivo, pularia o registro |0000| ("Record 0000 not found") e/ou
+	// duplicaria os dados já gravados.
+	var recovered []string
+	if rows, err := db.Query("SELECT id FROM import_jobs WHERE status = 'processing'"); err == nil {
+		for rows.Next() {
+			var id string
+			if rows.Scan(&id) == nil {
+				recovered = append(recovered, id)
+			}
+		}
+		rows.Close()
+	}
+	for _, id := range recovered {
+		purgeJobData(db, id)
+	}
+	res, err := db.Exec("UPDATE import_jobs SET status = 'pending', last_line_processed = 0, message = COALESCE(message,'') || ' [Recuperado: reprocessando do zero]' WHERE status = 'processing'")
 	if err == nil {
 		count, _ := res.RowsAffected()
 		if count > 0 {
-			fmt.Printf("Worker Recovery: Reset %d stuck jobs from 'processing' to 'pending'\n", count)
+			fmt.Printf("Worker Recovery: %d job(s) interrompido(s) limpos e re-enfileirados (reprocesso do zero)\n", count)
 		}
 	} else {
 		fmt.Printf("Worker Recovery Error: %v\n", err)
@@ -1078,8 +1094,27 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 		count0000, count0150, count0200, countC100, dbCountC100, countC170, countC190, countC190IpiNonZero, totalC190IPI, countC500, dbCountC500, countC600, countD100, dbCountD100, countD162, countD500, dbCountD500, debugLog.String()), nil
 }
 
+// purgeJobData remove os dados já gravados de um job (registros do SPED e
+// tabelas agregadas) sem apagar o próprio import_jobs. Usado no crash recovery
+// para reprocessar do zero sem duplicar. Filhos antes dos pais.
+func purgeJobData(db *sql.DB, jobID string) {
+	tables := []string{
+		"reg_c170", "reg_c190", "reg_d162", // filhos
+		"reg_c100", "reg_d100", // pais
+		"reg_c500", "reg_c600", "reg_d500", "reg_0200", "participants",
+		"operacoes_comerciais", "energia_agregado", "frete_agregado", "comunicacoes_agregado",
+	}
+	for _, t := range tables {
+		if _, err := db.Exec("DELETE FROM "+t+" WHERE job_id = $1", jobID); err != nil {
+			fmt.Printf("purgeJobData: erro ao limpar %s do job %s: %v\n", t, jobID, err)
+		}
+	}
+}
+
 func runAggregations(tx *sql.Tx, jobID string, rates TaxRates) error {
-	if _, err := tx.Exec("SET LOCAL work_mem = '64MB'"); err != nil {
+	// work_mem elevado (SET LOCAL = só nesta transação) reduz spill em disco nos
+	// GROUP BY/hash joins de SPEDs grandes, acelerando a agregação.
+	if _, err := tx.Exec("SET LOCAL work_mem = '256MB'"); err != nil {
 		return fmt.Errorf("failed to set work_mem: %v", err)
 	}
 
