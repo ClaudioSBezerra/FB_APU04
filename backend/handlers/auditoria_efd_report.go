@@ -27,7 +27,13 @@ func loadEmpresaLogo(db *sql.DB, companyID, cnpjSped string) ([]byte, string) {
 		return nil, ""
 	}
 	if companyID != "" {
+		// 1) a própria empresa ativa.
 		if d, m := q("id = $1::uuid", companyID); len(d) > 0 {
+			return d, m
+		}
+		// 2) qualquer empresa do MESMO GRUPO econômico com logo (matriz). Robusto:
+		//    não depende de companies.cnpj estar preenchido.
+		if d, m := q(`group_id = (SELECT group_id FROM companies WHERE id = $1::uuid) AND group_id IS NOT NULL`, companyID); len(d) > 0 {
 			return d, m
 		}
 	}
