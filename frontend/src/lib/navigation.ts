@@ -63,6 +63,12 @@ export const modules: Record<string, ModuleConfig> = {
     // aqui evita a SubNav duplicada — exibia duas linhas idênticas de abas.
     tabs: [],
   },
+  auditoria: {
+    label: 'Auditoria Fiscal — EFD ICMS/IPI × Guias',
+    tabs: [
+      { label: 'EFD ICMS/IPI × Guias', path: '/auditoria-efd' },
+    ],
+  },
   config: {
     label: 'Configurações',
     tabs: [
@@ -95,6 +101,7 @@ export function getActiveModule(pathname: string): string {
   if (pathname.startsWith('/painel/')) return 'painel'
   if (pathname.startsWith('/reforma')) return 'reforma'
   if (pathname.startsWith('/icms-fronteira')) return 'fronteira'
+  if (pathname.startsWith('/auditoria-efd')) return 'auditoria'
   if (pathname.startsWith('/config/')) return 'config'
   return 'simulador'
 }

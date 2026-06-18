@@ -1,4 +1,4 @@
-import { TrendingUp, FolderInput, Settings, LogOut, KeyRound, BarChart3, Scale, MapPin } from 'lucide-react'
+import { TrendingUp, FolderInput, Settings, LogOut, KeyRound, BarChart3, Scale, MapPin, ShieldCheck } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import {
@@ -36,6 +36,7 @@ const mainItems = [
   { id: 'painel',    icon: BarChart3,   label: 'Painel XMLs',           path: '/painel/xmls' },
   { id: 'reforma',   icon: Scale,       label: 'Análise Reforma Trib.', path: '/reforma/creditos' },
   { id: 'fronteira', icon: MapPin,      label: 'Módulo ICMS Fronteira', path: '/icms-fronteira' },
+  { id: 'auditoria', icon: ShieldCheck, label: 'Auditoria Fiscal',      path: '/auditoria-efd' },
 ]
 
 export function AppRail() {
