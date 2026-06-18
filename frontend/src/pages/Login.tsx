@@ -136,7 +136,7 @@ const Login = () => {
         <div className="relative z-10">
           {/* Versão — confirma o build ativo */}
           <p className="text-xs" style={{ color: "#6b7280" }}>
-            API v{apiVersion}
+            EFD ICMS/IPI v{apiVersion}
           </p>
         </div>
       </div>
