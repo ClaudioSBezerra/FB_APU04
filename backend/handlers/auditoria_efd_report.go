@@ -4,12 +4,51 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// loadEmpresaLogo busca a logo da empresa de forma resiliente: primeiro pela
+// empresa ativa (companyID da sessão); se não houver, pelo CNPJ do próprio SPED
+// (match exato por dígitos e, por fim, pela raiz de 8 dígitos). Cobre o caso de
+// a empresa ativa divergir da empresa do arquivo. Retorna bytes + mime.
+func loadEmpresaLogo(db *sql.DB, companyID, cnpjSped string) ([]byte, string) {
+	q := func(where string, arg string) ([]byte, string) {
+		var data []byte
+		var mime string
+		err := db.QueryRow(`SELECT logo_data, COALESCE(logo_mime,'') FROM companies WHERE `+where+` AND logo_data IS NOT NULL LIMIT 1`, arg).Scan(&data, &mime)
+		if err == nil && len(data) > 0 {
+			return data, mime
+		}
+		return nil, ""
+	}
+	if companyID != "" {
+		if d, m := q("id = $1::uuid", companyID); len(d) > 0 {
+			return d, m
+		}
+	}
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, cnpjSped)
+	if len(digits) >= 14 {
+		if d, m := q(`regexp_replace(COALESCE(cnpj,''),'[^0-9]','','g') = $1`, digits); len(d) > 0 {
+			return d, m
+		}
+	}
+	if len(digits) >= 8 {
+		if d, m := q(`LEFT(regexp_replace(COALESCE(cnpj,''),'[^0-9]','','g'),8) = $1`, digits[:8]); len(d) > 0 {
+			return d, m
+		}
+	}
+	return nil, ""
+}
 
 // ---------------------------------------------------------------------------
 // Relatório executivo (HTML→PDF, 1 página A4) + endpoint da auditoria EFD×Guias.
@@ -205,18 +244,16 @@ func IcmsAuditoriaEFDHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
-		// Logo da empresa (data URI base64) para o cabeçalho do relatório.
+		// Logo da empresa (data URI base64) — empresa ativa ou, fallback, CNPJ do SPED.
+		logoData, logoMime := loadEmpresaLogo(db, companyID, a.CNPJ)
+		log.Printf("[AUDIT-LOGO] companyID=%q xCompany=%q cnpjSped=%q logoBytes=%d mime=%q",
+			companyID, r.Header.Get("X-Company-ID"), a.CNPJ, len(logoData), logoMime)
 		logoURI := ""
-		if companyID != "" {
-			var logoData []byte
-			var logoMime string
-			if err := db.QueryRow(`SELECT logo_data, COALESCE(logo_mime,'') FROM companies WHERE id = $1`, companyID).
-				Scan(&logoData, &logoMime); err == nil && len(logoData) > 0 {
-				if logoMime == "" {
-					logoMime = "image/png"
-				}
-				logoURI = "data:" + logoMime + ";base64," + base64.StdEncoding.EncodeToString(logoData)
+		if len(logoData) > 0 {
+			if logoMime == "" {
+				logoMime = "image/png"
 			}
+			logoURI = "data:" + logoMime + ";base64," + base64.StdEncoding.EncodeToString(logoData)
 		}
 
 		out := auditar(a)
