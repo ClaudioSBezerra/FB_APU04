@@ -131,9 +131,14 @@ func UploadEmpresaLogoHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusBadRequest, "Arquivo muito grande (máx 5 MB)")
 			return
 		}
+		// Aceita o arquivo tanto em "logo" (Parâmetros/Gestão de Ambiente) quanto
+		// em "file" (tela Administrativo) — os fronts divergiam no nome do campo.
 		file, header, err := r.FormFile("logo")
 		if err != nil {
-			jsonErr(w, http.StatusBadRequest, "Campo 'logo' obrigatório")
+			file, header, err = r.FormFile("file")
+		}
+		if err != nil {
+			jsonErr(w, http.StatusBadRequest, "Campo de arquivo obrigatório ('logo' ou 'file')")
 			return
 		}
 		defer file.Close()
