@@ -121,6 +121,8 @@ func UploadEmpresaLogoHandler(db *sql.DB) http.HandlerFunc {
 		}
 		userID, _ := claims["user_id"].(string)
 		companyID, err := resolveCompanyIDParam(db, userID, r)
+		log.Printf("[LOGO-UP] start companyID=%q query=%q xCompany=%q err=%v",
+			companyID, r.URL.Query().Get("company_id"), r.Header.Get("X-Company-ID"), err)
 		if err != nil {
 			jsonErr(w, http.StatusInternalServerError, err.Error())
 			return
@@ -128,16 +130,26 @@ func UploadEmpresaLogoHandler(db *sql.DB) http.HandlerFunc {
 
 		r.Body = http.MaxBytesReader(w, r.Body, maxLogoSize)
 		if err := r.ParseMultipartForm(maxLogoSize); err != nil {
+			log.Printf("[LOGO-UP] ParseMultipartForm falhou (>5MB?): %v", err)
 			jsonErr(w, http.StatusBadRequest, "Arquivo muito grande (máx 5 MB)")
 			return
 		}
 		// Aceita o arquivo tanto em "logo" (Parâmetros/Gestão de Ambiente) quanto
 		// em "file" (tela Administrativo) — os fronts divergiam no nome do campo.
+		campo := "logo"
 		file, header, err := r.FormFile("logo")
 		if err != nil {
+			campo = "file"
 			file, header, err = r.FormFile("file")
 		}
 		if err != nil {
+			fields := []string{}
+			if r.MultipartForm != nil {
+				for k := range r.MultipartForm.File {
+					fields = append(fields, k)
+				}
+			}
+			log.Printf("[LOGO-UP] nenhum arquivo em 'logo'/'file'; campos recebidos=%v err=%v", fields, err)
 			jsonErr(w, http.StatusBadRequest, "Campo de arquivo obrigatório ('logo' ou 'file')")
 			return
 		}
@@ -145,6 +157,7 @@ func UploadEmpresaLogoHandler(db *sql.DB) http.HandlerFunc {
 
 		data, err := io.ReadAll(file)
 		if err != nil {
+			log.Printf("[LOGO-UP] ReadAll erro: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao ler arquivo")
 			return
 		}
@@ -153,17 +166,21 @@ func UploadEmpresaLogoHandler(db *sql.DB) http.HandlerFunc {
 		if mime == "" {
 			mime = "image/jpeg"
 		}
+		log.Printf("[LOGO-UP] campo=%s arquivo=%q bytes=%d mime=%s -> UPDATE companyID=%s",
+			campo, header.Filename, len(data), mime, companyID)
 
-		_, err = db.Exec(`UPDATE companies SET logo_data=$1, logo_mime=$2, logo_nome=$3 WHERE id=$4`,
+		res, err := db.Exec(`UPDATE companies SET logo_data=$1, logo_mime=$2, logo_nome=$3 WHERE id=$4::uuid`,
 			data, mime, header.Filename, companyID)
 		if err != nil {
-			log.Printf("UploadEmpresaLogo error: %v", err)
+			log.Printf("[LOGO-UP] UPDATE error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao salvar logo")
 			return
 		}
+		rows, _ := res.RowsAffected()
+		log.Printf("[LOGO-UP] UPDATE ok rows=%d companyID=%s", rows, companyID)
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok": true, "nome": header.Filename, "mime": mime, "bytes": len(data),
+			"ok": true, "nome": header.Filename, "mime": mime, "bytes": len(data), "company_id": companyID, "rows": rows,
 		})
 	}
 }
