@@ -111,8 +111,17 @@ sped_itens AS (
         COALESCE(ci.vl_item, 0)                             AS v_prod,
         COALESCE(ci.vl_ipi, 0)                              AS v_ipi,
         0::numeric                                          AS v_outro,
-        COALESCE(NULLIF(ci.aliq_icms,0), 12.0)              AS aliq_inter,
-        COALESCE(ci.vl_icms, 0)                             AS icms_debitado,
+        -- Alíq. interestadual: o C170 do SPED frequentemente não traz aliq_icms
+        -- por item → cai pro XML (v_icms/v_prod), senão 12.
+        COALESCE(NULLIF(ci.aliq_icms,0),
+                 CASE WHEN COALESCE(xi.v_prod,0) > 0 AND COALESCE(xi.v_icms,0) > 0
+                      THEN ROUND((xi.v_icms / xi.v_prod * 100.0)::numeric, 2) END,
+                 12.0)                                      AS aliq_inter,
+        -- ICMS próprio destacado (a abater do ST): o reg_c170 do SPED em geral NÃO
+        -- traz vl_icms por item (fica consolidado no C190) → prioriza o XML por item
+        -- (xi.v_icms), cai pro SPED, senão 0. Sem este fallback o ICMS debitado
+        -- zerava e a ST a pagar saía A MAIOR (relatado por Gilson — Rolimec BA).
+        COALESCE(NULLIF(xi.v_icms,0), NULLIF(ci.vl_icms,0), 0) AS icms_debitado,
         -- ST retido: prioriza o XML por item (v_st), cai pro SPED, senão 0.
         COALESCE(NULLIF(xi.v_st,0), ci.vl_icms_st, 0)       AS icms_retido,
         COALESCE(j.uf, 'PE')                                AS uf_filial,
@@ -281,6 +290,10 @@ func IcmsFronteiraSTItensHandler(db *sql.DB) http.HandlerFunc {
 			chaves[i] = rw.ChaveNFe
 		}
 		cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
+		// Rateio do frete: pré-escala cada CT-e pela fração de ST da nota, para a
+		// TELA de ST não contar o frete cheio (que já é contado na antecipação).
+		// O rateio interno por item (somaOper) no frontend continua igual.
+		cteLinks = scaleCteMapForRegime(cteLinks, fetchCteRateioFactors(db, companyID, periodo, chaves), "ST")
 
 		json.NewEncoder(w).Encode(STItensResponse{
 			Rows:     result,

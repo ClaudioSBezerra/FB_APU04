@@ -259,6 +259,7 @@ func IcmsFronteiraExportCSVHandler(db *sql.DB) http.HandlerFunc {
 			chaves[i] = row.ChaveNFe
 		}
 		cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
+		rateioMap := fetchCteRateioFactors(db, companyID, periodo, chaves)
 
 		filename := fmt.Sprintf("icms-fronteira-%s.csv", regime)
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -277,7 +278,7 @@ func IcmsFronteiraExportCSVHandler(db *sql.DB) http.HandlerFunc {
 				log.Printf("IcmsFronteiraExportCSV row write error: %v", err)
 				return
 			}
-			for _, cte := range cteLinks[row.ChaveNFe] {
+			for _, cte := range cteRateado(cteLinks[row.ChaveNFe], rateioMap, row.ChaveNFe, row.Regime) {
 				if err := cw.Write(cteLinkToCSVRecord(blocoLabel(row.Bloco), cte, row.ChaveNFe, row.AliqInterna)); err != nil {
 					log.Printf("IcmsFronteiraExportCSV cte row error: %v", err)
 				}
@@ -361,6 +362,9 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			spedChaves[i] = row.ChaveNFe
 		}
 		cteLinksMap := fetchCteLinksForNFs(db, companyID, spedChaves)
+		// Fatores de rateio do frete entre regimes (evita contar o CT-e cheio em
+		// antecipação E ST da mesma nota — vide CteRateio).
+		rateioMap := fetchCteRateioFactors(db, companyID, periodo, spedChaves)
 
 		// Estilos específicos para linhas de CT-e (fundo azul-acinzentado claro)
 		cteBlueFmt := "DCE6F1"
@@ -447,7 +451,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				tPagar += row.IcmsDevidoEst
 				er++
 
-				for _, cte := range cteLinksMap[row.ChaveNFe] {
+				for _, cte := range cteRateado(cteLinksMap[row.ChaveNFe], rateioMap, row.ChaveNFe, row.Regime) {
 					cteDev, ctePagar := cteAntecip(cte.VPrest, cte.VIcmsCTe, row.AliqInterna, row.BasePorDentro)
 					cteAliqInter := 0.0
 					if cte.VPrest > 0 {
@@ -578,7 +582,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				excelRow++
 
 				// ── Linhas de CT-e (interleaved) ──
-				for _, cte := range cteLinksMap[row.ChaveNFe] {
+				for _, cte := range cteRateado(cteLinksMap[row.ChaveNFe], rateioMap, row.ChaveNFe, row.Regime) {
 					icmsCTeDev := cte.VPrest*row.AliqInterna/100.0 - cte.VIcmsCTe
 					if icmsCTeDev < 0 {
 						icmsCTeDev = 0
@@ -1026,6 +1030,143 @@ func fetchCteLinksForNFs(db *sql.DB, companyID string, chaves []string) map[stri
 	return result
 }
 
+// CteRateio guarda os fatores de rateio do frete (CT-e) de uma nota entre os
+// regimes de fronteira, proporcionais ao valor dos produtos (v_prod).
+//
+// Um único CT-e cobre a nota inteira; antes era contado CHEIO em CADA regime
+// (antecipação E ST) → o mesmo frete entrava em duplicidade (relatado por Gilson
+// 2026-06-22, NF 297741 / CT-e 5006427 = R$156,43 contado em antecip E ST).
+// Agora cada regime recebe só a sua fração: fator = Σ v_prod do regime / Σ v_prod
+// de TODOS os regimes de fronteira da nota. A soma dos fatores = 1.
+type CteRateio struct {
+	Antecip float64 `json:"antecip"`
+	ST      float64 `json:"st"`
+	Difal   float64 `json:"difal"`
+}
+
+// Fator devolve a fração do frete que cabe ao regime (ANTECIPACAO/ST/DIFAL).
+func (r CteRateio) Fator(regime string) float64 {
+	switch strings.ToUpper(regime) {
+	case "ANTECIPACAO":
+		return r.Antecip
+	case "ST":
+		return r.ST
+	case "DIFAL":
+		return r.Difal
+	}
+	return 0
+}
+
+// fetchCteRateioFactors devolve, por chave_nfe, os fatores de rateio do frete
+// entre os regimes — reusando a MESMA classificação do fronteiraBaseQuery (mantém
+// coerência com o regime exibido em cada aba). Só inclui notas presentes no SPED
+// (a MV é construída do reg_c170); chaves ausentes do mapa → o chamador mantém o
+// frete cheio (fator 1), preservando o comportamento atual para XML não-SPED.
+func fetchCteRateioFactors(db *sql.DB, companyID, periodo string, chaves []string) map[string]CteRateio {
+	out := make(map[string]CteRateio)
+	if db == nil || len(chaves) == 0 {
+		return out
+	}
+	ph := make([]string, len(chaves))
+	args := make([]interface{}, len(chaves)+2)
+	args[0] = companyID
+	args[1] = periodo
+	for i, c := range chaves {
+		ph[i] = fmt.Sprintf("$%d", i+3)
+		args[i+2] = c
+	}
+	q := fronteiraBaseQuery + fmt.Sprintf(`
+		SELECT chave_nfe, regime, SUM(v_prod) AS soma
+		FROM classified
+		WHERE regime IS NOT NULL AND chave_nfe IN (%s)
+		GROUP BY chave_nfe, regime`, strings.Join(ph, ","))
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		log.Printf("fetchCteRateioFactors error: %v", err)
+		return out
+	}
+	defer rows.Close()
+	type acc struct{ antecip, st, difal float64 }
+	sums := make(map[string]*acc)
+	for rows.Next() {
+		var chave, regime string
+		var soma float64
+		if err := rows.Scan(&chave, &regime, &soma); err != nil {
+			continue
+		}
+		a := sums[chave]
+		if a == nil {
+			a = &acc{}
+			sums[chave] = a
+		}
+		switch regime {
+		case "ANTECIPACAO":
+			a.antecip += soma
+		case "ST":
+			a.st += soma
+		case "DIFAL":
+			a.difal += soma
+		}
+	}
+	for chave, a := range sums {
+		total := a.antecip + a.st + a.difal
+		if total <= 0 {
+			continue
+		}
+		out[chave] = CteRateio{
+			Antecip: a.antecip / total,
+			ST:      a.st / total,
+			Difal:   a.difal / total,
+		}
+	}
+	return out
+}
+
+// cteScale devolve cópias dos CT-es com VPrest e VIcmsCTe multiplicados por fat.
+// fat==1 → devolve a fatia original (sem alocar); fat<=0 → nil (regime sem
+// produtos na nota não recebe frete).
+func cteScale(arr []CteLink, fat float64) []CteLink {
+	if fat == 1.0 {
+		return arr
+	}
+	if fat <= 0 {
+		return nil
+	}
+	out := make([]CteLink, len(arr))
+	for i, l := range arr {
+		l.VPrest *= fat
+		l.VIcmsCTe *= fat
+		out[i] = l
+	}
+	return out
+}
+
+// cteRateado devolve os CT-es da nota já rateados para o regime informado.
+// Chave ausente do rateioMap (ex.: XML não-SPED) → fator 1 (frete cheio,
+// comportamento atual preservado).
+func cteRateado(arr []CteLink, rateioMap map[string]CteRateio, chave, regime string) []CteLink {
+	fat := 1.0
+	if rt, ok := rateioMap[chave]; ok {
+		fat = rt.Fator(regime)
+	}
+	return cteScale(arr, fat)
+}
+
+// scaleCteMapForRegime devolve um novo mapa chave→CT-es com todos os fretes já
+// rateados para um único regime — usado quando a tela/relatório é mono-regime
+// (ST por item), evitando mexer no rateio interno (somaOper) a jusante.
+func scaleCteMapForRegime(links map[string][]CteLink, rateioMap map[string]CteRateio, regime string) map[string][]CteLink {
+	out := make(map[string][]CteLink, len(links))
+	for chave, arr := range links {
+		fat := 1.0
+		if rt, ok := rateioMap[chave]; ok {
+			fat = rt.Fator(regime)
+		}
+		out[chave] = cteScale(arr, fat)
+	}
+	return out
+}
+
 const antecipacaoReportCSS = `<style>
 * { box-sizing: border-box; }
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1151,6 +1292,7 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 			spedChavesHTML[i] = row.ChaveNFe
 		}
 		cteLinksHTML := fetchCteLinksForNFs(db, companyID, spedChavesHTML)
+		rateioMapHTML := fetchCteRateioFactors(db, companyID, periodo, spedChavesHTML)
 
 		var blocoA, blocoB, blocoC []pdfRow
 		for _, row := range dataRows {
@@ -1166,7 +1308,7 @@ func IcmsFronteiraExportHTMLHandler(db *sql.DB) http.HandlerFunc {
 				target = &blocoB
 			}
 			*target = append(*target, pr)
-			for _, cte := range cteLinksHTML[row.ChaveNFe] {
+			for _, cte := range cteRateado(cteLinksHTML[row.ChaveNFe], rateioMapHTML, row.ChaveNFe, row.Regime) {
 				icmsCTeDev := cte.VPrest*row.AliqInterna/100.0 - cte.VIcmsCTe
 				if icmsCTeDev < 0 {
 					icmsCTeDev = 0

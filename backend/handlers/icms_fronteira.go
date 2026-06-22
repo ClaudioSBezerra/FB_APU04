@@ -697,6 +697,10 @@ LIMIT 500
 		chaves[i] = r.ChaveNFe
 	}
 	cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
+	// Rateio do frete: como este handler é mono-regime ($3), pré-escala cada CT-e
+	// pela fração do regime na nota — sem isto o frete do CT-e era contado CHEIO
+	// em antecipação E em ST da mesma nota (duplicidade; vide CteRateio).
+	cteLinks = scaleCteMapForRegime(cteLinks, fetchCteRateioFactors(db, companyID, periodo, chaves), regime)
 
 	json.NewEncoder(w).Encode(FronteiraNotasResponse{
 		Rows:             result,

@@ -278,6 +278,9 @@ func IcmsFronteiraSTItensXLSXHandler(db *sql.DB) http.HandlerFunc {
 			chaves[i] = rw.ChaveNFe
 		}
 		cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
+		// Rateio do frete: nesta tela mono-regime, pré-escala cada CT-e pela fração
+		// de ST da nota (evita contar o frete cheio aqui E na antecipação).
+		cteLinks = scaleCteMapForRegime(cteLinks, fetchCteRateioFactors(db, companyID, periodo, chaves), "ST")
 
 		data, err := buildSTItensXLSX(rows, cteLinks)
 		if err != nil {
@@ -677,6 +680,8 @@ func IcmsFronteiraSTItensHTMLHandler(db *sql.DB) http.HandlerFunc {
 			chaves[i] = rw.ChaveNFe
 		}
 		cteLinks := fetchCteLinksForNFs(db, companyID, chaves)
+		// Rateio do frete entre regimes (só a fração de ST nesta tela mono-regime).
+		cteLinks = scaleCteMapForRegime(cteLinks, fetchCteRateioFactors(db, companyID, periodo, chaves), "ST")
 
 		var companyName, groupName string
 		_ = db.QueryRow(`SELECT COALESCE(NULLIF(c.trade_name,''), c.name, ''), COALESCE(eg.name,'')
