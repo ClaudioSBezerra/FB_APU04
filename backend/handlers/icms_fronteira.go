@@ -229,10 +229,15 @@ classified AS (
             WHEN l.cfop IN ('2101','2102','2152')
                 THEN 'ANTECIPACAO'
         END                                                 AS regime,
+        -- Bloco pela data de ENTRADA (dt_e_s), não a emissão: a obrigação da
+        -- antecipação/fronteira nasce na entrada da mercadoria. Nota emitida no
+        -- mês anterior mas que entrou no período = mês atual (paga agora). Cai
+        -- pra dt_doc só quando o SPED não traz a data de entrada (confirmado c/
+        -- Gilson 2026-06-22).
         CASE
             WHEN $2::text = ''
-              OR (EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
-                  AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int)
+              OR (EXTRACT(MONTH FROM COALESCE(c100.dt_e_s, c100.dt_doc))::int = SPLIT_PART($2::text,'/',1)::int
+                  AND EXTRACT(YEAR  FROM COALESCE(c100.dt_e_s, c100.dt_doc))::int = SPLIT_PART($2::text,'/',2)::int)
             THEN 'mes_atual'
             ELSE 'mes_anterior'
         END                                                 AS bloco,
@@ -634,7 +639,8 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 
 	// G14: window functions retornam totais do conjunto completo (sem LIMIT),
 	// resolvendo o bug onde totais exibidos só refletiam as primeiras 500 notas.
-	// bloco classifica cada nota em "mes_atual" ou "mes_anterior" conforme dt_doc.
+	// bloco classifica cada nota em "mes_atual" ou "mes_anterior" conforme a data
+	// de ENTRADA (dt_e_s), pois a antecipação/fronteira é devida na entrada.
 	query := fronteiraBaseQuery + `
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
