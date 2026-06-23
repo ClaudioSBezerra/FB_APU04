@@ -90,11 +90,27 @@ WITH emp_uf AS (
             WHEN LEFT(cfop_saida,1) = '5' THEN '1' || SUBSTRING(cfop_saida FROM 2)
             ELSE cfop_saida
         END AS cfop_entrada,
-        -- eff_uf: dest_uf do XML ou, quando nulo, a UF da empresa (import_jobs).
-        -- Pré-calculado aqui para que todas as subqueries (EXISTS, LATERAL) usem
-        -- m.eff_uf diretamente — evita referenciar emp_uf dentro de sub-escopos
-        -- onde o PostgreSQL não localiza a CTE cross-joined do SELECT externo.
-        COALESCE(NULLIF(dest_uf,''), (SELECT uf FROM emp_uf)) AS eff_uf
+        -- eff_uf: resolução em 3 camadas para empresas multi-filial (ex.: ROLIMEC PE+BA+CE):
+        --   1) dest_uf do XML (campo <UF> do destinatário na NF-e) — fonte primária.
+        --   2) UF do estabelecimento pelo CNPJ destino: cruza dest_cnpj_cpf com
+        --      import_jobs.cnpj do mesmo company_id. Correto para filiais — o CNPJ
+        --      do destinatário identifica exatamente qual filial recebeu a mercadoria
+        --      e, portanto, qual UF rege a antecipação/ST.
+        --   3) emp_uf (MAX uf dos import_jobs) — último recurso; retorna a UF
+        --      dominante (ex.: PE quando há PE+BA+CE), mas só alcançado quando o
+        --      XML não traz dest_uf E o CNPJ destino não bate com nenhuma filial.
+        COALESCE(
+            NULLIF(dest_uf, ''),
+            (SELECT j.uf
+             FROM import_jobs j
+             WHERE j.company_id = $1
+               AND j.status = 'completed'
+               AND j.uf IS NOT NULL AND j.uf <> ''
+               AND regexp_replace(COALESCE(j.cnpj,''), '[^0-9]', '', 'g')
+                   = regexp_replace(COALESCE(dest_cnpj_cpf,''), '[^0-9]', '', 'g')
+             LIMIT 1),
+            (SELECT uf FROM emp_uf)
+        ) AS eff_uf
     FROM top
 ), cte_por_nfe AS (
     -- Frete CT-e por NF-e, considerando APENAS quando tomador = destinatário

@@ -428,18 +428,35 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 		}
 	}
 
-	// (8b) emp_uf efetivo: valor que o naoSpedQuery usa como fallback de dest_uf
-	dl("---- (8b) emp_uf (fallback dest_uf=NULL) para esta empresa ----")
+	// (8b) Resolução de eff_uf: filiais cadastradas (CNPJ→UF) + fallback emp_uf
+	dl("---- (8b) Filiais import_jobs (CNPJ→UF) e fallback emp_uf ----")
+	if rows, err := db.Query(`
+		SELECT cnpj, MAX(uf) AS uf, count(*) AS jobs
+		FROM import_jobs
+		WHERE company_id = $1 AND status='completed' AND uf IS NOT NULL AND uf <> ''
+		GROUP BY cnpj ORDER BY uf, cnpj`, companyID); err != nil {
+		dl("(8b) ERRO: %v", err)
+	} else {
+		n := 0
+		for rows.Next() {
+			var cnpj, uf string
+			var jobs int
+			if err := rows.Scan(&cnpj, &uf, &jobs); err == nil {
+				dl("(8b) filial cnpj=%s  uf=%s  jobs=%d", cnpj, uf, jobs)
+				n++
+			}
+		}
+		rows.Close()
+		if n == 0 {
+			dl("(8b) Nenhuma filial com uf preenchido em import_jobs.")
+		}
+	}
 	{
 		var empUF string
-		err := db.QueryRow(`
+		_ = db.QueryRow(`
 			SELECT COALESCE(MAX(uf) FILTER (WHERE uf IS NOT NULL AND uf <> ''), 'PE') AS uf
 			FROM import_jobs WHERE company_id = $1`, companyID).Scan(&empUF)
-		if err != nil {
-			dl("(8b) ERRO: %v", err)
-		} else {
-			dl("(8b) emp_uf=%s  (para notas com dest_uf NULL, eff_uf ficará = %s)", empUF, empUF)
-		}
+		dl("(8b) emp_uf fallback (último recurso, MAX uf)=%s", empUF)
 	}
 
 	dl("================ FIM ================")
