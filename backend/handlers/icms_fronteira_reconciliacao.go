@@ -300,8 +300,9 @@ func IcmsFronteiraReconciliacaoHandler(db *sql.DB) http.HandlerFunc {
 				resp.Normal.Rows = append(resp.Normal.Rows, n)
 				resp.Normal.Total += n.IcmsDevidoEst
 			}
-			// SpedSemXML: notas do SPED (qualquer bloco) sem XML importado
-			if !n.TemXML {
+			// SpedSemXML: só notas do mês de análise (bloco "normal") sem XML.
+			// Notas de mês anterior sem XML já aparecem em EmitidaMesAnterior — não duplicar.
+			if !n.TemXML && bloco == "normal" {
 				resp.SpedSemXML.Rows = append(resp.SpedSemXML.Rows, n)
 				resp.SpedSemXML.Total += n.IcmsDevidoEst
 			}
