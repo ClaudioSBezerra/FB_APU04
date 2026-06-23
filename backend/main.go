@@ -815,6 +815,24 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraSTItensDiagHandler(database), "")(w, r)
 	})
+	// Contraprova SPED vs. sistema — compara reg_c170 bruto com a MV por CFOP.
+	http.HandleFunc("/api/icms-fronteira/contraprova", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraContraprovaHandler(database), "")(w, r)
+	})
+	// Diagnóstico CT-e — por que um CT-e não aparece vinculado a uma NF.
+	http.HandleFunc("/api/icms-fronteira/cte-diagnostico", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraCTeDiagHandler(database), "")(w, r)
+	})
 	// Notas de ST sem XML (Bloco D) — Excel enxuto p/ o contador baixar os XML.
 	http.HandleFunc("/api/icms-fronteira/st-itens/faltantes/xlsx", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()

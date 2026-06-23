@@ -6402,6 +6402,231 @@ function IncentivoTab({ token }: { token: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
+// ValidacaoTab — Contraprova SPED + Diagnóstico CT-e
+// ---------------------------------------------------------------------------
+interface ContraprovaRow { cfop: string; sped_qtd: number; mv_qtd: number; diff_qtd: number; sped_valor: number; mv_valor: number; diff_valor: number }
+interface ContraprovaResp { rows: ContraprovaRow[]; total: ContraprovaRow; periodo: string; uf: string }
+interface CTeDiagRow { chave_cte: string; numero_cte: string; data_emissao: string; emit_nome: string; emit_cnpj: string; v_prest: number; toma: string; toma4_cnpj: string; dest_cnpj_cpf: string; toma_ok: boolean; dest_ok: boolean; visivel: boolean; motivo?: string }
+interface CTeDiagResp { chave_nfe: string; nf_dest_cnpj: string; nf_tem_xml: boolean; ctes: CTeDiagRow[]; total_ctes: number; visiveis: number }
+
+function ValidacaoTab({ token }: { token: string | null }) {
+  const ufCtx = useFronteiraUF()
+  const periodoCtx = useFronteiraPeriodoDefault()
+
+  const [periodoCP, setPeriodoCP] = useState(periodoCtx)
+  const [ufCP, setUfCP] = useState(ufCtx)
+  const [contraprova, setContraprova] = useState<ContraprovaResp | null>(null)
+  const [loadingCP, setLoadingCP] = useState(false)
+  const [errCP, setErrCP] = useState('')
+
+  const [chaveNFe, setChaveNFe] = useState('')
+  const [cteDiag, setCteDiag] = useState<CTeDiagResp | null>(null)
+  const [loadingCTE, setLoadingCTE] = useState(false)
+  const [errCTE, setErrCTE] = useState('')
+
+  useEffect(() => { if (!periodoCP && periodoCtx) setPeriodoCP(periodoCtx) }, [periodoCtx])
+  useEffect(() => { if (!ufCP && ufCtx) setUfCP(ufCtx) }, [ufCtx])
+
+  async function fetchContraprova() {
+    if (!periodoCP) { setErrCP('Informe o período'); return }
+    setLoadingCP(true); setErrCP(''); setContraprova(null)
+    try {
+      const params = new URLSearchParams({ periodo: periodoCP, uf: ufCP })
+      const res = await fetch(`/api/icms-fronteira/contraprova?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      setContraprova(await res.json())
+    } catch (e: unknown) { setErrCP(e instanceof Error ? e.message : 'Erro') }
+    finally { setLoadingCP(false) }
+  }
+
+  async function fetchCTeDiag() {
+    const chave = chaveNFe.trim()
+    if (!chave) { setErrCTE('Informe a chave da NF-e'); return }
+    setLoadingCTE(true); setErrCTE(''); setCteDiag(null)
+    try {
+      const res = await fetch(`/api/icms-fronteira/cte-diagnostico?chave_nfe=${encodeURIComponent(chave)}`, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      setCteDiag(await res.json())
+    } catch (e: unknown) { setErrCTE(e instanceof Error ? e.message : 'Erro') }
+    finally { setLoadingCTE(false) }
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* ---- Contraprova SPED ---- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <BarChart2 className="h-4 w-4 text-blue-500" />
+            Contraprova SPED vs. Sistema
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Compara o SPED bruto (reg_c170) com o que a MV capturou, por CFOP.
+            Diff = 0 em todos os CFOPs confirma que o sistema lê 100% do SPED.
+            Bloco C (XML sem SPED) não entra — por definição não está no SPED.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2 items-end">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">Período (MM/AAAA)</Label>
+              <Input className="w-28 text-xs h-8" placeholder="04/2026" value={periodoCP} onChange={e => setPeriodoCP(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">UF</Label>
+              <Input className="w-16 text-xs h-8" placeholder="BA" value={ufCP} onChange={e => setUfCP(e.target.value.toUpperCase())} />
+            </div>
+            <Button size="sm" className="h-8" onClick={fetchContraprova} disabled={loadingCP}>
+              {loadingCP ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Play className="h-3.5 w-3.5 mr-1" />}
+              Rodar contraprova
+            </Button>
+          </div>
+          {errCP && <p className="text-xs text-red-600">{errCP}</p>}
+          {contraprova && (
+            <div className="overflow-x-auto">
+              <Table className="text-xs">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>CFOP</TableHead>
+                    <TableHead className="text-right">SPED Qtd</TableHead>
+                    <TableHead className="text-right">Sistema Qtd</TableHead>
+                    <TableHead className="text-right">Diff Qtd</TableHead>
+                    <TableHead className="text-right">SPED Valor</TableHead>
+                    <TableHead className="text-right">Sistema Valor</TableHead>
+                    <TableHead className="text-right">Diff Valor</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {contraprova.rows.map(r => (
+                    <TableRow key={r.cfop} className={r.diff_qtd !== 0 ? 'bg-red-50' : ''}>
+                      <TableCell className="font-mono">{r.cfop}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.sped_qtd}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.mv_qtd}</TableCell>
+                      <TableCell className={`text-right tabular-nums font-semibold ${r.diff_qtd !== 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {r.diff_qtd !== 0 ? `−${r.diff_qtd}` : '✓'}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtBRL(r.sped_valor)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtBRL(r.mv_valor)}</TableCell>
+                      <TableCell className={`text-right tabular-nums ${Math.abs(r.diff_valor) > 0.01 ? 'text-red-600' : 'text-green-600'}`}>
+                        {Math.abs(r.diff_valor) > 0.01 ? fmtBRL(r.diff_valor) : '✓'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow className="font-bold">
+                    <TableCell>TOTAL</TableCell>
+                    <TableCell className="text-right tabular-nums">{contraprova.total.sped_qtd}</TableCell>
+                    <TableCell className="text-right tabular-nums">{contraprova.total.mv_qtd}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${contraprova.total.diff_qtd !== 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {contraprova.total.diff_qtd !== 0 ? `−${contraprova.total.diff_qtd}` : '✓ 100%'}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{fmtBRL(contraprova.total.sped_valor)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{fmtBRL(contraprova.total.mv_valor)}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${Math.abs(contraprova.total.diff_valor) > 0.01 ? 'text-red-600' : 'text-green-600'}`}>
+                      {Math.abs(contraprova.total.diff_valor) > 0.01 ? fmtBRL(contraprova.total.diff_valor) : '✓'}
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+              {contraprova.total.diff_qtd === 0 && (
+                <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Sistema captura 100% das notas do SPED nos CFOPs de fronteira.
+                </p>
+              )}
+              {contraprova.total.diff_qtd !== 0 && (
+                <p className="text-xs text-red-700 mt-2 flex items-center gap-1">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {contraprova.total.diff_qtd} nota(s) no SPED não estão no sistema. Verifique se a MV está atualizada (botão Recalcular).
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ---- Diagnóstico CT-e ---- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Stethoscope className="h-4 w-4 text-purple-500" />
+            Diagnóstico CT-e
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Informe a chave de acesso de uma NF-e para ver todos os CT-es vinculados a ela
+            e por que cada um aparece ou não no relatório.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2 items-end">
+            <div className="flex flex-col gap-1 flex-1 max-w-md">
+              <Label className="text-xs">Chave de Acesso da NF-e (44 dígitos)</Label>
+              <Input className="text-xs h-8 font-mono" placeholder="35260100012345..." value={chaveNFe} onChange={e => setChaveNFe(e.target.value)} />
+            </div>
+            <Button size="sm" className="h-8" onClick={fetchCTeDiag} disabled={loadingCTE}>
+              {loadingCTE ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Stethoscope className="h-3.5 w-3.5 mr-1" />}
+              Diagnosticar
+            </Button>
+          </div>
+          {errCTE && <p className="text-xs text-red-600">{errCTE}</p>}
+          {cteDiag && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                <span>XML: <strong className={cteDiag.nf_tem_xml ? 'text-green-700' : 'text-amber-700'}>{cteDiag.nf_tem_xml ? 'Encontrado' : 'Não importado'}</strong></span>
+                {cteDiag.nf_dest_cnpj && <span>Dest. CNPJ: <span className="font-mono">{cteDiag.nf_dest_cnpj}</span></span>}
+                <span>CT-es importados: <strong>{cteDiag.total_ctes}</strong></span>
+                <span>Visíveis no relatório: <strong className={cteDiag.visiveis > 0 ? 'text-green-700' : 'text-red-700'}>{cteDiag.visiveis}</strong></span>
+              </div>
+              {cteDiag.total_ctes === 0 && (
+                <p className="text-xs text-amber-700 flex items-center gap-1">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Nenhum CT-e vinculado a esta NF encontrado no banco. O XML do CT-e precisa ser importado.
+                </p>
+              )}
+              {cteDiag.ctes.length > 0 && (
+                <div className="overflow-x-auto">
+                  <Table className="text-xs">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>CT-e nº</TableHead>
+                        <TableHead>Emitente</TableHead>
+                        <TableHead className="text-right">Valor Frete</TableHead>
+                        <TableHead>Toma</TableHead>
+                        <TableHead>Dest. CNPJ (CT-e)</TableHead>
+                        <TableHead>Toma OK</TableHead>
+                        <TableHead>Dest OK</TableHead>
+                        <TableHead>Visível</TableHead>
+                        <TableHead>Motivo bloqueio</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {cteDiag.ctes.map(c => (
+                        <TableRow key={c.chave_cte} className={c.visivel ? '' : 'bg-red-50'}>
+                          <TableCell className="font-mono">{c.numero_cte} <span className="text-muted-foreground">{c.data_emissao}</span></TableCell>
+                          <TableCell>{c.emit_nome}</TableCell>
+                          <TableCell className="text-right tabular-nums">{fmtBRL(c.v_prest)}</TableCell>
+                          <TableCell className="font-mono">{c.toma}{c.toma === '4' ? ` / ${c.toma4_cnpj}` : ''}</TableCell>
+                          <TableCell className="font-mono text-xs">{c.dest_cnpj_cpf || '—'}</TableCell>
+                          <TableCell>{c.toma_ok ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}</TableCell>
+                          <TableCell>{c.dest_ok ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}</TableCell>
+                          <TableCell>{c.visivel ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}</TableCell>
+                          <TableCell className="text-red-700 max-w-xs">{c.motivo || '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // IcmsFronteira — main page
 // ---------------------------------------------------------------------------
 export default function IcmsFronteira() {
@@ -6465,6 +6690,7 @@ export default function IcmsFronteira() {
     '/icms-fronteira/contestacoes': 'contestacoes',
     '/icms-fronteira/apuracao':     'apuracao',
     '/icms-fronteira/administrativo': 'administrativo',
+    '/icms-fronteira/validacao':      'validacao',
   }
   const tabToPath: Record<string, string> = {
     resumo:        '/icms-fronteira',
@@ -6481,6 +6707,7 @@ export default function IcmsFronteira() {
     contestacoes:  '/icms-fronteira/contestacoes',
     apuracao:      '/icms-fronteira/apuracao',
     administrativo:'/icms-fronteira/administrativo',
+    validacao:     '/icms-fronteira/validacao',
   }
 
   const tab = pathToTab[location.pathname] ?? 'resumo'
@@ -6601,6 +6828,7 @@ export default function IcmsFronteira() {
           <TabsTrigger value="extrato" className="text-sm">Extrato SEFAZ</TabsTrigger>
           <TabsTrigger value="contestacoes" className="text-sm">Contestações</TabsTrigger>
           <TabsTrigger value="administrativo" className="text-sm">Administrativo</TabsTrigger>
+          <TabsTrigger value="validacao" className="text-sm">Validação</TabsTrigger>
         </TabsList>
 
         <TabsContent value="resumo" className="mt-6">
@@ -6888,6 +7116,10 @@ export default function IcmsFronteira() {
               <LegislacaoTab token={token} />
             </TabsContent>
           </Tabs>
+        </TabsContent>
+
+        <TabsContent value="validacao" className="mt-6">
+          <ValidacaoTab token={token} />
         </TabsContent>
       </Tabs>
       </div>
