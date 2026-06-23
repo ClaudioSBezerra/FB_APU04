@@ -31,50 +31,34 @@ func GetUserHierarchyHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// 1. Get Environment ID for the user
-		var envID string
-		err := db.QueryRow("SELECT environment_id FROM user_environments WHERE user_id = $1 LIMIT 1", userID).Scan(&envID)
+		// 1. Empresa ativa: respeita X-Company-ID (company switcher) via GetEffectiveCompanyID.
+		// Antes usava ORDER BY owner+created_at → sempre retornava a empresa mais antiga (SCALA),
+		// ignorando a seleção do usuário.
+		activeCompanyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
 		if err != nil {
-			if err == sql.ErrNoRows {
-				http.Error(w, "User not assigned to any environment", http.StatusNotFound)
-				return
-			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Empresa não encontrada: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// 2. Get Environment Details
-		var env Environment
-		err = db.QueryRow("SELECT id, name, COALESCE(description, ''), created_at FROM environments WHERE id = $1", envID).Scan(&env.ID, &env.Name, &env.Description, &env.CreatedAt)
-		if err != nil {
-			http.Error(w, "Environment not found", http.StatusNotFound)
-			return
-		}
-
-		// 3. Get Group Details (First group in the environment)
-		var group EnterpriseGroup
-		err = db.QueryRow("SELECT id, environment_id, name, COALESCE(description, ''), created_at FROM enterprise_groups WHERE environment_id = $1 LIMIT 1", envID).Scan(&group.ID, &group.EnvironmentID, &group.Name, &group.Description, &group.CreatedAt)
-		if err != nil && err != sql.ErrNoRows {
-			// Log error but continue?
-		}
-
-		// 4. Get Company Details (Prioritize company owned by user)
+		// 2. Company details from the active company ID
 		var company Company
-		// var companyCNPJ string // CNPJ removed from companies table
-		if group.ID != "" {
-			// Removed 'cnpj' from SELECT list as it no longer exists in companies table
-			// Prioritize the company owned by the user, then fallback to any company in the group
-			err = db.QueryRow(`
-				SELECT id, group_id, name, COALESCE(trade_name, ''), created_at 
-				FROM companies 
-				WHERE group_id = $1 
-				ORDER BY (owner_id = $2) DESC, created_at ASC 
-				LIMIT 1
-			`, group.ID, userID).Scan(&company.ID, &company.GroupID, &company.Name, &company.TradeName, &company.CreatedAt)
+		_ = db.QueryRow(`
+			SELECT id, group_id, name, COALESCE(trade_name, ''), created_at
+			FROM companies WHERE id = $1
+		`, activeCompanyID).Scan(&company.ID, &company.GroupID, &company.Name, &company.TradeName, &company.CreatedAt)
 
-			if err != nil && err != sql.ErrNoRows {
-				// Log error if needed
-			}
+		// 3. Group details
+		var group EnterpriseGroup
+		if company.GroupID != "" {
+			_ = db.QueryRow("SELECT id, environment_id, name, COALESCE(description, ''), created_at FROM enterprise_groups WHERE id = $1", company.GroupID).Scan(
+				&group.ID, &group.EnvironmentID, &group.Name, &group.Description, &group.CreatedAt)
+		}
+
+		// 4. Environment details
+		var env Environment
+		if group.EnvironmentID != "" {
+			_ = db.QueryRow("SELECT id, name, COALESCE(description, ''), created_at FROM environments WHERE id = $1", group.EnvironmentID).Scan(
+				&env.ID, &env.Name, &env.Description, &env.CreatedAt)
 		}
 
 		// 5. Get Branches (Filiais) from import_jobs using Company ID
