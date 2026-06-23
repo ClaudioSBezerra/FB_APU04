@@ -1715,14 +1715,6 @@ function STItensTab({ token }: { token: string | null }) {
     .map(def => ({ ...def, grupos: groupByChave(rows.filter(r => r.bloco === def.key)) }))
     .filter(b => b.grupos.length > 0)
 
-  // Bloco D — pendências: notas do SPED (A/B) sem XML importado. Seção
-  // informativa (repete notas que já aparecem em A/B); NÃO entra no Total Geral,
-  // para não duplicar. Sinaliza ao usuário quais XML faltam importar para
-  // capturar o ICMS-ST retido.
-  const blocoDNotas = groupByChave(
-    rows.filter(r => (r.bloco === 'mes_atual' || r.bloco === 'mes_anterior') && r.status_xml === 'Faltante'),
-  )
-
   // Total geral de ICMS a Pagar de todas as notas (produtos + CT-es rateados).
   const grupos = blocos.flatMap(b => b.grupos)
   let totalGeralAPagar = 0
@@ -1777,29 +1769,6 @@ function STItensTab({ token }: { token: string | null }) {
       window.open(URL.createObjectURL(blob))
     } catch {
       toast.error('Erro ao exportar PDF')
-    }
-  }
-
-  // Baixa o Excel enxuto das notas de ST sem XML (Bloco D, todas as filiais) —
-  // lista com Chave de Acesso para o contador baixar os XML na SEFAZ.
-  async function handleExportFaltantes() {
-    try {
-      const p = new URLSearchParams()
-      p.set('periodo', periodo)
-      const res = await fetch(`/api/icms-fronteira/st-itens/faltantes/xlsx?${p.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) throw new Error(`Erro ${res.status}`)
-      const blob = await res.blob()
-      const objUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = objUrl
-      a.download = 'st-notas-sem-xml.xlsx'
-      a.click()
-      URL.revokeObjectURL(objUrl)
-      toast.success('Excel de notas sem XML gerado')
-    } catch {
-      toast.error('Erro ao gerar Excel de notas sem XML')
     }
   }
 
@@ -1859,16 +1828,6 @@ function STItensTab({ token }: { token: string | null }) {
           title="Roda o diagnóstico e grava o resultado no log da API (filtre por [ST-DIAG] no Coolify)"
         >
           <Stethoscope className="h-3.5 w-3.5 mr-1" />Diagnóstico
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 text-xs"
-          onClick={handleExportFaltantes}
-          disabled={!periodo}
-          title="Excel com as notas de ST sem XML (Bloco D, todas as filiais) — lista com chave de acesso para baixar os XML na SEFAZ"
-        >
-          <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Notas sem XML
         </Button>
       </div>
 
@@ -2140,39 +2099,6 @@ function STItensTab({ token }: { token: string | null }) {
                 return [headerRow, ...grupoRows, subtotalBlocoRow]
               })}
 
-              {/* Bloco D — SPED sem XML (pendências). Seção informativa: repete
-                  notas de A/B que não têm XML importado. NÃO entra no Total Geral. */}
-              {blocoDNotas.length > 0 && (
-                <>
-                  <TableRow className="bg-amber-100 hover:bg-amber-100">
-                    <TableCell colSpan={COL_COUNT} className="text-xs font-bold uppercase tracking-wide text-amber-800">
-                      Bloco D — SPED sem XML · {blocoDNotas.length} nota{blocoDNotas.length !== 1 ? 's' : ''} (importe o XML para capturar o ICMS-ST retido · não somado no total geral)
-                    </TableCell>
-                  </TableRow>
-                  {blocoDNotas.flatMap((g) => g.itens.map((it, idx) => (
-                      <TableRow key={`blocoD-${g.chave}-${idx}`} className="bg-amber-50 hover:bg-amber-50">
-                        <TableCell className="text-xs">{it.cfop || '—'}</TableCell>
-                        <TableCell className="text-xs">{it.numero_nfe || '—'}</TableCell>
-                        <TableCell className="text-xs font-mono">{g.chave}</TableCell>
-                        <TableCell className="text-xs">{it.forn_nome || '—'}</TableCell>
-                        <TableCell className="text-xs">{it.cod_produto || '—'}</TableCell>
-                        <TableCell className="text-xs">{it.descricao || '—'}</TableCell>
-                        <TableCell className="text-xs">{it.ncm || '—'}</TableCell>
-                        <TableCell className="text-xs">{it.cest || '—'}</TableCell>
-                        <TableCell className="text-xs text-amber-700">Faltante</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.v_prod)}</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.v_ipi)}</TableCell>
-                        <TableCell />
-                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.v_operacao)}</TableCell>
-                        <TableCell colSpan={4} />
-                        <TableCell className="text-xs text-right tabular-nums">{fmtBRL(it.icms_debitado)}</TableCell>
-                        <TableCell colSpan={4} />
-                        <TableCell className="text-xs text-right tabular-nums text-amber-700">{fmtBRL(it.icms_retido)}</TableCell>
-                        <TableCell />
-                      </TableRow>
-                    )))}
-                </>
-              )}
             </TableBody>
             <TableFooter>
               <TableRow className="bg-muted/60 hover:bg-muted/60">
