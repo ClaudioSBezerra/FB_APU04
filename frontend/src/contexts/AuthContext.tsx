@@ -89,7 +89,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .then(res => {
           if (res.ok) return res.json();
           if (res.status === 401) {
+            // Preserva preferências de empresa antes de limpar (mesmo comportamento
+            // do logout — evita perder a empresa selecionada após deploy/restart do servidor)
+            const prefs: Record<string, string> = {};
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key?.startsWith('pref_company_')) prefs[key] = localStorage.getItem(key) || '';
+            }
             localStorage.clear();
+            Object.entries(prefs).forEach(([k, v]) => localStorage.setItem(k, v));
             window.location.href = '/login';
             throw new Error('Session expired');
           }
@@ -205,13 +213,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (user?.id) {
       localStorage.setItem(`pref_company_${user.id}`, JSON.stringify({ id, name, cnpj: newCnpj }));
     }
-    // Persiste preferência no banco — garante que o login retorna a empresa certa
+    // Persiste preferência no banco ANTES de recarregar: window.location.reload()
+    // cancela requests em-voo, então o banco nunca receberia a preferência se o
+    // reload viesse antes da resposta. O .finally() garante reload em qualquer caso.
     fetch('/api/auth/preferred-company', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ company_id: id }),
-    }).catch(() => {});
-    window.location.reload();
+    })
+      .catch(() => {})
+      .finally(() => window.location.reload());
   };
 
   return (
