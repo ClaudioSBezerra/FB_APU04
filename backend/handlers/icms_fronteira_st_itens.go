@@ -25,7 +25,7 @@ import (
 //
 // Duas fontes (UNION ALL):
 //  1. SPED        — reg_c170 × reg_0200 × reg_c100 × import_jobs (bloco
-//                   "mes_atual" / "mes_anterior" conforme dt_e_s (entrada) vs período).
+//                   "mes_atual" / "mes_anterior" conforme dt_doc (emissão) vs período).
 //  2. XML não-SPED — nfe_entradas_itens × nfe_entradas, onde a chave NÃO está
 //                   em nenhum SPED da empresa (bloco "nao_sped").
 // ---------------------------------------------------------------------------
@@ -97,13 +97,13 @@ sped_itens AS (
         COALESCE(NULLIF(ne.forn_uf, ''), NULLIF(m_part.uf, ''), '') AS forn_uf,
         ci.cfop                                             AS cfop,
         ci.num_item                                         AS num_item,
-        -- Bloco pela data de ENTRADA (dt_e_s), não a emissão — a obrigação da
-        -- antecipação/fronteira nasce na entrada (confirmado c/ Gilson 2026-06-22).
-        -- Cai pra dt_doc quando o SPED não traz a data de entrada.
+        -- Bloco pela data de EMISSÃO (dt_doc) — modelo do Gilson (revisado c/ dados
+        -- reais CE 2026-06-23): paga-se no mês de emissão; nota emitida antes que
+        -- só aparece no SPED agora = Bloco A (informativo). Reverte v2.1.1 (dt_e_s).
         CASE
             WHEN $2::text = ''
-              OR (EXTRACT(MONTH FROM COALESCE(c100.dt_e_s, c100.dt_doc))::int = SPLIT_PART($2::text,'/',1)::int
-                  AND EXTRACT(YEAR  FROM COALESCE(c100.dt_e_s, c100.dt_doc))::int = SPLIT_PART($2::text,'/',2)::int)
+              OR (EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
+                  AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int)
             THEN 'mes_atual'
             ELSE 'mes_anterior'
         END                                                 AS bloco,

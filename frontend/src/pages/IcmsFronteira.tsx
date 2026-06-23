@@ -940,7 +940,7 @@ function NotasTab({ endpoint, regime, token }: { endpoint: string; regime: strin
             {data.rows.map((row, idx) => (
               <TableRow key={`${row.chave_nfe}-${idx}`}>
                 <TableCell className="text-xs font-mono whitespace-nowrap">
-                  {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                  {fmtDateBR(row.data_emissao)}
                 </TableCell>
                 <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
                 <TableCell className="text-xs max-w-[180px]">
@@ -1070,7 +1070,7 @@ function TabelaNotasSpedAntecip({
             const nfRow = (
               <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
                 <TableCell className="text-xs font-mono whitespace-nowrap">
-                  {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                  {fmtDateBR(row.data_emissao)}
                 </TableCell>
                 <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
                 <TableCell className="text-xs max-w-[180px]">
@@ -1214,7 +1214,7 @@ function TabelaNotasSped({
             const nfRow = (
               <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
                 <TableCell className="text-xs font-mono whitespace-nowrap">
-                  {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                  {fmtDateBR(row.data_emissao)}
                 </TableCell>
                 <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
                 <TableCell className="text-xs max-w-[180px]">
@@ -1360,7 +1360,7 @@ function TabelaNotasXmlAntecip({
             const nfRow = (
               <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
                 <TableCell className="text-xs font-mono whitespace-nowrap">
-                  {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                  {fmtDateBR(row.data_emissao)}
                 </TableCell>
                 <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
                 <TableCell className="text-xs max-w-[180px]">
@@ -1505,7 +1505,7 @@ function TabelaNotasXml({
             const nfRow = (
               <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
                 <TableCell className="text-xs font-mono whitespace-nowrap">
-                  {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                  {fmtDateBR(row.data_emissao)}
                 </TableCell>
                 <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
                 <TableCell className="text-xs max-w-[180px]">
@@ -2564,7 +2564,7 @@ function FretesTab({ token }: { token: string | null }) {
                 {data.rows.map((row, idx) => (
                   <TableRow key={`${row.chave_nfe}-${row.chave_cte}-${idx}`}>
                     <TableCell className="text-xs font-mono whitespace-nowrap">
-                      {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                      {fmtDateBR(row.data_emissao)}
                     </TableCell>
                     <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
                     <TableCell className="text-xs max-w-[160px]">
@@ -5731,7 +5731,7 @@ function DivergenciasTab({ token }: { token: string | null }) {
                   </TableCell>
                   <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
                   <TableCell className="text-xs font-mono whitespace-nowrap">
-                    {row.data_emissao ? row.data_emissao.slice(0, 10) : '—'}
+                    {fmtDateBR(row.data_emissao)}
                   </TableCell>
                   <TableCell>
                     {row.regime ? <RegimeBadge regime={row.regime} /> : <span className="text-xs text-muted-foreground">—</span>}
@@ -5966,7 +5966,7 @@ function PlanilhaTab({ token }: { token: string | null }) {
                   {group.rows.map((row, idx) => (
                     <TableRow key={`${row.chave_nfe}-${row.n_item}`} className={idx % 2 === 0 ? '' : 'bg-muted/10'}>
                       <TableCell className="font-mono whitespace-nowrap">
-                        {idx === 0 ? (row.data_emissao ? row.data_emissao.slice(0, 10) : '—') : ''}
+                        {idx === 0 ? (fmtDateBR(row.data_emissao)) : ''}
                       </TableCell>
                       <TableCell className="font-mono whitespace-nowrap">
                         {idx === 0 ? (row.numero_nfe || '—') : ''}

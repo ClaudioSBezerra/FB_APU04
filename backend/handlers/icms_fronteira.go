@@ -229,15 +229,17 @@ classified AS (
             WHEN l.cfop IN ('2101','2102','2152')
                 THEN 'ANTECIPACAO'
         END                                                 AS regime,
-        -- Bloco pela data de ENTRADA (dt_e_s), não a emissão: a obrigação da
-        -- antecipação/fronteira nasce na entrada da mercadoria. Nota emitida no
-        -- mês anterior mas que entrou no período = mês atual (paga agora). Cai
-        -- pra dt_doc só quando o SPED não traz a data de entrada (confirmado c/
-        -- Gilson 2026-06-22).
+        -- Bloco pela data de EMISSÃO (dt_doc) — modelo do Gilson (revisado c/
+        -- dados reais CE, 2026-06-23): a antecipação é paga no mês de EMISSÃO da
+        -- nota (Bloco B = emitida no mês e no SPED; Bloco C = emitida no mês, só
+        -- no XML). No mês seguinte, quando a nota emitida antes aparece no SPED,
+        -- ela é Bloco A (informativo, já considerada). Ex.: NF 10302 emitida
+        -- 22/04, entrada 05/05 → Bloco A em 05/2026 (não B). (Reverte tentativa
+        -- por dt_e_s de v2.1.1.)
         CASE
             WHEN $2::text = ''
-              OR (EXTRACT(MONTH FROM COALESCE(c100.dt_e_s, c100.dt_doc))::int = SPLIT_PART($2::text,'/',1)::int
-                  AND EXTRACT(YEAR  FROM COALESCE(c100.dt_e_s, c100.dt_doc))::int = SPLIT_PART($2::text,'/',2)::int)
+              OR (EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
+                  AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int)
             THEN 'mes_atual'
             ELSE 'mes_anterior'
         END                                                 AS bloco,
@@ -640,7 +642,7 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 	// G14: window functions retornam totais do conjunto completo (sem LIMIT),
 	// resolvendo o bug onde totais exibidos só refletiam as primeiras 500 notas.
 	// bloco classifica cada nota em "mes_atual" ou "mes_anterior" conforme a data
-	// de ENTRADA (dt_e_s), pois a antecipação/fronteira é devida na entrada.
+	// de EMISSÃO (dt_doc) — paga-se a antecipação no mês de emissão da nota.
 	query := fronteiraBaseQuery + `
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,

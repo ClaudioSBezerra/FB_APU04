@@ -595,45 +595,7 @@ func buildSTItensXLSX(rows []STItemRow, cteLinks map[string][]CteLink) ([]byte, 
 	f.SetCellStyle(sheet, firstC, lastC, boldStyle)
 	applyMoney(er, boldMoneyStyle)
 
-	// Bloco D — SPED sem XML (pendências). Informativo: repete notas de A/B sem
-	// XML; NÃO soma no total geral. Lista o que falta importar.
-	if dnotas := stBlocoDFaltantes(rows); len(dnotas) > 0 {
-		er += 2 // linha em branco + cabeçalho de seção
-		dPlural := ""
-		if len(dnotas) != 1 {
-			dPlural = "s"
-		}
-		hc, _ := excelize.CoordinatesToCellName(1, er)
-		f.SetCellValue(sheet, hc, fmt.Sprintf("Bloco D — SPED sem XML · %d nota%s (importe o XML para capturar o ICMS-ST retido · não somado no total geral)", len(dnotas), dPlural))
-		hf, _ := excelize.CoordinatesToCellName(1, er)
-		hl, _ := excelize.CoordinatesToCellName(24, er)
-		f.SetCellStyle(sheet, hf, hl, blocoStyle)
-		er++
-		for _, g := range dnotas {
-			for _, it := range g.Itens {
-				setD := func(col int, v interface{}) {
-					c, _ := excelize.CoordinatesToCellName(col, er)
-					f.SetCellValue(sheet, c, v)
-				}
-				setD(1, it.CFOP)
-				setD(2, it.NumeroNFe+" · "+fmtDateBRGo(it.DataEmissao))
-				setD(3, g.Chave)
-				setD(4, it.FornNome)
-				setD(5, it.CodProduto)
-				setD(6, it.Descricao)
-				setD(7, it.NCM)
-				setD(8, it.CEST)
-				setD(9, "Faltante")
-				setD(10, it.VProd)
-				setD(11, it.VIPI)
-				setD(13, it.VOperacao)
-				setD(18, it.IcmsDebitado)
-				setD(23, it.IcmsRetido)
-				applyMoney(er, moneyStyle)
-				er++
-			}
-		}
-	}
+	// (Bloco D — SPED sem XML — removido a pedido do Gilson 2026-06-23.)
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
@@ -874,32 +836,7 @@ func buildSTItensHTML(rows []STItemRow, cteLinks map[string][]CteLink) string {
 		sb.WriteString(`</tr>`)
 	}
 
-	// Bloco D — SPED sem XML (pendências). Informativo: repete notas de A/B sem
-	// XML; NÃO soma no total geral.
-	if dnotas := stBlocoDFaltantes(rows); len(dnotas) > 0 {
-		dPlural := "s"
-		if len(dnotas) == 1 {
-			dPlural = ""
-		}
-		sb.WriteString(`<tr class="tot-row" style="background:#fde68a!important">`)
-		sb.WriteString(fmt.Sprintf(`<td colspan="24"><strong>Bloco D — SPED sem XML · %d nota%s</strong> (importe o XML para capturar o ICMS-ST retido · não somado no total geral)</td>`, len(dnotas), dPlural))
-		sb.WriteString(`</tr>`)
-		for _, g := range dnotas {
-			for _, it := range g.Itens {
-				sb.WriteString(`<tr style="background:#fffbeb">`)
-				sb.WriteString(td(it.CFOP) + td(it.NumeroNFe) + td(g.Chave) + td(it.FornNome))
-				sb.WriteString(td(it.CodProduto) + td(it.Descricao) + td(it.NCM) + td(it.CEST))
-				sb.WriteString(td("Faltante"))
-				sb.WriteString(tdR(it.VProd) + tdR(it.VIPI) + `<td></td>` + tdR(it.VOperacao))
-				sb.WriteString(empty(4))
-				sb.WriteString(tdR(it.IcmsDebitado))
-				sb.WriteString(`<td></td><td></td><td></td><td></td>`)
-				sb.WriteString(tdR(it.IcmsRetido))
-				sb.WriteString(`<td></td>`)
-				sb.WriteString(`</tr>`)
-			}
-		}
-	}
+	// (Bloco D — SPED sem XML — removido a pedido do Gilson 2026-06-23.)
 	sb.WriteString(`</tbody>`)
 
 	if totalGrupos > 0 {

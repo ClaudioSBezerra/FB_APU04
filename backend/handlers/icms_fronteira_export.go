@@ -138,6 +138,9 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string, r *http.Requ
 			log.Printf("fronteiraExport scan error: %v", err)
 			continue
 		}
+		// Data em DD/MM/AAAA para exibição (XLSX/HTML/CSV). Os blocos são
+		// classificados na SQL (por dt_doc), então formatar aqui é só cosmético.
+		row.DataEmissao = fmtDateBRGo(row.DataEmissao)
 		result = append(result, row)
 	}
 	return result, nil
