@@ -1093,24 +1093,28 @@ func SetPreferredCompanyHandler(db *sql.DB) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 
-		// Atualiza preferred_company_id em todos os user_environments do usuário
-		// que têm acesso ao ambiente onde essa empresa está.
-		_, err := db.ExecContext(ctx, `
-			UPDATE user_environments ue
-			SET preferred_company_id = $2
-			WHERE ue.user_id = $1
-			  AND ue.environment_id IN (
-				SELECT eg.environment_id
-				FROM companies c
-				JOIN enterprise_groups eg ON c.group_id = eg.id
-				WHERE c.id = $2
-			  )
+		// UPSERT preferred_company_id: se o registro em user_environments existe,
+		// atualiza; se não existe (usuário owner sem link explícito ao ambiente),
+		// insere. Antes era só UPDATE → encontrava 0 linhas para usuários owner
+		// sem registro em user_environments, silenciando a preferência.
+		res, err := db.ExecContext(ctx, `
+			INSERT INTO user_environments (user_id, environment_id, preferred_company_id)
+			SELECT $1, eg.environment_id, $2::uuid
+			FROM companies c
+			JOIN enterprise_groups eg ON c.group_id = eg.id
+			WHERE c.id = $2::uuid
+			ON CONFLICT (user_id, environment_id)
+			DO UPDATE SET preferred_company_id = EXCLUDED.preferred_company_id
 		`, userID, body.CompanyID)
 
 		if err != nil {
-			log.Printf("SetPreferredCompany: failed to update user %s → company %s: %v", userID, body.CompanyID, err)
+			log.Printf("SetPreferredCompany: upsert failed user %s → company %s: %v", userID, body.CompanyID, err)
 			http.Error(w, "failed to update preference", http.StatusInternalServerError)
 			return
+		}
+
+		if n, _ := res.RowsAffected(); n == 0 {
+			log.Printf("SetPreferredCompany: 0 rows affected (company %s not found in any enterprise_group)", body.CompanyID)
 		}
 
 		w.WriteHeader(http.StatusNoContent)
