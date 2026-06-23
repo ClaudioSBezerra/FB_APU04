@@ -53,7 +53,12 @@ type FronteiraXmlNaoSpedResponse struct {
 // ---------------------------------------------------------------------------
 
 const naoSpedQuery = `
-WITH xml_falt AS (
+WITH emp_uf AS (
+    -- UF efetiva da empresa: fonte confiável para fallback quando dest_uf do XML
+    -- está nulo. Usa o import_jobs mais recente (evita hardcode 'PE' para CE/outros).
+    SELECT COALESCE(MAX(uf) FILTER (WHERE uf IS NOT NULL AND uf <> ''), 'PE') AS uf
+    FROM import_jobs WHERE company_id = $1
+), xml_falt AS (
     SELECT
         ne.id, ne.chave_nfe, ne.data_emissao, ne.forn_cnpj, ne.forn_nome,
         ne.forn_uf, ne.dest_uf, ne.dest_cnpj_cpf, COALESCE(ne.numero_nfe,'') AS numero_nfe,
@@ -120,7 +125,7 @@ SELECT
                           SELECT 1 FROM company_segmentos cs
                           WHERE cs.company_id = $1::uuid
                             AND cs.segmento_codigo = regra.segmento_codigo
-                            AND cs.uf = COALESCE(m.dest_uf, 'PE')
+                            AND cs.uf = COALESCE(NULLIF(m.dest_uf,''), emp_uf.uf)
                       )
                     THEN 'ST'
                     ELSE 'ANTECIPACAO'
@@ -206,7 +211,7 @@ SELECT
                       SELECT 1 FROM company_segmentos cs
                       WHERE cs.company_id = $1::uuid
                         AND cs.segmento_codigo = regra.segmento_codigo
-                        AND cs.uf = COALESCE(m.dest_uf, 'PE')
+                        AND cs.uf = COALESCE(NULLIF(m.dest_uf,''), emp_uf.uf)
                   )
                 THEN CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
                     THEN GREATEST(0,
@@ -254,15 +259,16 @@ LEFT JOIN LATERAL (
            r.segmento_codigo
     FROM icms_fronteira_regras_ncm r
     WHERE (r.company_id = $1 OR r.company_id IS NULL)
-      AND r.uf_estado = COALESCE(m.dest_uf, 'PE')
+      AND r.uf_estado = COALESCE(NULLIF(m.dest_uf,''), emp_uf.uf)
       AND m.ncm IS NOT NULL
       AND LEFT(m.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
       AND LENGTH(r.ncm_prefixo) >= 4
     ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC LIMIT 1
 ) regra ON true
 LEFT JOIN cte_por_nfe cte ON cte.chave_nfe = m.chave_nfe
+CROSS JOIN emp_uf
 LEFT JOIN uf_beneficios_fiscais ufb
-    ON ufb.company_id = $1 AND ufb.uf = COALESCE(m.dest_uf, 'PE')
+    ON ufb.company_id = $1 AND ufb.uf = COALESCE(NULLIF(m.dest_uf,''), emp_uf.uf)
 LEFT JOIN icms_fronteira_classificacao_manual cm
     ON cm.company_id = $1 AND cm.chave_nfe = m.chave_nfe
 WHERE COALESCE(cm.regime,
@@ -275,7 +281,7 @@ WHERE COALESCE(cm.regime,
                       SELECT 1 FROM company_segmentos cs
                       WHERE cs.company_id = $1::uuid
                         AND cs.segmento_codigo = regra.segmento_codigo
-                        AND cs.uf = COALESCE(m.dest_uf, 'PE')
+                        AND cs.uf = COALESCE(NULLIF(m.dest_uf,''), emp_uf.uf)
                   )
                 THEN 'ST'
                 ELSE 'ANTECIPACAO'
@@ -286,7 +292,7 @@ WHERE COALESCE(cm.regime,
   AND COALESCE(cm.status, 'auto') <> 'excluded'
   -- Eixo de UF do módulo: restringe às NFs cujo destinatário (filial) é da UF
   -- selecionada. Consistente com o filtro uf_filial dos Blocos A/B. Vazio = todas.
-  AND ($4::text = '' OR COALESCE(m.dest_uf, 'PE') = $4)
+  AND ($4::text = '' OR COALESCE(NULLIF(m.dest_uf,''), emp_uf.uf) = $4)
   -- Filtros opcionais (fornecedor / número da nota / intervalo de data), iguais
   -- aos dos Blocos A/B. Vazio = sem filtro.
   AND ($5::text = '' OR m.forn_cnpj ILIKE '%'||$5||'%' OR m.forn_nome ILIKE '%'||$5||'%')

@@ -20,7 +20,7 @@ async function fetchParametros(token: string, companyId?: string): Promise<Empre
 }
 
 export default function EmpresaParametros() {
-  const { user, token, company: companyId } = useAuth()
+  const { user, token, companyId } = useAuth()
   const isAdmin = user?.role === 'admin'
 
   const [info, setInfo] = useState<EmpresaParametrosInfo | null>(null)
