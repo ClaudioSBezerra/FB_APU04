@@ -372,5 +372,75 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 		dl("(7) >>> se as regras vierem segmento=(NULL), a trava NUNCA casa (cadastrar segmento na empresa não adianta) — a regra precisa ter segmento_codigo. Se vier um número (ex.: 6), a empresa precisa ter ESSE código cadastrado na UF.")
 	}
 
+	// (8) Candidatos ao Bloco C (XML sem SPED): notas em nfe_entradas que NÃO
+	//     estão em reg_c100. Mostra CFOPs, dest_uf e se passariam no filtro ST.
+	dl("---- (8) Bloco C candidatos: XML-only (não em SPED) por CFOP e dest_uf ----")
+	if rows, err := db.Query(`
+		WITH xml_only AS (
+			SELECT ne.chave_nfe,
+			       ne.numero_nfe,
+			       ne.data_emissao,
+			       COALESCE(NULLIF(ne.dest_uf,''), 'NULL') AS dest_uf,
+			       COALESCE(nii.cfop,'') AS cfop_saida,
+			       CASE WHEN LEFT(COALESCE(nii.cfop,''),1)='6' THEN '2'||SUBSTRING(COALESCE(nii.cfop,'') FROM 2)
+			            WHEN LEFT(COALESCE(nii.cfop,''),1)='5' THEN '1'||SUBSTRING(COALESCE(nii.cfop,'') FROM 2)
+			            ELSE COALESCE(nii.cfop,'') END AS cfop_entrada
+			FROM nfe_entradas ne
+			LEFT JOIN LATERAL (
+				SELECT nii2.cfop
+				FROM nfe_entradas_itens nii2
+				WHERE nii2.nfe_id = ne.id AND NULLIF(nii2.cfop,'') IS NOT NULL
+				ORDER BY nii2.v_prod DESC NULLS LAST LIMIT 1
+			) nii ON true
+			WHERE ne.company_id = $1
+			  AND ne.data_emissao >= to_date($2,'MM/YYYY')
+			  AND ne.data_emissao <  (to_date($2,'MM/YYYY') + interval '1 month')
+			  AND NOT EXISTS (
+			      SELECT 1 FROM reg_c100 c100 JOIN import_jobs j ON j.id = c100.job_id
+			      WHERE j.company_id = $1 AND c100.chv_nfe = ne.chave_nfe
+			  )
+		)
+		SELECT cfop_saida,
+		       cfop_entrada,
+		       CASE WHEN cfop_entrada IN ('2403','2409','2651','2652') THEN 'ST_CFOP'
+		            WHEN cfop_entrada IN ('2101','2102','2152')        THEN 'ANTECIP_CFOP'
+		            WHEN cfop_entrada IN ('2551','2556')               THEN 'DIFAL_CFOP'
+		            ELSE 'FORA' END AS tipo,
+		       dest_uf,
+		       count(*)
+		FROM xml_only
+		GROUP BY 1,2,3,4 ORDER BY tipo, count(*) DESC`,
+		companyID, periodo); err != nil {
+		dl("(8) ERRO: %v", err)
+	} else {
+		n := 0
+		for rows.Next() {
+			var cfopS, cfopE, tipo, destUF string
+			var qtd int
+			if err := rows.Scan(&cfopS, &cfopE, &tipo, &destUF, &qtd); err == nil {
+				dl("(8) cfop_xml=%s→%s [%s] dest_uf=%s notas=%d", cfopS, cfopE, tipo, destUF, qtd)
+				n++
+			}
+		}
+		rows.Close()
+		if n == 0 {
+			dl("(8) Nenhuma nota XML-only no período (todas as notas XML estão no SPED).")
+		}
+	}
+
+	// (8b) emp_uf efetivo: valor que o naoSpedQuery usa como fallback de dest_uf
+	dl("---- (8b) emp_uf (fallback dest_uf=NULL) para esta empresa ----")
+	{
+		var empUF string
+		err := db.QueryRow(`
+			SELECT COALESCE(MAX(uf) FILTER (WHERE uf IS NOT NULL AND uf <> ''), 'PE') AS uf
+			FROM import_jobs WHERE company_id = $1`, companyID).Scan(&empUF)
+		if err != nil {
+			dl("(8b) ERRO: %v", err)
+		} else {
+			dl("(8b) emp_uf=%s  (para notas com dest_uf NULL, eff_uf ficará = %s)", empUF, empUF)
+		}
+	}
+
 	dl("================ FIM ================")
 }
