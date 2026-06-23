@@ -40,6 +40,7 @@ type ReconNota struct {
 	IcmsDevidoEst float64 `json:"icms_devido_est"`
 	Origem        string  `json:"origem"` // "sped" | "xml"
 	Alerta        string  `json:"alerta,omitempty"`
+	TemXML        bool    `json:"tem_xml"` // XML importado para esta nota?
 }
 
 type ReconBlock struct {
@@ -52,7 +53,8 @@ type ReconciliacaoResponse struct {
 	Periodo            string     `json:"periodo"`
 	Normal             ReconBlock `json:"normal"`
 	EmitidaMesAnterior ReconBlock `json:"emitida_mes_anterior"`
-	NaoLocalizadaSped  ReconBlock `json:"nao_localizada_sped"`
+	SpedSemXML         ReconBlock `json:"sped_sem_xml"`        // SPED sem XML importado
+	NaoLocalizadaSped  ReconBlock `json:"nao_localizada_sped"` // XML sem SPED
 }
 
 // Bloco 1 (normal) e Bloco 2 (emitida mês anterior) saem do SPED.
@@ -113,7 +115,8 @@ SELECT
          AND EXTRACT(YEAR  FROM s.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int
         THEN 'normal'
         ELSE 'emitida_mes_anterior'
-    END AS bloco
+    END AS bloco,
+    (ne.id IS NOT NULL) AS tem_xml
 FROM sped s
 LEFT JOIN participants part ON part.job_id = s.job_id AND part.cod_part = s.cod_part
 LEFT JOIN nfe_entradas ne ON ne.chave_nfe = s.chave_nfe
@@ -268,6 +271,7 @@ func IcmsFronteiraReconciliacaoHandler(db *sql.DB) http.HandlerFunc {
 			Periodo:            periodo,
 			Normal:             ReconBlock{Rows: []ReconNota{}},
 			EmitidaMesAnterior: ReconBlock{Rows: []ReconNota{}},
+			SpedSemXML:         ReconBlock{Rows: []ReconNota{}},
 			NaoLocalizadaSped:  ReconBlock{Rows: []ReconNota{}},
 		}
 
@@ -283,7 +287,7 @@ func IcmsFronteiraReconciliacaoHandler(db *sql.DB) http.HandlerFunc {
 			var bloco string
 			if err := rows.Scan(&n.ChaveNFe, &n.DataEmissao, &n.DataEntrada, &n.NumeroNFe,
 				&n.FornCNPJ, &n.FornNome, &n.FornUF, &n.CFOP, &n.Regime, &n.VOpr,
-				&n.IcmsDevidoEst, &bloco); err != nil {
+				&n.IcmsDevidoEst, &bloco, &n.TemXML); err != nil {
 				log.Printf("Reconciliacao SPED scan: %v", err)
 				continue
 			}
@@ -295,6 +299,11 @@ func IcmsFronteiraReconciliacaoHandler(db *sql.DB) http.HandlerFunc {
 			} else {
 				resp.Normal.Rows = append(resp.Normal.Rows, n)
 				resp.Normal.Total += n.IcmsDevidoEst
+			}
+			// SpedSemXML: notas do SPED (qualquer bloco) sem XML importado
+			if !n.TemXML {
+				resp.SpedSemXML.Rows = append(resp.SpedSemXML.Rows, n)
+				resp.SpedSemXML.Total += n.IcmsDevidoEst
 			}
 		}
 		rows.Close()
@@ -329,6 +338,7 @@ func IcmsFronteiraReconciliacaoHandler(db *sql.DB) http.HandlerFunc {
 
 		resp.Normal.Count = len(resp.Normal.Rows)
 		resp.EmitidaMesAnterior.Count = len(resp.EmitidaMesAnterior.Rows)
+		resp.SpedSemXML.Count = len(resp.SpedSemXML.Rows)
 		resp.NaoLocalizadaSped.Count = len(resp.NaoLocalizadaSped.Rows)
 
 		json.NewEncoder(w).Encode(resp)

@@ -3035,6 +3035,7 @@ interface ReconNota {
   icms_devido_est: number
   origem: string
   alerta?: string
+  tem_xml?: boolean
 }
 
 interface IASuggestion {
@@ -3049,6 +3050,7 @@ interface ReconResponse {
   periodo: string
   normal: ReconBlock
   emitida_mes_anterior: ReconBlock
+  sped_sem_xml: ReconBlock
   nao_localizada_sped: ReconBlock
 }
 
@@ -4136,7 +4138,28 @@ function ReconciliacaoTab({ token }: { token: string | null }) {
               <ReconBlockTable block={data.emitida_mes_anterior} />
             </div>
 
-            {/* Bloco 3 — Não localizada no SPED */}
+            {/* Bloco 3 — SPED sem XML */}
+            {data.sped_sem_xml.count > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">Sem XML</Badge>
+                    Está no SPED e não encontrado XML ({data.sped_sem_xml.count})
+                  </h3>
+                  <span className="text-xs font-semibold">ICMS: {fmtBRL(data.sped_sem_xml.total)}</span>
+                </div>
+                <Alert className="mb-2">
+                  <FileQuestion className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    Notas presentes no SPED mas sem XML importado. O cálculo é estimado pelo SPED (sem os
+                    valores detalhados do XML). Importe o XML para precisão nos valores de IPI, frete e ICMS-ST retido.
+                  </AlertDescription>
+                </Alert>
+                <ReconBlockTable block={data.sped_sem_xml} />
+              </div>
+            )}
+
+            {/* Bloco 4 — Não localizada no SPED */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold flex items-center gap-2">
