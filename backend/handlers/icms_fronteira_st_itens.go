@@ -87,6 +87,16 @@ type STItensResponse struct {
 // Placeholders: $1 company_id (uuid), $2 periodo "MM/YYYY", $3 uf.
 const stItensQuery = `
 WITH
+latest_jobs AS (
+    SELECT DISTINCT ON (company_id, COALESCE(cnpj, uf, ''), COALESCE(mes_ano, ''))
+        id
+    FROM import_jobs
+    WHERE status = 'completed'
+    ORDER BY company_id,
+             COALESCE(cnpj, uf, ''),
+             COALESCE(mes_ano, ''),
+             created_at DESC
+),
 sped_itens AS (
     SELECT
         c100.chv_nfe                                        AS chave_nfe,
@@ -141,6 +151,7 @@ sped_itens AS (
     LEFT JOIN nfe_entradas ne ON ne.company_id = j.company_id AND ne.chave_nfe = c100.chv_nfe
     LEFT JOIN nfe_entradas_itens xi ON xi.nfe_id = ne.id AND xi.n_item = ci.num_item
     WHERE j.company_id = $1
+      AND j.id IN (SELECT id FROM latest_jobs)
       AND ci.cfop IN ('2403','2409','2651','2652')
       AND c100.cod_sit NOT IN ('02','03','04','05')
       AND ($3::text = '' OR COALESCE(j.uf,'PE') = $3)

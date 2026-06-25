@@ -179,6 +179,20 @@ type FronteiraNotasResponse struct {
 // (PRODEPE, ST vs ANTECIPAÇÃO, regras NCM, DIFAL) sobre a MV já materializada.
 const fronteiraBaseQuery = `
 WITH
+-- Dedup: mantém apenas o job mais recente por (empresa, CNPJ-filial, período).
+-- Evita que reimports acumulem dados duplicados — cada reg_c100 de jobs antigos
+-- para o mesmo período/CNPJ é descartado. Filiais distintas (CNPJs diferentes)
+-- na mesma UF são preservadas (COALESCE(cnpj,uf) como chave diferenciadora).
+latest_jobs AS (
+    SELECT DISTINCT ON (company_id, COALESCE(cnpj, uf, ''), COALESCE(mes_ano, ''))
+        id
+    FROM import_jobs
+    WHERE status = 'completed'
+    ORDER BY company_id,
+             COALESCE(cnpj, uf, ''),
+             COALESCE(mes_ano, ''),
+             created_at DESC
+),
 classified AS (
     SELECT
         c100.chv_nfe                                        AS chave_nfe,
@@ -414,6 +428,7 @@ classified AS (
     LEFT JOIN uf_beneficios_fiscais ufb
         ON ufb.company_id = $1 AND ufb.uf = COALESCE(j.uf, 'PE')
     WHERE l.company_id = $1
+      AND j.id IN (SELECT id FROM latest_jobs)
       AND c100.cod_sit NOT IN ('02','03','04','05')
       AND ($2::text = '' OR j.mes_ano = $2
           OR (j.mes_ano IS NULL AND (
