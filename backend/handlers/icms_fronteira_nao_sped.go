@@ -81,7 +81,8 @@ WITH emp_uf AS (
     SELECT nii.nfe_id,
            COALESCE(nii.cfop,'') AS cfop_saida,
            COALESCE(nii.ncm,'')  AS ncm,
-           SUM(COALESCE(nii.v_prod, 0)) AS item_sum
+           SUM(COALESCE(nii.v_prod, 0)) AS item_sum,
+           SUM(COALESCE(nii.v_ipi,  0)) AS item_ipi
     FROM nfe_entradas_itens nii
     JOIN xml_falt xf ON xf.id = nii.nfe_id
     GROUP BY nii.nfe_id, nii.cfop, nii.ncm
@@ -97,10 +98,11 @@ WITH emp_uf AS (
         ig.ncm,
         -- v_prod = soma dos itens deste grupo (NCM+CFOP)
         ig.item_sum                                                               AS v_prod,
-        -- Valores do cabeçalho da NF rateados pela participação deste grupo
+        -- Frete/outro/ICMS do cabeçalho da NF rateados pela participação deste grupo
         CASE WHEN nt.total_sum > 0 THEN xf.v_frete * ig.item_sum / nt.total_sum ELSE 0 END AS v_frete,
         CASE WHEN nt.total_sum > 0 THEN xf.v_outro * ig.item_sum / nt.total_sum ELSE 0 END AS v_outro,
-        CASE WHEN nt.total_sum > 0 THEN xf.v_ipi   * ig.item_sum / nt.total_sum ELSE 0 END AS v_ipi,
+        -- IPI: soma real dos itens deste grupo no XML (mesmo critério dos Blocos A/B via SPED)
+        ig.item_ipi                                                                          AS v_ipi,
         CASE WHEN nt.total_sum > 0 THEN xf.v_icms  * ig.item_sum / nt.total_sum ELSE 0 END AS v_icms,
         -- Fração deste grupo no total da NF (para ratear v_frete_cte / v_icms_cte do CT-e)
         CASE WHEN nt.total_sum > 0 THEN ig.item_sum / nt.total_sum             ELSE 1 END AS item_ratio
