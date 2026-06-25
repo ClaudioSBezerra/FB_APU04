@@ -74,15 +74,39 @@ WITH emp_uf AS (
           SELECT 1 FROM reg_c100 c100 JOIN import_jobs j ON j.id = c100.job_id
           WHERE j.company_id = $1 AND c100.chv_nfe = ne.chave_nfe
       )
+), items_grouped AS (
+    -- Agrupa por (NF, CFOP, NCM): cada combinação distinta vira linha própria,
+    -- permitindo classificação correta quando uma NF tem itens ST e não-ST
+    -- no mesmo CFOP (ex.: NCM 7318=ST e NCM 38249941=Antecipação).
+    SELECT nii.nfe_id,
+           COALESCE(nii.cfop,'') AS cfop_saida,
+           COALESCE(nii.ncm,'')  AS ncm,
+           SUM(COALESCE(nii.v_prod, 0)) AS item_sum
+    FROM nfe_entradas_itens nii
+    JOIN xml_falt xf ON xf.id = nii.nfe_id
+    GROUP BY nii.nfe_id, nii.cfop, nii.ncm
+), nf_total AS (
+    SELECT nfe_id, SUM(item_sum) AS total_sum
+    FROM items_grouped
+    GROUP BY nfe_id
 ), top AS (
-    SELECT DISTINCT ON (xf.id)
+    SELECT
         xf.id, xf.chave_nfe, xf.data_emissao, xf.forn_cnpj, xf.forn_nome,
         xf.forn_uf, xf.dest_uf, xf.dest_cnpj_cpf, xf.numero_nfe,
-        xf.v_prod, xf.v_frete, xf.v_outro, xf.v_ipi, xf.v_icms,
-        COALESCE(nii.cfop,'') AS cfop_saida, COALESCE(nii.ncm,'') AS ncm
+        ig.cfop_saida,
+        ig.ncm,
+        -- v_prod = soma dos itens deste grupo (NCM+CFOP)
+        ig.item_sum                                                               AS v_prod,
+        -- Valores do cabeçalho da NF rateados pela participação deste grupo
+        CASE WHEN nt.total_sum > 0 THEN xf.v_frete * ig.item_sum / nt.total_sum ELSE 0 END AS v_frete,
+        CASE WHEN nt.total_sum > 0 THEN xf.v_outro * ig.item_sum / nt.total_sum ELSE 0 END AS v_outro,
+        CASE WHEN nt.total_sum > 0 THEN xf.v_ipi   * ig.item_sum / nt.total_sum ELSE 0 END AS v_ipi,
+        CASE WHEN nt.total_sum > 0 THEN xf.v_icms  * ig.item_sum / nt.total_sum ELSE 0 END AS v_icms,
+        -- Fração deste grupo no total da NF (para ratear v_frete_cte / v_icms_cte do CT-e)
+        CASE WHEN nt.total_sum > 0 THEN ig.item_sum / nt.total_sum             ELSE 1 END AS item_ratio
     FROM xml_falt xf
-    JOIN nfe_entradas_itens nii ON nii.nfe_id = xf.id
-    ORDER BY xf.id, nii.v_prod DESC NULLS LAST
+    JOIN items_grouped ig ON ig.nfe_id = xf.id
+    JOIN nf_total      nt ON nt.nfe_id  = xf.id
 ), mapped AS (
     SELECT *,
         CASE
@@ -159,13 +183,13 @@ SELECT
     m.v_prod,
     m.v_ipi,
     m.v_frete,
-    COALESCE(cte.v_frete_cte, 0) AS v_frete_cte,
+    COALESCE(cte.v_frete_cte, 0) * m.item_ratio AS v_frete_cte,
     m.v_outro,
     -- V.Operação EXIBIDO = produto + frete do CT-e (tomador=destinatário).
     -- Consistente com o que o contador usa como base de referência.
-    m.v_prod + COALESCE(cte.v_frete_cte, 0) AS v_opr,
+    m.v_prod + COALESCE(cte.v_frete_cte, 0) * m.item_ratio AS v_opr,
     m.v_icms AS v_icms_nf,
-    COALESCE(cte.v_icms_cte, 0) AS v_icms_cte,
+    COALESCE(cte.v_icms_cte, 0) * m.item_ratio AS v_icms_cte,
     -- Alíquota interestadual efetiva: mínimo 4% (crédito presumido para SN).
     CASE WHEN m.v_prod > 0
          THEN ROUND((GREATEST(m.v_icms, m.v_prod * 4.0/100.0) / m.v_prod * 100.0)::numeric, 2)
@@ -199,15 +223,15 @@ SELECT
         WHEN m.cfop_entrada IN ('2551','2556') THEN
             CASE WHEN COALESCE(ufb.base_por_dentro, false)
                 THEN GREATEST(0,
-                    ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro
-                      - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
+                    ((m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) * m.item_ratio + m.v_outro
+                      - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0) * m.item_ratio)
                      / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
                     * (COALESCE(regra.aliquota_interna,20.5)
                        - CASE WHEN m.v_prod > 0 THEN GREATEST(m.v_icms, m.v_prod * 4.0/100.0) / m.v_prod * 100.0 ELSE 4.0 END) / 100.0)
                 ELSE GREATEST(0,
-                    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                    (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) * m.item_ratio + m.v_outro)
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                    - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
+                    - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0) * m.item_ratio)
             END
         WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
             -- Antecipação (regra Gilson 2026-06-02): base = produto + IPI + frete da NF
@@ -236,10 +260,10 @@ SELECT
                   )
                 THEN CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
                     THEN GREATEST(0,
-                         (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) + m.v_outro)
+                         (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) * m.item_ratio + m.v_outro)
                          * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
                          * COALESCE(regra.aliquota_interna,20.5)/100.0
-                         - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0))
+                         - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0) * m.item_ratio)
                     ELSE 0 END
                 -- Sem segmento → reclassificada como ANTECIPAÇÃO (regra Gilson: base sem
                 -- frete do CT-e, abate só o ICMS destacado na NF; respeita base por dentro)
