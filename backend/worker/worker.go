@@ -212,6 +212,28 @@ func processNextJob(db *sql.DB, workerID int) {
 		// DELETE FILE FROM STORAGE (Cleanup)
 		deleteUploadFile()
 
+		// Dedup: remove jobs anteriores do mesmo (company_id, cnpj, mes_ano).
+		// ON DELETE CASCADE apaga reg_c100/c170/c190/reg_0200/participants etc.
+		// Só remove finalizados (completed/error/cancelled) — nunca jobs em fila.
+		var jCompanyID, jCNPJ, jMesAno string
+		if err := db.QueryRow(
+			"SELECT COALESCE(company_id::text,''), COALESCE(cnpj,''), COALESCE(mes_ano,'') FROM import_jobs WHERE id = $1", id,
+		).Scan(&jCompanyID, &jCNPJ, &jMesAno); err == nil && jCompanyID != "" && jMesAno != "" {
+			res, delErr := db.Exec(`
+				DELETE FROM import_jobs
+				WHERE company_id = $1::uuid
+				  AND COALESCE(cnpj, '') = $2
+				  AND COALESCE(mes_ano, '') = $3
+				  AND id != $4
+				  AND status IN ('completed', 'error', 'cancelled')`,
+				jCompanyID, jCNPJ, jMesAno, id)
+			if delErr != nil {
+				fmt.Printf("Worker #%d: Aviso — dedup de jobs antigos falhou: %v\n", workerID, delErr)
+			} else if n, _ := res.RowsAffected(); n > 0 {
+				fmt.Printf("Worker #%d: Dedup: %d job(s) anterior(es) removido(s) para %s/%s.\n", workerID, n, jCNPJ, jMesAno)
+			}
+		}
+
 		// Trigger View Refresh immediately after success
 		// OPTIMIZATION: Check if there are other jobs in the queue.
 		// Only refresh if this is the LAST job (pending/processing count == 0).
