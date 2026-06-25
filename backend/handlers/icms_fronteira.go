@@ -192,6 +192,7 @@ classified AS (
         -- com UF vazia quando o XML do fornecedor não estava importado.
         COALESCE(NULLIF(ne.forn_uf, ''), NULLIF(m_part.uf, ''), '') AS forn_uf,
         l.cfop                                              AS cfop,
+        COALESCE(l.ncm_8, '')                               AS ncm_8,
         l.v_prod_disp                                       AS v_prod,
         COALESCE(l.ipi_eff, 0)                              AS v_ipi,
         -- Crédito interestadual: prioriza vl_icms_inter (SUM de bc×aliq por linha
