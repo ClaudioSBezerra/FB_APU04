@@ -229,17 +229,22 @@ classified AS (
             WHEN l.cfop IN ('2101','2102','2152')
                 THEN 'ANTECIPACAO'
         END                                                 AS regime,
-        -- Bloco pela data de EMISSÃO (dt_doc) — modelo do Gilson (revisado c/
-        -- dados reais CE, 2026-06-23): a antecipação é paga no mês de EMISSÃO da
-        -- nota (Bloco B = emitida no mês e no SPED; Bloco C = emitida no mês, só
-        -- no XML). No mês seguinte, quando a nota emitida antes aparece no SPED,
-        -- ela é Bloco A (informativo, já considerada). Ex.: NF 10302 emitida
-        -- 22/04, entrada 05/05 → Bloco A em 05/2026 (não B). (Reverte tentativa
-        -- por dt_e_s de v2.1.1.)
+        -- Bloco pelo regime: antecipação/DIFAL pela EMISSÃO (dt_doc) — o ICMS é
+        -- pago quando a nota é emitida; nota emitida em mês anterior que aparece
+        -- só agora no SPED é Bloco A (informativo, já recolhida). ST pela ENTRADA
+        -- (COALESCE(dt_e_s, dt_doc)) — o substituído escritura pela entrada; nota
+        -- emitida em abril mas recebida em maio é Bloco B de maio (ST a verificar
+        -- agora). Ex.: NF ST emitida 22/04, entrada 05/05 → Bloco B em 05/2026.
         CASE
             WHEN $2::text = ''
-              OR (EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
-                  AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int)
+              OR (EXTRACT(MONTH FROM
+                      CASE WHEN l.cfop IN ('2403','2409','2651','2652')
+                           THEN COALESCE(c100.dt_e_s, c100.dt_doc)
+                           ELSE c100.dt_doc END)::int = SPLIT_PART($2::text,'/',1)::int
+                  AND EXTRACT(YEAR FROM
+                      CASE WHEN l.cfop IN ('2403','2409','2651','2652')
+                           THEN COALESCE(c100.dt_e_s, c100.dt_doc)
+                           ELSE c100.dt_doc END)::int = SPLIT_PART($2::text,'/',2)::int)
             THEN 'mes_atual'
             ELSE 'mes_anterior'
         END                                                 AS bloco,
