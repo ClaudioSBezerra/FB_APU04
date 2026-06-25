@@ -229,22 +229,14 @@ classified AS (
             WHEN l.cfop IN ('2101','2102','2152')
                 THEN 'ANTECIPACAO'
         END                                                 AS regime,
-        -- Bloco pelo regime: antecipação/DIFAL pela EMISSÃO (dt_doc) — o ICMS é
-        -- pago quando a nota é emitida; nota emitida em mês anterior que aparece
-        -- só agora no SPED é Bloco A (informativo, já recolhida). ST pela ENTRADA
-        -- (COALESCE(dt_e_s, dt_doc)) — o substituído escritura pela entrada; nota
-        -- emitida em abril mas recebida em maio é Bloco B de maio (ST a verificar
-        -- agora). Ex.: NF ST emitida 22/04, entrada 05/05 → Bloco B em 05/2026.
+        -- Bloco pela data de EMISSÃO (dt_doc) — modelo confirmado pelo contador
+        -- Gilson (2026-06-25): tanto antecipação quanto ST calculam pela emissão.
+        -- Nota emitida em abril que aparece no SPED de maio = Bloco A (já recolhida
+        -- na emissão). Bloco B = emitida no mês corrente e no SPED.
         CASE
             WHEN $2::text = ''
-              OR (EXTRACT(MONTH FROM
-                      CASE WHEN l.cfop IN ('2403','2409','2651','2652')
-                           THEN COALESCE(c100.dt_e_s, c100.dt_doc)
-                           ELSE c100.dt_doc END)::int = SPLIT_PART($2::text,'/',1)::int
-                  AND EXTRACT(YEAR FROM
-                      CASE WHEN l.cfop IN ('2403','2409','2651','2652')
-                           THEN COALESCE(c100.dt_e_s, c100.dt_doc)
-                           ELSE c100.dt_doc END)::int = SPLIT_PART($2::text,'/',2)::int)
+              OR (EXTRACT(MONTH FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',1)::int
+                  AND EXTRACT(YEAR  FROM c100.dt_doc)::int = SPLIT_PART($2::text,'/',2)::int)
             THEN 'mes_atual'
             ELSE 'mes_anterior'
         END                                                 AS bloco,
