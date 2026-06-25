@@ -382,22 +382,19 @@ classified AS (
         ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
     LEFT JOIN municipios_ibge m_part ON m_part.codigo_ibge = part.cod_mun
     LEFT JOIN nfe_entradas ne ON ne.company_id = j.company_id AND ne.chave_nfe = c100.chv_nfe
+    -- NCM efetivo: 1º o ncm_8 do MV (reg_0200 do SPED), 2º fallback XML quando
+    -- o SPED não tem NCM para o produto (ncm_8 = ''). Cada row do MV já representa
+    -- um NCM distinto, então o lookup de regra é sempre correto por NCM.
     LEFT JOIN LATERAL (
         SELECT COALESCE(
+            NULLIF(l.ncm_8, ''),
             (SELECT nii.ncm
              FROM nfe_entradas_itens nii
              WHERE nii.nfe_id = ne.id AND NULLIF(nii.ncm, '') IS NOT NULL
              ORDER BY nii.v_prod DESC NULLS LAST
-             LIMIT 1),
-            (SELECT LEFT(regexp_replace(p.cod_ncm, '[^0-9]', '', 'g'), 8)
-             FROM reg_c170 ci
-             JOIN reg_0200 p ON p.job_id = c100.job_id AND p.cod_item = ci.cod_item
-             WHERE ci.c100_id = c100.id AND ci.cfop = l.cfop
-               AND NULLIF(regexp_replace(p.cod_ncm, '[^0-9]', '', 'g'), '') IS NOT NULL
-             ORDER BY ci.vl_item DESC NULLS LAST
              LIMIT 1)
         ) AS ncm
-    ) top_item ON true
+    ) ncm_eff ON true
     LEFT JOIN LATERAL (
         SELECT r.aliquota_interna, r.mva_original,
                r.mva_ajustado_4pct, r.mva_ajustado_7pct, r.mva_ajustado_12pct,
@@ -405,8 +402,8 @@ classified AS (
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
           AND r.uf_estado = COALESCE(j.uf, 'PE')
-          AND top_item.ncm IS NOT NULL
-          AND LEFT(top_item.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
+          AND ncm_eff.ncm IS NOT NULL
+          AND LEFT(ncm_eff.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
           AND LENGTH(r.ncm_prefixo) >= 4
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
         LIMIT 1

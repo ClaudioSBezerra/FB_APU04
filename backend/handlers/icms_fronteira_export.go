@@ -29,6 +29,7 @@ SELECT
     forn_cnpj,
     forn_uf,
     cfop,
+    COALESCE(ncm_8, '') AS ncm_8,
     regime,
     bloco,
     v_prod,
@@ -71,6 +72,7 @@ type fronteiraExportRow struct {
 	FornCNPJ      string
 	FornUF        string
 	CFOP          string
+	NCM           string
 	Regime        string
 	Bloco         string // "mes_atual" | "mes_anterior"
 	VProd         float64
@@ -119,6 +121,7 @@ func fetchExportRows(db *sql.DB, companyID, regime, periodo string, r *http.Requ
 			&row.FornCNPJ,
 			&row.FornUF,
 			&row.CFOP,
+			&row.NCM,
 			&row.Regime,
 			&row.Bloco,
 			&row.VProd,
@@ -350,14 +353,15 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		moneyWarnStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}}, CustomNumFmt: &moneyFmt})
 		numWarnStyle, _ := f.NewStyle(&excelize.Style{Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFF3CD"}}, CustomNumFmt: &numFmt})
 
-		// Modelo correto: 18 colunas (A–R), CT-es interleaved após cada NF.
-		// J = ICMS Atual (ICMS NF); K = V.BC ST; L = V.BC Antecip.; M = V.ST; R = Chave CT-e.
+		// Modelo correto: 19 colunas (A–S), CT-es interleaved após cada NF.
+		// J = ICMS Atual (ICMS NF); K = V.BC ST; L = V.BC Antecip.; M = V.ST;
+		// Q = NCM; R = Chave NF-e; S = Chave CT-e.
 		abHeaders := []string{
 			"Data Emissão", "Número NF-e", "Fornecedor", "CNPJ", "UF", "CFOP", "Regime",
 			"V.Prod", "V.IPI", "ICMS Atual", "V.BC ST", "V.BC Antecip.", "V.ST", "Alíq.Inter.%", "Alíq.Interna.%",
-			"ICMS Devido Est.", "Chave NF-e", "Chave CT-e",
+			"ICMS Devido Est.", "NCM", "Chave NF-e", "Chave CT-e",
 		}
-		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R"}
+		cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S"}
 
 		// Busca CT-es vinculados para as NFs exportadas
 		spedChaves := make([]string, len(dataRows))
@@ -391,19 +395,19 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 		// cálculo do contador (igual ao Bloco C). CT-e como linha-filha (separado,
 		// não somado ao total da NF). Captura os estilos do handler por closure.
 		writeABAntecipSheet := func(sheetName string, sheetRows []fronteiraExportRow, warn bool) {
-			letters := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S"}
+			letters := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T"}
 			heads := []string{
 				"Data Emissão", "Número NF-e", "Fornecedor", "CNPJ", "UF", "CFOP", "Regime",
 				"V.Prod", "V.IPI", "Frete NF", "Outras NF", "Total Operação",
 				"Alíq.Inter.%", "Alíq.Interna.%", "V. Devido", "ICMS Destacado", "ICMS a Pagar",
-				"Chave NF-e", "Chave CT-e",
+				"NCM", "Chave NF-e", "Chave CT-e",
 			}
 			for i, h := range heads {
 				cell := fmt.Sprintf("%s1", letters[i])
 				f.SetCellValue(sheetName, cell, h)
 				f.SetCellStyle(sheetName, cell, cell, headerStyle)
 			}
-			textCols := []string{"A", "B", "C", "D", "E", "F", "G", "R", "S"}
+			textCols := []string{"A", "B", "C", "D", "E", "F", "G", "R", "S", "T"}
 			moneyCols := []string{"H", "I", "J", "K", "L", "O", "P", "Q"}
 			pctCols := []string{"M", "N"}
 			tSty, mSty, nSty := 0, moneyStyle, numStyle
@@ -432,7 +436,8 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				set("O", row.VDevido)
 				set("P", row.VIcms)
 				set("Q", row.IcmsDevidoEst)
-				set("R", row.ChaveNFe)
+				set("R", row.NCM)
+				set("S", row.ChaveNFe)
 				if tSty > 0 {
 					for _, c := range textCols {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), tSty)
@@ -472,8 +477,8 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					set("O", cteDev)          // V. Devido
 					set("P", cte.VIcmsCTe)    // ICMS Destacado
 					set("Q", ctePagar)        // ICMS a Pagar
-					set("R", row.ChaveNFe)
-					set("S", cte.ChaveCTe)
+					set("S", row.ChaveNFe)
+					set("T", cte.ChaveCTe)
 					for _, c := range textCols {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, er), fmt.Sprintf("%s%d", c, er), cteTextStyle)
 					}
@@ -488,7 +493,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				}
 			}
 			f.SetCellValue(sheetName, fmt.Sprintf("A%d", er), "TOTAL")
-			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", er), fmt.Sprintf("S%d", er), boldStyle)
+			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", er), fmt.Sprintf("T%d", er), boldStyle)
 			f.SetCellValue(sheetName, fmt.Sprintf("H%d", er), tProd)
 			f.SetCellValue(sheetName, fmt.Sprintf("I%d", er), tIpi)
 			f.SetCellValue(sheetName, fmt.Sprintf("J%d", er), tFrete)
@@ -565,10 +570,11 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 				f.SetCellValue(sheetName, fmt.Sprintf("N%d", excelRow), row.AliqInter)
 				f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.AliqInterna)
 				f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), row.IcmsDevidoEst)
-				f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), row.ChaveNFe)
-				// R (Chave CT-e) fica vazio nas linhas de NF
+				f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), row.NCM)
+				f.SetCellValue(sheetName, fmt.Sprintf("R%d", excelRow), row.ChaveNFe)
+				// S (Chave CT-e) fica vazio nas linhas de NF
 				if textStyle > 0 {
-					for _, c := range []string{"A", "B", "C", "D", "E", "F", "G", "Q", "R"} {
+					for _, c := range []string{"A", "B", "C", "D", "E", "F", "G", "Q", "R", "S"} {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), textStyle)
 					}
 				}
@@ -604,9 +610,9 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 					f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), 0.0)          // V.ST
 					f.SetCellValue(sheetName, fmt.Sprintf("O%d", excelRow), row.AliqInterna)
 					f.SetCellValue(sheetName, fmt.Sprintf("P%d", excelRow), icmsCTeDev)   // ICMS Devido Est. do CT-e
-					f.SetCellValue(sheetName, fmt.Sprintf("Q%d", excelRow), row.ChaveNFe) // Chave da NF!
-					f.SetCellValue(sheetName, fmt.Sprintf("R%d", excelRow), cte.ChaveCTe)
-					for _, c := range []string{"A", "B", "C", "D", "E", "F", "G", "Q", "R"} {
+					f.SetCellValue(sheetName, fmt.Sprintf("R%d", excelRow), row.ChaveNFe) // Chave da NF!
+					f.SetCellValue(sheetName, fmt.Sprintf("S%d", excelRow), cte.ChaveCTe)
+					for _, c := range []string{"A", "B", "C", "D", "E", "F", "G", "Q", "R", "S"} {
 						f.SetCellStyle(sheetName, fmt.Sprintf("%s%d", c, excelRow), fmt.Sprintf("%s%d", c, excelRow), cteTextStyle)
 					}
 					for _, c := range []string{"H", "I", "J", "K", "L", "M", "P"} {
@@ -621,7 +627,7 @@ func IcmsFronteiraExportXLSXHandler(db *sql.DB) http.HandlerFunc {
 			}
 			totalRow := excelRow
 			f.SetCellValue(sheetName, fmt.Sprintf("A%d", totalRow), "TOTAL")
-			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("R%d", totalRow), boldStyle)
+			f.SetCellStyle(sheetName, fmt.Sprintf("A%d", totalRow), fmt.Sprintf("S%d", totalRow), boldStyle)
 			f.SetCellValue(sheetName, fmt.Sprintf("H%d", totalRow), totalVProd)
 			f.SetCellValue(sheetName, fmt.Sprintf("I%d", totalRow), totalVIPI)
 			f.SetCellValue(sheetName, fmt.Sprintf("J%d", totalRow), totalVIcms) // ICMS NF total
