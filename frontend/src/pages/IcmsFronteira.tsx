@@ -388,9 +388,10 @@ interface DiffRow {
 }
 
 interface ComparativoResponse {
-  bloco_a: DiffRow[]
-  bloco_b: DiffRow[]
-  bloco_c: DiffRow[]
+  bloco_a: DiffRow[] | null
+  bloco_b: DiffRow[] | null
+  bloco_c: DiffRow[] | null
+  warnings?: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -3746,17 +3747,17 @@ function ComparativoTab({ token }: { token: string | null }) {
     toast.success('Planilha exportada com sucesso!')
   }
 
-  const bLocoAOnly1 = result?.bloco_a.filter(r => r.status === 'only_1').length ?? 0
-  const bLocoAOnly2 = result?.bloco_a.filter(r => r.status === 'only_2').length ?? 0
-  const bLocoADiff = result?.bloco_a.filter(r => r.status === 'diff').length ?? 0
+  const bLocoAOnly1 = (result?.bloco_a ?? []).filter(r => r.status === 'only_1').length
+  const bLocoAOnly2 = (result?.bloco_a ?? []).filter(r => r.status === 'only_2').length
+  const bLocoADiff = (result?.bloco_a ?? []).filter(r => r.status === 'diff').length
 
-  const bLocoBOnly1 = result?.bloco_b.filter(r => r.status === 'only_1').length ?? 0
-  const bLocoBOnly2 = result?.bloco_b.filter(r => r.status === 'only_2').length ?? 0
-  const bLocoBDiff = result?.bloco_b.filter(r => r.status === 'diff').length ?? 0
+  const bLocoBOnly1 = (result?.bloco_b ?? []).filter(r => r.status === 'only_1').length
+  const bLocoBOnly2 = (result?.bloco_b ?? []).filter(r => r.status === 'only_2').length
+  const bLocoBDiff = (result?.bloco_b ?? []).filter(r => r.status === 'diff').length
 
-  const bLocoCOnly1 = result?.bloco_c.filter(r => r.status === 'only_1').length ?? 0
-  const bLocoCOnly2 = result?.bloco_c.filter(r => r.status === 'only_2').length ?? 0
-  const bLocoCDiff = result?.bloco_c.filter(r => r.status === 'diff').length ?? 0
+  const bLocoCOnly1 = (result?.bloco_c ?? []).filter(r => r.status === 'only_1').length
+  const bLocoCOnly2 = (result?.bloco_c ?? []).filter(r => r.status === 'only_2').length
+  const bLocoCDiff = (result?.bloco_c ?? []).filter(r => r.status === 'diff').length
 
   return (
     <Card>
@@ -3857,6 +3858,17 @@ function ComparativoTab({ token }: { token: string | null }) {
               </Button>
             </div>
 
+            {result.warnings && result.warnings.length > 0 && (
+              <div className="space-y-1">
+                {result.warnings.map((w, i) => (
+                  <div key={i} className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    {w}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <Tabs value={activeBloco} onValueChange={(v) => setActiveBloco(v as 'a' | 'b' | 'c')}>
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="a" className="text-xs">
@@ -3872,7 +3884,7 @@ function ComparativoTab({ token }: { token: string | null }) {
 
               {['a', 'b', 'c'].map((bloco) => {
                 const blocoKey = `bloco_${bloco}` as 'bloco_a' | 'bloco_b' | 'bloco_c'
-                const data = result[blocoKey]
+                const data = result[blocoKey] ?? []
                 const only1 = data.filter(r => r.status === 'only_1').length
                 const only2 = data.filter(r => r.status === 'only_2').length
                 const diff = data.filter(r => r.status === 'diff').length

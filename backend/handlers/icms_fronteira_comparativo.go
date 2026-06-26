@@ -27,9 +27,10 @@ type DiffRow struct {
 }
 
 type ComparativoResponse struct {
-	BlocoA []DiffRow `json:"bloco_a"`
-	BlocoB []DiffRow `json:"bloco_b"`
-	BlocoC []DiffRow `json:"bloco_c"`
+	BlocoA   []DiffRow `json:"bloco_a"`
+	BlocoB   []DiffRow `json:"bloco_b"`
+	BlocoC   []DiffRow `json:"bloco_c"`
+	Warnings []string  `json:"warnings,omitempty"`
 }
 
 // icmsTolerancia: diferenças de ICMS até este valor (em R$) são tratadas como
@@ -79,10 +80,40 @@ func IcmsFronteiraComparativoHandler() http.HandlerFunc {
 		sheets1 := findSheetsByKeyword(f1)
 		sheets2 := findSheetsByKeyword(f2)
 
+		type blocoSpec struct {
+			key, label, k1, k2 string
+		}
+		blocos := []blocoSpec{
+			{"anterior", "Bloco A", sheets1["anterior"], sheets2["anterior"]},
+			{"atual", "Bloco B", sheets1["atual"], sheets2["atual"]},
+			{"nao_sped", "Bloco C", sheets1["nao_sped"], sheets2["nao_sped"]},
+		}
+
 		resp := ComparativoResponse{
-			BlocoA: compareBlocos(f1, f2, sheets1["anterior"], sheets2["anterior"]),
-			BlocoB: compareBlocos(f1, f2, sheets1["atual"], sheets2["atual"]),
-			BlocoC: compareBlocos(f1, f2, sheets1["nao_sped"], sheets2["nao_sped"]),
+			BlocoA:   make([]DiffRow, 0),
+			BlocoB:   make([]DiffRow, 0),
+			BlocoC:   make([]DiffRow, 0),
+			Warnings: []string{},
+		}
+
+		for _, b := range blocos {
+			if b.k1 == "" || b.k2 == "" {
+				continue
+			}
+			warn := checkColumnCompatibility(f1, b.k1, f2, b.k2, b.label)
+			if warn != "" {
+				resp.Warnings = append(resp.Warnings, warn)
+				continue
+			}
+			rows := compareBlocos(f1, f2, b.k1, b.k2)
+			switch b.key {
+			case "anterior":
+				resp.BlocoA = rows
+			case "atual":
+				resp.BlocoB = rows
+			case "nao_sped":
+				resp.BlocoC = rows
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -105,22 +136,64 @@ func openUploadedXLSX(r *http.Request, field string) (*excelize.File, error) {
 
 func findSheetsByKeyword(f *excelize.File) map[string]string {
 	result := map[string]string{}
-	for _, sheet := range f.GetSheetList() {
+	sheets := f.GetSheetList()
+	for _, sheet := range sheets {
 		lower := strings.ToLower(sheet)
 		switch {
-		case strings.Contains(lower, "anterior"):
-			result["anterior"] = sheet
-		case strings.Contains(lower, "atual"):
-			result["atual"] = sheet
-		case strings.Contains(lower, "não") || strings.Contains(lower, "nao") || strings.Contains(lower, "sped"):
-			result["nao_sped"] = sheet
+		case strings.Contains(lower, "anterior") || strings.Contains(lower, "bloco a") ||
+			(strings.Contains(lower, "a -") || strings.HasPrefix(lower, "a-")):
+			if result["anterior"] == "" {
+				result["anterior"] = sheet
+			}
+		case strings.Contains(lower, "atual") || strings.Contains(lower, "bloco b") ||
+			(strings.Contains(lower, "b -") || strings.HasPrefix(lower, "b-")):
+			if result["atual"] == "" {
+				result["atual"] = sheet
+			}
+		case strings.Contains(lower, "não") || strings.Contains(lower, "nao") ||
+			strings.Contains(lower, "sped") || strings.Contains(lower, "bloco c") ||
+			(strings.Contains(lower, "c -") || strings.HasPrefix(lower, "c-")):
+			if result["nao_sped"] == "" {
+				result["nao_sped"] = sheet
+			}
+		}
+	}
+	// Fallback por posição: se não identificou nenhuma aba por nome,
+	// usa a ordem física das abas (1ª=anterior, 2ª=atual, 3ª=nao_sped).
+	// Isso permite comparar planilhas de terceiros com nomes livres.
+	if len(result) == 0 && len(sheets) > 0 {
+		result["anterior"] = sheets[0]
+		if len(sheets) > 1 {
+			result["atual"] = sheets[1]
+		}
+		if len(sheets) > 2 {
+			result["nao_sped"] = sheets[2]
 		}
 	}
 	return result
 }
 
+// checkColumnCompatibility verifica se ambas as abas têm as colunas mínimas
+// para comparação (Chave NF-e + ICMS Devido). Retorna aviso se incompatível.
+func checkColumnCompatibility(f1 *excelize.File, sheet1 string, f2 *excelize.File, sheet2 string, label string) string {
+	colsOK := func(f *excelize.File, sheet string) bool {
+		rows, err := f.GetRows(sheet)
+		if err != nil || len(rows) == 0 {
+			return false
+		}
+		ci := detectColumns(rows[0])
+		return ci.chaveNFe >= 0 && ci.icmsDevido >= 0
+	}
+	ok1 := colsOK(f1, sheet1)
+	ok2 := colsOK(f2, sheet2)
+	if !ok1 || !ok2 {
+		return fmt.Sprintf("%s: colunas não são semelhantes para comparativo (verifique se as duas planilhas têm 'Chave NF-e' e 'ICMS Devido')", label)
+	}
+	return ""
+}
+
 func compareBlocos(f1, f2 *excelize.File, sheet1, sheet2 string) []DiffRow {
-	var diffs []DiffRow
+	diffs := make([]DiffRow, 0)
 	if sheet1 == "" || sheet2 == "" {
 		return diffs
 	}
