@@ -158,6 +158,8 @@ interface FronteiraXmlNaoSpedRow {
   forn_nome: string
   forn_uf: string
   cfop_saida: string
+  cfop_original: string  // CFOP do XML antes de qualquer override
+  cfop_override: string  // CFOP sobrescrito pelo usuário (vazio se automático)
   ncm: string
   v_prod: number
   v_ipi: number
@@ -1299,6 +1301,76 @@ function TabelaNotasSped({
   )
 }
 
+// CfopEditCell — célula CFOP editável no Bloco C.
+// Permite corrigir o CFOP de uma linha (chave_nfe + NCM) sem alterar o XML.
+// O backend recalcula regime e ICMS com o CFOP corrigido.
+const CFOP_OPTIONS = [
+  { value: '6101', label: '6101 — Antecipação' },
+  { value: '6102', label: '6102 — Antecipação' },
+  { value: '6403', label: '6403 — ST' },
+  { value: '6409', label: '6409 — ST' },
+  { value: '6651', label: '6651 — ST' },
+  { value: '6652', label: '6652 — ST' },
+  { value: '6551', label: '6551 — DIFAL' },
+  { value: '6556', label: '6556 — DIFAL' },
+]
+
+function CfopEditCell({ row, token }: { row: FronteiraXmlNaoSpedRow; token: string | null }) {
+  const queryClient = useQueryClient()
+  const [saving, setSaving] = useState(false)
+  const isOverridden = !!row.cfop_override
+
+  async function handleChange(newCfop: string) {
+    setSaving(true)
+    try {
+      if (newCfop === '__reset__') {
+        const res = await fetch(
+          `/api/icms-fronteira/nao-sped/cfop-override?chave=${encodeURIComponent(row.chave_nfe)}&ncm=${encodeURIComponent(row.ncm)}`,
+          { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+        )
+        if (!res.ok) throw new Error(await res.text())
+        toast.success('CFOP restaurado ao original')
+      } else {
+        const res = await fetch('/api/icms-fronteira/nao-sped/cfop-override', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ chave_nfe: row.chave_nfe, ncm: row.ncm, cfop_saida_override: newCfop }),
+        })
+        if (!res.ok) throw new Error(await res.text())
+        toast.success('CFOP ajustado — a nota foi reclassificada')
+      }
+      queryClient.invalidateQueries({ queryKey: ['icms-fronteira-nao-sped'] })
+    } catch (e) {
+      toast.error('Falha ao salvar CFOP: ' + (e instanceof Error ? e.message : ''))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Select value={row.cfop_saida} onValueChange={handleChange} disabled={saving}>
+        <SelectTrigger className={`h-6 text-xs w-[5.5rem] font-mono px-1.5 ${isOverridden ? 'border-amber-400 bg-amber-50 text-amber-800' : ''}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {CFOP_OPTIONS.map(o => (
+            <SelectItem key={o.value} value={o.value} className="text-xs font-mono">{o.label}</SelectItem>
+          ))}
+          {isOverridden && (
+            <SelectItem value="__reset__" className="text-xs text-muted-foreground">
+              ↩ Original ({row.cfop_original})
+            </SelectItem>
+          )}
+        </SelectContent>
+      </Select>
+      {isOverridden && (
+        <span className="text-[9px] font-semibold text-amber-600 leading-none">editado</span>
+      )}
+    </div>
+  )
+}
+
 // TabelaNotasXmlAntecip — Bloco C do regime ANTECIPAÇÃO. Memória de cálculo
 // coluna-a-coluna conforme orientação do contador Gilson (2026-06-02):
 // V.Prod · IPI · Frete NF · Outras NF · Total Operação · Alíq · V.Devido ·
@@ -1308,10 +1380,12 @@ function TabelaNotasXmlAntecip({
   rows,
   showAliq,
   cteLinks = {},
+  token,
 }: {
   rows: FronteiraXmlNaoSpedRow[]
   showAliq: boolean
   cteLinks?: Record<string, CteLink[]>
+  token?: string | null
 }) {
   const operacao       = (r: FronteiraXmlNaoSpedRow) => (r.v_prod || 0) + (r.v_ipi || 0) + (r.v_frete || 0) + (r.v_outro || 0)
   const totalVProd     = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
@@ -1369,7 +1443,7 @@ function TabelaNotasXmlAntecip({
                   <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
                 </TableCell>
                 <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
-                <TableCell className="text-xs font-mono">{row.cfop_saida || '—'}</TableCell>
+                <TableCell className="text-xs py-1"><CfopEditCell row={row} token={token ?? null} /></TableCell>
                 <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
@@ -1454,18 +1528,20 @@ function TabelaNotasXml({
   showAliq,
   cteLinks = {},
   regime,
+  token,
 }: {
   rows: FronteiraXmlNaoSpedRow[]
   showAliq: boolean
   cteLinks?: Record<string, CteLink[]>
   regime?: RegimedStr
+  token?: string | null
 }) {
   // Regime de antecipação usa a memória de cálculo coluna-a-coluna definida pelo
   // contador Gilson (2026-06-02): Produto · IPI · Frete NF · Outras NF · Total
   // Operação · Alíq · V. Devido · ICMS Destacado · ICMS a Pagar. DIFAL/ST mantêm
   // o layout original (cálculos distintos — não tocados).
   if (regime === 'antecipacao') {
-    return <TabelaNotasXmlAntecip rows={rows} showAliq={showAliq} cteLinks={cteLinks} />
+    return <TabelaNotasXmlAntecip rows={rows} showAliq={showAliq} cteLinks={cteLinks} token={token} />
   }
   const totalVProd     = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
   const totalVIpi      = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
@@ -1514,7 +1590,7 @@ function TabelaNotasXml({
                   <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
                 </TableCell>
                 <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
-                <TableCell className="text-xs font-mono">{row.cfop_saida || '—'}</TableCell>
+                <TableCell className="text-xs py-1"><CfopEditCell row={row} token={token ?? null} /></TableCell>
                 <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
@@ -2369,7 +2445,7 @@ function NotasTabBlocos({
                 ) : rowsXml.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-2 text-center">Todas as notas XML do mês estão no SPED.</p>
                 ) : (
-                  <TabelaNotasXml rows={rowsXml} showAliq={showAliq} cteLinks={cteLinksC} regime={regime} />
+                  <TabelaNotasXml rows={rowsXml} showAliq={showAliq} cteLinks={cteLinksC} regime={regime} token={token} />
                 )}
               </div>
             )}

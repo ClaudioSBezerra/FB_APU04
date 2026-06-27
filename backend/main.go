@@ -26,7 +26,7 @@ import (
 
 // Version information for backend deployment validation
 const (
-	BackendVersion = "2.1.8"
+	BackendVersion = "2.1.9"
 	FeatureSet     = "Escrituração de Entradas EFD, Importação ERP Bridge, NF-e Entradas, CT-e Entradas, Enriquecimento PIS/COFINS/IPI, Malha Fina, Apuração IBS/CBS, Créditos em Risco, SPED layout 020"
 )
 
@@ -1010,6 +1010,9 @@ func main() {
 	})
 
 	// Block C — NFs em XML não encontradas em nenhum SPED (nao_sped)
+	http.HandleFunc("/api/icms-fronteira/nao-sped/cfop-override", func(w http.ResponseWriter, r *http.Request) {
+		handlers.AuthMiddleware(handlers.NaoSpedCfopOverrideHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/nao-sped", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {

@@ -22,6 +22,8 @@ type FronteiraXmlNaoSpedRow struct {
 	FornNome      string  `json:"forn_nome"`
 	FornUF        string  `json:"forn_uf"`
 	CfopSaida     string  `json:"cfop_saida"`
+	CfopOriginal  string  `json:"cfop_original"`  // CFOP original do XML (antes do override)
+	CfopOverride  string  `json:"cfop_override"`  // CFOP sobrescrito pelo usuário (vazio se automático)
 	NCM           string  `json:"ncm"`
 	VProd         float64 `json:"v_prod"`
 	VIPI          float64 `json:"v_ipi"` // IPI do XML (<vIPI> do header)
@@ -94,7 +96,10 @@ WITH emp_uf AS (
     SELECT
         xf.id, xf.chave_nfe, xf.data_emissao, xf.forn_cnpj, xf.forn_nome,
         xf.forn_uf, xf.dest_uf, xf.dest_cnpj_cpf, xf.numero_nfe,
-        ig.cfop_saida,
+        -- CFOP efetivo: usa override do usuário quando presente, senão XML original
+        COALESCE(ov.cfop_saida_override, ig.cfop_saida) AS cfop_saida,
+        ig.cfop_saida                                    AS cfop_xml,
+        COALESCE(ov.cfop_saida_override, '')             AS cfop_override_val,
         ig.ncm,
         -- v_prod = soma dos itens deste grupo (NCM+CFOP)
         ig.item_sum                                                               AS v_prod,
@@ -109,6 +114,10 @@ WITH emp_uf AS (
     FROM xml_falt xf
     JOIN items_grouped ig ON ig.nfe_id = xf.id
     JOIN nf_total      nt ON nt.nfe_id  = xf.id
+    LEFT JOIN nao_sped_cfop_override ov
+           ON ov.company_id = $1::uuid
+          AND ov.chave_nfe  = xf.chave_nfe
+          AND COALESCE(ov.ncm, '') = COALESCE(ig.ncm, '')
 ), mapped AS (
     SELECT *,
         CASE
@@ -299,7 +308,9 @@ SELECT
             END
         ELSE 0
     END AS valor_devido,
-    COALESCE(ufb.base_por_dentro, false) AS base_por_dentro
+    COALESCE(ufb.base_por_dentro, false) AS base_por_dentro,
+    m.cfop_xml          AS cfop_original,
+    m.cfop_override_val AS cfop_override
 FROM mapped m
 LEFT JOIN LATERAL (
     SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct,
@@ -450,6 +461,7 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 				&row.VProd, &row.VIPI, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
 				&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
 				&row.IcmsDevidoEst, &row.ValorDevido, &row.BasePorDentro,
+				&row.CfopOriginal, &row.CfopOverride,
 			); err != nil {
 				log.Printf("IcmsFronteiraXmlNaoSped[%s] scan error: %v", regime, err)
 				continue
