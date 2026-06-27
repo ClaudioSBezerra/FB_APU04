@@ -177,23 +177,36 @@ SELECT
     COALESCE(cm.regime,
         CASE
             WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
-            WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
-                CASE
-                    WHEN regra.segmento_codigo IS NOT NULL
-                      AND EXISTS (
-                          SELECT 1 FROM company_segmentos cs
-                          WHERE cs.company_id = $1::uuid
-                            AND cs.segmento_codigo = regra.segmento_codigo
-                            AND cs.uf = m.eff_uf
-                      )
-                    THEN 'ST'
-                    ELSE 'ANTECIPACAO'
-                END
-            WHEN m.cfop_entrada IN ('2101','2102','2152') THEN 'ANTECIPACAO'
+            -- ST por NCM (orientação Gilson 2026-06-27): NCM cadastrado com segmento ST
+            -- → classifica como ST independentemente do CFOP do fornecedor. Necessário
+            -- quando o remetente não tem protocolo CONFAZ e usa CFOP 6101/6102.
+            WHEN regra.segmento_codigo IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM company_segmentos cs
+                  WHERE cs.company_id = $1::uuid
+                    AND cs.segmento_codigo = regra.segmento_codigo
+                    AND cs.uf = m.eff_uf
+              )
+            THEN 'ST'
+            WHEN m.cfop_entrada IN ('2403','2409','2651','2652','2101','2102','2152') THEN 'ANTECIPACAO'
             ELSE 'NAO_FRONTEIRA'
         END
     ) AS regime,
-    COALESCE(cm.status, 'auto') AS class_status,
+    COALESCE(cm.status,
+        -- 'ncm': CFOP normal (6101/6102) mas NCM tem regra ST → reclassificado pelo NCM
+        CASE
+            WHEN m.cfop_entrada IN ('2101','2102','2152')
+              AND regra.segmento_codigo IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM company_segmentos cs
+                  WHERE cs.company_id = $1::uuid
+                    AND cs.segmento_codigo = regra.segmento_codigo
+                    AND cs.uf = m.eff_uf
+              )
+            THEN 'ncm'
+            ELSE 'auto'
+        END
+    ) AS class_status,
     m.v_prod,
     m.v_ipi,
     m.v_frete,
@@ -247,11 +260,24 @@ SELECT
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
                     - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0) * m.item_ratio)
             END
-        WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
-            -- Antecipação (regra Gilson 2026-06-02): base = produto + IPI + frete da NF
-            -- + outras despesas da NF (SEM frete do CT-e — esse vai no bloco próprio do
-            -- CT-e). Abate apenas o ICMS destacado na NF (sem piso de 4% e sem ICMS do
-            -- CT-e). PE mantém o cálculo "por dentro"; demais UFs, direto.
+        -- ST por NCM: calcula ST com MVA independentemente do CFOP (inclui CT-e na base).
+        WHEN regra.segmento_codigo IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM company_segmentos cs
+              WHERE cs.company_id = $1::uuid
+                AND cs.segmento_codigo = regra.segmento_codigo
+                AND cs.uf = m.eff_uf
+          )
+        THEN CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
+            THEN GREATEST(0,
+                 (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) * m.item_ratio + m.v_outro)
+                 * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
+                 * COALESCE(regra.aliquota_interna,20.5)/100.0
+                 - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0) * m.item_ratio)
+            ELSE 0 END
+        -- ANTECIPACAO: todos os CFOPs em escopo sem regra de ST no NCM (inclui 6101/6102
+        -- sem protocolo CONFAZ e 6401/6403 sem segmento cadastrado).
+        WHEN m.cfop_entrada IN ('2403','2409','2651','2652','2101','2102','2152') THEN
             CASE WHEN COALESCE(ufb.base_por_dentro, false)
                 THEN GREATEST(0,
                     ((m.v_prod + m.v_ipi + m.v_frete + m.v_outro - m.v_icms)
@@ -262,36 +288,6 @@ SELECT
                     (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
                     * COALESCE(regra.aliquota_interna,20.5)/100.0
                     - m.v_icms)
-            END
-        WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
-            CASE
-                WHEN regra.segmento_codigo IS NOT NULL
-                  AND EXISTS (
-                      SELECT 1 FROM company_segmentos cs
-                      WHERE cs.company_id = $1::uuid
-                        AND cs.segmento_codigo = regra.segmento_codigo
-                        AND cs.uf = m.eff_uf
-                  )
-                THEN CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
-                    THEN GREATEST(0,
-                         (m.v_prod + m.v_ipi + m.v_frete + COALESCE(cte.v_frete_cte,0) * m.item_ratio + m.v_outro)
-                         * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
-                         * COALESCE(regra.aliquota_interna,20.5)/100.0
-                         - GREATEST(m.v_icms, m.v_prod * 4.0/100.0) - COALESCE(cte.v_icms_cte,0) * m.item_ratio)
-                    ELSE 0 END
-                -- Sem segmento → reclassificada como ANTECIPAÇÃO (regra Gilson: base sem
-                -- frete do CT-e, abate só o ICMS destacado na NF; respeita base por dentro)
-                ELSE CASE WHEN COALESCE(ufb.base_por_dentro, false)
-                    THEN GREATEST(0,
-                        ((m.v_prod + m.v_ipi + m.v_frete + m.v_outro - m.v_icms)
-                         / NULLIF(1.0 - COALESCE(regra.aliquota_interna,20.5)/100.0, 0))
-                        * COALESCE(regra.aliquota_interna,20.5)/100.0
-                        - m.v_icms)
-                    ELSE GREATEST(0,
-                        (m.v_prod + m.v_ipi + m.v_frete + m.v_outro)
-                        * COALESCE(regra.aliquota_interna,20.5)/100.0
-                        - m.v_icms)
-                END
             END
         ELSE 0
     END AS icms_devido_est,
@@ -335,19 +331,15 @@ LEFT JOIN icms_fronteira_classificacao_manual cm
 WHERE COALESCE(cm.regime,
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
-        WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
-            CASE
-                WHEN regra.segmento_codigo IS NOT NULL
-                  AND EXISTS (
-                      SELECT 1 FROM company_segmentos cs
-                      WHERE cs.company_id = $1::uuid
-                        AND cs.segmento_codigo = regra.segmento_codigo
-                        AND cs.uf = m.eff_uf
-                  )
-                THEN 'ST'
-                ELSE 'ANTECIPACAO'
-            END
-        WHEN m.cfop_entrada IN ('2101','2102','2152') THEN 'ANTECIPACAO'
+        WHEN regra.segmento_codigo IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM company_segmentos cs
+              WHERE cs.company_id = $1::uuid
+                AND cs.segmento_codigo = regra.segmento_codigo
+                AND cs.uf = m.eff_uf
+          )
+        THEN 'ST'
+        WHEN m.cfop_entrada IN ('2403','2409','2651','2652','2101','2102','2152') THEN 'ANTECIPACAO'
         ELSE 'NAO_FRONTEIRA'
     END) = $3
   AND COALESCE(cm.status, 'auto') <> 'excluded'

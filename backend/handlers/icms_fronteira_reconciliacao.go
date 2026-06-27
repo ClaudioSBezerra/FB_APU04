@@ -188,43 +188,51 @@ SELECT
     m.numero_nfe,
     m.forn_cnpj, m.forn_nome, COALESCE(m.forn_uf,'') AS forn_uf,
     m.cfop_saida, m.cfop_entrada,
-    -- Regime final: manual sobrescreve a sugestão automática (cfop_entrada).
-    COALESCE(cm.regime,
-        CASE
-            WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
-            WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN 'ST'
-            WHEN m.cfop_entrada IN ('2101','2102','2152') THEN 'ANTECIPACAO'
-            ELSE 'NAO_FRONTEIRA'
-        END
-    ) AS regime,
-    -- class_status: 'auto' (sugestão), 'manual' (validada/editada), 'excluded' (fora do cálculo)
-    COALESCE(cm.status, 'auto') AS class_status,
+    -- Regime automático por NCM (orientação Gilson 2026-06-27): ST detectado pelo
+    -- NCM, independente do CFOP do fornecedor. Sem mais reclassificação manual.
+    CASE
+        WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
+        WHEN regra.segmento_codigo IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM company_segmentos cs
+              WHERE cs.company_id = $1::uuid
+                AND cs.segmento_codigo = regra.segmento_codigo
+                AND cs.uf = COALESCE(m.dest_uf, 'PE')
+          )
+        THEN 'ST'
+        WHEN m.cfop_entrada IN ('2403','2409','2651','2652','2101','2102','2152') THEN 'ANTECIPACAO'
+        ELSE 'NAO_FRONTEIRA'
+    END AS regime,
+    'auto' AS class_status,
     (m.v_prod + m.v_frete + m.v_outro) AS v_opr,
-    -- Estimativa (XML-only não traz ICMS interestadual do SPED): usa alíquota
-    -- interestadual presumida pela UF do fornecedor (7% Sul/Sudeste, senão 12%).
-    -- Valor é ESTIMADO e exige validação antes de entrar no cálculo oficial.
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN
             GREATEST(0, (m.v_prod+m.v_frete+m.v_outro)
                 * (COALESCE(regra.aliquota_interna,20.5)
                    - CASE WHEN m.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0 ELSE 12.0 END)/100.0)
-        WHEN m.cfop_entrada IN ('2101','2102','2152') THEN
+        WHEN regra.segmento_codigo IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM company_segmentos cs
+              WHERE cs.company_id = $1::uuid
+                AND cs.segmento_codigo = regra.segmento_codigo
+                AND cs.uf = COALESCE(m.dest_uf, 'PE')
+          )
+        THEN CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
+            THEN GREATEST(0, (m.v_prod+m.v_frete+m.v_outro)
+                 * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
+                 * COALESCE(regra.aliquota_interna,20.5)/100.0
+                 - (m.v_prod+m.v_frete+m.v_outro)
+                   * CASE WHEN m.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0 ELSE 12.0 END/100.0)
+            ELSE 0 END
+        WHEN m.cfop_entrada IN ('2403','2409','2651','2652','2101','2102','2152') THEN
             GREATEST(0, (m.v_prod+m.v_frete+m.v_outro)
                 * (COALESCE(regra.aliquota_interna,20.5)
                    - CASE WHEN m.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0 ELSE 12.0 END)/100.0)
-        WHEN m.cfop_entrada IN ('2403','2409','2651','2652') THEN
-            CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
-                THEN GREATEST(0, (m.v_prod+m.v_frete+m.v_outro)
-                     * (1.0 + COALESCE(regra.mva_original, regra.mva_ajustado_12pct)/100.0)
-                     * COALESCE(regra.aliquota_interna,20.5)/100.0
-                     - (m.v_prod+m.v_frete+m.v_outro)
-                       * CASE WHEN m.forn_uf = ANY(ARRAY['PR','RS','SC','MG','RJ','SP']) THEN 7.0 ELSE 12.0 END/100.0)
-                ELSE 0 END
         ELSE 0
     END AS icms_devido_est
 FROM mapped m
 LEFT JOIN LATERAL (
-    SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct
+    SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct, r.segmento_codigo
     FROM icms_fronteira_regras_ncm r
     WHERE (r.company_id = $1 OR r.company_id IS NULL)
       AND r.uf_estado = COALESCE(m.dest_uf, 'PE')
@@ -232,11 +240,7 @@ LEFT JOIN LATERAL (
       AND LEFT(m.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
     ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC LIMIT 1
 ) regra ON true
-LEFT JOIN icms_fronteira_classificacao_manual cm
-    ON cm.company_id = $1 AND cm.chave_nfe = m.chave_nfe
 WHERE m.cfop_entrada IN ('2101','2102','2152','2403','2409','2651','2652','2551','2556')
-  -- Notas marcadas como 'excluded' não aparecem no bloco
-  AND COALESCE(cm.status, 'auto') <> 'excluded'
 ORDER BY m.data_emissao, m.chave_nfe
 `
 

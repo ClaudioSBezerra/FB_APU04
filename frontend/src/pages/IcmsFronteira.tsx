@@ -1612,7 +1612,13 @@ function TabelaNotasXml({
                   <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
                 </TableCell>
                 <TableCell className="text-xs font-mono font-semibold">{row.forn_uf || '—'}</TableCell>
-                <TableCell className="text-xs py-1"><CfopEditCell row={row} token={token ?? null} /></TableCell>
+                <TableCell className="text-xs py-1">
+                  <CfopEditCell row={row} token={token ?? null} />
+                  {row.class_status === 'ncm' && (
+                    <span className="text-[9px] font-sans text-blue-600 bg-blue-50 border border-blue-200 px-1 rounded leading-none mt-0.5 inline-block"
+                      title="NCM com regra ST — fornecedor sem protocolo CONFAZ, ST calculado pelo NCM">NCM→ST</span>
+                  )}
+                </TableCell>
                 <TableCell className="text-xs"><ChaveCell chave={row.chave_nfe} label={`NF-e ${row.numero_nfe}`} /></TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_prod)}</TableCell>
                 <TableCell className="text-xs text-right tabular-nums">{fmtBRL(row.v_ipi)}</TableCell>
@@ -3063,13 +3069,6 @@ interface ReconNota {
   tem_xml?: boolean
 }
 
-interface IASuggestion {
-  regime_sugerido: string
-  confianca: string
-  justificativa: string
-  contexto_usado?: Record<string, unknown>
-  historico_fornecedor?: Array<{ regime: string; cfop: string; qtd: number }>
-}
 interface ReconBlock { rows: ReconNota[]; total: number; count: number }
 interface ReconResponse {
   periodo: string
@@ -3121,181 +3120,48 @@ function ReconBlockTable({ block, showCfopMap }: { block: ReconBlock; showCfopMa
   )
 }
 
-// Tabela do bloco "Faltando" — com edição, validação e botão IA por linha.
 function FaltandoBlockTable({
-  block, token, periodo, queryClient,
+  block,
 }: {
   block: ReconBlock
-  token: string | null
-  periodo: string
-  queryClient: ReturnType<typeof useQueryClient>
+  token?: string | null
+  periodo?: string
+  queryClient?: ReturnType<typeof useQueryClient>
 }) {
-  const [iaModal, setIaModal] = useState<{ chave: string; sugestao: IASuggestion | null; loading: boolean } | null>(null)
-
-  async function saveManual(chave: string, regime: string, status: 'manual' | 'excluded') {
-    try {
-      const res = await fetch('/api/icms-fronteira/reconciliacao/classificacao', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ chave_nfe: chave, regime, status }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      toast.success(status === 'excluded' ? 'Nota excluída do cálculo' : 'Classificação validada')
-      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/reconciliacao', periodo] })
-    } catch (e) {
-      toast.error('Falha ao salvar: ' + (e instanceof Error ? e.message : ''))
-    }
-  }
-
-  async function resetManual(chave: string) {
-    try {
-      const res = await fetch(`/api/icms-fronteira/reconciliacao/classificacao?chave=${encodeURIComponent(chave)}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) throw new Error(await res.text())
-      toast.success('Voltou à classificação automática')
-      queryClient.invalidateQueries({ queryKey: ['icms-fronteira/reconciliacao', periodo] })
-    } catch (e) {
-      toast.error('Falha: ' + (e instanceof Error ? e.message : ''))
-    }
-  }
-
-  async function sugerirIA(chave: string) {
-    setIaModal({ chave, sugestao: null, loading: true })
-    try {
-      const res = await fetch('/api/icms-fronteira/reconciliacao/sugerir-ia', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ chave_nfe: chave }),
-      })
-      if (!res.ok) throw new Error((await res.json()).error || 'IA indisponível')
-      const d = await res.json()
-      setIaModal({ chave, sugestao: d, loading: false })
-    } catch (e) {
-      toast.error('IA: ' + (e instanceof Error ? e.message : ''))
-      setIaModal(null)
-    }
-  }
-
   if (!block.rows.length) {
     return <p className="text-xs text-muted-foreground py-4">Nenhuma nota neste bloco.</p>
   }
-
   return (
-    <>
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-xs">Emissão</TableHead>
-              <TableHead className="text-xs">NF</TableHead>
-              <TableHead className="text-xs">Fornecedor</TableHead>
-              <TableHead className="text-xs">UF</TableHead>
-              <TableHead className="text-xs">CFOP saída→entrada</TableHead>
-              <TableHead className="text-xs">Regime (editável)</TableHead>
-              <TableHead className="text-xs">Status</TableHead>
-              <TableHead className="text-xs text-right">V. Operação</TableHead>
-              <TableHead className="text-xs text-right">ICMS estimado</TableHead>
-              <TableHead className="text-xs text-right">Ações</TableHead>
+    <div className="rounded-md border overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="text-xs">Emissão</TableHead>
+            <TableHead className="text-xs">NF</TableHead>
+            <TableHead className="text-xs">Fornecedor</TableHead>
+            <TableHead className="text-xs">UF</TableHead>
+            <TableHead className="text-xs">CFOP saída→entrada</TableHead>
+            <TableHead className="text-xs">Regime</TableHead>
+            <TableHead className="text-xs text-right">V. Operação</TableHead>
+            <TableHead className="text-xs text-right">ICMS estimado</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {block.rows.map((r, i) => (
+            <TableRow key={`${r.chave_nfe}-${i}`}>
+              <TableCell className="text-xs">{r.data_emissao ? r.data_emissao.slice(0, 10) : '—'}</TableCell>
+              <TableCell className="text-xs">{r.numero_nfe || '—'}</TableCell>
+              <TableCell className="text-xs">{r.forn_nome || formatCNPJ(r.forn_cnpj)}</TableCell>
+              <TableCell className="text-xs">{r.forn_uf || '—'}</TableCell>
+              <TableCell className="text-xs tabular-nums">{r.cfop} → {r.cfop_entrada}</TableCell>
+              <TableCell className="text-xs"><RegimeBadge regime={r.regime} /></TableCell>
+              <TableCell className="text-xs text-right tabular-nums">{fmtBRL(r.v_opr)}</TableCell>
+              <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(r.icms_devido_est)}</TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {block.rows.map((r, i) => (
-              <TableRow key={`${r.chave_nfe}-${i}`}>
-                <TableCell className="text-xs">{r.data_emissao ? r.data_emissao.slice(0, 10) : '—'}</TableCell>
-                <TableCell className="text-xs">{r.numero_nfe || '—'}</TableCell>
-                <TableCell className="text-xs">{r.forn_nome || formatCNPJ(r.forn_cnpj)}</TableCell>
-                <TableCell className="text-xs">{r.forn_uf || '—'}</TableCell>
-                <TableCell className="text-xs tabular-nums">{r.cfop} → {r.cfop_entrada}</TableCell>
-                <TableCell className="text-xs">
-                  <Select
-                    value={r.regime}
-                    onValueChange={v => saveManual(r.chave_nfe, v, 'manual')}
-                  >
-                    <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ANTECIPACAO">Antecipação</SelectItem>
-                      <SelectItem value="ST">ST</SelectItem>
-                      <SelectItem value="DIFAL">DIFAL</SelectItem>
-                      <SelectItem value="NAO_FRONTEIRA">Não Fronteira</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell className="text-xs">
-                  {r.class_status === 'manual'
-                    ? <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">manual</Badge>
-                    : <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px]">auto</Badge>}
-                </TableCell>
-                <TableCell className="text-xs text-right tabular-nums">{fmtBRL(r.v_opr)}</TableCell>
-                <TableCell className="text-xs text-right tabular-nums font-semibold">{fmtBRL(r.icms_devido_est)}</TableCell>
-                <TableCell className="text-xs text-right whitespace-nowrap">
-                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
-                    title="Sugerir com IA" onClick={() => sugerirIA(r.chave_nfe)}>
-                    <Sparkles className="h-3 w-3 mr-1" />IA
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
-                    title="Validar (mantém o regime atual)" onClick={() => saveManual(r.chave_nfe, r.regime, 'manual')}>
-                    ✓
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px] text-red-600"
-                    title="Excluir do cálculo" onClick={() => saveManual(r.chave_nfe, r.regime, 'excluded')}>
-                    ×
-                  </Button>
-                  {r.class_status === 'manual' && (
-                    <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px] text-slate-500"
-                      title="Voltar à classificação automática" onClick={() => resetManual(r.chave_nfe)}>
-                      ↺
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Modal de sugestão IA */}
-      <Dialog open={!!iaModal} onOpenChange={o => !o && setIaModal(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Sugestão da IA</DialogTitle>
-            <DialogDescription className="text-xs">
-              Chave NF: ...{iaModal?.chave.slice(-12)}
-            </DialogDescription>
-          </DialogHeader>
-          {iaModal?.loading && <p className="text-sm py-6 text-center text-muted-foreground">Consultando IA...</p>}
-          {iaModal?.sugestao && (
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Regime sugerido:</span>
-                <RegimeBadge regime={iaModal.sugestao.regime_sugerido} />
-                <Badge variant="outline" className="text-[10px]">conf: {iaModal.sugestao.confianca}</Badge>
-              </div>
-              <div className="rounded-md border bg-muted/30 p-3 text-xs">{iaModal.sugestao.justificativa}</div>
-              {iaModal.sugestao.historico_fornecedor && iaModal.sugestao.historico_fornecedor.length > 0 && (
-                <div className="text-xs">
-                  <span className="text-muted-foreground">Histórico: </span>
-                  {iaModal.sugestao.historico_fornecedor.map(h => `${h.qtd}× ${h.regime}`).join(', ')}
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter className="gap-2">
-            <Button variant="outline" size="sm" onClick={() => setIaModal(null)}>Descartar</Button>
-            <Button
-              size="sm"
-              disabled={!iaModal?.sugestao}
-              onClick={async () => {
-                if (!iaModal?.sugestao) return
-                await saveManual(iaModal.chave, iaModal.sugestao.regime_sugerido, 'manual')
-                setIaModal(null)
-              }}
-            >Aplicar sugestão</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
 
@@ -4208,8 +4074,8 @@ function ReconciliacaoTab({ token }: { token: string | null }) {
                 <Info className="h-4 w-4" />
                 <AlertDescription className="text-xs">
                   Notas emitidas no mês, presentes nos XMLs mas ausentes do SPED. Classificadas
-                  automaticamente pelo CFOP de saída do fornecedor (6xxx→2xxx). ICMS é
-                  <strong> estimado</strong> — validar a classificação com o contador antes de incluir no cálculo oficial.
+                  automaticamente pelo <strong>NCM</strong> — se o NCM tiver regra de ST cadastrada a nota vai para ST,
+                  independente do CFOP do fornecedor. ICMS é <strong>estimado</strong>.
                 </AlertDescription>
               </Alert>
               <FaltandoBlockTable
