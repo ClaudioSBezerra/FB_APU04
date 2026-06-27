@@ -142,6 +142,7 @@ type FronteiraNotaRow struct {
 	IcmsDevidoEst float64 `json:"icms_devido_est"` // ICMS a pagar (devido − ICMS destacado)
 	ValorDevido   float64 `json:"valor_devido"`    // V. Devido bruto (antecipação)
 	BasePorDentro bool    `json:"base_por_dentro"` // UF usa cálculo "por dentro" (ex.: PE)
+	NfStatus      string  `json:"nf_status"`       // ATIVO | CANCELADO (deleção lógica)
 	Regime        string  `json:"regime"`
 	Bloco         string  `json:"bloco"`
 }
@@ -375,7 +376,8 @@ classified AS (
         regra.mva_ajustado_7pct                             AS regra_mva_7,
         regra.mva_ajustado_12pct                            AS regra_mva_12,
         regra.segmento_codigo                               AS regra_seg_codigo,
-        COALESCE(ufb.base_por_dentro, false)                AS base_por_dentro
+        COALESCE(ufb.base_por_dentro, false)                AS base_por_dentro,
+        COALESCE(c100.status, 'ATIVO')                      AS nf_status
     FROM mv_icms_fronteira_linhas l
     JOIN reg_c100 c100 ON c100.id = l.c100_id
     JOIN import_jobs j ON j.id = c100.job_id
@@ -642,9 +644,9 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 SELECT
     chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
     cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st, v_frete, v_outro,
-    aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, valor_devido, base_por_dentro, regime, bloco,
+    aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, valor_devido, base_por_dentro, nf_status, regime, bloco,
     COUNT(*)            OVER () AS total_count,
-    SUM(` + icmsExpr + `) OVER () AS total_full
+    SUM(CASE WHEN nf_status = 'ATIVO' THEN ` + icmsExpr + ` ELSE 0 END) OVER () AS total_full
 FROM classified
 WHERE regime = $3` + filtroSQL + `
 ORDER BY bloco, data_emissao DESC, chave_nfe
@@ -674,7 +676,7 @@ LIMIT 500
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
 			&row.CFOP, &row.VProd, &row.VIPI, &row.VIcms, &row.VBcST, &row.VST,
 			&row.VFrete, &row.VOutro,
-			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.ValorDevido, &row.BasePorDentro, &row.Regime,
+			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.ValorDevido, &row.BasePorDentro, &row.NfStatus, &row.Regime,
 			&row.Bloco,
 			&rowTotalCount, &rowTotalFull,
 		); err != nil {
@@ -685,12 +687,14 @@ LIMIT 500
 		if rowTotalFull.Valid {
 			totalFull = rowTotalFull.Float64
 		}
-		if row.Bloco == "mes_atual" {
-			totalMesAtual += row.IcmsDevidoEst
-			countMesAtual++
-		} else {
-			totalMesAnterior += row.IcmsDevidoEst
-			countMesAnterior++
+		if row.NfStatus != "CANCELADO" {
+			if row.Bloco == "mes_atual" {
+				totalMesAtual += row.IcmsDevidoEst
+				countMesAtual++
+			} else {
+				totalMesAnterior += row.IcmsDevidoEst
+				countMesAnterior++
+			}
 		}
 		result = append(result, row)
 	}

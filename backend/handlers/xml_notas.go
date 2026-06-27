@@ -47,6 +47,7 @@ type notaRow struct {
 	VIBS        float64 `json:"v_ibs"`
 	VCBS        float64 `json:"v_cbs"`
 	Source      string  `json:"source"`
+	Status      string  `json:"status"` // ATIVO | CANCELADO (entradas apenas)
 }
 
 func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
@@ -103,7 +104,8 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 				       COALESCE(dest_cnpj_cpf,''), COALESCE(dest_nome,''), COALESCE(dest_uf,''),
 				       COALESCE(v_nf,0), COALESCE(v_bc,0), COALESCE(v_icms,0),
 				       COALESCE(v_pis,0), COALESCE(v_cofins,0), COALESCE(v_ipi,0),
-				       COALESCE(v_ibs,0), COALESCE(v_cbs,0), source
+				       COALESCE(v_ibs,0), COALESCE(v_cbs,0), source,
+				       COALESCE(status, 'ATIVO')
 				FROM nfe_entradas`
 			orderBy = "data_emissao DESC, numero_nfe DESC"
 
@@ -118,7 +120,7 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 				       COALESCE(dest_cnpj_cpf,''), COALESCE(dest_nome,''), COALESCE(dest_uf,''),
 				       COALESCE(v_nf,0), COALESCE(v_bc,0), COALESCE(v_icms,0),
 				       COALESCE(v_pis,0), COALESCE(v_cofins,0), COALESCE(v_ipi,0),
-				       COALESCE(v_ibs,0), COALESCE(v_cbs,0), source
+				       COALESCE(v_ibs,0), COALESCE(v_cbs,0), source, ''
 				FROM nfe_saidas`
 			orderBy = "data_emissao DESC, numero_nfe DESC"
 
@@ -133,7 +135,7 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 				       '', '', '',
 				       COALESCE(v_rec,0), COALESCE(v_bc_icms,0), COALESCE(v_icms,0),
 				       0, 0, 0,
-				       COALESCE(v_ibs,0), COALESCE(v_cbs,0), source
+				       COALESCE(v_ibs,0), COALESCE(v_cbs,0), source, ''
 				FROM cte_entradas`
 			orderBy = "data_emissao DESC, numero_cte DESC"
 
@@ -207,7 +209,7 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 				&row.DestCNPJ, &row.DestNome, &row.DestUF,
 				&row.VTotal, &row.VBCICMS, &row.VICMS,
 				&row.VPIS, &row.VCOFINS, &row.VIPI,
-				&row.VIBS, &row.VCBS, &row.Source,
+				&row.VIBS, &row.VCBS, &row.Source, &row.Status,
 			); err != nil {
 				log.Printf("[XMLNotas] scan error: %v", err)
 				continue

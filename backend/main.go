@@ -26,7 +26,7 @@ import (
 
 // Version information for backend deployment validation
 const (
-	BackendVersion = "2.1.9"
+	BackendVersion = "2.2.0"
 	FeatureSet     = "Escrituração de Entradas EFD, Importação ERP Bridge, NF-e Entradas, CT-e Entradas, Enriquecimento PIS/COFINS/IPI, Malha Fina, Apuração IBS/CBS, Créditos em Risco, SPED layout 020"
 )
 
@@ -512,6 +512,10 @@ func main() {
 	http.HandleFunc("/api/user/companies", withAuth(handlers.GetUserCompaniesHandler, ""))
 
 	// Admin Endpoints
+	http.HandleFunc("/api/admin/nf/cancelamento", func(w http.ResponseWriter, r *http.Request) {
+		handlers.AuthMiddleware(handlers.AdminNFCancelamentoHandler(getDB()), "")(w, r)
+	})
+
 	http.HandleFunc("/api/admin/reset-db", withAuth(handlers.ResetDatabaseHandler, "admin"))
 	http.HandleFunc("/api/company/reset-data", withAuth(handlers.ResetCompanyDataHandler, ""))
 	http.HandleFunc("/api/admin/refresh-views", withAuth(handlers.RefreshViewsHandler, ""))
@@ -1011,7 +1015,9 @@ func main() {
 
 	// Block C — NFs em XML não encontradas em nenhum SPED (nao_sped)
 	http.HandleFunc("/api/icms-fronteira/nao-sped/cfop-override", func(w http.ResponseWriter, r *http.Request) {
-		handlers.AuthMiddleware(handlers.NaoSpedCfopOverrideHandler(database), "")(w, r)
+		db := getDB()
+		if db == nil { jsonServiceUnavailable(w); return }
+		handlers.AuthMiddleware(handlers.NaoSpedCfopOverrideHandler(db), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/nao-sped", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()

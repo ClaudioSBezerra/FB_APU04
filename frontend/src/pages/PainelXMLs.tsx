@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,8 @@ import {
 } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Download, LayoutList, BarChart3, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, LayoutList, BarChart3, ChevronLeft, ChevronRight, XCircle, RefreshCcw } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,6 +65,7 @@ interface NotaRow {
   v_ibs: number;
   v_cbs: number;
   source: string;
+  status?: string; // ATIVO | CANCELADO (apenas entradas)
 }
 
 interface NotasResponse {
@@ -107,6 +109,54 @@ function SourceBadge({ source }: { source: string }) {
   const s = map[source] ?? { label: source, className: 'bg-gray-100 text-gray-600' };
   return (
     <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${s.className}`}>{s.label}</Badge>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CancelNFButton — cancela/reativa uma NF-e entrada diretamente do grid
+// ---------------------------------------------------------------------------
+function CancelNFButton({ chave, status, token, queryKey }: {
+  chave: string;
+  status?: string;
+  token: string | null;
+  queryKey: unknown[];
+}) {
+  const qc = useQueryClient();
+  const [loading, setLoading] = useState(false);
+  const isCancelado = status === 'CANCELADO';
+
+  const toggle = async () => {
+    if (!token) return;
+    const newStatus = isCancelado ? 'ATIVO' : 'CANCELADO';
+    if (!isCancelado && !window.confirm(`Cancelar NF ${chave.slice(-8)}?\nEla continuará visível mas não será somada nos totais.`)) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/nf/cancelamento', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ chave_nfe: chave, status: newStatus }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+      toast.success(isCancelado ? 'NF reativada com sucesso' : 'NF marcada como cancelada');
+      qc.invalidateQueries({ queryKey });
+    } catch (e: unknown) {
+      toast.error(`Erro: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className={`h-6 px-1.5 text-[10px] ${isCancelado ? 'text-emerald-600 hover:text-emerald-700' : 'text-rose-500 hover:text-rose-600'}`}
+      onClick={toggle}
+      disabled={loading}
+      title={isCancelado ? 'Reativar NF' : 'Cancelar NF (deleção lógica)'}
+    >
+      {isCancelado ? <RefreshCcw className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+    </Button>
   );
 }
 
@@ -300,13 +350,15 @@ function TabelaNotas({
   tipo: 'entradas' | 'saidas' | 'ctes';
   shared: SharedFilters;
 }) {
+  const { token } = useAuth();
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [filtro, setFiltro] = useState({ inicio: '', fim: '' });
   const [offset, setOffset] = useState(0);
 
+  const qKey = ['xml-notas', tipo, filtro.inicio, filtro.fim, offset, shared.destUF, shared.cnpjFilial];
   const { data, isLoading, isError } = useQuery<NotasResponse>({
-    queryKey: ['xml-notas', tipo, filtro.inicio, filtro.fim, offset, shared.destUF, shared.cnpjFilial],
+    queryKey: qKey,
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
       if (filtro.inicio) params.set('data_inicio', filtro.inicio);
@@ -410,14 +462,20 @@ function TabelaNotas({
                   {!isCtes && <TableHead className="py-1.5 px-2 text-[11px] text-right">VLR COFINS</TableHead>}
                   <TableHead className="py-1.5 px-2 text-[11px] text-right">VLR IBS</TableHead>
                   <TableHead className="py-1.5 px-2 text-[11px] text-right">VLR CBS</TableHead>
+                  {tipo === 'entradas' && <TableHead className="py-1.5 px-2 text-[11px] text-center w-10">Ação</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row, idx) => (
-                  <TableRow key={`${row.chave}-${idx}`} className="h-8">
+                {rows.map((row, idx) => {
+                  const isCancelado = row.status === 'CANCELADO';
+                  return (
+                  <TableRow key={`${row.chave}-${idx}`} className={`h-8 ${isCancelado ? 'opacity-50 bg-rose-50/40 line-through' : ''}`}>
                     <TableCell className="py-1 px-2">
-                      <div className="text-[11px] font-mono font-medium leading-tight">
-                        {row.numero ? `${row.numero}${row.serie ? `/${row.serie}` : ''}` : '—'}
+                      <div className="flex items-center gap-1">
+                        <div className="text-[11px] font-mono font-medium leading-tight">
+                          {row.numero ? `${row.numero}${row.serie ? `/${row.serie}` : ''}` : '—'}
+                        </div>
+                        {isCancelado && <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-rose-100 text-rose-600 border-rose-300 no-underline">cancelada</Badge>}
                       </div>
                       <div className="text-[10px] text-muted-foreground font-mono leading-tight" title={row.chave}>
                         {shortChave(row.chave)}
@@ -454,8 +512,14 @@ function TabelaNotas({
                     {!isCtes && <TableCell className="py-1 px-2 text-right text-[11px]">{fmtBRL(row.v_cofins)}</TableCell>}
                     <TableCell className="py-1 px-2 text-right text-[11px]">{fmtBRL(row.v_ibs)}</TableCell>
                     <TableCell className="py-1 px-2 text-right text-[11px]">{fmtBRL(row.v_cbs)}</TableCell>
+                    {tipo === 'entradas' && (
+                      <TableCell className="py-1 px-2 text-center">
+                        <CancelNFButton chave={row.chave} status={row.status} token={token} queryKey={qKey} />
+                      </TableCell>
+                    )}
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

@@ -24,6 +24,7 @@ type FronteiraXmlNaoSpedRow struct {
 	CfopSaida     string  `json:"cfop_saida"`
 	CfopOriginal  string  `json:"cfop_original"`  // CFOP original do XML (antes do override)
 	CfopOverride  string  `json:"cfop_override"`  // CFOP sobrescrito pelo usuário (vazio se automático)
+	NfStatus      string  `json:"nf_status"`      // ATIVO | CANCELADO (deleção lógica)
 	NCM           string  `json:"ncm"`
 	VProd         float64 `json:"v_prod"`
 	VIPI          float64 `json:"v_ipi"` // IPI do XML (<vIPI> do header)
@@ -67,7 +68,8 @@ WITH emp_uf AS (
         COALESCE(ne.v_prod,0) AS v_prod, COALESCE(ne.v_frete,0) AS v_frete,
         COALESCE(ne.v_outro,0) AS v_outro,
         COALESCE(ne.v_ipi,0) AS v_ipi,    -- IPI total do XML (<vIPI> do header)
-        COALESCE(ne.v_icms,0) AS v_icms   -- ICMS interestadual pago pelo fornecedor (<vICMS>)
+        COALESCE(ne.v_icms,0) AS v_icms,   -- ICMS interestadual pago pelo fornecedor (<vICMS>)
+        COALESCE(ne.status, 'ATIVO') AS nf_status
     FROM nfe_entradas ne
     WHERE ne.company_id = $1
       AND EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
@@ -110,7 +112,8 @@ WITH emp_uf AS (
         ig.item_ipi                                                                          AS v_ipi,
         CASE WHEN nt.total_sum > 0 THEN xf.v_icms  * ig.item_sum / nt.total_sum ELSE 0 END AS v_icms,
         -- Fração deste grupo no total da NF (para ratear v_frete_cte / v_icms_cte do CT-e)
-        CASE WHEN nt.total_sum > 0 THEN ig.item_sum / nt.total_sum             ELSE 1 END AS item_ratio
+        CASE WHEN nt.total_sum > 0 THEN ig.item_sum / nt.total_sum             ELSE 1 END AS item_ratio,
+        xf.nf_status
     FROM xml_falt xf
     JOIN items_grouped ig ON ig.nfe_id = xf.id
     JOIN nf_total      nt ON nt.nfe_id  = xf.id
@@ -310,7 +313,8 @@ SELECT
     END AS valor_devido,
     COALESCE(ufb.base_por_dentro, false) AS base_por_dentro,
     m.cfop_xml          AS cfop_original,
-    m.cfop_override_val AS cfop_override
+    m.cfop_override_val AS cfop_override,
+    m.nf_status
 FROM mapped m
 LEFT JOIN LATERAL (
     SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct,
@@ -389,6 +393,7 @@ func fetchNaoSpedRows(db *sql.DB, companyID, periodo, regime, uf, forn, numNota,
 			&row.VProd, &row.VIPI, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
 			&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
 			&row.IcmsDevidoEst, &row.ValorDevido, &row.BasePorDentro,
+			&row.CfopOriginal, &row.CfopOverride, &row.NfStatus,
 		); err != nil {
 			continue
 		}
@@ -461,12 +466,14 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 				&row.VProd, &row.VIPI, &row.VFrete, &row.VFreteCTe, &row.VOutro, &row.VOpr,
 				&row.VIcmsNF, &row.VIcmsCTe, &row.AliqInter, &row.AliqInterna, &row.MVA,
 				&row.IcmsDevidoEst, &row.ValorDevido, &row.BasePorDentro,
-				&row.CfopOriginal, &row.CfopOverride,
+				&row.CfopOriginal, &row.CfopOverride, &row.NfStatus,
 			); err != nil {
 				log.Printf("IcmsFronteiraXmlNaoSped[%s] scan error: %v", regime, err)
 				continue
 			}
-			total += row.IcmsDevidoEst
+			if row.NfStatus != "CANCELADO" {
+				total += row.IcmsDevidoEst
+			}
 			result = append(result, row)
 		}
 

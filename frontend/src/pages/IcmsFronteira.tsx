@@ -125,6 +125,7 @@ interface FronteiraNotaRow {
   icms_devido_est: number
   valor_devido: number
   base_por_dentro: boolean
+  nf_status: string   // 'ATIVO' | 'CANCELADO'
   regime: string
   bloco: string // 'mes_atual' | 'mes_anterior'
 }
@@ -177,6 +178,7 @@ interface FronteiraXmlNaoSpedRow {
   base_por_dentro: boolean
   regime: string
   class_status: string // 'auto' | 'manual'
+  nf_status: string   // 'ATIVO' | 'CANCELADO'
 }
 
 interface FronteiraXmlNaoSpedResponse {
@@ -1026,20 +1028,21 @@ function TabelaNotasSpedAntecip({
   cteLinks?: Record<string, CteLink[]>
 }) {
   const operacao      = (r: FronteiraNotaRow) => (r.v_prod || 0) + (r.v_ipi || 0) + (r.v_frete || 0) + (r.v_outro || 0)
-  const totalVProd    = rows.reduce((a, r) => a + (r.v_prod || 0), 0)
-  const totalVIpi     = rows.reduce((a, r) => a + (r.v_ipi || 0), 0)
-  const totalVFrete   = rows.reduce((a, r) => a + (r.v_frete || 0), 0)
-  const totalVOutro   = rows.reduce((a, r) => a + (r.v_outro || 0), 0)
+  const activeRows    = rows.filter(r => r.nf_status !== 'CANCELADO')
+  const totalVProd    = activeRows.reduce((a, r) => a + (r.v_prod || 0), 0)
+  const totalVIpi     = activeRows.reduce((a, r) => a + (r.v_ipi || 0), 0)
+  const totalVFrete   = activeRows.reduce((a, r) => a + (r.v_frete || 0), 0)
+  const totalVOutro   = activeRows.reduce((a, r) => a + (r.v_outro || 0), 0)
   // CT-e (frete): mesma cadeia da NF; entra nos totais (regra Gilson 2026-06-03).
   let cteOper = 0, cteDevido = 0, cteDest = 0, ctePagar = 0
-  rows.forEach(r => (cteLinks[r.chave_nfe] ?? []).forEach(cte => {
+  activeRows.forEach(r => (cteLinks[r.chave_nfe] ?? []).forEach(cte => {
     const c = cteAntecip(cte.v_prest, cte.v_icms_cte, r.aliq_interna, r.base_por_dentro)
     cteOper += cte.v_prest; cteDevido += c.devido; cteDest += cte.v_icms_cte; ctePagar += c.aPagar
   }))
-  const totalOperacao = rows.reduce((a, r) => a + operacao(r), 0) + cteOper
-  const totalVDevido  = rows.reduce((a, r) => a + (r.valor_devido || 0), 0) + cteDevido
-  const totalVIcms    = rows.reduce((a, r) => a + (r.v_icms || 0), 0) + cteDest
-  const totalIcms     = rows.reduce((a, r) => a + (r.icms_devido_est || 0), 0) + ctePagar
+  const totalOperacao = activeRows.reduce((a, r) => a + operacao(r), 0) + cteOper
+  const totalVDevido  = activeRows.reduce((a, r) => a + (r.valor_devido || 0), 0) + cteDevido
+  const totalVIcms    = activeRows.reduce((a, r) => a + (r.v_icms || 0), 0) + cteDest
+  const totalIcms     = activeRows.reduce((a, r) => a + (r.icms_devido_est || 0), 0) + ctePagar
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
@@ -1070,12 +1073,16 @@ function TabelaNotasSpedAntecip({
         <TableBody>
           {rows.flatMap((row, idx) => {
             const ctes = cteLinks[row.chave_nfe] ?? []
+            const isCancelado = row.nf_status === 'CANCELADO'
             const nfRow = (
-              <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
+              <TableRow key={`nf-${row.chave_nfe}-${idx}`} className={isCancelado ? 'opacity-50 bg-rose-50/30 line-through' : ''}>
                 <TableCell className="text-xs font-mono whitespace-nowrap">
                   {fmtDateBR(row.data_emissao)}
                 </TableCell>
-                <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+                <TableCell className="text-xs font-mono">
+                  <span>{row.numero_nfe || '—'}</span>
+                  {isCancelado && <span className="ml-1 text-[9px] font-sans text-rose-600 bg-rose-100 px-1 rounded no-underline">cancelada</span>}
+                </TableCell>
                 <TableCell className="text-xs max-w-[180px]">
                   <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
                   <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
@@ -1176,11 +1183,12 @@ function TabelaNotasSped({
   if (regime === 'antecipacao') {
     return <TabelaNotasSpedAntecip rows={rows} showAliq={showAliq} cteLinks={cteLinks} />
   }
-  const totalVProd = rows.reduce((a, r) => a + (r.v_prod || 0), 0)
-  const totalVIpi  = rows.reduce((a, r) => a + (r.v_ipi || 0), 0)
+  const activeRowsSped = rows.filter(r => r.nf_status !== 'CANCELADO')
+  const totalVProd = activeRowsSped.reduce((a, r) => a + (r.v_prod || 0), 0)
+  const totalVIpi  = activeRowsSped.reduce((a, r) => a + (r.v_ipi || 0), 0)
   const totalVOpr  = totalVProd + totalVIpi
-  const totalVIcms = rows.reduce((a, r) => a + (r.v_icms || 0), 0)
-  const totalIcms  = rows.reduce((a, r) => {
+  const totalVIcms = activeRowsSped.reduce((a, r) => a + (r.v_icms || 0), 0)
+  const totalIcms  = activeRowsSped.reduce((a, r) => {
     const ctesDev = (cteLinks[r.chave_nfe] ?? []).reduce((s, c) => {
       const dev = c.v_prest * (r.aliq_interna || 20.5) / 100 - c.v_icms_cte
       return s + (dev > 0 ? dev : 0)
@@ -1214,12 +1222,16 @@ function TabelaNotasSped({
         <TableBody>
           {rows.flatMap((row, idx) => {
             const ctes = cteLinks[row.chave_nfe] ?? []
+            const isCanceladoSped = row.nf_status === 'CANCELADO'
             const nfRow = (
-              <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
+              <TableRow key={`nf-${row.chave_nfe}-${idx}`} className={isCanceladoSped ? 'opacity-50 bg-rose-50/30 line-through' : ''}>
                 <TableCell className="text-xs font-mono whitespace-nowrap">
                   {fmtDateBR(row.data_emissao)}
                 </TableCell>
-                <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+                <TableCell className="text-xs font-mono">
+                  <span>{row.numero_nfe || '—'}</span>
+                  {isCanceladoSped && <span className="ml-1 text-[9px] font-sans text-rose-600 bg-rose-100 px-1 rounded no-underline">cancelada</span>}
+                </TableCell>
                 <TableCell className="text-xs max-w-[180px]">
                   <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
                   <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
@@ -1388,20 +1400,21 @@ function TabelaNotasXmlAntecip({
   token?: string | null
 }) {
   const operacao       = (r: FronteiraXmlNaoSpedRow) => (r.v_prod || 0) + (r.v_ipi || 0) + (r.v_frete || 0) + (r.v_outro || 0)
-  const totalVProd     = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
-  const totalVIpi      = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
-  const totalVFrete    = rows.reduce((acc, r) => acc + (r.v_frete || 0), 0)
-  const totalVOutro    = rows.reduce((acc, r) => acc + (r.v_outro || 0), 0)
+  const activeXml      = rows.filter(r => r.nf_status !== 'CANCELADO')
+  const totalVProd     = activeXml.reduce((acc, r) => acc + (r.v_prod || 0), 0)
+  const totalVIpi      = activeXml.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
+  const totalVFrete    = activeXml.reduce((acc, r) => acc + (r.v_frete || 0), 0)
+  const totalVOutro    = activeXml.reduce((acc, r) => acc + (r.v_outro || 0), 0)
   // CT-e (frete): mesma cadeia da NF; entra nos totais (regra Gilson 2026-06-03).
   let cteOper = 0, cteDevido = 0, cteDest = 0, ctePagar = 0
-  rows.forEach(r => (cteLinks[r.chave_nfe] ?? []).forEach(cte => {
+  activeXml.forEach(r => (cteLinks[r.chave_nfe] ?? []).forEach(cte => {
     const c = cteAntecip(cte.v_prest, cte.v_icms_cte, r.aliq_interna, r.base_por_dentro)
     cteOper += cte.v_prest; cteDevido += c.devido; cteDest += cte.v_icms_cte; ctePagar += c.aPagar
   }))
-  const totalOperacao  = rows.reduce((acc, r) => acc + operacao(r), 0) + cteOper
-  const totalVDevido   = rows.reduce((acc, r) => acc + (r.valor_devido || 0), 0) + cteDevido
-  const totalVIcms     = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0) + cteDest
-  const totalIcms      = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0) + ctePagar
+  const totalOperacao  = activeXml.reduce((acc, r) => acc + operacao(r), 0) + cteOper
+  const totalVDevido   = activeXml.reduce((acc, r) => acc + (r.valor_devido || 0), 0) + cteDevido
+  const totalVIcms     = activeXml.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0) + cteDest
+  const totalIcms      = activeXml.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0) + ctePagar
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
@@ -1432,12 +1445,16 @@ function TabelaNotasXmlAntecip({
         <TableBody>
           {rows.flatMap((row, idx) => {
             const ctes = cteLinks[row.chave_nfe] ?? []
+            const isCanceladoXml = row.nf_status === 'CANCELADO'
             const nfRow = (
-              <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
+              <TableRow key={`nf-${row.chave_nfe}-${idx}`} className={isCanceladoXml ? 'opacity-50 bg-rose-50/30 line-through' : ''}>
                 <TableCell className="text-xs font-mono whitespace-nowrap">
                   {fmtDateBR(row.data_emissao)}
                 </TableCell>
-                <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+                <TableCell className="text-xs font-mono">
+                  <span>{row.numero_nfe || '—'}</span>
+                  {isCanceladoXml && <span className="ml-1 text-[9px] font-sans text-rose-600 bg-rose-100 px-1 rounded no-underline">cancelada</span>}
+                </TableCell>
                 <TableCell className="text-xs max-w-[180px]">
                   <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
                   <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
@@ -1543,13 +1560,14 @@ function TabelaNotasXml({
   if (regime === 'antecipacao') {
     return <TabelaNotasXmlAntecip rows={rows} showAliq={showAliq} cteLinks={cteLinks} token={token} />
   }
-  const totalVProd     = rows.reduce((acc, r) => acc + (r.v_prod || 0), 0)
-  const totalVIpi      = rows.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
+  const activeXmlST    = rows.filter(r => r.nf_status !== 'CANCELADO')
+  const totalVProd     = activeXmlST.reduce((acc, r) => acc + (r.v_prod || 0), 0)
+  const totalVIpi      = activeXmlST.reduce((acc, r) => acc + (r.v_ipi || 0), 0)
   const totalVOpr      = totalVProd + totalVIpi
-  const totalVFreteCTe = rows.reduce((acc, r) => acc + (r.v_frete_cte || 0), 0)
-  const totalVIcms     = rows.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
-  const totalVIcmsCTe  = rows.reduce((acc, r) => acc + (r.v_icms_cte || 0), 0)
-  const totalIcms      = rows.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
+  const totalVFreteCTe = activeXmlST.reduce((acc, r) => acc + (r.v_frete_cte || 0), 0)
+  const totalVIcms     = activeXmlST.reduce((acc, r) => acc + (r.v_icms_nf || 0), 0)
+  const totalVIcmsCTe  = activeXmlST.reduce((acc, r) => acc + (r.v_icms_cte || 0), 0)
+  const totalIcms      = activeXmlST.reduce((acc, r) => acc + (r.icms_devido_est || 0), 0)
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
@@ -1579,12 +1597,16 @@ function TabelaNotasXml({
         <TableBody>
           {rows.flatMap((row, idx) => {
             const ctes = cteLinks[row.chave_nfe] ?? []
+            const isCanceladoXmlST = row.nf_status === 'CANCELADO'
             const nfRow = (
-              <TableRow key={`nf-${row.chave_nfe}-${idx}`}>
+              <TableRow key={`nf-${row.chave_nfe}-${idx}`} className={isCanceladoXmlST ? 'opacity-50 bg-rose-50/30 line-through' : ''}>
                 <TableCell className="text-xs font-mono whitespace-nowrap">
                   {fmtDateBR(row.data_emissao)}
                 </TableCell>
-                <TableCell className="text-xs font-mono">{row.numero_nfe || '—'}</TableCell>
+                <TableCell className="text-xs font-mono">
+                  <span>{row.numero_nfe || '—'}</span>
+                  {isCanceladoXmlST && <span className="ml-1 text-[9px] font-sans text-rose-600 bg-rose-100 px-1 rounded no-underline">cancelada</span>}
+                </TableCell>
                 <TableCell className="text-xs max-w-[180px]">
                   <div className="truncate" title={row.forn_nome}>{row.forn_nome || '—'}</div>
                   <div className="text-muted-foreground text-[10px] font-mono">{formatCNPJ(row.forn_cnpj)}</div>
