@@ -185,9 +185,33 @@ xml_itens AS (
     FROM nfe_entradas_itens nii
     JOIN nfe_entradas ne ON ne.id = nii.nfe_id
     WHERE ne.company_id = $1
-      AND (CASE WHEN LEFT(nii.cfop,1)='6' THEN '2'||SUBSTRING(nii.cfop FROM 2)
+      AND (
+          -- CFOPs de ST direto (fornecedor com protocolo CONFAZ)
+          (CASE WHEN LEFT(nii.cfop,1)='6' THEN '2'||SUBSTRING(nii.cfop FROM 2)
                 WHEN LEFT(nii.cfop,1)='5' THEN '1'||SUBSTRING(nii.cfop FROM 2)
                 ELSE nii.cfop END) IN ('2403','2409','2651','2652')
+          -- CFOPs de venda normal (6101/6102) onde NCM tem regra de ST cadastrada
+          -- e a empresa tem o segmento correspondente na UF destino (orientação Gilson 2026-06-27)
+          OR (
+              (CASE WHEN LEFT(nii.cfop,1)='6' THEN '2'||SUBSTRING(nii.cfop FROM 2)
+                    WHEN LEFT(nii.cfop,1)='5' THEN '1'||SUBSTRING(nii.cfop FROM 2)
+                    ELSE nii.cfop END) IN ('2101','2102','2152')
+              AND nii.ncm IS NOT NULL AND nii.ncm <> ''
+              AND EXISTS (
+                  SELECT 1 FROM icms_fronteira_regras_ncm r
+                  JOIN company_segmentos cs
+                    ON cs.company_id = $1::uuid
+                   AND cs.segmento_codigo = r.segmento_codigo
+                   AND cs.uf = COALESCE(ne.dest_uf,'PE')
+                  WHERE (r.company_id = $1 OR r.company_id IS NULL)
+                    AND r.uf_estado = COALESCE(ne.dest_uf,'PE')
+                    AND r.segmento_codigo IS NOT NULL
+                    AND LENGTH(r.ncm_prefixo) >= 4
+                    AND LEFT(LEFT(regexp_replace(COALESCE(nii.ncm,''),'[^0-9]','','g'),8),
+                             LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
+              )
+          )
+      )
       AND EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
       AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',2)::int
       AND ($3::text = '' OR COALESCE(ne.dest_uf,'PE') = $3)
