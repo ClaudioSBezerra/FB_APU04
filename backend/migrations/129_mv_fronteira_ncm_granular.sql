@@ -39,7 +39,7 @@ fonte AS (
         -- NCM normalizado: 8 dígitos numéricos do reg_0200 (produto SPED).
         -- Itens sem NCM no SPED ficam no grupo '' e usam fallback XML na query.
         LEFT(regexp_replace(COALESCE(p.cod_ncm, ''), '[^0-9]', '', 'g'), 8)       AS ncm_8,
-        SUM(COALESCE(c170.vl_item, 0))                                             AS sum_item,
+        SUM(COALESCE(xi.v_prod, c170.vl_item, 0))                                 AS sum_item,
         -- IPI: C170 item (mais preciso) → C190 por CFOP → XML → 0
         COALESCE(
             NULLIF(SUM(COALESCE(c170.vl_ipi, 0)), 0),
