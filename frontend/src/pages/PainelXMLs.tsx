@@ -353,16 +353,18 @@ function TabelaNotas({
   const { token } = useAuth();
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
-  const [filtro, setFiltro] = useState({ inicio: '', fim: '' });
+  const [chaveNf, setChaveNf] = useState('');
+  const [filtro, setFiltro] = useState({ inicio: '', fim: '', chave: '' });
   const [offset, setOffset] = useState(0);
 
-  const qKey = ['xml-notas', tipo, filtro.inicio, filtro.fim, offset, shared.destUF, shared.cnpjFilial];
+  const qKey = ['xml-notas', tipo, filtro.inicio, filtro.fim, filtro.chave, offset, shared.destUF, shared.cnpjFilial];
   const { data, isLoading, isError } = useQuery<NotasResponse>({
     queryKey: qKey,
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
       if (filtro.inicio) params.set('data_inicio', filtro.inicio);
       if (filtro.fim) params.set('data_fim', filtro.fim);
+      if (filtro.chave) params.set('chave', filtro.chave);
       if (shared.destUF) params.set('dest_uf', shared.destUF);
       if (shared.cnpjFilial) params.set('cnpj_filial', shared.cnpjFilial);
       const res = await fetch(`/api/xml/notas/${tipo}?${params}`);
@@ -383,7 +385,7 @@ function TabelaNotas({
 
   const handleSearch = () => {
     setOffset(0);
-    setFiltro({ inicio: dataInicio, fim: dataFim });
+    setFiltro({ inicio: dataInicio, fim: dataFim, chave: chaveNf.trim() });
   };
 
   if (isError) {
@@ -413,6 +415,17 @@ function TabelaNotas({
             onChange={e => setDataFim(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
             className="h-8 w-36 text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground whitespace-nowrap">Chave / Nº NF</label>
+          <Input
+            type="text"
+            placeholder="Chave ou número"
+            value={chaveNf}
+            onChange={e => setChaveNf(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            className="h-8 w-44 text-xs font-mono"
           />
         </div>
         <Button size="sm" variant="outline" onClick={handleSearch} disabled={isLoading} className="h-8">

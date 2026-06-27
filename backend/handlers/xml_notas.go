@@ -81,6 +81,7 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 		cnpj := strings.TrimSpace(q.Get("cnpj"))
 		destUF := strings.ToUpper(strings.TrimSpace(q.Get("dest_uf")))
 		cnpjFilial := onlyDigits(strings.TrimSpace(q.Get("cnpj_filial")))
+		chave := strings.TrimSpace(q.Get("chave"))
 		limit := 100
 		offset := 0
 		if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v <= 500 {
@@ -90,12 +91,13 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 			offset = v
 		}
 
-		var selectSQL, fromTable, orderBy, cnpjCol string
+		var selectSQL, fromTable, orderBy, cnpjCol, chaveCol, numCol string
 
 		switch tipo {
 		case "entradas":
 			fromTable = "nfe_entradas"
 			cnpjCol = "forn_cnpj"
+			chaveCol, numCol = "chave_nfe", "numero_nfe"
 			selectSQL = `
 				SELECT chave_nfe, COALESCE(numero_nfe,''), COALESCE(serie,''),
 				       TO_CHAR(data_emissao,'DD/MM/YYYY'), mes_ano,
@@ -112,6 +114,7 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 		case "saidas":
 			fromTable = "nfe_saidas"
 			cnpjCol = "emit_cnpj"
+			chaveCol, numCol = "chave_nfe", "numero_nfe"
 			selectSQL = `
 				SELECT chave_nfe, COALESCE(numero_nfe,''), COALESCE(serie,''),
 				       TO_CHAR(data_emissao,'DD/MM/YYYY'), mes_ano,
@@ -127,6 +130,7 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 		case "ctes":
 			fromTable = "cte_entradas"
 			cnpjCol = "emit_cnpj"
+			chaveCol, numCol = "chave_cte", "numero_cte"
 			selectSQL = `
 				SELECT chave_cte, COALESCE(numero_cte,''), '',
 				       TO_CHAR(data_emissao,'DD/MM/YYYY'), mes_ano,
@@ -181,6 +185,12 @@ func XMLNotasHandler(db *sql.DB) http.HandlerFunc {
 				args = append(args, cnpjFilial+"%")
 				idx++
 			}
+		}
+		if chave != "" {
+			where += fmt.Sprintf(" AND (COALESCE(%s,'') ILIKE $%d OR COALESCE(%s,'') ILIKE $%d)", chaveCol, idx, numCol, idx+1)
+			like := "%" + chave + "%"
+			args = append(args, like, like)
+			idx += 2
 		}
 
 		countArgs := make([]interface{}, len(args))
