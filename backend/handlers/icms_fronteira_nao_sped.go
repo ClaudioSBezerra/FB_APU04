@@ -437,6 +437,8 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		forn, numNota, dataIni, dataFim := naoSpedFiltros(r)
+		log.Printf("[NAO-SPED-DBG] regime=%s periodo=%s uf=%q forn=%q numNota=%q dataIni=%q dataFim=%q",
+			regime, periodo, uf, forn, numNota, dataIni, dataFim)
 		rows, err := db.Query(naoSpedQuery, companyID, periodo, regime, uf, forn, numNota, dataIni, dataFim)
 		if err != nil {
 			log.Printf("IcmsFronteiraXmlNaoSped[%s] error: %v", regime, err)
@@ -463,11 +465,16 @@ func IcmsFronteiraXmlNaoSpedHandler(db *sql.DB) http.HandlerFunc {
 				log.Printf("IcmsFronteiraXmlNaoSped[%s] scan error: %v", regime, err)
 				continue
 			}
+			if row.NumeroNFe == "159027" {
+				log.Printf("[NAO-SPED-DBG] *** NF 159027 ENCONTRADA *** ncm=%s cfop=%s regime=%s class=%s effUf=? status=%s icmsDev=%.2f",
+					row.NCM, row.CfopSaida, row.Regime, row.ClassStatus, row.NfStatus, row.IcmsDevidoEst)
+			}
 			if row.NfStatus != "CANCELADO" {
 				total += row.IcmsDevidoEst
 			}
 			result = append(result, row)
 		}
+		log.Printf("[NAO-SPED-DBG] regime=%s total_rows=%d", regime, len(result))
 
 		chaves := make([]string, len(result))
 		for i, r := range result {
