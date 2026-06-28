@@ -20,6 +20,11 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 - [x] **Phase 8: Cadastro de Empresas + Ambiente Administrativo por UF** - Cadastro completo de empresa (CNPJ/IE/CNAE), gestão multi-empresa na UI, ambiente administrativo por UF com regras ICMS-Fronteira (PE/BA/CE) (completed 2026-05-23)
 - [x] **Phase 9: Módulos 2.x — Analytics Dimensional** - Por CFOP (2.2), por NCM (2.1), por UF/destino com mapa coroplético (2.3), segmentação B2B vs. B2C (2.4) (completed 2026-05-23)
 
+---
+*Milestone v6.00 — ICMS Fronteira (Substituição Tributária / Antecipação)*
+
+- [x] **Phase 10: ICMS Fronteira — ST por NCM no Bloco C** - Classificação automática de ST pelo NCM (regra + segmento da empresa na UF) para NFs em XML sem SPED, independentemente do CFOP do fornecedor; fecha o caso de fornecedor sem protocolo CONFAZ (CFOP 6101/6102); remove a tela de reclassificação manual (completed 2026-06-27, UAT 5/5 em 2026-06-28)
+
 ## Phase Details
 
 ### Phase 1: Estabilização Crítica (Reset + Cache)
@@ -228,6 +233,25 @@ Plans:
 - [x] 09-01-PLAN.md — Backend: reforma_modulo2.go (4 handlers JSON + 2 CSV: cfopAnalysis, ncmAnalysis, ufDestino, b2bB2c) + 6 rotas em main.go (wave 1)
 - [x] 09-02-PLAN.md — Frontend: 4 páginas (Reforma22/21/23/24) + ativação de 4 tabs em navigation.ts + 4 rotas em App.tsx (wave 2, depende de 09-01)
 
+### Phase 10: ICMS Fronteira — ST por NCM no Bloco C
+
+**Goal**: Classificar como ICMS-ST, pelo NCM, as NFs presentes em XML mas ausentes do SPED (Bloco C) quando o NCM tem regra de ST cadastrada e a empresa tem o segmento da regra para a UF destino — independentemente do CFOP do fornecedor. Resolve o caso do fornecedor sem protocolo CONFAZ, que emite com CFOP de venda normal (6101/6102) mas cuja mercadoria é de ST.
+**Depends on**: Phase 8 (cadastro de regras por UF + segmentos)
+**Requirements**: FRST-01, FRST-02, FRST-03
+**Success Criteria** (what must be TRUE):
+
+  1. NF CFOP 6101/6102 (entrada 2101/2102/2152) com NCM de ST + segmento da empresa na UF → classificada como ST (não Antecipação)
+  2. Demonstrativo ST por Item (Bloco C) inclui essas NFs, com MVA/base/alíquota por item
+  3. Aba Antecipação e aba ST classificam a mesma NF de forma consistente (não some de ambas)
+  4. Tela de reclassificação manual removida — classificação por NCM é regra automática do sistema
+  5. Badge "NCM→ST" indica visualmente as NFs reclassificadas pelo NCM
+
+**Plans:** 1/1 plan complete (retroativo)
+
+Plans:
+
+- [x] 10-01-PLAN.md — Classificação NCM-first nas 3 views do Bloco C (nao-sped, reconciliação, ST por item) + remoção da tela de reclassificação manual (retroativo)
+
 ## Progress
 
 **Execution Order:**
@@ -244,6 +268,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Módulos 1.x — Exposição Tributária Direta | 2/2 | Verified | 2026-05-23 |
 | 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Verified | 2026-05-23 |
 | 9. Módulos 2.x — Analytics Dimensional | 2/2 | Verified | 2026-05-23 |
+| 10. ICMS Fronteira — ST por NCM no Bloco C | 1/1 | Verified (UAT 5/5) | 2026-06-28 |
 
 > **Milestone v5.00 fechado em 2026-05-29.** Fases 6–9 marcadas como *Verified* por
 > fechamento administrativo (sem UAT formal), a pedido do usuário — o trabalho ativo
