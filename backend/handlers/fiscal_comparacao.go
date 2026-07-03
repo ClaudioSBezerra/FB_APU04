@@ -156,10 +156,10 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 
 		query := fmt.Sprintf(`
 			SELECT id, chave_nfe, COALESCE(numero_nfe,''), COALESCE(serie,''),
-			       COALESCE(dest_nome,''), TO_CHAR(data_emissao,'DD/MM/YYYY'),
+			       COALESCE(dest_xnome,''), TO_CHAR(data_emissao,'DD/MM/YYYY'),
 			       COALESCE(v_icms,0), COALESCE(v_st,0), COALESCE(v_pis,0),
 			       COALESCE(v_cofins,0), COALESCE(v_ibs,0), COALESCE(v_cbs,0)
-			FROM nfe_saidas
+			FROM pacotefiscal_nfe_saidas
 			%s
 			ORDER BY data_emissao DESC
 			LIMIT 50`, where)
@@ -224,7 +224,7 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			fei.percentual_difal, fei.valor_icms_partilha_destino, fei.valor_icms_pobreza,
 			fei.grupo_fiscal_codigo,
 			(fei.full_result->>'BaseCalculoIbsCbs')::numeric AS base_calculo_ibs_cbs
-		FROM nfe_saidas_itens nsi
+		FROM pacotefiscal_nfe_saidas_itens nsi
 		LEFT JOIN fiscal_execution_items fei ON fei.nfe_item_id = nsi.id
 		WHERE nsi.nfe_id = $1 AND nsi.company_id = $2
 		ORDER BY nsi.n_item ASC`, nfeID, companyID)

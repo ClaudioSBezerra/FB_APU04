@@ -72,6 +72,7 @@ export const modules: Record<string, ModuleConfig> = {
   pacotefiscal: {
     label: 'Teste Pacote Fiscal',
     tabs: [
+      { label: 'Importar XML', path: '/pacote-fiscal/importar', adminOnly: true },
       { label: 'Comparação Fiscal', path: '/pacote-fiscal/comparacao' },
     ],
   },

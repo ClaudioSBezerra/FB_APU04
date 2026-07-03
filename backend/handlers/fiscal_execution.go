@@ -124,8 +124,8 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		var emitCNPJ, emitUF, destUF, destCMun string
 		var dataEmissao time.Time
 		err = db.QueryRow(`
-			SELECT emit_cnpj, COALESCE(emit_uf,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), data_emissao
-			FROM nfe_saidas
+			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), data_emissao
+			FROM pacotefiscal_nfe_saidas
 			WHERE id = $1 AND company_id = $2`, req.NfeID, companyID,
 		).Scan(&emitCNPJ, &emitUF, &destUF, &destCMun, &dataEmissao)
 		if err == sql.ErrNoRows {
@@ -133,7 +133,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		if err != nil {
-			log.Printf("FiscalExecutionRunHandler: erro ao carregar nfe_saidas (nfe_id=%s): %v", req.NfeID, err)
+			log.Printf("FiscalExecutionRunHandler: erro ao carregar pacotefiscal_nfe_saidas (nfe_id=%s): %v", req.NfeID, err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao carregar nota")
 			return
 		}
@@ -149,11 +149,11 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 
 		itemRows, err := db.Query(`
 			SELECT id, COALESCE(c_prod,''), COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_ipi,0)
-			FROM nfe_saidas_itens
+			FROM pacotefiscal_nfe_saidas_itens
 			WHERE nfe_id = $1 AND company_id = $2
 			ORDER BY n_item ASC`, req.NfeID, companyID)
 		if err != nil {
-			log.Printf("FiscalExecutionRunHandler: erro ao carregar nfe_saidas_itens (nfe_id=%s): %v", req.NfeID, err)
+			log.Printf("FiscalExecutionRunHandler: erro ao carregar pacotefiscal_nfe_saidas_itens (nfe_id=%s): %v", req.NfeID, err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao carregar itens da nota")
 			return
 		}
