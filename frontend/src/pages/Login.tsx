@@ -134,9 +134,9 @@ const Login = () => {
 
         {/* ── Rodapé do painel ── */}
         <div className="relative z-10">
-          {/* Versão — confirma o build ativo */}
+          {/* Versão — confirma que frontend e backend do build ativo batem */}
           <p className="text-xs" style={{ color: "#6b7280" }}>
-            EFD ICMS/IPI v{apiVersion}
+            EFD ICMS/IPI · Frontend v{__APP_VERSION__} · Backend v{apiVersion}
           </p>
         </div>
       </div>
