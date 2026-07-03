@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -30,6 +31,10 @@ export function NfeSearchCombobox({ onSelect }: { onSelect: (nfe: NfeSearchResul
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
+  // Filtro de período — permite listar NF-e por data de emissão sem já
+  // saber o número/chave (o texto de busca sozinho exige >=3 chars digitados).
+  const [dataInicio, setDataInicio] = useState('');
+  const [dataFim, setDataFim] = useState('');
 
   // Debounce: 300ms é a convenção-padrão adotada nesta fase (sem precedente
   // exato no codebase — primeiro combobox server-driven do projeto).
@@ -38,16 +43,22 @@ export function NfeSearchCombobox({ onSelect }: { onSelect: (nfe: NfeSearchResul
     return () => clearTimeout(t);
   }, [query]);
 
+  const hasDateFilter = dataInicio !== '' || dataFim !== '';
+
   const { data, isFetching } = useQuery<NfeSearchResult[]>({
-    queryKey: ['nfe-saidas-search', debounced, companyId],
+    queryKey: ['nfe-saidas-search', debounced, dataInicio, dataFim, companyId],
     queryFn: async () => {
-      const res = await fetch(`/api/fiscal/comparacao/search?q=${encodeURIComponent(debounced)}`, {
+      const params = new URLSearchParams({ q: debounced });
+      if (dataInicio) params.set('data_inicio', dataInicio);
+      if (dataFim) params.set('data_fim', dataFim);
+      const res = await fetch(`/api/fiscal/comparacao/search?${params}`, {
         headers: { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId || '' },
       });
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
-    enabled: debounced.length >= 3, // evita disparar com 1-2 caracteres
+    // Roda com >=3 chars de busca OU com filtro de período aplicado
+    enabled: debounced.length >= 3 || hasDateFilter,
   });
 
   return (
@@ -60,10 +71,30 @@ export function NfeSearchCombobox({ onSelect }: { onSelect: (nfe: NfeSearchResul
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0">
         <Command shouldFilter={false}>
+          <div className="flex items-center gap-1.5 px-2 pt-2 pb-1.5 border-b">
+            <label className="text-[10px] text-muted-foreground whitespace-nowrap">De</label>
+            <Input
+              type="date"
+              value={dataInicio}
+              onChange={e => setDataInicio(e.target.value)}
+              className="h-6 text-[11px] px-1.5"
+            />
+            <label className="text-[10px] text-muted-foreground whitespace-nowrap">Até</label>
+            <Input
+              type="date"
+              value={dataFim}
+              onChange={e => setDataFim(e.target.value)}
+              className="h-6 text-[11px] px-1.5"
+            />
+          </div>
           <CommandInput placeholder="Número ou chave de acesso..." value={query} onValueChange={setQuery} />
           <CommandList>
             <CommandEmpty className="text-xs py-3 text-center">
-              {isFetching ? 'Buscando...' : debounced.length < 3 ? 'Digite ao menos 3 caracteres.' : 'Nenhuma nota encontrada.'}
+              {isFetching
+                ? 'Buscando...'
+                : debounced.length < 3 && !hasDateFilter
+                  ? 'Digite ao menos 3 caracteres ou filtre por período.'
+                  : 'Nenhuma nota encontrada.'}
             </CommandEmpty>
             <CommandGroup>
               {(data ?? []).map(nfe => (

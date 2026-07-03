@@ -13,6 +13,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -105,19 +106,46 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		q := strings.TrimSpace(r.URL.Query().Get("q"))
-		if len(q) < 3 {
+		dataInicio := strings.TrimSpace(r.URL.Query().Get("data_inicio"))
+		dataFim := strings.TrimSpace(r.URL.Query().Get("data_fim"))
+		hasDateFilter := dataInicio != "" || dataFim != ""
+
+		// Sem texto de busca (>=3 chars) e sem filtro de período: não roda
+		// query nenhuma, responde vazio (evita listar a tabela toda).
+		if len(q) < 3 && !hasDateFilter {
 			json.NewEncoder(w).Encode([]NfeSearchResult{})
 			return
 		}
 
-		rows, err := db.Query(`
+		where := "WHERE company_id = $1"
+		args := []interface{}{companyID}
+		idx := 2
+
+		if len(q) >= 3 {
+			where += fmt.Sprintf(" AND (numero_nfe ILIKE '%%'||$%d||'%%' OR chave_nfe ILIKE '%%'||$%d||'%%')", idx, idx)
+			args = append(args, q)
+			idx++
+		}
+		if dataInicio != "" {
+			where += fmt.Sprintf(" AND data_emissao >= $%d", idx)
+			args = append(args, dataInicio)
+			idx++
+		}
+		if dataFim != "" {
+			where += fmt.Sprintf(" AND data_emissao <= $%d", idx)
+			args = append(args, dataFim)
+			idx++
+		}
+
+		query := fmt.Sprintf(`
 			SELECT id, chave_nfe, COALESCE(numero_nfe,''), COALESCE(serie,''),
 			       COALESCE(dest_nome,''), TO_CHAR(data_emissao,'DD/MM/YYYY')
 			FROM nfe_saidas
-			WHERE company_id = $1
-			  AND (numero_nfe ILIKE '%'||$2||'%' OR chave_nfe ILIKE '%'||$2||'%')
+			%s
 			ORDER BY data_emissao DESC
-			LIMIT 20`, companyID, q)
+			LIMIT 50`, where)
+
+		rows, err := db.Query(query, args...)
 		if err != nil {
 			log.Printf("[FiscalComparacaoSearch] query error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao buscar NF-e")
