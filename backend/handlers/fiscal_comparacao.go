@@ -22,14 +22,23 @@ import (
 )
 
 // NfeSearchResult representa um candidato retornado pela busca de NF-e por
-// número ou chave de acesso (autocomplete server-side).
+// número ou chave de acesso (autocomplete server-side). Inclui os totais de
+// imposto do CABEÇALHO da nota (nfe_saidas — vindos do bloco <ICMSTot> do
+// XML), usados pela tela para o "Resumo da Nota" (acumulado dos itens vs.
+// total declarado da NF), sem precisar de uma segunda chamada ao backend.
 type NfeSearchResult struct {
-	ID          string `json:"id"`
-	ChaveNFe    string `json:"chave_nfe"`
-	NumeroNFe   string `json:"numero_nfe"`
-	Serie       string `json:"serie"`
-	DestNome    string `json:"dest_nome"`
-	DataEmissao string `json:"data_emissao"`
+	ID          string  `json:"id"`
+	ChaveNFe    string  `json:"chave_nfe"`
+	NumeroNFe   string  `json:"numero_nfe"`
+	Serie       string  `json:"serie"`
+	DestNome    string  `json:"dest_nome"`
+	DataEmissao string  `json:"data_emissao"`
+	VIcms       float64 `json:"v_icms"`
+	VSt         float64 `json:"v_st"`
+	VPis        float64 `json:"v_pis"`
+	VCofins     float64 `json:"v_cofins"`
+	VIbs        float64 `json:"v_ibs"`
+	VCbs        float64 `json:"v_cbs"`
 }
 
 // ComparacaoRow representa um item da comparação esperado (nfe_saidas_itens)
@@ -147,7 +156,9 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 
 		query := fmt.Sprintf(`
 			SELECT id, chave_nfe, COALESCE(numero_nfe,''), COALESCE(serie,''),
-			       COALESCE(dest_nome,''), TO_CHAR(data_emissao,'DD/MM/YYYY')
+			       COALESCE(dest_nome,''), TO_CHAR(data_emissao,'DD/MM/YYYY'),
+			       COALESCE(v_icms,0), COALESCE(v_st,0), COALESCE(v_pis,0),
+			       COALESCE(v_cofins,0), COALESCE(v_ibs,0), COALESCE(v_cbs,0)
 			FROM nfe_saidas
 			%s
 			ORDER BY data_emissao DESC
@@ -165,7 +176,8 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var row NfeSearchResult
 			if err := rows.Scan(&row.ID, &row.ChaveNFe, &row.NumeroNFe, &row.Serie,
-				&row.DestNome, &row.DataEmissao); err != nil {
+				&row.DestNome, &row.DataEmissao,
+				&row.VIcms, &row.VSt, &row.VPis, &row.VCofins, &row.VIbs, &row.VCbs); err != nil {
 				log.Printf("[FiscalComparacaoSearch] scan error: %v", err)
 				continue
 			}

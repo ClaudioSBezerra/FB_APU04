@@ -15,7 +15,7 @@
 // tolerância ZERO — abs(esperado - calculado) !== 0. NÃO reusar o threshold
 // de um centavo de ConciliacaoBridgeXML.tsx (essa tela é validação de pacote
 // fiscal, não reconciliação ERP-vs-XML).
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -317,6 +317,10 @@ export default function ComparacaoFiscal() {
   const [showOnlyDivergent, setShowOnlyDivergent] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ComparacaoRow | null>(null);
   const [downloadingCSV, setDownloadingCSV] = useState(false);
+  // Ao clicar no "olho" numa nota da lista, a seção de detalhe abaixo é
+  // preenchida — mas como ela pode aparecer bem abaixo de uma lista longa de
+  // resultados, sem scroll automático parece que o clique "não fez nada".
+  const detailRef = useRef<HTMLDivElement>(null);
 
   const authHeaders = { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId || '' };
   const nfeId = selectedNfe?.id ?? null;
@@ -355,7 +359,40 @@ export default function ComparacaoFiscal() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  useEffect(() => {
+    if (selectedNfe && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [selectedNfe]);
+
   const rows = useMemo(() => data ?? [], [data]);
+
+  // Resumo da Nota — acumula o valor CALCULADO de cada imposto somando todos
+  // os itens já executados ('ok') e compara contra o total ESPERADO do
+  // cabeçalho da nota (nfe_saidas, bloco <ICMSTot> do XML). Diferença só é
+  // exibida quando TODOS os itens já foram calculados — soma parcial
+  // compararia um total incompleto contra o total da NF inteira, gerando
+  // falso positivo de divergência.
+  const notaSummary = useMemo(() => {
+    if (!selectedNfe || rows.length === 0) return null;
+    const acumuladoCalculado: Record<TaxKey, number> = { icms: 0, icms_st: 0, pis: 0, cofins: 0, ibs: 0, cbs: 0 };
+    let itensNaoOk = 0;
+    rows.forEach(row => {
+      if (row.status !== 'ok') { itensNaoOk++; return; }
+      getTaxPairs(row).forEach(pair => {
+        acumuladoCalculado[pair.key] += pair.valorCalculado ?? 0;
+      });
+    });
+    const esperado: Record<TaxKey, number> = {
+      icms: selectedNfe.v_icms,
+      icms_st: selectedNfe.v_st,
+      pis: selectedNfe.v_pis,
+      cofins: selectedNfe.v_cofins,
+      ibs: selectedNfe.v_ibs,
+      cbs: selectedNfe.v_cbs,
+    };
+    return { acumuladoCalculado, esperado, itensNaoOk, totalItens: rows.length };
+  }, [rows, selectedNfe]);
 
   const summary = useMemo(() => {
     let semDivergencia = 0;
@@ -492,7 +529,7 @@ export default function ComparacaoFiscal() {
       <NfeSearchList onViewDetail={setSelectedNfe} activeId={nfeId} />
 
       {selectedNfe && (
-        <div className="flex items-center gap-3 flex-wrap border-t pt-3">
+        <div ref={detailRef} className="flex items-center gap-3 flex-wrap border-t pt-3">
           <span className="text-xs text-muted-foreground">
             Visualizando: Nº {selectedNfe.numero_nfe}/{selectedNfe.serie} — {selectedNfe.dest_nome} — {selectedNfe.data_emissao}
             <span className="font-mono ml-2">{selectedNfe.chave_nfe.slice(0, 8)}...{selectedNfe.chave_nfe.slice(-6)}</span>
@@ -504,6 +541,68 @@ export default function ComparacaoFiscal() {
             Executar esta nota
           </Button>
         </div>
+      )}
+
+      {notaSummary && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+              Resumo da Nota — Acumulado dos Itens
+              {notaSummary.itensNaoOk > 0 && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">
+                  {notaSummary.itensNaoOk} de {notaSummary.totalItens} itens não calculados — total parcial
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent bg-muted/30">
+                    <TableHead className="py-1.5 px-2 text-[11px]"></TableHead>
+                    {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => (
+                      <TableHead key={key} className="py-1.5 px-2 text-[11px] text-center">{TAX_LABELS[key]}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Esperado (total NF)</TableCell>
+                    {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => (
+                      <TableCell key={key} className="py-1 px-2 text-right text-[11px] font-semibold">
+                        {fmtBRL(notaSummary.esperado[key])}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Calculado (soma dos itens)</TableCell>
+                    {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => (
+                      <TableCell key={key} className="py-1 px-2 text-right text-[11px] text-muted-foreground">
+                        {fmtBRL(notaSummary.acumuladoCalculado[key])}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Diferença</TableCell>
+                    {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => {
+                      const diferenca = Math.round((notaSummary.esperado[key] - notaSummary.acumuladoCalculado[key]) * 100) / 100;
+                      return (
+                        <TableCell key={key} className="py-1 px-2 text-right">
+                          {notaSummary.itensNaoOk > 0 ? (
+                            <span className="text-[11px] text-muted-foreground">—</span>
+                          ) : (
+                            <DiferencaBadge diferenca={diferenca} divergente={diferenca !== 0} />
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {!nfeId ? null : isLoading ? (

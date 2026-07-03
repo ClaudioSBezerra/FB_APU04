@@ -33,6 +33,14 @@ export interface NfeSearchResult {
   serie: string;
   dest_nome: string;
   data_emissao: string;
+  // Totais do cabeçalho da nota (bloco <ICMSTot> do XML) — usados no
+  // "Resumo da Nota" (acumulado dos itens vs. total declarado da NF).
+  v_icms: number;
+  v_st: number;
+  v_pis: number;
+  v_cofins: number;
+  v_ibs: number;
+  v_cbs: number;
 }
 
 interface ExecuteSummary {
