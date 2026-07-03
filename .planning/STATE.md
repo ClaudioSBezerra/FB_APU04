@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v6.00
 milestone_name: milestone
-status: verifying
-last_updated: "2026-07-03T19:30:32.893Z"
-last_activity: 2026-07-03
+status: Awaiting next milestone
+last_updated: "2026-07-03T19:38:22.421Z"
+last_activity: 2026-07-03 — Milestone v6.00 completed and archived
 progress:
   total_phases: 12
   completed_phases: 7
@@ -25,10 +25,10 @@ See: `.planning/PROJECT.md` (updated 2026-07-03)
 
 ## Current Position
 
-Phase: 12 (tela-compara-o-fiscal-navega-o) — COMPLETE (3/3 plans)
-Plan: 3 of 3 — concluído (Task 2 checkpoint aprovado pelo usuário)
-Status: Fase 12 concluída — pronta para verificação de fase / fechamento de milestone v6.00
-Last activity: 2026-07-03 -- Phase 12 Plan 03 concluído (Task 2 checkpoint aprovado); Fase 12 (3/3 plans) COMPLETA
+Phase: Milestone v6.00 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-03 — Milestone v6.00 completed and archived
 
 ## Decisions Made
 
@@ -102,6 +102,18 @@ Last activity: 2026-07-03 -- Phase 12 Plan 03 concluído (Task 2 checkpoint apro
 - 2026-05-16: Phase 02 completa — Upload XML manual (Plans 01+02+03+04).
 - 2026-05-08: Inicialização GSD. Codebase mapeado, PROJECT/REQUIREMENTS/ROADMAP criados.
 
+## Deferred Items
+
+Items acknowledged and deferred at milestone v6.00 close on 2026-07-03:
+
+| Category | Item | Status |
+|----------|------|--------|
+| uat_gap | Phase 11 — 11-HUMAN-UAT.md | partial (2 pending scenarios — requer credenciais Oracle prod/PRODB reais) |
+| verification_gap | Phase 08 — 08-VERIFICATION.md | human_needed (inclui CR-02: qualquer usuário autenticado pode sobrescrever regras fiscais globais BA/CE — achado de segurança não corrigido) |
+| verification_gap | Phase 09 — 09-VERIFICATION.md | human_needed (validação visual de gráficos/mapa/badges com dados reais) |
+| verification_gap | Phase 11 — 11-VERIFICATION.md | human_needed (2 truths pendentes de execução real contra Oracle) |
+| quick_task | 260519-ixg-painel-sped-xml-crt-sn | unknown (aparenta completo; deferred-items.md lista apenas ideias futuras, sem trabalho pendente) |
+
 ## Configuration
 
 - **Mode:** YOLO (autonomous)
@@ -132,3 +144,7 @@ Last activity: 2026-07-03 -- Phase 12 Plan 03 concluído (Task 2 checkpoint apro
 ### Blockers
 
 None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd:new-milestone

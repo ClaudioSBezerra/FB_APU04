@@ -1,17 +1,22 @@
 # FB_APU04 — Simulador Fiscal
 
-## Current Milestone: v6.00 — Módulo Teste Pacote Fiscal
+## Current State
 
-**Goal:** Portar a validação unitária do pacote fiscal (do projeto irmão descontinuado FB_TESTESFC) como um novo módulo dentro do FB_APU04, reaproveitando `nfe_saidas`/`nfe_saidas_itens` já existentes, com gate de acesso temporário `adminOnly` até a construção de um sistema de permissão por módulo (milestone futura).
+**v6.00 — Módulo Teste Pacote Fiscal: SHIPPED (2026-07-03)**
 
-**Target features:**
-- Lookup de grupo fiscal via Oracle (prod/PRODB) por item de `nfe_saidas_itens`
-- Execução do `PKG_FISCAL_FCTAX.calcula_imposto_produto` via bloco PL/SQL estático (bind seguro), portado de `oracle_fiscal.go`
-- Nova tabela `fiscal_execution_items` com o resultado (~88 campos) por item
-- Tela "Comparação Fiscal": esperado (XML/`nfe_saidas_itens`) vs. calculado (pacote fiscal), destacando divergências ICMS/ICMS-ST/PIS/COFINS/IBS/CBS
-- Item de navegação novo "Teste Pacote Fiscal" com gate `adminOnly: true`
+Backend (Phase 11) resolve grupo fiscal via Oracle prod/PRODB por item de `nfe_saidas_itens`, executa `PKG_FISCAL_FCTAX.calcula_imposto_produto` via bloco PL/SQL 100% estático (bind seguro, zero concatenação) e persiste ~88 campos de saída em `fiscal_execution_items`, em lote, com isolamento de erro por item. Frontend (Phase 12) entrega a tela "Comparação Fiscal": busca de NF-e, execução sob demanda, comparação esperado × calculado das 6 impostos (ICMS/ICMS-ST/PIS/COFINS/IBS/CBS) com tolerância zero, filtro "só divergentes", resumo agregado e exportação Excel/CSV. Navegação nova ("Teste Pacote Fiscal") gated por `adminOnly` — trava temporária até existir permissão granular por módulo. Ver `.planning/milestones/v6.00-ROADMAP.md` para o detalhamento completo.
 
-**Milestone anterior (v5.00 — Análise da Reforma Tributária): COMPLETA (2026-05-29)**
+## Next Milestone Goals
+
+Nenhuma milestone nova iniciada ainda. Candidatos capturados durante o v6.00 (não compromissados):
+- Resolver o achado de segurança CR-02 (Phase 08): regras fiscais globais BA/CE editáveis por qualquer usuário autenticado, não só admin
+- Validar os 2 cenários de UAT da Fase 11 pendentes contra Oracle prod/PRODB real (credenciais reais só disponíveis em produção)
+- Sistema de permissão granular por módulo — hoje só existe o gate binário `adminOnly` (usado por auditoria, malha e agora teste-pacote-fiscal)
+
+<details>
+<summary>Histórico de milestones anteriores</summary>
+
+**v5.00 — Análise da Reforma Tributária: COMPLETA (2026-05-29)**
 - Módulo 1.1: Créditos ICMS bloqueados — CST/CFOP de uso/consumo e ativo permanente (EFD C170/C190)
 - Módulo 1.2: Reprecificação de produtos — ICMS por dentro → IBS/CBS por fora (XMLs NF-e venda)
 - Módulo 1.3: Ranking de fornecedores por crédito IBS/CBS gerado, alerta Simples Nacional
@@ -20,6 +25,8 @@
 - Módulo 2.2: Análise por CFOP — impacto por natureza da operação (grupos: uso/consumo, ativo, transferências, exportação)
 - Módulo 2.3: Análise por UF/destino — tributação na origem (ICMS) → destino (IBS)
 - Módulo 2.4: Segmentação B2B vs. B2C automática por indFinal/CPF/CNPJ
+
+</details>
 
 ## What This Is
 
@@ -47,6 +54,7 @@ A escrituração fiscal precisa ser **completa e auditável** — todos os valor
 - ✓ Bridge AWS containerizado (`fbtax-bridge-apu04`) isolado do bridge APU02 — separado em 2026-05-07
 - ✓ Z.AI GLM API para relatórios executivos com IA — em produção
 - ✓ E-mail estruturado SMTP via Hostinger — em produção
+- ✓ Módulo Teste Pacote Fiscal: execução do `PKG_FISCAL_FCTAX.calcula_imposto_produto` via Oracle prod/PRODB, comparação item a item (esperado × calculado) das 6 impostos com divergências destacadas — v6.00 (2026-07-03)
 
 ### Active
 
@@ -58,7 +66,7 @@ A escrituração fiscal precisa ser **completa e auditável** — todos os valor
 
 **Expandir (prioridade 2):**
 - [x] Importação de XMLs via upload manual (drag-and-drop) alimentando as mesmas tabelas do ERP Bridge — fonte unificada de identificação tributária
-- [ ] Módulo Teste Pacote Fiscal — validação item a item do pacote fiscal Oracle contra os valores das notas já importadas (v6.00, em andamento)
+- [x] Módulo Teste Pacote Fiscal — validação item a item do pacote fiscal Oracle contra os valores das notas já importadas — Validado em v6.00 (2026-07-03)
 
 **Demais frentes (prioridade 3+, ordem a definir no roadmap):**
 - [ ] Estabilização adicional: tirar credenciais do código (.env, configs AWS), bootstrap de testes Go/React, retry/reconnect no Bridge SAP S4 (DPY-4011)
@@ -94,6 +102,13 @@ A escrituração fiscal precisa ser **completa e auditável** — todos os valor
 - Quando NF-e chega por Oracle Bridge e XML, **XML vence** (fonte SEFAZ é autêntica)
 - Estabilizar primeiro (apenas ResetDatabase como crítico), depois XML, depois resto
 
+**v6.00 (Módulo Teste Pacote Fiscal) — shipped 2026-07-03:**
+- Backend Go abre conexão síncrona própria ao Oracle via `erp_bridge_config` para o pacote fiscal — não reaproveita o bridge Python, que segue isolado para import de NF-e/CT-e
+- `fiscal_execution_items` no modelo híbrido (11 colunas típicas indexáveis + `full_result` JSONB) em vez de ~88 colunas literais — decisão validada em produção nas Fases 11-12
+- 4º estado `not_executed` (distinto de `ok`/`error`/`sem_grupo_fiscal`) resolvido via `COALESCE(fei.status, 'not_executed')` no LEFT JOIN — evita confundir "nunca rodou" com "rodou e falhou"
+- IBS calculado exposto como soma única `valor_ibs_uf + valor_ibs_mun` (não existe coluna de total na tabela) — resolvido uma vez no SQL, reusado pelo JSON e pelo CSV
+- Dívida conhecida ficou registrada em STATE.md § Deferred Items em vez de bloquear o fechamento da milestone (ver seção "Next Milestone Goals" acima)
+
 ## Constraints
 
 - **Tech stack**: Go 1.22 (backend), React 18+/Vite/TypeScript (frontend), PostgreSQL 15, Redis 7, Python 3 (bridge) — stack travado, mudar exige justificativa forte
@@ -114,8 +129,9 @@ A escrituração fiscal precisa ser **completa e auditável** — todos os valor
 | Estabilização foca SOMENTE em ResetDatabase | Outros itens (secrets, testes, retry bridge) são importantes mas não bloqueantes | — Pending |
 | Multi-cliente externo fora do escopo atual | Tenancy lógico já cobre o caso interno; venda externa é decisão comercial separada | — Pending |
 | `--config` no bridge.py permite isolar instâncias APU02/APU04 | Cada config tem seu tracker.db e logs separados | ✓ Good |
-| Portar validação do pacote fiscal do FB_TESTESFC para dentro do FB_APU04 (novo módulo) em vez de manter produto standalone | Deploy em Hostinger/Coolify (FB_TESTESFC) não alcança a rede interna Oracle da Ferreira Costa (IPs privados `10.131.x.x`); FB_APU04 já roda com acesso Oracle | — Pending |
-| Reaproveitar `nfe_saidas`/`nfe_saidas_itens` existentes como fonte de dados em vez de portar o pipeline de import de XML do FB_TESTESFC | Granularidade item-a-item já suficiente para os 23 parâmetros de entrada do pacote fiscal (`PKG_FISCAL_FCTAX`); evita duplicar upload/parse/dedup de XML | — Pending |
+| Portar validação do pacote fiscal do FB_TESTESFC para dentro do FB_APU04 (novo módulo) em vez de manter produto standalone | Deploy em Hostinger/Coolify (FB_TESTESFC) não alcança a rede interna Oracle da Ferreira Costa (IPs privados `10.131.x.x`); FB_APU04 já roda com acesso Oracle | ✓ Good — shipped v6.00 |
+| Reaproveitar `nfe_saidas`/`nfe_saidas_itens` existentes como fonte de dados em vez de portar o pipeline de import de XML do FB_TESTESFC | Granularidade item-a-item já suficiente para os 23 parâmetros de entrada do pacote fiscal (`PKG_FISCAL_FCTAX`); evita duplicar upload/parse/dedup de XML | ✓ Good — shipped v6.00 |
+| Gate `adminOnly` binário para o módulo Teste Pacote Fiscal, em vez de permissão granular | Evitar bloquear a entrega atrás de uma infra de permissões maior e separada | ⚠️ Revisit — candidato a milestone futura (ver Next Milestone Goals) |
 
 ## Evolution
 
@@ -135,4 +151,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-03 — Milestone v6.00 iniciado*
+*Last updated: 2026-07-03 — após milestone v6.00 (Módulo Teste Pacote Fiscal) shipped*
