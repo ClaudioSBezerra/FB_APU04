@@ -526,6 +526,11 @@ func main() {
 	http.HandleFunc("/api/admin/users/reassign", withAuth(handlers.ReassignUserHandler, "admin"))
 	http.HandleFunc("/api/admin/diagnostic", withAuth(handlers.DiagnosticDataHandler, "admin"))
 
+	// ── Motor de Execução do Pacote Fiscal (Fase 11) ──
+	// Smoke test admin de conectividade Oracle síncrona (D-03) — primeira conexão
+	// Oracle aberta pelo próprio backend Go em tempo de requisição.
+	http.HandleFunc("/api/fiscal/oracle-ping", withAuth(handlers.FiscalOraclePingHandler, "admin"))
+
 	// Configuration Endpoints
 	http.HandleFunc("/api/config/aliquotas", withAuth(handlers.GetTaxRatesHandler, ""))
 	http.HandleFunc("/api/config/cfop", withAuth(handlers.ListCFOPsHandler, ""))
