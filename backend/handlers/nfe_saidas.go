@@ -80,13 +80,14 @@ type det struct {
 }
 
 type prod struct {
-	CProd string `xml:"cProd"`
-	XProd string `xml:"xProd"`
-	NCM   string `xml:"NCM"`
-	CEST  string `xml:"CEST"`
-	CFOP  string `xml:"CFOP"`
-	VProd string `xml:"vProd"`
-	VDesc string `xml:"vDesc"`
+	CProd  string `xml:"cProd"`
+	XProd  string `xml:"xProd"`
+	NCM    string `xml:"NCM"`
+	CEST   string `xml:"CEST"`
+	CFOP   string `xml:"CFOP"`
+	VProd  string `xml:"vProd"`
+	VDesc  string `xml:"vDesc"`
+	VOutro string `xml:"vOutro"`
 }
 
 type detImposto struct {
@@ -104,7 +105,7 @@ type detICMSGrupo struct {
 	CSOSN string `xml:"CSOSN"`
 	VBC   string `xml:"vBC"`
 	VICMS string `xml:"vICMS"`
-	VBCST string `xml:"vBCST"` // base de cálculo do ICMS-ST por item
+	VBCST string `xml:"vBCST"`   // base de cálculo do ICMS-ST por item
 	VST   string `xml:"vICMSST"` // ICMS-ST retido pelo fornecedor por item
 }
 
@@ -408,7 +409,8 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 				v_bc_pis, v_pis,
 				v_bc_cofins, v_cofins,
 				v_ipi,
-				v_bc_st, v_st
+				v_bc_st, v_st,
+				v_desc, v_outro
 			) VALUES (
 				$1, $2, $3,
 				$4, $5, $6, $7,
@@ -418,7 +420,8 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 				$16, $17,
 				$18, $19,
 				$20,
-				$21, $22
+				$21, $22,
+				$23, $24
 			)
 			ON CONFLICT (nfe_id, n_item) DO UPDATE SET
 				c_prod       = EXCLUDED.c_prod,
@@ -439,7 +442,9 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 				v_cofins     = EXCLUDED.v_cofins,
 				v_ipi        = EXCLUDED.v_ipi,
 				v_bc_st      = EXCLUDED.v_bc_st,
-				v_st         = EXCLUDED.v_st
+				v_st         = EXCLUDED.v_st,
+				v_desc       = EXCLUDED.v_desc,
+				v_outro      = EXCLUDED.v_outro
 		`, tableName),
 			nfeID, companyID, nItem,
 			d.Prod.CProd, d.Prod.XProd, d.Prod.NCM, d.Prod.CFOP,
@@ -450,6 +455,7 @@ func insertNFeItens(tx *sql.Tx, nfeID string, companyID string, dets []det, tabl
 			toDecimal(d.Imposto.COFINS.VBCCOFINS), toDecimal(d.Imposto.COFINS.VCOFINS),
 			toDecimal(d.Imposto.IPI.VIPI),
 			vBCST, vST,
+			toDecimal(d.Prod.VDesc), toDecimal(d.Prod.VOutro),
 		)
 		if err != nil {
 			return fmt.Errorf("item %d: %w", nItem, err)
