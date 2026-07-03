@@ -102,8 +102,8 @@ Requisitos do milestone v6.00: portar a validação unitária do pacote fiscal (
 - [x] **TPF-03**: Serviço de execução do `PKG_FISCAL_FCTAX.calcula_imposto_produto` via bloco PL/SQL estático com bind seguro (`sql.Named`/`go_ora.Out`, nunca concatenação), portado de `oracle_fiscal.go`
 - [x] **TPF-04**: Nova tabela `fiscal_execution_items` com os ~88 campos de saída do pacote fiscal por item, incluindo status (`ok`/erro)
 - [x] **TPF-05**: Endpoint de execução em lote com concorrência limitada, timeout por item e isolamento de erro (um item com falha não derruba o lote)
-- [ ] **TPF-06**: Tela "Comparação Fiscal" — esperado (`nfe_saidas_itens`) vs. calculado (`fiscal_execution_items`), divergências destacadas em ICMS/ICMS-ST/PIS/COFINS/IBS/CBS
-- [ ] **TPF-07**: Filtro "só divergentes" e resumo agregado de divergências na tela
+- [x] **TPF-06**: Tela "Comparação Fiscal" — esperado (`nfe_saidas_itens`) vs. calculado (`fiscal_execution_items`), divergências destacadas em ICMS/ICMS-ST/PIS/COFINS/IBS/CBS
+- [x] **TPF-07**: Filtro "só divergentes" e resumo agregado de divergências na tela
 - [ ] **TPF-08**: Item de navegação novo "Teste Pacote Fiscal" com gate `adminOnly: true` (reaproveita padrão de `navigation.ts`) — trava temporária até sistema de permissão por módulo (milestone futura)
 
 ## v2 Requirements

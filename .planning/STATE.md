@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v6.00
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-03T18:16:30.029Z"
-last_activity: 2026-07-03 -- Phase 12 planning complete
+last_updated: "2026-07-03T19:01:04.944Z"
+last_activity: 2026-07-03
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 21
-  completed_plans: 18
+  completed_plans: 19
   percent: 50
 ---
 
@@ -21,14 +21,14 @@ See: `.planning/PROJECT.md` (updated 2026-07-03)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Phase 11 — motor-de-execu-o-do-pacote-fiscal-backend
+**Current focus:** Phase 12 — tela-compara-o-fiscal-navega-o
 
 ## Current Position
 
-Phase: 12
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-03 -- Phase 12 planning complete
+Phase: 12 (tela-compara-o-fiscal-navega-o) — EXECUTING
+Plan: 2 of 3
+Status: Plan 01 completo, pronto para Plan 02
+Last activity: 2026-07-03 -- Phase 12 Plan 01 executado (backend Comparação Fiscal)
 
 ## Decisions Made
 
@@ -73,9 +73,13 @@ Last activity: 2026-07-03 -- Phase 12 planning complete
 - [Phase 11]: Guard IDOR aplicado tambem na query de itens (nfe_saidas_itens WHERE nfe_id=$1 AND company_id=$2), nao so no cabecalho — Defesa em profundidade sem custo — company_id ja e coluna desnormalizada em nfe_saidas_itens (migration 075)
 - [Phase 11]: openFiscalOracleConn reaproveitado do Plan 11-01 em vez de redefinido em fiscal_execution.go — O original FB_TESTESFC redefine a funcao no mesmo arquivo — no FB_APU04 isso geraria erro de simbolo duplicado, ja que a funcao ja existe em fiscal_oracle_conn.go
 - [Phase 11]: Plan 11-06: checkpoint executado de forma automatizada (auto_advance=true); binario fb_apu04 desatualizado exigiu rebuild para teste HTTP ao vivo; sem credencial Oracle real na sessao, Pitfalls 1/2 do go-ora confirmadas ausentes por inspecao de codigo, nao por execucao real do pacote (validacao final pendente de credencial real)
+- [Phase 12]: queryComparacaoRows extraida como helper interna reutilizada pelo JSON read handler e pelo CSV handler — evita duplicar a soma de IBS (Pitfall 2 do RESEARCH.md)
+- [Phase 12]: COALESCE(fei.status, 'not_executed') resolve o 4o estado implicito do LEFT JOIN — distinto de error/sem_grupo_fiscal/pending, evita colapsar item nunca executado em Nao calculado
+- [Phase 12]: CSV export espelha apenas as 6 colunas de impostos x esperado/calculado/diferenca — DIFAL/FCP/grupo_fiscal_codigo/full_result ficam fora do CSV, sao dialog-only
 
 ## Recent History
 
+- 2026-07-03: Phase 12 Plan 01 executado — 3 handlers HTTP admin-gated (fiscal_comparacao.go + fiscal_comparacao_csv.go): busca de NF-e por número/chave, leitura da comparação item a item (esperado x calculado, 4º estado not_executed, IBS somado) e export CSV; 3 rotas registradas em main.go. TPF-06 e TPF-07 atendidos.
 - 2026-07-03: Phase 11 Plan 06 executado (checkpoint de validação) — endpoint POST /api/fiscal/execute validado end-to-end contra Postgres local real (auth admin, guard IDOR duplo, carga de item, isolamento de erro por item, upsert em fiscal_execution_items); alcançabilidade de rede/protocolo Oracle reconfirmada (ORA-01017); Pitfalls 1/2 do go-ora confirmadas ausentes por inspeção de código (não por execução real — sem credencial Oracle real na sessão). Fase 11 (motor de execução do pacote fiscal, backend) COMPLETA (6/6 plans). Validação final com dados/credenciais Oracle reais fica pendente para o usuário (ver 11-06-SUMMARY.md § User Setup Required).
 - 2026-07-03: Phase 11 Plan 05 executado — POST /api/fiscal/execute (FiscalExecutionRunHandler + processFiscalBatch + persistFiscalItemResult), fan-out com semáforo cap 5, timeout 15s/item, defer recover() por item, upsert por item em fiscal_execution_items; guard tests 405/401. TPF-05 atendido (5/6 plans da Fase 11 concluídos).
 - 2026-07-03: Phase 11 Plan 03 executado — fiscal_group_lookup.go (resolveCodEmpresa + lookupGrupoFiscal, porte verbatim FB_TESTESFC) e migration 147 (fiscal_execution_items, schema híbrido + colunas IBS/CBS). TPF-01 e TPF-04 atendidos.
@@ -115,3 +119,4 @@ Last activity: 2026-07-03 -- Phase 12 planning complete
 | Phase 11 P04 | 20min | 2 tasks | 1 files |
 | Phase 11 P05 | 25min | 2 tasks | 3 files |
 | Phase 11 P06 | 35min | 1 tasks | 0 files |
+| Phase 12 P01 | 20min | 2 tasks | 3 files |
