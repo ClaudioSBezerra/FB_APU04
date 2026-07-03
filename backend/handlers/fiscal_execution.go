@@ -101,6 +101,22 @@ type fiscalDebugTrace struct {
 	entries []fiscalDebugEntry
 }
 
+// sanitizeOracleErrForDebug prepara um erro Oracle para o debug trace
+// admin-only (nunca para a resposta de erro normal da API — T-11-18): troca
+// quebras de linha por espaço e limita o tamanho, para nunca despejar um
+// stacktrace inteiro ou (em tese) uma connection string na tela.
+func sanitizeOracleErrForDebug(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.ReplaceAll(err.Error(), "\n", " ")
+	const maxLen = 300
+	if len(msg) > maxLen {
+		msg = msg[:maxLen] + "..."
+	}
+	return msg
+}
+
 func (t *fiscalDebugTrace) add(itemID, produto, etapa, mensagem string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -320,9 +336,12 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 			}
 			return "sem_grupo_fiscal"
 		}
-		// Nunca propagar err.Error() cru do Oracle (T-11-18) — detalhe só em log.
+		// Nunca propagar err.Error() cru do Oracle na resposta normal (T-11-18) —
+		// mas o debug trace é admin-only e efêmero (não persistido em
+		// fiscal_execution_items), então inclui o detalhe sanitizado (truncado,
+		// sem newline) para diagnóstico direto na tela sem precisar de SSH/logs.
 		log.Printf("FiscalExecutionRunHandler: item=%s err=%v", it.ID, err)
-		trace.add(it.ID, produtoLabel, "erro", "Falha ao consultar o grupo fiscal no Oracle (prod/PRODB).")
+		trace.add(it.ID, produtoLabel, "erro", "Falha ao consultar o grupo fiscal no Oracle (prod/PRODB): "+sanitizeOracleErrForDebug(err))
 		if perr := persistFiscalItemResult(pgDB, companyID, it.ID, "error",
 			"Falha ao consultar o grupo fiscal no Oracle (prod/PRODB).", "", nil, nil); perr != nil {
 			log.Printf("FiscalExecutionRunHandler: item=%s persist error: %v", it.ID, perr)
@@ -374,9 +393,10 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 	trace.add(it.ID, produtoLabel, "chamando_pacote", "Executando PKG_FISCAL_FCTAX.calcula_imposto_produto...")
 	result, callErr := services.CallFiscalPackage(ctx, oracleDB, in)
 	if callErr != nil {
-		// Nunca propagar callErr.Error() cru do Oracle (T-11-18).
+		// Nunca propagar callErr.Error() cru do Oracle na resposta normal
+		// (T-11-18) — debug trace é admin-only/efêmero, inclui detalhe sanitizado.
 		log.Printf("FiscalExecutionRunHandler: item=%s err=%v", it.ID, callErr)
-		trace.add(it.ID, produtoLabel, "erro", "Falha ao executar o pacote fiscal no Oracle.")
+		trace.add(it.ID, produtoLabel, "erro", "Falha ao executar o pacote fiscal no Oracle: "+sanitizeOracleErrForDebug(callErr))
 		if perr := persistFiscalItemResult(pgDB, companyID, it.ID, "error",
 			"Falha ao executar o pacote fiscal no Oracle (FCCORP_BKP).", grupoFiscal, inputJSON, nil); perr != nil {
 			log.Printf("FiscalExecutionRunHandler: item=%s persist error: %v", it.ID, perr)
