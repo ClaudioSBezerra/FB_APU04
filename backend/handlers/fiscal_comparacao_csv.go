@@ -74,6 +74,7 @@ func FiscalComparacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 			"COFINS Esperado", "COFINS Calculado", "COFINS Diferença",
 			"IBS Esperado", "IBS Calculado", "IBS Diferença",
 			"CBS Esperado", "CBS Calculado", "CBS Diferença",
+			"Base IBS/CBS Calculado",
 		}
 		if err := cw.Write(header); err != nil {
 			log.Printf("[FiscalComparacaoCSV] write header error: %v", err)
@@ -87,6 +88,7 @@ func FiscalComparacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 			cofinsCalc := ptrFloat(row.ValorCofins)
 			ibsCalc := ptrFloat(row.ValorIbsTotal)
 			cbsCalc := ptrFloat(row.ValorCbs)
+			baseIbsCbsCalc := ptrFloat(row.BaseCalculoIbsCbs)
 
 			record := []string{
 				fmt.Sprintf("%d", row.NItem), row.XProd, row.NCM, row.CFOP, row.Status,
@@ -96,6 +98,7 @@ func FiscalComparacaoCSVHandler(db *sql.DB) http.HandlerFunc {
 				fmt.Sprintf("%.2f", row.VCofins), fmt.Sprintf("%.2f", cofinsCalc), fmt.Sprintf("%.2f", row.VCofins-cofinsCalc),
 				fmt.Sprintf("%.2f", row.VIbs), fmt.Sprintf("%.2f", ibsCalc), fmt.Sprintf("%.2f", row.VIbs-ibsCalc),
 				fmt.Sprintf("%.2f", row.VCbs), fmt.Sprintf("%.2f", cbsCalc), fmt.Sprintf("%.2f", row.VCbs-cbsCalc),
+				fmt.Sprintf("%.2f", baseIbsCbsCalc),
 			}
 			if err := cw.Write(record); err != nil {
 				log.Printf("[FiscalComparacaoCSV] write row error: %v", err)

@@ -98,6 +98,10 @@ interface ComparacaoRow {
   valor_icms_partilha_destino: number | null;
   valor_icms_pobreza: number | null;
   grupo_fiscal_codigo: string | null;
+  // Base de cálculo compartilhada entre IBS e CBS — só existe lado
+  // calculado (extraído do full_result do pacote Oracle); sem "esperado"
+  // correspondente no XML, por isso não entra em getTaxPairs/divergência.
+  base_calculo_ibs_cbs: number | null;
 }
 
 interface ExecuteSummary {
@@ -293,6 +297,7 @@ function DetalheItem({ row, onClose }: { row: ComparacaoRow; onClose: () => void
             <Linha label="% DIFAL" value={row.percentual_difal != null ? `${row.percentual_difal}%` : null} />
             <Linha label="ICMS Partilha Destino" value={fmtBRL(row.valor_icms_partilha_destino)} />
             <Linha label="ICMS Pobreza (FCP)" value={fmtBRL(row.valor_icms_pobreza)} />
+            <Linha label="Base IBS/CBS" value={fmtBRL(row.base_calculo_ibs_cbs)} />
             <Linha label="Grupo Fiscal" value={row.grupo_fiscal_codigo} />
           </Secao>
         </div>
@@ -380,6 +385,8 @@ export default function ComparacaoFiscal() {
     const excelData = rows.map(row => {
       const pairs = getTaxPairs(row);
       const record: Record<string, unknown> = {
+        'Nº Nota': selectedNfe ? `${selectedNfe.numero_nfe}${selectedNfe.serie ? `/${selectedNfe.serie}` : ''}` : '',
+        'Cliente': selectedNfe?.dest_nome ?? '',
         'Item': row.n_item,
         'Produto': row.x_prod,
         'NCM': row.ncm,
@@ -392,6 +399,7 @@ export default function ComparacaoFiscal() {
         record[`${pair.label} Calculado`] = pair.valorCalculado ?? 0;
         record[`${pair.label} Diferença`] = diferenca;
       });
+      record['Base IBS/CBS Calculado'] = row.base_calculo_ibs_cbs ?? 0;
       return record;
     });
     exportToExcel(excelData, `comparacao-fiscal-${selectedNfe?.numero_nfe ?? nfeId}`, 'Comparação Fiscal');
@@ -431,6 +439,21 @@ export default function ComparacaoFiscal() {
           Campo v_ibs/v_cbs do XML pode aparecer zerado — parser atual de nfe_saidas_itens
           nem sempre popula esses campos. Divergência aqui pode refletir dado de origem
           ausente, não necessariamente um erro do pacote fiscal.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+
+  const BaseIbsCbsHeaderTooltip = () => (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <HelpCircle className="h-3 w-3 ml-1 inline text-muted-foreground cursor-help" />
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs max-w-xs">
+          Base de cálculo compartilhada entre IBS e CBS, retornada pelo pacote fiscal
+          Oracle. Não existe um valor "esperado" equivalente no XML da nota — é só
+          informativo, sem comparação de divergência.
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -569,22 +592,29 @@ export default function ComparacaoFiscal() {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent bg-muted/30">
-                    <TableHead className="py-1.5 px-2 text-[11px]">Chave NF-e</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px]">Nº Nota</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px]">Cliente</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-center">Item</TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px]">Produto</TableHead>
-                    <TableHead className="py-1.5 px-2 text-[11px]">CFOP</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] border-l">Status</TableHead>
                     {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => (
                       <TableHead key={key} colSpan={3} className="py-1.5 px-2 text-[11px] text-center border-l">
                         {TAX_LABELS[key]}
                         {(key === 'ibs' || key === 'cbs') && <IbsCbsHeaderTooltip />}
                       </TableHead>
                     ))}
-                    <TableHead className="py-1.5 px-2 text-[11px] border-l">Status</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right border-l">
+                      Base IBS/CBS
+                      <BaseIbsCbsHeaderTooltip />
+                    </TableHead>
                     <TableHead className="py-1.5 px-2 text-[11px]"></TableHead>
                   </TableRow>
                   <TableRow className="hover:bg-transparent bg-muted/10">
                     <TableHead className="py-1 px-2 text-[10px]"></TableHead>
                     <TableHead className="py-1 px-2 text-[10px]"></TableHead>
                     <TableHead className="py-1 px-2 text-[10px]"></TableHead>
+                    <TableHead className="py-1 px-2 text-[10px]"></TableHead>
+                    <TableHead className="py-1 px-2 text-[10px] border-l"></TableHead>
                     {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => (
                       <Fragment key={key}>
                         <TableHead className="py-1 px-2 text-[10px] text-right border-l">Esperado</TableHead>
@@ -592,7 +622,7 @@ export default function ComparacaoFiscal() {
                         <TableHead className="py-1 px-2 text-[10px] text-right">Diferença</TableHead>
                       </Fragment>
                     ))}
-                    <TableHead className="py-1 px-2 text-[10px] border-l"></TableHead>
+                    <TableHead className="py-1 px-2 text-[10px] text-right border-l">Calculado</TableHead>
                     <TableHead className="py-1 px-2 text-[10px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -608,11 +638,17 @@ export default function ComparacaoFiscal() {
                     const pairs = getTaxPairs(row);
                     return (
                       <TableRow key={row.id} className={rowTint}>
-                        <TableCell className="py-1 px-2 text-[11px] font-mono truncate max-w-[140px]">
-                          {selectedNfe ? `${selectedNfe.chave_nfe.slice(0, 8)}...${selectedNfe.chave_nfe.slice(-6)}` : '—'}
+                        <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">
+                          {selectedNfe ? `${selectedNfe.numero_nfe}${selectedNfe.serie ? `/${selectedNfe.serie}` : ''}` : '—'}
                         </TableCell>
+                        <TableCell className="py-1 px-2 text-[11px] truncate max-w-[180px]">
+                          {selectedNfe?.dest_nome ?? '—'}
+                        </TableCell>
+                        <TableCell className="py-1 px-2 text-[11px] text-center">{row.n_item}</TableCell>
                         <TableCell className="py-1 px-2 text-[11px] truncate max-w-[200px]">{row.x_prod}</TableCell>
-                        <TableCell className="py-1 px-2 text-[11px] whitespace-nowrap">{row.cfop}</TableCell>
+                        <TableCell className="py-1 px-2 border-l">
+                          <StatusBadge row={row} />
+                        </TableCell>
                         {pairs.map(pair => {
                           const diferenca = (pair.valorEsperado ?? 0) - (pair.valorCalculado ?? 0);
                           const divergente = !naoOk && isPairDivergente(pair);
@@ -634,8 +670,8 @@ export default function ComparacaoFiscal() {
                             </Fragment>
                           );
                         })}
-                        <TableCell className="py-1 px-2 border-l">
-                          <StatusBadge row={row} />
+                        <TableCell className="py-1 px-2 text-right text-[11px] text-muted-foreground border-l">
+                          {naoOk ? '—' : fmtBRL(row.base_calculo_ibs_cbs)}
                         </TableCell>
                         <TableCell className="py-1 px-2">
                           <Button

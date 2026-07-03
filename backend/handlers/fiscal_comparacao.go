@@ -75,6 +75,14 @@ type ComparacaoRow struct {
 	ValorIcmsPartilhaDestino *float64 `json:"valor_icms_partilha_destino"`
 	ValorIcmsPobreza         *float64 `json:"valor_icms_pobreza"`
 	GrupoFiscalCodigo        *string  `json:"grupo_fiscal_codigo"`
+	// BaseCalculoIbsCbs — base de cálculo compartilhada entre IBS e CBS. Não
+	// existe coluna dedicada em fiscal_execution_items (só valor_ibs_uf/
+	// valor_ibs_mun/valor_cbs) nem em nfe_saidas_itens (XML não traz essa
+	// base hoje) — extraído do full_result JSONB (campo Go BaseCalculoIbsCbs
+	// do pacote Oracle, oracle_fiscal.go). Só existe lado "calculado"; sem
+	// "esperado" para comparar, não entra em getTaxPairs/divergência no
+	// frontend — é informativo.
+	BaseCalculoIbsCbs *float64 `json:"base_calculo_ibs_cbs"`
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +210,8 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			(COALESCE(fei.valor_ibs_uf,0) + COALESCE(fei.valor_ibs_mun,0)) AS valor_ibs_total,
 			fei.valor_cbs,
 			fei.percentual_difal, fei.valor_icms_partilha_destino, fei.valor_icms_pobreza,
-			fei.grupo_fiscal_codigo
+			fei.grupo_fiscal_codigo,
+			(fei.full_result->>'BaseCalculoIbsCbs')::numeric AS base_calculo_ibs_cbs
 		FROM nfe_saidas_itens nsi
 		LEFT JOIN fiscal_execution_items fei ON fei.nfe_item_id = nsi.id
 		WHERE nsi.nfe_id = $1 AND nsi.company_id = $2
@@ -234,6 +243,7 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			&row.ValorCbs,
 			&row.PercentualDifal, &row.ValorIcmsPartilhaDestino, &row.ValorIcmsPobreza,
 			&row.GrupoFiscalCodigo,
+			&row.BaseCalculoIbsCbs,
 		); err != nil {
 			log.Printf("[FiscalComparacaoRead] scan error: %v", err)
 			continue
