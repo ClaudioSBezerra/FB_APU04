@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v6.00
 milestone_name: milestone
-status: executing
-last_updated: "2026-07-03T19:11:22.237Z"
-last_activity: 2026-07-03
+status: Plan 02 completo, pronto para Plan 03
+last_updated: "2026-07-03T19:22:18.950Z"
+last_activity: 2026-07-03 -- Phase 12 Plan 02 executado (frontend Comparação Fiscal)
 progress:
   total_phases: 12
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 21
-  completed_plans: 20
-  percent: 50
+  completed_plans: 21
+  percent: 58
 ---
 
 # State: FB_APU04
@@ -27,8 +27,8 @@ See: `.planning/PROJECT.md` (updated 2026-07-03)
 
 Phase: 12 (tela-compara-o-fiscal-navega-o) — EXECUTING
 Plan: 3 of 3
-Status: Plan 02 completo, pronto para Plan 03
-Last activity: 2026-07-03 -- Phase 12 Plan 02 executado (frontend Comparação Fiscal)
+Status: Plan 03 Task 1/2 concluída (navegação adminOnly, commit ed837a5) — Task 2 (checkpoint:human-verify, gate blocking) PENDENTE, aguardando verificação manual do usuário (10 passos de fluxo end-to-end no PLAN.md). Plano 03 NÃO está concluído.
+Last activity: 2026-07-03 -- Phase 12 Plan 03 Task 1 executado (navegação adminOnly TPF-08); Task 2 aguardando aprovação humana
 
 ## Decisions Made
 
@@ -81,6 +81,7 @@ Last activity: 2026-07-03 -- Phase 12 Plan 02 executado (frontend Comparação F
 
 ## Recent History
 
+- 2026-07-03: Phase 12 Plan 03 Task 1 executado — navigation.ts (módulo pacotefiscal + getActiveModule) + AppSidebar.tsx (NavSection "Teste Pacote Fiscal", adminOnly: true) + App.tsx (rota /pacote-fiscal/comparacao sob AdminRoute); build/tsc limpos, commit ed837a5. TPF-08 (código) atendido. Task 2 (checkpoint:human-verify, gate blocking) PENDENTE — aguardando o usuário rodar a verificação manual de 10 passos do fluxo end-to-end (busca→executar→comparar) e responder "approved". Plano 12-03 e Fase 12 NÃO estão concluídos até essa aprovação.
 - 2026-07-03: Phase 12 Plan 02 executado — NfeSearchCombobox.tsx (busca server-side debounced de NF-e) + ComparacaoFiscal.tsx (tela completa: busca→executa→recarrega na mesma tela, 6 impostos com tolerância zero, 4 estados de badge, filtro só divergentes, resumo agregado 4 cards + 6 chips, dialog de detalhe, export Excel/CSV). TPF-06 e TPF-07 atendidos (frontend).
 - 2026-07-03: Phase 12 Plan 01 executado — 3 handlers HTTP admin-gated (fiscal_comparacao.go + fiscal_comparacao_csv.go): busca de NF-e por número/chave, leitura da comparação item a item (esperado x calculado, 4º estado not_executed, IBS somado) e export CSV; 3 rotas registradas em main.go. TPF-06 e TPF-07 atendidos.
 - 2026-07-03: Phase 11 Plan 06 executado (checkpoint de validação) — endpoint POST /api/fiscal/execute validado end-to-end contra Postgres local real (auth admin, guard IDOR duplo, carga de item, isolamento de erro por item, upsert em fiscal_execution_items); alcançabilidade de rede/protocolo Oracle reconfirmada (ORA-01017); Pitfalls 1/2 do go-ora confirmadas ausentes por inspeção de código (não por execução real — sem credencial Oracle real na sessão). Fase 11 (motor de execução do pacote fiscal, backend) COMPLETA (6/6 plans). Validação final com dados/credenciais Oracle reais fica pendente para o usuário (ver 11-06-SUMMARY.md § User Setup Required).
@@ -124,3 +125,7 @@ Last activity: 2026-07-03 -- Phase 12 Plan 02 executado (frontend Comparação F
 | Phase 11 P06 | 35min | 1 tasks | 0 files |
 | Phase 12 P01 | 20min | 2 tasks | 3 files |
 | Phase 12 P02 | 30min | 2 tasks | 2 files |
+
+### Blockers
+
+- Plan 12-03 Task 2 (checkpoint:human-verify) pendente — aguardando verificação manual do fluxo end-to-end da tela Comparação Fiscal (Task 1, navegação adminOnly TPF-08, já commitada em ed837a5)
