@@ -1,4 +1,4 @@
-import { TrendingUp, FolderInput, Settings, LogOut, KeyRound, BarChart3, Scale, MapPin, ShieldCheck } from 'lucide-react'
+import { TrendingUp, FolderInput, Settings, LogOut, KeyRound, BarChart3, Scale, MapPin, ShieldCheck, FlaskConical } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import {
@@ -37,6 +37,7 @@ const mainItems = [
   { id: 'reforma',   icon: Scale,       label: 'Análise Reforma Trib.', path: '/reforma/creditos' },
   { id: 'fronteira', icon: MapPin,      label: 'Módulo ICMS Fronteira', path: '/icms-fronteira' },
   { id: 'auditoria', icon: ShieldCheck, label: 'Auditoria Fiscal',      path: '/auditoria-efd' },
+  { id: 'pacotefiscal', icon: FlaskConical, label: 'Teste Pacote Fiscal', path: '/pacote-fiscal/comparacao', adminOnly: true },
 ]
 
 export function AppRail() {
@@ -44,6 +45,8 @@ export function AppRail() {
   const navigate = useNavigate()
   const { user, company, logout, token, companyId } = useAuth()
   const active = getActiveModule(location.pathname)
+  const isAdmin = user?.role === 'admin'
+  const visibleItems = mainItems.filter(item => !item.adminOnly || isAdmin)
 
   // Logo da empresa — exibida no topo do rail; fallback para o ícone do sistema
   const [empresaLogoUrl, setEmpresaLogoUrl] = useState<string | null>(null)
@@ -115,7 +118,7 @@ export function AppRail() {
 
         {/* Nav principal */}
         <nav className="flex flex-col items-center gap-1 p-2 flex-1 pt-3">
-          {mainItems.map(item => (
+          {visibleItems.map(item => (
             <Tooltip key={item.id}>
               <TooltipTrigger asChild>
                 <button
