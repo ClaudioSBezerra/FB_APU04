@@ -109,3 +109,10 @@ None - no external service configuration required. A tabela `fiscal_execution_it
 ---
 *Phase: 11-motor-de-execu-o-do-pacote-fiscal-backend*
 *Completed: 2026-07-03*
+
+## Self-Check: PASSED
+
+- FOUND: backend/handlers/fiscal_group_lookup.go
+- FOUND: backend/migrations/147_fiscal_execution_items.sql
+- FOUND: 44cb23c (Task 1 commit)
+- FOUND: b27915c (Task 2 commit)
