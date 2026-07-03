@@ -42,7 +42,7 @@ Declared values (must be multiples of 4), matching project-wide Tailwind default
 
 Exceptions:
 - **Dense table density is intentional and required**, not a shortcut: table cells use `py-1 px-2` (4px/8px) with `text-[11px]` content, exactly matching `ConciliacaoBridgeXML.tsx` and `ComparativoEFDvsXML.tsx`. This screen will likely show 6 taxes × 3 values (esperado/calculado/diferença) = 18 numeric columns per row; standard `md` padding would make the table unusably wide. Do not "fix" this to a looser density — it is the established convention for this exact screen family.
-- Filter control wrapper (Switch + Label for "só divergentes") uses `flex items-center gap-2 rounded-md border px-3 py-1.5` — verbatim pattern already used in `IcmsFronteira.tsx` for an identical toggle-filter UI.
+- Filter control wrapper (Switch + Label for "só divergentes") uses `flex items-center gap-2 rounded-md border px-3 py-1` (4px vertical padding — tightened from the `py-1.5` seen in `IcmsFronteira.tsx` because 6px is not on the declared 4/8/16/24/32 spacing scale; matches the dense table density already used elsewhere in this spec).
 
 ---
 
@@ -199,3 +199,4 @@ No `shadcn view`/vetting gate triggered — this phase adds zero new third-party
 - [ ] Dimension 6 Registry Safety: PASS
 
 **Approval:** pending
+</content>
