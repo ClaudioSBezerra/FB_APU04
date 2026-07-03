@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v6.00
 milestone_name: milestone
-status: executing
-last_updated: "2026-07-03T17:02:28.019Z"
+status: verifying
+last_updated: "2026-07-03T17:12:07.987Z"
 last_activity: 2026-07-03
 progress:
   total_phases: 12
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 18
-  completed_plans: 17
-  percent: 42
+  completed_plans: 18
+  percent: 50
 ---
 
 # State: FB_APU04
@@ -27,7 +27,7 @@ See: `.planning/PROJECT.md` (updated 2026-07-03)
 
 Phase: 11 (motor-de-execu-o-do-pacote-fiscal-backend) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-03
 
 ## Decisions Made
@@ -72,9 +72,11 @@ Last activity: 2026-07-03
 - [Phase 11]: CallFiscalPackage retorna (*FiscalResult, error) em vez de (FiscalResult, error) do FB_TESTESFC original — Pointer signature exigida pelo contrato do plano 11-04 para consumo pelo handler de lote (Plan 11-05)
 - [Phase 11]: Guard IDOR aplicado tambem na query de itens (nfe_saidas_itens WHERE nfe_id=$1 AND company_id=$2), nao so no cabecalho — Defesa em profundidade sem custo — company_id ja e coluna desnormalizada em nfe_saidas_itens (migration 075)
 - [Phase 11]: openFiscalOracleConn reaproveitado do Plan 11-01 em vez de redefinido em fiscal_execution.go — O original FB_TESTESFC redefine a funcao no mesmo arquivo — no FB_APU04 isso geraria erro de simbolo duplicado, ja que a funcao ja existe em fiscal_oracle_conn.go
+- [Phase 11]: Plan 11-06: checkpoint executado de forma automatizada (auto_advance=true); binario fb_apu04 desatualizado exigiu rebuild para teste HTTP ao vivo; sem credencial Oracle real na sessao, Pitfalls 1/2 do go-ora confirmadas ausentes por inspecao de codigo, nao por execucao real do pacote (validacao final pendente de credencial real)
 
 ## Recent History
 
+- 2026-07-03: Phase 11 Plan 06 executado (checkpoint de validação) — endpoint POST /api/fiscal/execute validado end-to-end contra Postgres local real (auth admin, guard IDOR duplo, carga de item, isolamento de erro por item, upsert em fiscal_execution_items); alcançabilidade de rede/protocolo Oracle reconfirmada (ORA-01017); Pitfalls 1/2 do go-ora confirmadas ausentes por inspeção de código (não por execução real — sem credencial Oracle real na sessão). Fase 11 (motor de execução do pacote fiscal, backend) COMPLETA (6/6 plans). Validação final com dados/credenciais Oracle reais fica pendente para o usuário (ver 11-06-SUMMARY.md § User Setup Required).
 - 2026-07-03: Phase 11 Plan 05 executado — POST /api/fiscal/execute (FiscalExecutionRunHandler + processFiscalBatch + persistFiscalItemResult), fan-out com semáforo cap 5, timeout 15s/item, defer recover() por item, upsert por item em fiscal_execution_items; guard tests 405/401. TPF-05 atendido (5/6 plans da Fase 11 concluídos).
 - 2026-07-03: Phase 11 Plan 03 executado — fiscal_group_lookup.go (resolveCodEmpresa + lookupGrupoFiscal, porte verbatim FB_TESTESFC) e migration 147 (fiscal_execution_items, schema híbrido + colunas IBS/CBS). TPF-01 e TPF-04 atendidos.
 - 2026-07-03: Phase 11 Plan 02 executado — migration 146 (v_desc/v_outro em nfe_saidas_itens e nfe_entradas_itens); struct prod parseia vOutro; insertNFeItens grava/atualiza v_desc/v_outro. TPF-02 atendido.
@@ -112,3 +114,4 @@ Last activity: 2026-07-03
 | Phase 11 P03 | 12min | 2 tasks | 2 files |
 | Phase 11 P04 | 20min | 2 tasks | 1 files |
 | Phase 11 P05 | 25min | 2 tasks | 3 files |
+| Phase 11 P06 | 35min | 1 tasks | 0 files |
