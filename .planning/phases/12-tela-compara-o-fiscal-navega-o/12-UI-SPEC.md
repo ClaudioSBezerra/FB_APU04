@@ -1,10 +1,11 @@
 ---
 phase: 12
 slug: tela-compara-o-fiscal-navega-o
-status: draft
+status: approved
 shadcn_initialized: true
 preset: manual (no components.json — components vendored directly under frontend/src/components/ui, CLI not used to install them)
 created: 2026-07-03
+reviewed_at: 2026-07-03T17:43:26Z
 ---
 
 # Phase 12 — UI Design Contract
