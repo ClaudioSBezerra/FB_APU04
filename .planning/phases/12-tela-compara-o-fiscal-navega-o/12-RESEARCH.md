@@ -437,17 +437,19 @@ Not applicable in the "old vs. new industry practice" sense — this is an inter
 | A2 | Aggregate summary (4 KPI cards + 6 per-tax chips) can be computed entirely client-side from the comparison payload without a dedicated backend aggregation endpoint | Architectural Responsibility Map, Phase Requirements (TPF-07) | Low-Medium — holds as long as a single note's item count stays in the tens; if some notes have hundreds of items, client-side `reduce()` is still fine (cheap arithmetic), but the underlying table might then need the pagination/virtualization already flagged as Claude's Discretion in CONTEXT.md |
 | A3 | The "never executed" (`fiscal_execution_items` row absent) state should probably render identically to "Não calculado," not as a distinct 4th visual state | Pitfall 1 | Medium — if the user/planner disagrees, the UI-SPEC and this research's Pitfall 1 need a 4th explicit state added before implementation; flagged as an open question below |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should "nunca executado" (no `fiscal_execution_items` row) get a visually distinct state from "Não calculado" (`status = error/sem_grupo_fiscal/pending`)?**
+1. **Should "nunca executado" (no `fiscal_execution_items` row) get a visually distinct state from "Não calculado" (`status = error/sem_grupo_fiscal/pending`)?** (RESOLVED)
    - What we know: UI-SPEC documents exactly 3 states (OK / Divergente / Não calculado) and defines "Não calculado" as `status != 'ok'`. That definition presumes a `fiscal_execution_items` row exists.
    - What's unclear: On first search of a note that has never been run through `/api/fiscal/execute`, every item's `fiscal_execution_items.*` columns are SQL `NULL` via the `LEFT JOIN` — technically not any of the 4 documented `status` values.
    - Recommendation: Treat `NULL` status the same as "Não calculado" for the badge/color (simplest, matches UI-SPEC's 3-state model), but consider a distinct tooltip message ("Nota ainda não executada — clique em Executar" vs. the existing "sem_grupo_fiscal — produto não encontrado..." style messages) so users don't confuse "never run" with "ran and failed." This is a planning-time decision, not a research gap — flagging so the plan explicitly assigns it rather than leaving it to task-time improvisation.
+   - **RESOLVED: given a distinct 4th state**, not collapsed into "Não calculado" — backend `COALESCE(fei.status,'not_executed')` + distinct badge in the UI. See 12-01-PLAN.md Task 1 / 12-02-PLAN.md Task 2.
 
-2. **Does the CSV export need the same `full_result` JSONB "Só calculado" fields (DIFAL/FCP) as columns, or only the 6-tax esperado/calculado/diferença set shown in the table?**
+2. **Does the CSV export need the same `full_result` JSONB "Só calculado" fields (DIFAL/FCP) as columns, or only the 6-tax esperado/calculado/diferença set shown in the table?** (RESOLVED)
    - What we know: `ConciliacaoBridgeXML.tsx`'s CSV export mirrors exactly what's in the visible table (not the dialog's extra detail).
    - What's unclear: TPF-06/07 don't explicitly require DIFAL/FCP in the export; UI-SPEC's Detail Dialog section 6 lists them as dialog-only ("Só calculado" section), implying they're NOT meant for the main table/export.
    - Recommendation: Match the table exactly (6 taxes × 3 columns + identification), excluding DIFAL/FCP/grupo_fiscal_codigo from CSV/Excel — consistent with D-04's instruction to mirror the sibling screens' export scope (which also exports only what's in their visible table, not dialog-only detail).
+   - **RESOLVED: mirrors only the 6-tax comparison table columns**, per the recommendation — DIFAL/FCP/full_result explicitly excluded, enforced by a grep gate. See 12-01-PLAN.md Task 2.
 
 ## Environment Availability
 

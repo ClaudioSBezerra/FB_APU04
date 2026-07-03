@@ -91,7 +91,8 @@ Accent reserved for: primary action buttons, active nav/tab indicator, interacti
 |---------|------|
 | Page title (H1) | "Comparação Fiscal" |
 | Page subtitle (muted, below H1) | "Compare o valor esperado (XML da nota) com o valor calculado pelo pacote fiscal (PKG_FISCAL_FCTAX) para ICMS, ICMS-ST, PIS, COFINS, IBS e CBS." |
-| Primary CTA | "Exportar Excel" (verb + noun, matches the export action every comparable screen in this codebase provides — `ConciliacaoBridgeXML.tsx`, `ComparativoEFDvsXML.tsx`). No batch-execution trigger button in this phase's scope — TPF-05's `/api/fiscal/execute` is out of scope for Phase 12's UI (success criteria are read/filter/summarize only) |
+| Primary CTA | "Executar" (verb, in the note-search bar — triggers `POST /api/fiscal/execute` for the selected NF-e, then auto-reloads the comparison below; decision D-01/CONTEXT.md, added after this document's initial draft) |
+| Secondary CTA (results toolbar) | "Exportar Excel" (verb + noun, matches the export action every comparable screen in this codebase provides — `ConciliacaoBridgeXML.tsx`, `ComparativoEFDvsXML.tsx`) |
 | Secondary action (per row) | "Ver detalhes" — opens the item detail Dialog (esperado/calculado/diferença full breakdown + "Só calculado" section) |
 | Filter label | "Só divergentes" (Switch + Label, off by default — showing all executed items on first load) |
 | Empty state — no items executed at all | Heading: "Nenhum item comparado ainda." Body: "Nenhum item de `nfe_saidas_itens` possui resultado do pacote fiscal para os filtros atuais. Execute o processamento em lote (endpoint `/api/fiscal/execute`) para gerar comparações." |
@@ -109,6 +110,7 @@ Accent reserved for: primary action buttons, active nav/tab indicator, interacti
 Single-page screen, no tabs needed inside it (unlike `ConciliacaoBridgeXML.tsx`'s 2-tab layout) — TPF-06/07/08 describe one list view, not multiple report modes.
 
 1. **Header**: H1 "Comparação Fiscal" + `HelpCircle` tooltip explaining esperado(XML)-vs-calculado(pacote) comparison, same affordance as `ConciliacaoBridgeXML.tsx` header. Subtitle line below.
+1.5. **Nota search + execute bar** (added per CONTEXT.md D-01/D-02, after this document's initial draft): search combobox (busca por número da nota ou chave de acesso, autocomplete) + "Executar" button. Selecting a note and clicking "Executar" calls `POST /api/fiscal/execute`, then auto-reloads the comparison sections below for that note — no separate navigation or toast-then-click step (D-01).
 2. **Summary cards row** (4 cards, `grid grid-cols-1 sm:grid-cols-4 gap-4`, same `Card`/`CardHeader`/`CardTitle`/`CardContent` pattern as reference screens):
    - "Total de Itens" — count of rows in `fiscal_execution_items` for the active filters
    - "Sem Divergência" — count where all 6 taxes match exactly
@@ -192,11 +194,11 @@ No `shadcn view`/vetting gate triggered — this phase adds zero new third-party
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: FLAG (non-blocking — focal point + icon-button aria-label recommendation)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS (2 revision rounds fixed off-grid values)
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved (gsd-ui-checker, 2026-07-03T17:43:26Z) — see commit `33dca8d`. Post-approval addendum: added "Nota search + execute bar" (D-01/D-02) and "Executar" CTA, not re-verified by checker since it's a pure addition of an already-approved-pattern control (search+button), not a change to spacing/color/typography tokens.
