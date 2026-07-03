@@ -11,7 +11,8 @@ Backend (Phase 11) resolve grupo fiscal via Oracle prod/PRODB por item de `nfe_s
 Nenhuma milestone nova iniciada ainda. Candidatos capturados durante o v6.00 (não compromissados):
 - Resolver o achado de segurança CR-02 (Phase 08): regras fiscais globais BA/CE editáveis por qualquer usuário autenticado, não só admin
 - Validar os 2 cenários de UAT da Fase 11 pendentes contra Oracle prod/PRODB real (credenciais reais só disponíveis em produção)
-- Sistema de permissão granular por módulo — hoje só existe o gate binário `adminOnly` (usado por auditoria, malha e agora teste-pacote-fiscal)
+- Sistema de permissão granular por módulo — hoje só existe o gate binário `adminOnly` (usado por auditoria, malha e agora teste-pacote-fiscal); usuário já sinalizou que vai restringir acesso ao módulo Teste Pacote Fiscal numa fase futura
+- Verificar o caminho de tags XML do bloco IBS/CBS por item (`<imposto><IBSCBS><gIBSCBS>`) em `pacotefiscal_xml_import.go` contra um XML real de produção com Reforma Tributária — implementado como melhor esforço, não validado contra amostra real (schema ainda em evolução)
 
 <details>
 <summary>Histórico de milestones anteriores</summary>
@@ -130,7 +131,8 @@ A escrituração fiscal precisa ser **completa e auditável** — todos os valor
 | Multi-cliente externo fora do escopo atual | Tenancy lógico já cobre o caso interno; venda externa é decisão comercial separada | — Pending |
 | `--config` no bridge.py permite isolar instâncias APU02/APU04 | Cada config tem seu tracker.db e logs separados | ✓ Good |
 | Portar validação do pacote fiscal do FB_TESTESFC para dentro do FB_APU04 (novo módulo) em vez de manter produto standalone | Deploy em Hostinger/Coolify (FB_TESTESFC) não alcança a rede interna Oracle da Ferreira Costa (IPs privados `10.131.x.x`); FB_APU04 já roda com acesso Oracle | ✓ Good — shipped v6.00 |
-| Reaproveitar `nfe_saidas`/`nfe_saidas_itens` existentes como fonte de dados em vez de portar o pipeline de import de XML do FB_TESTESFC | Granularidade item-a-item já suficiente para os 23 parâmetros de entrada do pacote fiscal (`PKG_FISCAL_FCTAX`); evita duplicar upload/parse/dedup de XML | ✓ Good — shipped v6.00 |
+| ~~Reaproveitar `nfe_saidas`/`nfe_saidas_itens` existentes como fonte de dados~~ — **REVERTIDA em 2026-07** | Decisão original: granularidade item-a-item já suficiente, evita duplicar upload/parse. Motivo da reversão (usuário): reduzir raio de impacto — bug na importação/schema deste módulo não pode afetar Painel XMLs/Conciliação/Auditoria; acesso a este módulo será restringido em fase futura, mais barato isolar agora do que depois | ⚠️ Revisit — substituída por pipeline isolado (ver linha abaixo) |
+| Pipeline de importação de XML isolado: `pacotefiscal_nfe_saidas`/`pacotefiscal_nfe_saidas_itens` dedicados (migration 148), com cabeçalho completo de emit/dest (razão social, IE, endereço, contato — nfe_saidas só tinha nome/UF/município) | Isolamento de dados/tipos (não Go package separado — reusa helpers genéricos já testados de charset/ZIP/decimal). `fiscal_execution_items.nfe_item_id` repontado para a nova tabela de itens (TRUNCATE de execuções de teste pré-existentes, sem valor histórico) | ✓ Good — migration validada e2e contra Postgres descartável antes do deploy |
 | Gate `adminOnly` binário para o módulo Teste Pacote Fiscal, em vez de permissão granular | Evitar bloquear a entrega atrás de uma infra de permissões maior e separada | ⚠️ Revisit — candidato a milestone futura (ver Next Milestone Goals) |
 
 ## Evolution
