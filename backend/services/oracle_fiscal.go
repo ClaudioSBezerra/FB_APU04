@@ -16,7 +16,16 @@
 // (FCCORP_BKP) em 2026-06-30..07-02.
 package services
 
-import "time"
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"reflect"
+	"strings"
+	"time"
+
+	go_ora "github.com/sijms/go-ora/v2"
+)
 
 // fiscalOutStringBufSize é o tamanho do buffer VARCHAR2 alocado para cada bind
 // OUT de string do bloco PL/SQL. O driver go-ora exige o seu próprio tipo
@@ -294,4 +303,85 @@ var fiscalOutFields = []fiscalOutField{
 	{"CClassTribIbsCbs", "CClassTribIbsCbs"},
 	{"IdRegraCalculoIbs", "IdRegraCalculoIbs"},
 	{"IdRegraCalculoCbs", "IdRegraCalculoCbs"},
+}
+
+// ---------------------------------------------------------------------------
+// Montagem do bloco PL/SQL anônimo — 100% estática/gerada de metadados fixos.
+// Nenhum valor de entrada/saída é concatenado na string; todos trafegam via
+// bind variables (sql.Named/go_ora.Out) na chamada em CallFiscalPackage.
+// ---------------------------------------------------------------------------
+
+// BuildCalculaImpostoBlock monta a string do bloco PL/SQL anônimo que declara
+// a variável do Object Type, chama calcula_imposto_produto com notação
+// nomeada (obrigatória) e "achata" cada campo do resultado em uma bind
+// variable OUT escalar. O texto é gerado exclusivamente a partir de
+// fiscalInParams/fiscalOutFields — NUNCA a partir de valores de entrada
+// (T-11-11).
+func BuildCalculaImpostoBlock() string {
+	var b strings.Builder
+
+	b.WriteString("declare\n")
+	b.WriteString("  result PKG_FISCAL_FCTAX.RDADOS_FISCAIS_PRODUTO;\n")
+	b.WriteString("begin\n")
+	b.WriteString("  result := PKG_FISCAL_FCTAX.calcula_imposto_produto(\n")
+	for i, p := range fiscalInParams {
+		sep := ","
+		if i == len(fiscalInParams)-1 {
+			sep = ""
+		}
+		fmt.Fprintf(&b, "    %s => :%s%s\n", p.OracleParam, p.OracleParam, sep)
+	}
+	b.WriteString("  );\n\n")
+
+	for _, f := range fiscalOutFields {
+		fmt.Fprintf(&b, "  :o%s := result.%s;\n", f.GoField, f.OracleField)
+	}
+	b.WriteString("end;")
+
+	return b.String()
+}
+
+// buildBindArgs gera a lista de sql.Named (IN) + sql.Named/go_ora.Out (OUT) a
+// partir das duas tabelas de metadados acima, usando reflection para localizar
+// o campo Go correspondente — nenhum bind é escrito manualmente em duplicidade,
+// e nenhum valor de entrada é concatenado na string do bloco (T-11-11).
+//
+// Pitfall 1 (go-ora): campos OUT string usam go_ora.Out{Dest, Size} — o
+// sql.Out genérico do database/sql manda size=0 e causa
+// ORA-06502 "buffer too small". Campos numéricos podem usar sql.Out normal.
+func buildBindArgs(in FiscalInput, result *FiscalResult) []interface{} {
+	args := make([]interface{}, 0, len(fiscalInParams)+len(fiscalOutFields))
+
+	inVal := reflect.ValueOf(in)
+	for _, p := range fiscalInParams {
+		fv := inVal.FieldByName(p.GoField)
+		args = append(args, sql.Named(p.OracleParam, fv.Interface()))
+	}
+
+	resVal := reflect.ValueOf(result).Elem()
+	for _, f := range fiscalOutFields {
+		fv := resVal.FieldByName(f.GoField)
+		if fv.Kind() == reflect.String {
+			args = append(args, sql.Named("o"+f.GoField, go_ora.Out{Dest: fv.Addr().Interface(), Size: fiscalOutStringBufSize}))
+		} else {
+			args = append(args, sql.Named("o"+f.GoField, sql.Out{Dest: fv.Addr().Interface()}))
+		}
+	}
+
+	return args
+}
+
+// CallFiscalPackage executa PKG_FISCAL_FCTAX.calcula_imposto_produto via
+// bloco PL/SQL anônimo estático e retorna o resultado tipado. O contexto deve
+// ter um timeout aplicado pelo chamador (batch handler — 15s por item,
+// TPF-05).
+func CallFiscalPackage(ctx context.Context, oracleDB *sql.DB, in FiscalInput) (*FiscalResult, error) {
+	result := &FiscalResult{}
+	args := buildBindArgs(in, result)
+	block := BuildCalculaImpostoBlock()
+
+	if _, err := oracleDB.ExecContext(ctx, block, args...); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
