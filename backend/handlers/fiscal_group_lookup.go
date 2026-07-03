@@ -53,6 +53,19 @@ func resolveCodEmpresa(emitCNPJ, emitUF string) (int, error) {
 // O filtro por cod_empresa é obrigatório — sem ele, o mesmo código de produto
 // pode existir em mais de uma filial com grupo fiscal diferente.
 // sql.ErrNoRows é traduzido para errSemGrupoFiscal (não fatal).
+// stripCheckDigit remove o último dígito do código do produto do XML
+// (<cProd>) antes de buscar em PROD/PRODB — o código lá é composto por
+// código + dígito verificador (ex.: XML "3796949" → PROD/PRODB "379694").
+// Confirmado pelo usuário em 2026-07 comparando um produto real que não
+// batia na busca. Não mexe em nada além desta busca (o valor original de
+// it.CProd continua sendo o que é enviado como pProduto ao pacote fiscal).
+func stripCheckDigit(codigo string) string {
+	if len(codigo) <= 1 {
+		return codigo
+	}
+	return codigo[:len(codigo)-1]
+}
+
 func lookupGrupoFiscal(ctx context.Context, oracleDB *sql.DB, codigoProduto string, codEmpresa int) (grupoFiscal, origem, ncm string, err error) {
 	const query = `
 		SELECT pb.grupo_fiscal, p.especial AS origem, p.ncm
@@ -61,9 +74,10 @@ func lookupGrupoFiscal(ctx context.Context, oracleDB *sql.DB, codigoProduto stri
 		  AND pb.codigo = :codigoProduto
 		  AND pb.cod_empresa = :codEmpresa`
 
+	codigoBusca := stripCheckDigit(codigoProduto)
 	var grupoFiscalNS, origemNS, ncmNS sql.NullString
 	row := oracleDB.QueryRowContext(ctx, query,
-		sql.Named("codigoProduto", codigoProduto),
+		sql.Named("codigoProduto", codigoBusca),
 		sql.Named("codEmpresa", codEmpresa),
 	)
 	if scanErr := row.Scan(&grupoFiscalNS, &origemNS, &ncmNS); scanErr != nil {

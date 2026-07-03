@@ -309,7 +309,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		return "error"
 	}
 
-	trace.add(it.ID, produtoLabel, "lookup_grupo_fiscal", fmt.Sprintf("Buscando grupo fiscal em PROD/PRODB (cod_empresa=%d, produto=%s)...", nfe.CodEmpresa, it.CProd))
+	trace.add(it.ID, produtoLabel, "lookup_grupo_fiscal", fmt.Sprintf("Buscando grupo fiscal em PROD/PRODB (cod_empresa=%d, código XML=%s, código buscado=%s)...", nfe.CodEmpresa, it.CProd, stripCheckDigit(it.CProd)))
 	grupoFiscal, _, _, err := lookupGrupoFiscal(ctx, oracleDB, it.CProd, nfe.CodEmpresa)
 	if err != nil {
 		if errors.Is(err, errSemGrupoFiscal) {
