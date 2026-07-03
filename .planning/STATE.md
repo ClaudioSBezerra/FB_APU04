@@ -1,34 +1,34 @@
 ---
 gsd_state_version: 1.0
 milestone: v6.00
-milestone_name: Módulo Teste Pacote Fiscal
-status: planning
-last_updated: "2026-07-03T12:35:30.866Z"
-last_activity: 2026-07-03
+milestone_name: milestone
+status: Roadmap criado, aguardando planejamento da Phase 11
+last_updated: "2026-07-03T12:59:43.423Z"
+last_activity: 2026-07-03 — Roadmap v6.00 criado (Phases 11-12)
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 12
+  completed_phases: 5
+  total_plans: 12
+  completed_plans: 12
+  percent: 42
 ---
 
 # State: FB_APU04
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-05-22)
+See: `.planning/PROJECT.md` (updated 2026-07-03)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Milestone v5.00 COMPLETO — fases 6–9 fechadas
+**Current focus:** Milestone v6.00 — Módulo Teste Pacote Fiscal: roadmap definido (Phase 11 backend + Phase 12 frontend), aguardando `/gsd:plan-phase 11`
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 11 — Motor de Execução do Pacote Fiscal (Backend) — not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-03 — Milestone v6.00 started
+Status: Roadmap criado, aguardando planejamento da Phase 11
+Last activity: 2026-07-03 — Roadmap v6.00 criado (Phases 11-12)
 
 ## Decisions Made
 
@@ -61,9 +61,13 @@ Last activity: 2026-07-03 — Milestone v6.00 started
 - **smtp_require_tls: false para porta 465:** SSL implicito Hostinger — conforme services/email.go
 - **inhibit_rule BridgeDaemonDown inibe BridgeDPY4011Consecutivos:** daemon down e causa raiz; DPY-4011 e sintoma correlato
 - **runbooks em docs/runbooks/ versionados no repo:** linkaveis via runbook_url; nao wiki externo
+- **Portar validação do pacote fiscal do FB_TESTESFC como módulo dentro do FB_APU04 (não manter standalone):** deploy Hostinger/Coolify do FB_TESTESFC não alcança a rede Oracle interna da Ferreira Costa (IPs privados 10.131.x.x); FB_APU04 já tem acesso Oracle em produção
+- **Reaproveitar nfe_saidas/nfe_saidas_itens em vez de portar o pipeline de import de XML do FB_TESTESFC:** granularidade item-a-item já suficiente para os 23 parâmetros de entrada do pacote fiscal; evita duplicar upload/parse/dedup
+- **Gate `adminOnly: true` como trava temporária de acesso ao módulo Teste Pacote Fiscal:** sistema de permissão granular por módulo fica para milestone futura dedicada
 
 ## Recent History
 
+- 2026-07-03: Milestone v6.00 (Módulo Teste Pacote Fiscal) roadmap criado — Phase 11 (motor de execução: lookup grupo fiscal Oracle, execução PKG_FISCAL_FCTAX via PL/SQL com bind seguro, tabela fiscal_execution_items, endpoint de execução em lote) e Phase 12 (tela Comparação Fiscal + filtro divergentes + navegação adminOnly); REQUIREMENTS.md atualizado com TPF-01..TPF-08 e traceability para Phases 11-12
 - 2026-05-29: Milestone v5.00 FECHADO — fases 6–9 marcadas como verificadas (fechamento administrativo, sem UAT formal). Decisão do usuário; trabalho ativo migrou para o módulo ICMS Fronteira (rastreado fora da estrutura de fases GSD).
 - 2026-05-23: Phase 09 Plan 02 executado — 4 páginas frontend React (CFOP/NCM/UF-Destino/B2B-B2C); mapa coroplético react-simple-maps; 4 tabs habilitadas; build produção OK
 - 2026-05-23: Phase 09 Plan 01 executado — 4 handlers JSON + 2 CSV Módulo 2.x (CFOP/NCM/UF-Destino/B2B-B2C); 6 rotas registradas em main.go; guard tests PASS
@@ -86,4 +90,4 @@ Last activity: 2026-07-03 — Milestone v6.00 started
 - **Commit docs:** Yes
 
 ---
-*Last updated: 2026-05-29 — Milestone v5.00 fechado (fases 6–9 verificadas administrativamente, sem UAT formal)*
+*Last updated: 2026-07-03 — Roadmap v6.00 (Módulo Teste Pacote Fiscal) criado: Phases 11-12*
