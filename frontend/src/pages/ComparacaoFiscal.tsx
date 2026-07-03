@@ -1,9 +1,11 @@
 // ComparacaoFiscal.tsx — tela "Comparação Fiscal" (Fase 12, TPF-06/TPF-07).
 //
-// Busca uma NF-e de saída (NfeSearchCombobox), dispara a execução do pacote
-// fiscal (POST /api/fiscal/execute, Fase 11) e recarrega automaticamente a
+// Busca NF-e de saída por período/número (NfeSearchList — filtro visível +
+// seleção múltipla + execução em lote), dispara a execução do pacote fiscal
+// (POST /api/fiscal/execute, Fase 11) e recarrega automaticamente a
 // comparação esperado (nfe_saidas_itens) x calculado (fiscal_execution_items)
-// na mesma tela — sem navegação extra (D-01/D-02, CONTEXT.md).
+// na mesma tela para a nota em visualização — sem navegação extra (D-01/D-02,
+// CONTEXT.md).
 //
 // Composição de 3 análogos: shell de ConciliacaoBridgeXML.tsx (cards, filtro,
 // tabela densa, badges, export) + mutation trigger-then-reload de
@@ -17,7 +19,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-import { NfeSearchCombobox, type NfeSearchResult } from '@/components/NfeSearchCombobox';
+import { NfeSearchList, type NfeSearchResult } from '@/components/NfeSearchList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -462,28 +464,26 @@ export default function ComparacaoFiscal() {
         </p>
       </div>
 
-      {/* Busca + Executar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <NfeSearchCombobox onSelect={setSelectedNfe} />
-        {selectedNfe && (
+      {/* Busca de NF-e: filtro por período/número visível na página, lista com
+          seleção múltipla e execução em lote do pacote fiscal */}
+      <NfeSearchList onViewDetail={setSelectedNfe} activeId={nfeId} />
+
+      {selectedNfe && (
+        <div className="flex items-center gap-3 flex-wrap border-t pt-3">
           <span className="text-xs text-muted-foreground">
-            Nº {selectedNfe.numero_nfe}/{selectedNfe.serie} — {selectedNfe.dest_nome} — {selectedNfe.data_emissao}
+            Visualizando: Nº {selectedNfe.numero_nfe}/{selectedNfe.serie} — {selectedNfe.dest_nome} — {selectedNfe.data_emissao}
             <span className="font-mono ml-2">{selectedNfe.chave_nfe.slice(0, 8)}...{selectedNfe.chave_nfe.slice(-6)}</span>
           </span>
-        )}
-        <Button onClick={() => nfeId && executar.mutate(nfeId)} disabled={!nfeId || executar.isPending} size="sm">
-          {executar.isPending
-            ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-            : <Send className="h-4 w-4 mr-1.5" />}
-          Executar
-        </Button>
-      </div>
+          <Button onClick={() => nfeId && executar.mutate(nfeId)} disabled={!nfeId || executar.isPending} size="sm" variant="outline">
+            {executar.isPending
+              ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              : <Send className="h-4 w-4 mr-1.5" />}
+            Executar esta nota
+          </Button>
+        </div>
+      )}
 
-      {!nfeId ? (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          Busque uma NF-e por número ou chave de acesso para iniciar a comparação.
-        </p>
-      ) : isLoading ? (
+      {!nfeId ? null : isLoading ? (
         <p className="text-sm text-muted-foreground text-center py-8">Carregando comparação fiscal...</p>
       ) : isError ? (
         <p className="text-sm text-destructive px-4 py-6">
