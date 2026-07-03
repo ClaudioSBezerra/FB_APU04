@@ -534,6 +534,13 @@ func main() {
 	// em fiscal_execution_items, com concorrência 5/timeout 15s por item (TPF-05).
 	http.HandleFunc("/api/fiscal/execute", withAuth(handlers.FiscalExecutionRunHandler, "admin"))
 
+	// Tela "Comparação Fiscal" (Fase 12, TPF-06/07): busca NF-e, leitura
+	// esperado x calculado item a item, e exportação CSV. Todas admin-gated
+	// e company-scoped (T-12-01/T-12-02) — rotas mais específicas primeiro.
+	http.HandleFunc("/api/fiscal/comparacao/search", withAuth(handlers.FiscalComparacaoSearchHandler, "admin"))
+	http.HandleFunc("/api/fiscal/comparacao/csv", withAuth(handlers.FiscalComparacaoCSVHandler, "admin"))
+	http.HandleFunc("/api/fiscal/comparacao", withAuth(handlers.FiscalComparacaoReadHandler, "admin"))
+
 	// Configuration Endpoints
 	http.HandleFunc("/api/config/aliquotas", withAuth(handlers.GetTaxRatesHandler, ""))
 	http.HandleFunc("/api/config/cfop", withAuth(handlers.ListCFOPsHandler, ""))
