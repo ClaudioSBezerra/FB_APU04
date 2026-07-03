@@ -277,7 +277,7 @@ Plans:
 **Wave 1**
 
 - [x] 11-01-PLAN.md — Driver go-ora + conexão Oracle síncrona (openFiscalOracleConn) + rota admin de smoke test de alcançabilidade (checkpoints: legitimidade go-ora + reachability)
-- [ ] 11-02-PLAN.md — TPF-02: v_desc/v_outro por item (migration 146 nas duas tabelas de itens + struct prod/insertNFeItens)
+- [x] 11-02-PLAN.md — TPF-02: v_desc/v_outro por item (migration 146 nas duas tabelas de itens + struct prod/insertNFeItens)
 - [ ] 11-03-PLAN.md — TPF-01 lookup de grupo fiscal (fiscal_group_lookup.go) + TPF-04 tabela fiscal_execution_items (migration 147, schema híbrido + IBS/CBS)
 
 **Wave 2** *(bloqueada até go-ora instalado)*
@@ -325,7 +325,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Verified | 2026-05-23 |
 | 9. Módulos 2.x — Analytics Dimensional | 2/2 | Verified | 2026-05-23 |
 | 10. ICMS Fronteira — ST por NCM no Bloco C | 1/1 | Verified (UAT 5/5) | 2026-06-28 |
-| 11. Motor de Execução do Pacote Fiscal (Backend) | 1/6 | In Progress|  |
+| 11. Motor de Execução do Pacote Fiscal (Backend) | 2/6 | In Progress|  |
 | 12. Tela Comparação Fiscal + Navegação | 0/TBD | Not started | - |
 
 > **Milestone v5.00 fechado em 2026-05-29.** Fases 6–9 marcadas como *Verified* por
