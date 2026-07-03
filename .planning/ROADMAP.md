@@ -305,7 +305,20 @@ Plans:
   4. Usuário pode ativar um filtro "só divergentes" que oculta itens sem nenhuma divergência
   5. A tela exibe um resumo agregado (contagem e/ou percentual de itens divergentes) por tipo de imposto
 
-**Plans**: TBD
+**Plans**: 3 plans (3 waves)
+
+Plans:
+**Wave 1**
+
+- [ ] 12-01-PLAN.md — Backend: fiscal_comparacao.go (search + comparison-read LEFT JOIN, 4º estado not_executed, soma IBS) + fiscal_comparacao_csv.go + 3 rotas admin-gated em main.go (TPF-06/07)
+
+**Wave 2** *(bloqueada até Wave 1)*
+
+- [ ] 12-02-PLAN.md — Frontend: NfeSearchCombobox.tsx (busca server-side debounced) + ComparacaoFiscal.tsx (busca→executar→recarrega, 6 impostos, 4 estados de badge, filtro só divergentes, resumo agregado, export Excel/CSV) (TPF-06/07)
+
+**Wave 3** *(bloqueada até Wave 2)*
+
+- [ ] 12-03-PLAN.md — Navegação: navigation.ts + AppSidebar.tsx + App.tsx (item adminOnly 'Teste Pacote Fiscal') + checkpoint de verificação end-to-end (TPF-08)
 **UI hint**: yes
 
 ## Progress
@@ -326,7 +339,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. Módulos 2.x — Analytics Dimensional | 2/2 | Verified | 2026-05-23 |
 | 10. ICMS Fronteira — ST por NCM no Bloco C | 1/1 | Verified (UAT 5/5) | 2026-06-28 |
 | 11. Motor de Execução do Pacote Fiscal (Backend) | 6/6 | Complete    | 2026-07-03 |
-| 12. Tela Comparação Fiscal + Navegação | 0/TBD | Not started | - |
+| 12. Tela Comparação Fiscal + Navegação | 0/3 | Planned | - |
 
 > **Milestone v5.00 fechado em 2026-05-29.** Fases 6–9 marcadas como *Verified* por
 > fechamento administrativo (sem UAT formal), a pedido do usuário — o trabalho ativo
