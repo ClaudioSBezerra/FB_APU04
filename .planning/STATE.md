@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v6.00
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-03T16:55:54.976Z"
+last_updated: "2026-07-03T17:02:28.019Z"
 last_activity: 2026-07-03
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
   percent: 42
 ---
 
@@ -26,7 +26,7 @@ See: `.planning/PROJECT.md` (updated 2026-07-03)
 ## Current Position
 
 Phase: 11 (motor-de-execu-o-do-pacote-fiscal-backend) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-07-03
 
@@ -70,9 +70,12 @@ Last activity: 2026-07-03
 - [Phase 11]: Porte verbatim do fiscal_group_lookup.go do FB_TESTESFC, apenas removendo a redefinicao de onlyDigits (ja existe em icms_fronteira_prodepe.go)
 - [Phase 11]: Modelo hibrido (11 colunas tipicas + full_result JSONB) em vez de 88 colunas literais em fiscal_execution_items, com 3 colunas adicionais valor_ibs_uf/valor_ibs_mun/valor_cbs para a Fase 12 (TPF-06)
 - [Phase 11]: CallFiscalPackage retorna (*FiscalResult, error) em vez de (FiscalResult, error) do FB_TESTESFC original — Pointer signature exigida pelo contrato do plano 11-04 para consumo pelo handler de lote (Plan 11-05)
+- [Phase 11]: Guard IDOR aplicado tambem na query de itens (nfe_saidas_itens WHERE nfe_id=$1 AND company_id=$2), nao so no cabecalho — Defesa em profundidade sem custo — company_id ja e coluna desnormalizada em nfe_saidas_itens (migration 075)
+- [Phase 11]: openFiscalOracleConn reaproveitado do Plan 11-01 em vez de redefinido em fiscal_execution.go — O original FB_TESTESFC redefine a funcao no mesmo arquivo — no FB_APU04 isso geraria erro de simbolo duplicado, ja que a funcao ja existe em fiscal_oracle_conn.go
 
 ## Recent History
 
+- 2026-07-03: Phase 11 Plan 05 executado — POST /api/fiscal/execute (FiscalExecutionRunHandler + processFiscalBatch + persistFiscalItemResult), fan-out com semáforo cap 5, timeout 15s/item, defer recover() por item, upsert por item em fiscal_execution_items; guard tests 405/401. TPF-05 atendido (5/6 plans da Fase 11 concluídos).
 - 2026-07-03: Phase 11 Plan 03 executado — fiscal_group_lookup.go (resolveCodEmpresa + lookupGrupoFiscal, porte verbatim FB_TESTESFC) e migration 147 (fiscal_execution_items, schema híbrido + colunas IBS/CBS). TPF-01 e TPF-04 atendidos.
 - 2026-07-03: Phase 11 Plan 02 executado — migration 146 (v_desc/v_outro em nfe_saidas_itens e nfe_entradas_itens); struct prod parseia vOutro; insertNFeItens grava/atualiza v_desc/v_outro. TPF-02 atendido.
 - 2026-07-03: Milestone v6.00 (Módulo Teste Pacote Fiscal) roadmap criado — Phase 11 (motor de execução: lookup grupo fiscal Oracle, execução PKG_FISCAL_FCTAX via PL/SQL com bind seguro, tabela fiscal_execution_items, endpoint de execução em lote) e Phase 12 (tela Comparação Fiscal + filtro divergentes + navegação adminOnly); REQUIREMENTS.md atualizado com TPF-01..TPF-08 e traceability para Phases 11-12
@@ -108,3 +111,4 @@ Last activity: 2026-07-03
 | Phase 11 P02 | 15min | 2 tasks | 2 files |
 | Phase 11 P03 | 12min | 2 tasks | 2 files |
 | Phase 11 P04 | 20min | 2 tasks | 1 files |
+| Phase 11 P05 | 25min | 2 tasks | 3 files |

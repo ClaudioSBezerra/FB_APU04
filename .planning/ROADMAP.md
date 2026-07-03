@@ -286,7 +286,7 @@ Plans:
 
 **Wave 3** *(bloqueada até Waves 1-2)*
 
-- [ ] 11-05-PLAN.md — TPF-05: endpoint de lote /api/fiscal/execute (fan-out sem cap 5, timeout 15s/item, isolamento por item, upsert) + guard tests
+- [x] 11-05-PLAN.md — TPF-05: endpoint de lote /api/fiscal/execute (fan-out sem cap 5, timeout 15s/item, isolamento por item, upsert) + guard tests
 
 **Wave 4** *(bloqueada até Wave 3)*
 
@@ -325,7 +325,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Verified | 2026-05-23 |
 | 9. Módulos 2.x — Analytics Dimensional | 2/2 | Verified | 2026-05-23 |
 | 10. ICMS Fronteira — ST por NCM no Bloco C | 1/1 | Verified (UAT 5/5) | 2026-06-28 |
-| 11. Motor de Execução do Pacote Fiscal (Backend) | 4/6 | In Progress|  |
+| 11. Motor de Execução do Pacote Fiscal (Backend) | 5/6 | In Progress|  |
 | 12. Tela Comparação Fiscal + Navegação | 0/TBD | Not started | - |
 
 > **Milestone v5.00 fechado em 2026-05-29.** Fases 6–9 marcadas como *Verified* por
