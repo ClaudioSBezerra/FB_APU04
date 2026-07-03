@@ -88,12 +88,16 @@ export function NfeSearchList({
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [q, setQ] = useState('');
-  const [applied, setApplied] = useState({ dataInicio: '', dataFim: '', q: '' });
+  const [ufOrigem, setUfOrigem] = useState('');
+  const [ufDestino, setUfDestino] = useState('');
+  const [cliente, setCliente] = useState('');
+  const [emitente, setEmitente] = useState('');
+  const emptyApplied = { dataInicio: '', dataFim: '', q: '', ufOrigem: '', ufDestino: '', cliente: '', emitente: '' };
+  const [applied, setApplied] = useState(emptyApplied);
+  const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [execStatus, setExecStatus] = useState<Record<string, ExecStatus>>({});
   const [batchRunning, setBatchRunning] = useState(false);
-
-  const hasFilters = applied.dataInicio !== '' || applied.dataFim !== '' || applied.q.length >= 3;
 
   const { data, isLoading, isError, refetch } = useQuery<NfeSearchResult[]>({
     queryKey: ['nfe-saidas-search', applied],
@@ -102,18 +106,25 @@ export function NfeSearchList({
       if (applied.q) params.set('q', applied.q);
       if (applied.dataInicio) params.set('data_inicio', applied.dataInicio);
       if (applied.dataFim) params.set('data_fim', applied.dataFim);
+      if (applied.ufOrigem) params.set('uf_origem', applied.ufOrigem);
+      if (applied.ufDestino) params.set('uf_destino', applied.ufDestino);
+      if (applied.cliente) params.set('cliente', applied.cliente);
+      if (applied.emitente) params.set('emitente', applied.emitente);
       const res = await fetch(`/api/fiscal/comparacao/search?${params}`, { headers: authHeaders });
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
-    enabled: hasFilters,
+    // Roda a partir do primeiro clique em "Buscar" — sem exigir 3+ caracteres
+    // em nenhum campo; sem filtro nenhum, lista as 50 notas mais recentes.
+    enabled: searched,
   });
 
   const rows = data ?? [];
 
   const handleSearch = () => {
     setSelected(new Set());
-    setApplied({ dataInicio, dataFim, q: q.trim() });
+    setSearched(true);
+    setApplied({ dataInicio, dataFim, q: q.trim(), ufOrigem, ufDestino, cliente: cliente.trim(), emitente: emitente.trim() });
   };
 
   const allSelected = rows.length > 0 && rows.every(r => selected.has(r.id));
@@ -189,11 +200,57 @@ export function NfeSearchList({
           <label className="text-[11px] text-muted-foreground">Número ou chave</label>
           <Input
             type="text"
-            placeholder="mín. 3 caracteres"
+            placeholder="opcional"
             value={q}
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
             className="h-8 w-48 text-xs font-mono"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground">UF Origem</label>
+          <Input
+            type="text"
+            placeholder="PE"
+            value={ufOrigem}
+            onChange={e => setUfOrigem(e.target.value.toUpperCase().slice(0, 2))}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            className="h-8 w-16 text-xs uppercase"
+            maxLength={2}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground">UF Destino</label>
+          <Input
+            type="text"
+            placeholder="SP"
+            value={ufDestino}
+            onChange={e => setUfDestino(e.target.value.toUpperCase().slice(0, 2))}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            className="h-8 w-16 text-xs uppercase"
+            maxLength={2}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground">Cliente</label>
+          <Input
+            type="text"
+            placeholder="nome do destinatário"
+            value={cliente}
+            onChange={e => setCliente(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            className="h-8 w-44 text-xs"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground">Emitente</label>
+          <Input
+            type="text"
+            placeholder="nome do emitente"
+            value={emitente}
+            onChange={e => setEmitente(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            className="h-8 w-44 text-xs"
           />
         </div>
         <Button size="sm" onClick={handleSearch} disabled={isLoading} className="h-8">
@@ -215,9 +272,9 @@ export function NfeSearchList({
         )}
       </div>
 
-      {!hasFilters ? (
+      {!searched ? (
         <p className="text-sm text-muted-foreground text-center py-6">
-          Digite ao menos 3 caracteres do número/chave ou informe um período para listar as notas.
+          Clique em "Buscar" para listar as notas mais recentes, ou aplique um filtro primeiro.
         </p>
       ) : isError ? (
         <p className="text-sm text-destructive text-center py-6">

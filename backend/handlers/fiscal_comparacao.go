@@ -125,20 +125,19 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 		q := strings.TrimSpace(r.URL.Query().Get("q"))
 		dataInicio := strings.TrimSpace(r.URL.Query().Get("data_inicio"))
 		dataFim := strings.TrimSpace(r.URL.Query().Get("data_fim"))
-		hasDateFilter := dataInicio != "" || dataFim != ""
+		ufOrigem := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf_origem")))
+		ufDestino := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf_destino")))
+		cliente := strings.TrimSpace(r.URL.Query().Get("cliente"))
+		emitente := strings.TrimSpace(r.URL.Query().Get("emitente"))
 
-		// Sem texto de busca (>=3 chars) e sem filtro de período: não roda
-		// query nenhuma, responde vazio (evita listar a tabela toda).
-		if len(q) < 3 && !hasDateFilter {
-			json.NewEncoder(w).Encode([]NfeSearchResult{})
-			return
-		}
-
+		// Sem nenhum filtro, roda mesmo assim e lista as 50 notas mais recentes
+		// da empresa (mesmo padrão de "Nota a Nota" em Painel XMLs) — não exige
+		// mais 3+ caracteres em "q" para trazer resultado.
 		where := "WHERE company_id = $1"
 		args := []interface{}{companyID}
 		idx := 2
 
-		if len(q) >= 3 {
+		if q != "" {
 			where += fmt.Sprintf(" AND (numero_nfe ILIKE '%%'||$%d||'%%' OR chave_nfe ILIKE '%%'||$%d||'%%')", idx, idx)
 			args = append(args, q)
 			idx++
@@ -151,6 +150,26 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 		if dataFim != "" {
 			where += fmt.Sprintf(" AND data_emissao <= $%d", idx)
 			args = append(args, dataFim)
+			idx++
+		}
+		if ufOrigem != "" {
+			where += fmt.Sprintf(" AND emit_uf = $%d", idx)
+			args = append(args, ufOrigem)
+			idx++
+		}
+		if ufDestino != "" {
+			where += fmt.Sprintf(" AND dest_uf = $%d", idx)
+			args = append(args, ufDestino)
+			idx++
+		}
+		if cliente != "" {
+			where += fmt.Sprintf(" AND dest_xnome ILIKE '%%'||$%d||'%%'", idx)
+			args = append(args, cliente)
+			idx++
+		}
+		if emitente != "" {
+			where += fmt.Sprintf(" AND emit_xnome ILIKE '%%'||$%d||'%%'", idx)
+			args = append(args, emitente)
 			idx++
 		}
 
