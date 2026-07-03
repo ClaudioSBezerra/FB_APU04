@@ -1,37 +1,29 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-27T18:00:00.000Z",
-  "phase": null,
-  "phase_name": "Aba Incentivo (relatório das dispensas PRODEPE/PROIND aplicadas)",
+  "timestamp": "2026-07-03T00:00:00.000Z",
+  "phase": 11,
+  "phase_name": "Motor de Execução do Pacote Fiscal (Backend)",
   "phase_dir": null,
   "plan": null,
-  "task": 1,
-  "total_tasks": 5,
-  "status": "in_progress",
+  "task": 0,
+  "total_tasks": 0,
+  "status": "not_started",
   "completed_tasks": [
-    {"id": "B-11", "name": "limpar-dados (admin_reset_helpers)", "status": "completed"},
-    {"id": "B-12", "name": "handlers CRUD + import CSV de NCM + rotas", "status": "completed"},
-    {"id": "B-13", "name": "motor SPED + Bloco C (EXISTS por CNPJ+vigência)", "status": "completed"},
-    {"id": "B-14", "name": "UI aba PRODEPE+PROIND (dropdown programa, badge)", "status": "completed"},
-    {"id": "B-15-localhost", "name": "Validação localhost smoke (HTTP 200, schema)", "status": "completed"}
+    {"id": "MS-01", "name": "Milestone v6.00 criada: PROJECT.md, REQUIREMENTS.md (TPF-01..TPF-08), ROADMAP.md (Fase 11/12), STATE.md resetados e commitados", "status": "completed"}
   ],
   "remaining_tasks": [
-    {"id": "B-15-dados", "name": "Cadastrar Rolimec PE/Hipermatal/Scala em /icms-fronteira → Administrativo → PRODEPE e conferir queda do total na aba Antecipação (DIFAL deve continuar)", "status": "not_started"},
-    {"id": "INC-1", "name": "Backend: IcmsFronteiraIncentivoHandler — reusa fronteiraBaseQuery + naoSpedQuery filtrando por JOIN prodepe_enquadramentos; calcula icms_que_seria_devido em paralelo p/ exibir economia", "status": "not_started"},
-    {"id": "INC-2", "name": "Rota /api/icms-fronteira/incentivo em main.go", "status": "not_started"},
-    {"id": "INC-3", "name": "Frontend: aba Incentivo no /icms-fronteira ao lado de Antecipação/ST/DIFAL/Fretes — mesmo layout, badge PRODEPE/PROIND, coluna Nº Ato+Vigência, total dispensado destacado", "status": "not_started"},
-    {"id": "INC-4", "name": "Export CSV/XLSX da aba Incentivo (reusa padrão)", "status": "not_started"}
+    {"id": "MS-02", "name": "/gsd:plan-phase 11 — planejar Motor de Execução do Pacote Fiscal (backend)", "status": "not_started"},
+    {"id": "MS-03", "name": "/gsd:plan-phase 12 — planejar Tela Comparação Fiscal + Navegação (frontend)", "status": "not_started"}
   ],
   "blockers": [],
-  "human_actions_pending": [
-    {"action": "Cadastrar Rolimec PE em /icms-fronteira → Administrativo → PRODEPE e validar que o motor zerou (task B-15-dados)", "context": "Sem dados reais cadastrados, a aba Incentivo abriria vazia. Vale o usuário validar antes de avançar para INC-*.", "blocking": false}
-  ],
+  "human_actions_pending": [],
   "decisions": [
-    {"decision": "Aba Incentivo é RELATÓRIO (espelho de Antecipação/ST/DIFAL), não generalização do cadastro", "rationale": "Cadastro PRODEPE/PROIND continua em Administrativo. Relatório dá prova fiscal/auditoria e visibilidade ao que o motor zera."},
-    {"decision": "PRODEPE e PROIND no mesmo schema, diferenciados só por coluna 'programa' (CHECK)", "rationale": "Mesma natureza fiscal de dispensa; motor não diferencia. Coluna existe para UI/relatório e contagem separada."},
-    {"decision": "Não generalizar para Atacadista/Refinarias agora", "rationale": "Cada tipo tem regra de cálculo distinta. Arquitetura prematura sem caso real."}
+    {"decision": "Descontinuar FB_TESTESFC como produto standalone; portar sua funcionalidade validada como módulo novo dentro do FB_APU04", "rationale": "Deploy Hostinger/Coolify do FB_TESTESFC não alcança a rede interna Oracle da Ferreira Costa (IPs privados 10.131.x.x, sem VPN/túnel); FB_APU04 já roda com acesso Oracle via bridge AWS existente"},
+    {"decision": "Reaproveitar nfe_saidas/nfe_saidas_itens já existentes no FB_APU04 como fonte de dados, em vez de portar o pipeline de import de XML do FB_TESTESFC", "rationale": "Os 23 parâmetros IN do pacote Oracle (PKG_FISCAL_FCTAX.calcula_imposto_produto) só precisam de valores absolutos (preço total, IPI, desconto) já presentes em nfe_saidas_itens — não pedem quantidade nem % de alíquota"},
+    {"decision": "Sistema de permissão por módulo fica para uma milestone futura; v6.00 usa gate binário adminOnly como trava temporária", "rationale": "Evitar bloquear a entrega do valor principal (módulo funcionando) atrás de um trabalho de infraestrutura de permissões maior e separado"},
+    {"decision": "Numeração de fases da v6.00 continua a partir da Fase 11 (não reseta), preservando as fases 06-10 já commitadas em .planning/phases/ mesmo sem a v5.00 ter sido formalmente fechada via /gsd:complete-milestone", "rationale": "v5.00 nunca foi arquivada (sem .planning/milestones/v5.00-phases/); rodar phases.clear teria apagado a Fase 10 (ICMS Fronteira ST por NCM) permanentemente sem necessidade"}
   ],
   "uncommitted_files": [],
-  "next_action": "Começar o handler IcmsFronteiraIncentivoHandler em backend/handlers/icms_fronteira_incentivo.go. Usuário pode cadastrar Rolimec em paralelo (UI já está pronta).",
-  "context_notes": "Fase B (PRODEPE/PROIND) commitada em 7ba5a06 (2026-05-27). Próximo: aba Incentivo (Leitura A — espelho de Antecipação com total dispensado em destaque). Stack docker UP em web:3003/api:8084. Empresa de teste = Rolimec MASTER (company_id 0fce5c57-e0f1-4554-9785-8fb8bcd040ff)."
+  "next_action": "/gsd:plan-phase 11 (cwd = /home/claudiobezerra/projetos/FB_APU04). Ler .planning/.continue-here.md primeiro — tem o código-fonte reutilizável do FB_TESTESFC (oracle_fiscal.go, fiscal_group_lookup.go, fiscal_execution.go) embutido, já que esse projeto irmão será excluído do disco local.",
+  "context_notes": "Milestone v6.00 (Módulo Teste Pacote Fiscal) criada em 2026-07-03 continuando o trabalho do projeto descontinuado FB_TESTESFC. Ver .planning/.continue-here.md para o contexto técnico completo (contrato Oracle de 23 params/~88 campos OUT, pegadinhas go-ora, gap de cod_empresa só Recife/PE confirmado, padrão de isolamento de erro por item)."
 }
