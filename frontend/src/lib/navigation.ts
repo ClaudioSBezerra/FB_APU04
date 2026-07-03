@@ -69,6 +69,12 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'EFD ICMS/IPI × Guias', path: '/auditoria-efd' },
     ],
   },
+  pacotefiscal: {
+    label: 'Teste Pacote Fiscal',
+    tabs: [
+      { label: 'Comparação Fiscal', path: '/pacote-fiscal/comparacao' },
+    ],
+  },
   config: {
     label: 'Configurações',
     tabs: [
@@ -102,6 +108,7 @@ export function getActiveModule(pathname: string): string {
   if (pathname.startsWith('/reforma')) return 'reforma'
   if (pathname.startsWith('/icms-fronteira')) return 'fronteira'
   if (pathname.startsWith('/auditoria-efd')) return 'auditoria'
+  if (pathname.startsWith('/pacote-fiscal')) return 'pacotefiscal'
   if (pathname.startsWith('/config/')) return 'config'
   return 'simulador'
 }

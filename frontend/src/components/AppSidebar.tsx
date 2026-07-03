@@ -28,6 +28,8 @@ import {
   MapPin,
   AlertTriangle,
   ShieldCheck,
+  FlaskConical,
+  GitCompare,
 } from "lucide-react"
 import {
   Sidebar,
@@ -153,6 +155,15 @@ const sections: NavSection[] = [
     sectionIcon: ShieldCheck,
     items: [
       { title: "EFD ICMS/IPI × Guias", url: "/auditoria-efd", icon: ShieldCheck },
+    ],
+  },
+  {
+    id: "pacotefiscal",
+    title: "Teste Pacote Fiscal",
+    sectionIcon: FlaskConical,
+    adminOnly: true,
+    items: [
+      { title: "Comparação Fiscal", url: "/pacote-fiscal/comparacao", icon: GitCompare },
     ],
   },
   {

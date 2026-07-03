@@ -42,6 +42,7 @@ import Reforma21NcmAnalysis  from './pages/Reforma21NcmAnalysis'
 import Reforma23UfDestino    from './pages/Reforma23UfDestino'
 import Reforma24B2bB2c       from './pages/Reforma24B2bB2c'
 import IcmsFronteira from './pages/IcmsFronteira'
+import ComparacaoFiscal from './pages/ComparacaoFiscal'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ForgotPassword from './pages/ForgotPassword'
@@ -181,6 +182,7 @@ function AppLayout() {
               {/* Simulador da Reforma Tributária - SPED */}
               <Route path="/importar-efd"                      element={<ImportarEFD />} />
               <Route path="/auditoria-efd"                     element={<AuditoriaEFD />} />
+              <Route path="/pacote-fiscal/comparacao"          element={<AdminRoute><ComparacaoFiscal /></AdminRoute>} />
               <Route path="/mercadorias/xml"                   element={<MercadoriasXML />} />
               <Route path="/mercadorias"                       element={<Mercadorias />} />
               <Route path="/operacoes/simples"                 element={<OperacoesSimplesNacional />} />
