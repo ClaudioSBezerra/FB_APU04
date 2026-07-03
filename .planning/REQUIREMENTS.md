@@ -67,6 +67,7 @@ Requisitos do milestone v5.00, organizados pelas fases A/B/C definidas na pesqui
 - [ ] **RFMB-04**: Módulo 1.4 — Impacto de capital de giro do split payment: float tributário perdido (IBS+CBS sobre saídas × prazo médio em dias); custo financeiro CDI de reposição; `taxa_cdi_anual_pct` e `prazo_medio_dias` configuráveis via `reforma_parametros`; tabela de sensibilidade DSO × CDI
 
 **Regras transversais para todos os handlers da Fase B:**
+
 - EFD: `AND c100.cod_sit NOT IN ('02','03','04','05')`
 - XML: `AND cancelado = 'N'`
 - Transferências: `JOIN cfop cf ON cfop = cf.cfop WHERE cf.tipo != 'T'`
@@ -98,9 +99,9 @@ Requisitos do milestone v6.00: portar a validação unitária do pacote fiscal (
 
 - [ ] **TPF-01**: Lookup de grupo fiscal via Oracle (`prod`/`PRODB`) por item de `nfe_saidas_itens`, portado de `fiscal_group_lookup.go`
 - [ ] **TPF-02**: Extensão de `nfe_saidas_itens`/`insertNFeItens` para persistir despesas/desconto por item, se confirmado necessário como input do pacote fiscal
-- [ ] **TPF-03**: Serviço de execução do `PKG_FISCAL_FCTAX.calcula_imposto_produto` via bloco PL/SQL estático com bind seguro (`sql.Named`/`go_ora.Out`, nunca concatenação), portado de `oracle_fiscal.go`
+- [x] **TPF-03**: Serviço de execução do `PKG_FISCAL_FCTAX.calcula_imposto_produto` via bloco PL/SQL estático com bind seguro (`sql.Named`/`go_ora.Out`, nunca concatenação), portado de `oracle_fiscal.go`
 - [ ] **TPF-04**: Nova tabela `fiscal_execution_items` com os ~88 campos de saída do pacote fiscal por item, incluindo status (`ok`/erro)
-- [ ] **TPF-05**: Endpoint de execução em lote com concorrência limitada, timeout por item e isolamento de erro (um item com falha não derruba o lote)
+- [x] **TPF-05**: Endpoint de execução em lote com concorrência limitada, timeout por item e isolamento de erro (um item com falha não derruba o lote)
 - [ ] **TPF-06**: Tela "Comparação Fiscal" — esperado (`nfe_saidas_itens`) vs. calculado (`fiscal_execution_items`), divergências destacadas em ICMS/ICMS-ST/PIS/COFINS/IBS/CBS
 - [ ] **TPF-07**: Filtro "só divergentes" e resumo agregado de divergências na tela
 - [ ] **TPF-08**: Item de navegação novo "Teste Pacote Fiscal" com gate `adminOnly: true` (reaproveita padrão de `navigation.ts`) — trava temporária até sistema de permissão por módulo (milestone futura)
@@ -147,13 +148,17 @@ Mapeamento requisito → fase. Atualizado quando o ROADMAP.md for criado.
 | RFMB-01 a RFMB-04 | Phase 7 | Planned |
 | CADU-01 a CADU-07 | Phase 8 | Pending |
 | RFMC-01 a RFMC-04 | Phase 9 | Pending |
+| TPF-01, TPF-02, TPF-03, TPF-04, TPF-05 | Phase 11 | Planned |
+| TPF-06, TPF-07, TPF-08 | Phase 12 | Planned |
 
 **Coverage:**
+
 - v1 requirements: 25 total (all complete)
 - v5.00 requirements: 23 total (16 originais + 7 CADU)
-- Mapped to phases: 23
+- v6.00 requirements: 8 total (TPF-01 a TPF-08)
+- Mapped to phases: 23 (v5.00) + 8 (v6.00) = 31
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-08*
-*Last updated: 2026-05-08 after initialization*
+*Last updated: 2026-07-03 — Roadmap v6.00 criado (Phases 11-12); TPF-01 a TPF-08 mapeados*

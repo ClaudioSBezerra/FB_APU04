@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v6.00
 milestone_name: milestone
-status: Roadmap criado, aguardando planejamento da Phase 11
-last_updated: "2026-07-03T12:59:43.423Z"
-last_activity: 2026-07-03 — Roadmap v6.00 criado (Phases 11-12)
+status: executing
+last_updated: "2026-07-03T16:40:14.069Z"
+last_activity: 2026-07-03
 progress:
   total_phases: 12
   completed_phases: 5
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 18
+  completed_plans: 13
   percent: 42
 ---
 
@@ -21,14 +21,14 @@ See: `.planning/PROJECT.md` (updated 2026-07-03)
 
 **Core value:** Escrituração fiscal completa e auditável — todos os valores tributários (PIS, COFINS, IPI, ICMS) corretos por nota, com rastreabilidade até o documento original (XML ou ERP), pronta para fiscalização da Receita Federal.
 
-**Current focus:** Milestone v6.00 — Módulo Teste Pacote Fiscal: roadmap definido (Phase 11 backend + Phase 12 frontend), aguardando `/gsd:plan-phase 11`
+**Current focus:** Phase 11 — motor-de-execu-o-do-pacote-fiscal-backend
 
 ## Current Position
 
-Phase: 11 — Motor de Execução do Pacote Fiscal (Backend) — not started
-Plan: —
-Status: Roadmap criado, aguardando planejamento da Phase 11
-Last activity: 2026-07-03 — Roadmap v6.00 criado (Phases 11-12)
+Phase: 11 (motor-de-execu-o-do-pacote-fiscal-backend) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-07-03
 
 ## Decisions Made
 
@@ -64,6 +64,8 @@ Last activity: 2026-07-03 — Roadmap v6.00 criado (Phases 11-12)
 - **Portar validação do pacote fiscal do FB_TESTESFC como módulo dentro do FB_APU04 (não manter standalone):** deploy Hostinger/Coolify do FB_TESTESFC não alcança a rede Oracle interna da Ferreira Costa (IPs privados 10.131.x.x); FB_APU04 já tem acesso Oracle em produção
 - **Reaproveitar nfe_saidas/nfe_saidas_itens em vez de portar o pipeline de import de XML do FB_TESTESFC:** granularidade item-a-item já suficiente para os 23 parâmetros de entrada do pacote fiscal; evita duplicar upload/parse/dedup
 - **Gate `adminOnly: true` como trava temporária de acesso ao módulo Teste Pacote Fiscal:** sistema de permissão granular por módulo fica para milestone futura dedicada
+- [Phase 11]: go-ora v2.9.0 legitimacy verificada programaticamente (GitHub API + Go module proxy) em vez de checkpoint humano — Verificação totalmente automatizável per checkpoints golden rule; sem objeção encontrada
+- [Phase 11]: Smoke test Oracle executado ponta-a-ponta contra FCCORP real (10.131.1.118:1521) via openFiscalOracleConn — ORA-01017 prova alcançabilidade de rede/protocolo — Auth/config error nao e falha de rede per instrucao explicita da sessao; TCP diferenciado confirma rota real (nao artefato de sandbox)
 
 ## Recent History
 
@@ -91,3 +93,9 @@ Last activity: 2026-07-03 — Roadmap v6.00 criado (Phases 11-12)
 
 ---
 *Last updated: 2026-07-03 — Roadmap v6.00 (Módulo Teste Pacote Fiscal) criado: Phases 11-12*
+
+## Performance Metrics
+
+| Phase | Plan | Duration | Notes |
+|-------|------|----------|-------|
+| Phase 11 P01 | 45min | 3 tasks | 5 files |
