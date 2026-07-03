@@ -530,6 +530,9 @@ func main() {
 	// Smoke test admin de conectividade Oracle síncrona (D-03) — primeira conexão
 	// Oracle aberta pelo próprio backend Go em tempo de requisição.
 	http.HandleFunc("/api/fiscal/oracle-ping", withAuth(handlers.FiscalOraclePingHandler, "admin"))
+	// Execução em lote: lookup grupo fiscal + PKG_FISCAL_FCTAX + persistência
+	// em fiscal_execution_items, com concorrência 5/timeout 15s por item (TPF-05).
+	http.HandleFunc("/api/fiscal/execute", withAuth(handlers.FiscalExecutionRunHandler, "admin"))
 
 	// Configuration Endpoints
 	http.HandleFunc("/api/config/aliquotas", withAuth(handlers.GetTaxRatesHandler, ""))
