@@ -1,10 +1,17 @@
 # FB_APU04 — Simulador Fiscal
 
-## Current Milestone: v5.00 — Análise da Reforma Tributária
+## Current Milestone: v6.00 — Módulo Teste Pacote Fiscal
 
-**Goal:** Entregar dois módulos analíticos sobre dados já importados (EFD ICMS/IPI + XMLs NF-e), identificando oportunidades de crédito IBS/CBS e impactos por produto, CFOP, UF e segmento de cliente.
+**Goal:** Portar a validação unitária do pacote fiscal (do projeto irmão descontinuado FB_TESTESFC) como um novo módulo dentro do FB_APU04, reaproveitando `nfe_saidas`/`nfe_saidas_itens` já existentes, com gate de acesso temporário `adminOnly` até a construção de um sistema de permissão por módulo (milestone futura).
 
 **Target features:**
+- Lookup de grupo fiscal via Oracle (prod/PRODB) por item de `nfe_saidas_itens`
+- Execução do `PKG_FISCAL_FCTAX.calcula_imposto_produto` via bloco PL/SQL estático (bind seguro), portado de `oracle_fiscal.go`
+- Nova tabela `fiscal_execution_items` com o resultado (~88 campos) por item
+- Tela "Comparação Fiscal": esperado (XML/`nfe_saidas_itens`) vs. calculado (pacote fiscal), destacando divergências ICMS/ICMS-ST/PIS/COFINS/IBS/CBS
+- Item de navegação novo "Teste Pacote Fiscal" com gate `adminOnly: true`
+
+**Milestone anterior (v5.00 — Análise da Reforma Tributária): COMPLETA (2026-05-29)**
 - Módulo 1.1: Créditos ICMS bloqueados — CST/CFOP de uso/consumo e ativo permanente (EFD C170/C190)
 - Módulo 1.2: Reprecificação de produtos — ICMS por dentro → IBS/CBS por fora (XMLs NF-e venda)
 - Módulo 1.3: Ranking de fornecedores por crédito IBS/CBS gerado, alerta Simples Nacional
@@ -50,7 +57,8 @@ A escrituração fiscal precisa ser **completa e auditável** — todos os valor
 - ✓ Correção cache simu.fcxlabs.com/login (SW órfão FC Bots) — unregister-sw.js + nginx headers — Validado em Phase 1 (2026-05-15)
 
 **Expandir (prioridade 2):**
-- [ ] Importação de XMLs via upload manual (drag-and-drop) alimentando as mesmas tabelas do ERP Bridge — fonte unificada de identificação tributária
+- [x] Importação de XMLs via upload manual (drag-and-drop) alimentando as mesmas tabelas do ERP Bridge — fonte unificada de identificação tributária
+- [ ] Módulo Teste Pacote Fiscal — validação item a item do pacote fiscal Oracle contra os valores das notas já importadas (v6.00, em andamento)
 
 **Demais frentes (prioridade 3+, ordem a definir no roadmap):**
 - [ ] Estabilização adicional: tirar credenciais do código (.env, configs AWS), bootstrap de testes Go/React, retry/reconnect no Bridge SAP S4 (DPY-4011)
@@ -64,6 +72,7 @@ A escrituração fiscal precisa ser **completa e auditável** — todos os valor
 - **Migração para outro stack (não-Go, não-React, não-PostgreSQL)** — produto está em produção e estável; mudar fundações destruiria valor sem ganho proporcional
 - **Reescrita do Bridge em Go** — Python+oracledb funciona e a equipe domina; a complexidade está na lógica fiscal, não na linguagem
 - **Reset/limpeza por API sem UI dedicada** — depois do incidente de 2026-05-07, qualquer operação destrutiva requer fluxo UI explícito com confirmações
+- **Sistema de permissão por módulo neste ciclo** — v6.00 usa gate binário `adminOnly` como trava temporária; permissão granular por usuário/módulo (config, RT-SPED, XMLs, painel, reforma, fronteira, auditoria, teste pacote fiscal) fica para uma milestone futura dedicada
 
 ## Context
 
@@ -105,6 +114,8 @@ A escrituração fiscal precisa ser **completa e auditável** — todos os valor
 | Estabilização foca SOMENTE em ResetDatabase | Outros itens (secrets, testes, retry bridge) são importantes mas não bloqueantes | — Pending |
 | Multi-cliente externo fora do escopo atual | Tenancy lógico já cobre o caso interno; venda externa é decisão comercial separada | — Pending |
 | `--config` no bridge.py permite isolar instâncias APU02/APU04 | Cada config tem seu tracker.db e logs separados | ✓ Good |
+| Portar validação do pacote fiscal do FB_TESTESFC para dentro do FB_APU04 (novo módulo) em vez de manter produto standalone | Deploy em Hostinger/Coolify (FB_TESTESFC) não alcança a rede interna Oracle da Ferreira Costa (IPs privados `10.131.x.x`); FB_APU04 já roda com acesso Oracle | — Pending |
+| Reaproveitar `nfe_saidas`/`nfe_saidas_itens` existentes como fonte de dados em vez de portar o pipeline de import de XML do FB_TESTESFC | Granularidade item-a-item já suficiente para os 23 parâmetros de entrada do pacote fiscal (`PKG_FISCAL_FCTAX`); evita duplicar upload/parse/dedup de XML | — Pending |
 
 ## Evolution
 
@@ -124,4 +135,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 — Milestone v5.00 iniciado*
+*Last updated: 2026-07-03 — Milestone v6.00 iniciado*

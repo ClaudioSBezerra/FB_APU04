@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v5.00
-milestone_name: milestone
-status: complete
-last_updated: "2026-05-29T12:00:00.000Z"
-last_activity: 2026-05-29
+milestone: v6.00
+milestone_name: Módulo Teste Pacote Fiscal
+status: planning
+last_updated: "2026-07-03T12:35:30.866Z"
+last_activity: 2026-07-03
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 11
-  completed_plans: 11
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # State: FB_APU04
@@ -25,10 +25,10 @@ See: `.planning/PROJECT.md` (updated 2026-05-22)
 
 ## Current Position
 
-Phase: 09 (modulos-2x-analytics-dimensional) — VERIFIED
-Plan: 2 of 2
-Status: Milestone v5.00 completo. Fases 6–9 marcadas como verificadas em 2026-05-29 (fechamento administrativo, sem UAT formal — trabalho migrou para ICMS Fronteira, fora da estrutura GSD).
-Last activity: 2026-05-29
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-07-03 — Milestone v6.00 started
 
 ## Decisions Made
 
