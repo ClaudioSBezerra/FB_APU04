@@ -282,7 +282,7 @@ Plans:
 
 **Wave 2** *(bloqueada até go-ora instalado)*
 
-- [ ] 11-04-PLAN.md — TPF-03: services/oracle_fiscal.go (bloco PL/SQL estático via reflection, 23 IN/~88 OUT, bind seguro)
+- [x] 11-04-PLAN.md — TPF-03: services/oracle_fiscal.go (bloco PL/SQL estático via reflection, 23 IN/~88 OUT, bind seguro)
 
 **Wave 3** *(bloqueada até Waves 1-2)*
 
@@ -325,7 +325,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Verified | 2026-05-23 |
 | 9. Módulos 2.x — Analytics Dimensional | 2/2 | Verified | 2026-05-23 |
 | 10. ICMS Fronteira — ST por NCM no Bloco C | 1/1 | Verified (UAT 5/5) | 2026-06-28 |
-| 11. Motor de Execução do Pacote Fiscal (Backend) | 3/6 | In Progress|  |
+| 11. Motor de Execução do Pacote Fiscal (Backend) | 4/6 | In Progress|  |
 | 12. Tela Comparação Fiscal + Navegação | 0/TBD | Not started | - |
 
 > **Milestone v5.00 fechado em 2026-05-29.** Fases 6–9 marcadas como *Verified* por

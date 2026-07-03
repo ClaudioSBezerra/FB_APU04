@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v6.00
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-03T16:50:27.103Z"
+last_updated: "2026-07-03T16:55:54.976Z"
 last_activity: 2026-07-03
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 18
-  completed_plans: 15
+  completed_plans: 16
   percent: 42
 ---
 
@@ -26,7 +26,7 @@ See: `.planning/PROJECT.md` (updated 2026-07-03)
 ## Current Position
 
 Phase: 11 (motor-de-execu-o-do-pacote-fiscal-backend) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-07-03
 
@@ -69,6 +69,7 @@ Last activity: 2026-07-03
 - [Phase 11]: Migration 146 cobre nfe_saidas_itens e nfe_entradas_itens (v_desc/v_outro) — insertNFeItens é compartilhado entre as duas tabelas de itens (mesmo texto SQL, tableName como único diferencial); sem as colunas em nfe_entradas_itens o INSERT de entradas quebraria em runtime assim que v_desc/v_outro fossem adicionados ao SQL — mantém também a simetria já estabelecida pelas migrations 094/095/141
 - [Phase 11]: Porte verbatim do fiscal_group_lookup.go do FB_TESTESFC, apenas removendo a redefinicao de onlyDigits (ja existe em icms_fronteira_prodepe.go)
 - [Phase 11]: Modelo hibrido (11 colunas tipicas + full_result JSONB) em vez de 88 colunas literais em fiscal_execution_items, com 3 colunas adicionais valor_ibs_uf/valor_ibs_mun/valor_cbs para a Fase 12 (TPF-06)
+- [Phase 11]: CallFiscalPackage retorna (*FiscalResult, error) em vez de (FiscalResult, error) do FB_TESTESFC original — Pointer signature exigida pelo contrato do plano 11-04 para consumo pelo handler de lote (Plan 11-05)
 
 ## Recent History
 
@@ -106,3 +107,4 @@ Last activity: 2026-07-03
 | Phase 11 P01 | 45min | 3 tasks | 5 files |
 | Phase 11 P02 | 15min | 2 tasks | 2 files |
 | Phase 11 P03 | 12min | 2 tasks | 2 files |
+| Phase 11 P04 | 20min | 2 tasks | 1 files |
