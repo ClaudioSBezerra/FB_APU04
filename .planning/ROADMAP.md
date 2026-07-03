@@ -29,7 +29,7 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 *Milestone v6.00 — Módulo Teste Pacote Fiscal (início: 2026-07-03)*
 
 - [x] **Phase 11: Motor de Execução do Pacote Fiscal (Backend)** - Lookup de grupo fiscal via Oracle, execução do PKG_FISCAL_FCTAX via PL/SQL estático com bind seguro, tabela fiscal_execution_items, endpoint de execução em lote com concorrência limitada e isolamento de erro por item (completed 2026-07-03)
-- [ ] **Phase 12: Tela Comparação Fiscal + Navegação** - Tela item a item esperado vs. calculado com divergências destacadas, filtro "só divergentes", resumo agregado e item de navegação com gate adminOnly
+- [x] **Phase 12: Tela Comparação Fiscal + Navegação** - Tela item a item esperado vs. calculado com divergências destacadas, filtro "só divergentes", resumo agregado e item de navegação com gate adminOnly (completed 2026-07-03)
 
 ## Phase Details
 
@@ -318,7 +318,7 @@ Plans:
 
 **Wave 3** *(bloqueada até Wave 2)*
 
-- [ ] 12-03-PLAN.md — Navegação: navigation.ts + AppSidebar.tsx + App.tsx (item adminOnly 'Teste Pacote Fiscal') + checkpoint de verificação end-to-end (TPF-08)
+- [x] 12-03-PLAN.md — Navegação: navigation.ts + AppSidebar.tsx + App.tsx (item adminOnly 'Teste Pacote Fiscal') + checkpoint de verificação end-to-end (TPF-08)
 
 **UI hint**: yes
 
@@ -340,7 +340,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. Módulos 2.x — Analytics Dimensional | 2/2 | Verified | 2026-05-23 |
 | 10. ICMS Fronteira — ST por NCM no Bloco C | 1/1 | Verified (UAT 5/5) | 2026-06-28 |
 | 11. Motor de Execução do Pacote Fiscal (Backend) | 6/6 | Complete    | 2026-07-03 |
-| 12. Tela Comparação Fiscal + Navegação | 2/3 | In Progress|  |
+| 12. Tela Comparação Fiscal + Navegação | 3/3 | Complete   | 2026-07-03 |
 
 > **Milestone v5.00 fechado em 2026-05-29.** Fases 6–9 marcadas como *Verified* por
 > fechamento administrativo (sem UAT formal), a pedido do usuário — o trabalho ativo

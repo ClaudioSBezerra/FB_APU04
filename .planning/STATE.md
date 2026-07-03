@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v6.00
 milestone_name: milestone
-status: Plan 02 completo, pronto para Plan 03
-last_updated: "2026-07-03T19:22:18.950Z"
-last_activity: 2026-07-03 -- Phase 12 Plan 02 executado (frontend Comparação Fiscal)
+status: verifying
+last_updated: "2026-07-03T19:30:32.893Z"
+last_activity: 2026-07-03
 progress:
   total_phases: 12
   completed_phases: 7
@@ -25,10 +25,10 @@ See: `.planning/PROJECT.md` (updated 2026-07-03)
 
 ## Current Position
 
-Phase: 12 (tela-compara-o-fiscal-navega-o) — EXECUTING
-Plan: 3 of 3
-Status: Plan 03 Task 1/2 concluída (navegação adminOnly, commit ed837a5) — Task 2 (checkpoint:human-verify, gate blocking) PENDENTE, aguardando verificação manual do usuário (10 passos de fluxo end-to-end no PLAN.md). Plano 03 NÃO está concluído.
-Last activity: 2026-07-03 -- Phase 12 Plan 03 Task 1 executado (navegação adminOnly TPF-08); Task 2 aguardando aprovação humana
+Phase: 12 (tela-compara-o-fiscal-navega-o) — COMPLETE (3/3 plans)
+Plan: 3 of 3 — concluído (Task 2 checkpoint aprovado pelo usuário)
+Status: Fase 12 concluída — pronta para verificação de fase / fechamento de milestone v6.00
+Last activity: 2026-07-03 -- Phase 12 Plan 03 concluído (Task 2 checkpoint aprovado); Fase 12 (3/3 plans) COMPLETA
 
 ## Decisions Made
 
@@ -78,9 +78,11 @@ Last activity: 2026-07-03 -- Phase 12 Plan 03 Task 1 executado (navegação admi
 - [Phase 12]: CSV export espelha apenas as 6 colunas de impostos x esperado/calculado/diferenca — DIFAL/FCP/grupo_fiscal_codigo/full_result ficam fora do CSV, sao dialog-only
 - [Phase 12]: Comentarios que citavam literalmente 'nao usar > 0.01' foram reescritos sem o literal, para nao quebrar o proprio grep de verificacao do plano — mesmo pitfall documentado no Plan 12-01
 - [Phase 12]: Divergencia avaliada em base E valor por par de imposto (nao so valor) para ICMS/ICMS-ST/PIS/COFINS, seguindo a regra binding do UI-SPEC ('todo par base/valor'); tabela exibe so a subcoluna de valor, base completa fica no dialog de detalhe
+- [Phase 12]: Task 2 checkpoint (fluxo end-to-end busca->executar->comparar da tela Comparação Fiscal) aprovado pelo usuário sem ressalvas nos 10 passos de verificação manual — Fase 12 (3/3 plans) concluída; TPF-08 fechado
 
 ## Recent History
 
+- 2026-07-03: Phase 12 Plan 03 Task 2 aprovado pelo usuário ("aprovado") — 10 passos de verificação end-to-end da tela Comparação Fiscal (busca NF-e → executar pacote fiscal → recarregar comparação → filtro/resumo/export) confirmados sem problemas. Plano 12-03 CONCLUÍDO (2/2 tasks); TPF-08 marcado completo em REQUIREMENTS.md; ROADMAP.md atualizado (Phase 12 = Complete, 3/3 plans); Fase 12 (Tela Comparação Fiscal + Navegação) COMPLETA — pronta para verificação de fase/fechamento.
 - 2026-07-03: Phase 12 Plan 03 Task 1 executado — navigation.ts (módulo pacotefiscal + getActiveModule) + AppSidebar.tsx (NavSection "Teste Pacote Fiscal", adminOnly: true) + App.tsx (rota /pacote-fiscal/comparacao sob AdminRoute); build/tsc limpos, commit ed837a5. TPF-08 (código) atendido. Task 2 (checkpoint:human-verify, gate blocking) PENDENTE — aguardando o usuário rodar a verificação manual de 10 passos do fluxo end-to-end (busca→executar→comparar) e responder "approved". Plano 12-03 e Fase 12 NÃO estão concluídos até essa aprovação.
 - 2026-07-03: Phase 12 Plan 02 executado — NfeSearchCombobox.tsx (busca server-side debounced de NF-e) + ComparacaoFiscal.tsx (tela completa: busca→executa→recarrega na mesma tela, 6 impostos com tolerância zero, 4 estados de badge, filtro só divergentes, resumo agregado 4 cards + 6 chips, dialog de detalhe, export Excel/CSV). TPF-06 e TPF-07 atendidos (frontend).
 - 2026-07-03: Phase 12 Plan 01 executado — 3 handlers HTTP admin-gated (fiscal_comparacao.go + fiscal_comparacao_csv.go): busca de NF-e por número/chave, leitura da comparação item a item (esperado x calculado, 4º estado not_executed, IBS somado) e export CSV; 3 rotas registradas em main.go. TPF-06 e TPF-07 atendidos.
@@ -125,7 +127,8 @@ Last activity: 2026-07-03 -- Phase 12 Plan 03 Task 1 executado (navegação admi
 | Phase 11 P06 | 35min | 1 tasks | 0 files |
 | Phase 12 P01 | 20min | 2 tasks | 3 files |
 | Phase 12 P02 | 30min | 2 tasks | 2 files |
+| Phase 12 P03 | 15min | 2 tasks | 3 files |
 
 ### Blockers
 
-- Plan 12-03 Task 2 (checkpoint:human-verify) pendente — aguardando verificação manual do fluxo end-to-end da tela Comparação Fiscal (Task 1, navegação adminOnly TPF-08, já commitada em ed837a5)
+None

@@ -9,8 +9,9 @@ requires:
   - phase: 12-tela-compara-o-fiscal-navega-o (Plan 02)
     provides: "ComparacaoFiscal.tsx (default export) pronta para ser roteada"
 provides:
-  - "Item de navegação 'Teste Pacote Fiscal → Comparação Fiscal' com gate adminOnly (código completo, Task 1)"
+  - "Item de navegação 'Teste Pacote Fiscal → Comparação Fiscal' com gate adminOnly"
   - "Rota /pacote-fiscal/comparacao registrada em App.tsx, envolta em AdminRoute"
+  - "Fluxo end-to-end busca→executar→comparar validado visualmente pelo usuário (10/10 passos, sem ressalvas)"
 affects: []
 
 # Tech tracking
@@ -31,43 +32,43 @@ key-decisions:
 
 patterns-established: []
 
-requirements-completed: []  # TPF-08 code-side está implementado (Task 1), mas o plano só considera o requisito fechado após o checkpoint humano (Task 2) validar o fluxo end-to-end. Não marcar como completo em REQUIREMENTS.md até aprovação.
+requirements-completed: [TPF-08]
 
 # Metrics
-duration: "~10min (Task 1 apenas; Task 2 pendente)"
-completed: null  # plano NÃO concluído — aguardando checkpoint humano
+duration: 15min
+completed: 2026-07-03
 ---
 
-# Phase 12 Plan 03: Navegação adminOnly (Task 1) — PENDENTE checkpoint humano
+# Phase 12 Plan 03: Navegação adminOnly + Verificação End-to-End Summary
 
-**Task 1 completa: wiring de navegação em 3 arquivos (navigation.ts + AppSidebar.tsx + App.tsx) para o item "Teste Pacote Fiscal → Comparação Fiscal", gate `adminOnly: true` reusando o padrão idêntico da seção "malha". Task 2 (checkpoint humano de verificação end-to-end) está PENDENTE — este plano NÃO está concluído.**
-
-## Status
-
-**Task 1: CONCLUÍDA e commitada.**
-**Task 2 (`checkpoint:human-verify`, gate `blocking`): PENDENTE.** Aguardando o usuário rodar a verificação manual descrita no PLAN.md e responder "approved" ou reportar problemas. Este executor NÃO pode simular/aprovar essa verificação — ela requer navegação visual em browser real (login, clicar, observar UI), que está fora do alcance desta sessão não-interativa.
+**Item de navegação "Teste Pacote Fiscal → Comparação Fiscal" com gate `adminOnly: true` (3 arquivos, reuso verbatim do padrão "malha"), fluxo completo busca→executar→comparar aprovado pelo usuário nos 10 passos de verificação manual.**
 
 ## Performance
 
-- **Duration:** ~10 min (Task 1)
-- **Completed:** Task 1 em 2026-07-03; Task 2 ainda não iniciada
-- **Tasks:** 1/2
+- **Duration:** ~15 min
+- **Completed:** 2026-07-03
+- **Tasks:** 2/2
 - **Files modified:** 3
 
-## Accomplishments (Task 1)
+## Accomplishments
 - `frontend/src/lib/navigation.ts`: módulo `pacotefiscal` (label "Teste Pacote Fiscal", tab "Comparação Fiscal" → `/pacote-fiscal/comparacao`) + branch em `getActiveModule()` para `/pacote-fiscal`
 - `frontend/src/components/AppSidebar.tsx`: import de `FlaskConical`/`GitCompare` (lucide-react); nova `NavSection` `"pacotefiscal"` com `adminOnly: true`, item único "Comparação Fiscal"
 - `frontend/src/App.tsx`: import de `ComparacaoFiscal`; rota `/pacote-fiscal/comparacao` envolta em `<AdminRoute>` (defesa em profundidade além do gate de nav)
-- `npx tsc --noEmit` limpo; `npm run build` conclui sem erro
-- Todos os greps de verificação do plano passam (`pacotefiscal` em navigation.ts, branch `startsWith('/pacote-fiscal')`, `adminOnly: true` em AppSidebar.tsx, `AdminRoute><ComparacaoFiscal` em App.tsx)
+- `npx tsc --noEmit` limpo; `npm run build` conclui sem erro; todos os greps de verificação do plano passam
+- **Checkpoint humano (Task 2) aprovado pelo usuário** ("aprovado") — os 10 passos de verificação end-to-end confirmados sem problemas: item de nav visível só para admin, busca de NF-e, execução do pacote fiscal com recarga automática na mesma tela, 4 cards + 6 chips de resumo, tabela com tolerância zero, 4 estados de badge, filtro "só divergentes", tooltip IBS/CBS, exports Excel/CSV
 
 ## Task Commits
 
+Each task was committed atomically:
+
 1. **Task 1: Wiring de navegação nos 3 arquivos (adminOnly gate)** - `ed837a5` (feat)
+2. **Task 2: Verificação end-to-end do fluxo Comparação Fiscal** - checkpoint humano, sem commit de código (verificação manual pura) — aprovado pelo usuário via mensagem "aprovado"
 
-Task 2 (checkpoint humano) não gera commit de código — é verificação manual pura.
+Commits intermediários de progresso (antes da aprovação do checkpoint):
+- `56167c8` (docs) - registro de progresso da Task 1, aguardando Task 2
+- `0737c23` (docs) - atualização de STATE.md refletindo Task 2 pendente
 
-**Plan metadata:** Este commit de SUMMARY (pendente) — plano ainda não fechado, sem commit final `docs(12-03): complete...` até aprovação humana.
+**Plan metadata:** (este commit) `docs(12-03): complete Navegação adminOnly plan`
 
 ## Files Created/Modified
 - `frontend/src/lib/navigation.ts` - módulo `pacotefiscal` + branch `getActiveModule`
@@ -75,50 +76,29 @@ Task 2 (checkpoint humano) não gera commit de código — é verificação manu
 - `frontend/src/App.tsx` - import + rota `/pacote-fiscal/comparacao` sob `AdminRoute`
 
 ## Decisions Made
-Nenhuma — plano executado exatamente como escrito (o UI-SPEC e o PATTERNS.md já traziam o código exato a inserir nos 3 arquivos).
+Nenhuma decisão de implementação nova — plano executado exatamente como escrito (o UI-SPEC e o PATTERNS.md já traziam o código exato a inserir nos 3 arquivos). Decisão de processo registrada em STATE.md: checkpoint Task 2 aprovado sem ressalvas pelo usuário.
 
 ## Deviations from Plan
 None - plano executado exatamente como escrito.
 
 ## Issues Encountered
-None. Build e tsc limpos na primeira tentativa.
+None. Build e tsc limpos na primeira tentativa; checkpoint humano aprovado sem problemas reportados.
 
 ## User Setup Required
 
-Nenhuma configuração de serviço externo. O que falta é **verificação humana** (Task 2), não configuração.
+None - no external service configuration required.
 
 ## Next Phase Readiness
 
-**Este plano NÃO está pronto para ser considerado concluído.** Falta:
-1. Rodar `cd frontend && npm run dev` (ou equivalente) e o backend, logar como admin
-2. Seguir os 10 passos de `<how-to-verify>` do Task 2 do PLAN.md (ver abaixo, seção "Checkpoint Pendente")
-3. Responder "approved" (ou descrever problemas) para que a execução seja retomada e o plano seja fechado (SUMMARY final + STATE.md + ROADMAP.md + REQUIREMENTS.md atualizados)
-
-Até essa aprovação, a Fase 12 permanece com Plan 03 em andamento (não concluída), e o milestone v6.00 não deve ser dado como fechado.
-
-## Checkpoint Pendente (Task 2)
-
-**Tipo:** human-verify (gate: blocking)
-**O que foi construído:** Fluxo completo do módulo Teste Pacote Fiscal: item de navegação admin-gated (TPF-08, Task 1 desta sessão), tela Comparação Fiscal (TPF-06/07, Plan 12-02) que busca uma NF-e, dispara a execução do pacote fiscal (endpoint da Fase 11) e recarrega a comparação item a item das 6 impostos com divergências destacadas, filtro "só divergentes", resumo agregado e exportação.
-
-**Passos de verificação (executar manualmente, em browser real):**
-1. Rodar o frontend (`npm run dev`) e o backend, logar como usuário admin.
-2. Confirmar que a seção "Teste Pacote Fiscal" aparece na sidebar; abrir "Comparação Fiscal" (`/pacote-fiscal/comparacao`).
-3. Buscar uma NF-e de saída existente (digitar >=3 chars do número ou chave) e selecionar um resultado do autocomplete.
-4. Clicar "Executar" — o botão mostra spinner, e ao concluir a tabela recarrega automaticamente na mesma tela (sem navegação extra).
-5. Verificar: 4 cards de resumo, 6 chips por imposto, tabela com Esperado/Calculado/Diferença para ICMS/ICMS-ST/PIS/COFINS/IBS/CBS, células divergentes em vermelho (tolerância zero).
-6. Confirmar os badges de estado: itens com status != "ok" = "Não calculado"; itens de uma nota nunca executada (buscar sem clicar Executar) = "Nunca executado" (badge distinto).
-7. Ativar "Só divergentes" e confirmar que itens sem divergência somem.
-8. Passar o mouse nos headers IBS/CBS e confirmar o tooltip de aviso de dado zerado.
-9. Clicar "Exportar Excel" e "Exportar CSV" e confirmar os downloads.
-10. (Opcional/segurança) logar como usuário NÃO-admin e confirmar que a seção não aparece e que `/pacote-fiscal/comparacao` redireciona.
-
-**Sinal de retorno:** Digite "approved" ou descreva os problemas encontrados.
+- **Fase 12 (Tela Comparação Fiscal + Navegação) está COMPLETA (3/3 plans).** TPF-06, TPF-07 e TPF-08 atendidos.
+- Módulo "Teste Pacote Fiscal" está pronto para uso por usuários admin em produção: navegação, busca de NF-e, execução do pacote fiscal (Fase 11) e comparação item a item (Fase 12), tudo validado end-to-end pelo usuário.
+- Validação com dados/credenciais Oracle reais em produção (execução real do `PKG_FISCAL_FCTAX` contra FCCORP) segue como acompanhamento operacional já sinalizado desde a Fase 11 (ver 11-06-SUMMARY.md § User Setup Required) — não bloqueia o fechamento desta fase, que cobria a camada de apresentação/comparação.
+- Fase 12 pronta para a etapa de verificação de fase / fechamento de milestone v6.00 (todas as 3 waves concluídas, todos os requisitos TPF-01 a TPF-08 do milestone atendidos).
 
 ---
 *Phase: 12-tela-compara-o-fiscal-navega-o*
-*Status: Task 1/2 concluída — Task 2 (checkpoint humano) pendente*
+*Completed: 2026-07-03*
 
 ## Self-Check: PASSED
 
-Arquivos modificados existem em disco (frontend/src/lib/navigation.ts, frontend/src/components/AppSidebar.tsx, frontend/src/App.tsx) e o commit da Task 1 (`ed837a5`) está presente no git log. Build de produção e `tsc --noEmit` confirmados limpos nesta sessão.
+Arquivos modificados existem em disco (frontend/src/lib/navigation.ts, frontend/src/components/AppSidebar.tsx, frontend/src/App.tsx) e os commits (`ed837a5`, `56167c8`, `0737c23`) estão presentes no git log. Build de produção e `tsc --noEmit` confirmados limpos.

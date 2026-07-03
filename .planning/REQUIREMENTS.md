@@ -104,7 +104,7 @@ Requisitos do milestone v6.00: portar a validação unitária do pacote fiscal (
 - [x] **TPF-05**: Endpoint de execução em lote com concorrência limitada, timeout por item e isolamento de erro (um item com falha não derruba o lote)
 - [x] **TPF-06**: Tela "Comparação Fiscal" — esperado (`nfe_saidas_itens`) vs. calculado (`fiscal_execution_items`), divergências destacadas em ICMS/ICMS-ST/PIS/COFINS/IBS/CBS
 - [x] **TPF-07**: Filtro "só divergentes" e resumo agregado de divergências na tela
-- [ ] **TPF-08**: Item de navegação novo "Teste Pacote Fiscal" com gate `adminOnly: true` (reaproveita padrão de `navigation.ts`) — trava temporária até sistema de permissão por módulo (milestone futura)
+- [x] **TPF-08**: Item de navegação novo "Teste Pacote Fiscal" com gate `adminOnly: true` (reaproveita padrão de `navigation.ts`) — trava temporária até sistema de permissão por módulo (milestone futura)
 
 ## v2 Requirements
 
@@ -149,7 +149,7 @@ Mapeamento requisito → fase. Atualizado quando o ROADMAP.md for criado.
 | CADU-01 a CADU-07 | Phase 8 | Pending |
 | RFMC-01 a RFMC-04 | Phase 9 | Pending |
 | TPF-01, TPF-02, TPF-03, TPF-04, TPF-05 | Phase 11 | Planned |
-| TPF-06, TPF-07, TPF-08 | Phase 12 | Planned |
+| TPF-06, TPF-07, TPF-08 | Phase 12 | Complete (2026-07-03) |
 
 **Coverage:**
 
