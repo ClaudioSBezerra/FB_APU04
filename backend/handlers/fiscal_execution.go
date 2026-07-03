@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -63,6 +64,7 @@ type fiscalNotaContext struct {
 type fiscalItemInput struct {
 	ID     string
 	CProd  string
+	XProd  string
 	CFOP   string
 	VProd  float64
 	VDesc  float64
@@ -71,10 +73,44 @@ type fiscalItemInput struct {
 }
 
 type fiscalExecutionSummary struct {
-	Total          int `json:"total"`
-	OK             int `json:"ok"`
-	SemGrupoFiscal int `json:"sem_grupo_fiscal"`
-	Error          int `json:"error"`
+	Total          int                `json:"total"`
+	OK             int                `json:"ok"`
+	SemGrupoFiscal int                `json:"sem_grupo_fiscal"`
+	Error          int                `json:"error"`
+	Debug          []fiscalDebugEntry `json:"debug"`
+}
+
+// ---------------------------------------------------------------------------
+// Rastro de depuração (2026-07) — a execução é uma chamada HTTP síncrona
+// (não streaming), então este trace é devolvido no corpo da resposta ao
+// final da execução ("o que aconteceu", não "o que está acontecendo agora"
+// em tempo real — isso exigiria SSE/WebSocket). Thread-safe: escrito por até
+// 5 goroutines concorrentes (semáforo de processFiscalBatch).
+// ---------------------------------------------------------------------------
+
+type fiscalDebugEntry struct {
+	Timestamp string `json:"timestamp"`
+	ItemID    string `json:"item_id,omitempty"`
+	Produto   string `json:"produto,omitempty"`
+	Etapa     string `json:"etapa"`
+	Mensagem  string `json:"mensagem"`
+}
+
+type fiscalDebugTrace struct {
+	mu      sync.Mutex
+	entries []fiscalDebugEntry
+}
+
+func (t *fiscalDebugTrace) add(itemID, produto, etapa, mensagem string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.entries = append(t.entries, fiscalDebugEntry{
+		Timestamp: time.Now().Format("15:04:05.000"),
+		ItemID:    itemID,
+		Produto:   produto,
+		Etapa:     etapa,
+		Mensagem:  mensagem,
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +184,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		nfeCtx.CodEmpresa, nfeCtx.CodEmpresaErr = resolveCodEmpresa(emitCNPJ, emitUF)
 
 		itemRows, err := db.Query(`
-			SELECT id, COALESCE(c_prod,''), COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_ipi,0)
+			SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_ipi,0)
 			FROM pacotefiscal_nfe_saidas_itens
 			WHERE nfe_id = $1 AND company_id = $2
 			ORDER BY n_item ASC`, req.NfeID, companyID)
@@ -160,7 +196,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		var itens []fiscalItemInput
 		for itemRows.Next() {
 			var it fiscalItemInput
-			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VIPI); scanErr != nil {
+			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VIPI); scanErr != nil {
 				log.Printf("FiscalExecutionRunHandler: erro ao escanear item (nfe_id=%s): %v", req.NfeID, scanErr)
 				continue
 			}
@@ -179,21 +215,27 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		trace := &fiscalDebugTrace{}
+		trace.add("", "", "conexao", fmt.Sprintf("Conectando ao Oracle (company_id=%s, filial cod_empresa=%d)...", companyID, nfeCtx.CodEmpresa))
+
 		// Conexão Oracle dedicada a este lote (Plan 11-01) — SetMaxOpenConns(5)
 		// já casado com o cap do semáforo usado em processFiscalBatch.
 		oracleConn, err := openFiscalOracleConn(db, companyID)
 		if err != nil {
 			log.Printf("FiscalExecutionRunHandler: openFiscalOracleConn falhou (company_id=%s): %v", companyID, err)
+			trace.add("", "", "conexao", "Falha ao conectar ao Oracle — verifique as credenciais ERP configuradas.")
 			jsonErr(w, http.StatusBadGateway, "Falha ao conectar ao Oracle. Verifique as credenciais ERP configuradas.")
 			return
 		}
 		defer oracleConn.Close()
+		trace.add("", "", "conexao", "Conexão Oracle estabelecida (FCCORP/PRODB).")
 
 		// Backstop apenas — o timeout real é por item (15s), não do lote inteiro.
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 		defer cancel()
 
-		summary := processFiscalBatch(ctx, oracleConn, db, companyID, nfeCtx, itens)
+		summary := processFiscalBatch(ctx, oracleConn, db, companyID, nfeCtx, itens, trace)
+		summary.Debug = trace.entries
 		json.NewEncoder(w).Encode(summary)
 	}
 }
@@ -203,7 +245,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 // Semáforo de concorrência limitado a 5 + recover por item + upsert por item.
 // ---------------------------------------------------------------------------
 
-func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, companyID string, nfe fiscalNotaContext, itens []fiscalItemInput) fiscalExecutionSummary {
+func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, companyID string, nfe fiscalNotaContext, itens []fiscalItemInput, trace *fiscalDebugTrace) fiscalExecutionSummary {
 	summary := fiscalExecutionSummary{Total: len(itens)}
 	var mu sync.Mutex
 	sem := make(chan struct{}, 5)
@@ -218,6 +260,7 @@ func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, com
 			defer func() {
 				if rec := recover(); rec != nil {
 					log.Printf("FiscalExecutionRunHandler: item=%s panic recuperado: %v", it.ID, rec)
+					trace.add(it.ID, it.XProd, "erro", fmt.Sprintf("Panic recuperado: %v", rec))
 					if perr := persistFiscalItemResult(pgDB, companyID, it.ID, "error",
 						"Falha inesperada ao processar o item.", "", nil, nil); perr != nil {
 						log.Printf("FiscalExecutionRunHandler: item=%s persist error after panic: %v", it.ID, perr)
@@ -232,7 +275,7 @@ func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, com
 			itemCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			defer cancel()
 
-			status := processSingleFiscalItem(itemCtx, oracleDB, pgDB, companyID, nfe, it)
+			status := processSingleFiscalItem(itemCtx, oracleDB, pgDB, companyID, nfe, it, trace)
 			mu.Lock()
 			switch status {
 			case "ok":
@@ -252,9 +295,13 @@ func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, com
 // processSingleFiscalItem executa o pipeline (lookup grupo fiscal → pacote
 // fiscal → persistência) para um único item, isolando qualquer falha nesse
 // item — nunca aborta os demais itens do lote (T-11-17).
-func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, companyID string, nfe fiscalNotaContext, it fiscalItemInput) string {
+func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, companyID string, nfe fiscalNotaContext, it fiscalItemInput, trace *fiscalDebugTrace) string {
+	produtoLabel := fmt.Sprintf("%s — %s", it.CProd, it.XProd)
+	trace.add(it.ID, produtoLabel, "inicio", fmt.Sprintf("Processando item (CFOP %s, v_prod %.2f)", it.CFOP, it.VProd))
+
 	if nfe.CodEmpresaErr != nil {
 		log.Printf("FiscalExecutionRunHandler: item=%s err=%v", it.ID, nfe.CodEmpresaErr)
+		trace.add(it.ID, produtoLabel, "erro", "Não foi possível determinar a filial (cod_empresa) do emitente.")
 		if perr := persistFiscalItemResult(pgDB, companyID, it.ID, "error",
 			"Não foi possível determinar a filial (cod_empresa) do emitente para o lookup fiscal.", "", nil, nil); perr != nil {
 			log.Printf("FiscalExecutionRunHandler: item=%s persist error: %v", it.ID, perr)
@@ -262,9 +309,11 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		return "error"
 	}
 
+	trace.add(it.ID, produtoLabel, "lookup_grupo_fiscal", fmt.Sprintf("Buscando grupo fiscal em PROD/PRODB (cod_empresa=%d, produto=%s)...", nfe.CodEmpresa, it.CProd))
 	grupoFiscal, _, _, err := lookupGrupoFiscal(ctx, oracleDB, it.CProd, nfe.CodEmpresa)
 	if err != nil {
 		if errors.Is(err, errSemGrupoFiscal) {
+			trace.add(it.ID, produtoLabel, "sem_grupo_fiscal", "Produto não encontrado em PROD/PRODB.")
 			if perr := persistFiscalItemResult(pgDB, companyID, it.ID, "sem_grupo_fiscal",
 				"Produto não encontrado em PROD/PRODB — grupo fiscal não pôde ser determinado.", "", nil, nil); perr != nil {
 				log.Printf("FiscalExecutionRunHandler: item=%s persist error: %v", it.ID, perr)
@@ -273,12 +322,14 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		}
 		// Nunca propagar err.Error() cru do Oracle (T-11-18) — detalhe só em log.
 		log.Printf("FiscalExecutionRunHandler: item=%s err=%v", it.ID, err)
+		trace.add(it.ID, produtoLabel, "erro", "Falha ao consultar o grupo fiscal no Oracle (prod/PRODB).")
 		if perr := persistFiscalItemResult(pgDB, companyID, it.ID, "error",
 			"Falha ao consultar o grupo fiscal no Oracle (prod/PRODB).", "", nil, nil); perr != nil {
 			log.Printf("FiscalExecutionRunHandler: item=%s persist error: %v", it.ID, perr)
 		}
 		return "error"
 	}
+	trace.add(it.ID, produtoLabel, "grupo_fiscal_resolvido", fmt.Sprintf("Grupo fiscal resolvido: %s", grupoFiscal))
 
 	// Mapeamento verificado contra FB_TESTESFC fiscal_execution.go:285-309 —
 	// pUFOrigem<-emit_uf, pUFDestino<-dest_uf (NÃO emit_uf), pCodigoIbge<-
@@ -320,10 +371,12 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		inputJSON = []byte("{}")
 	}
 
+	trace.add(it.ID, produtoLabel, "chamando_pacote", "Executando PKG_FISCAL_FCTAX.calcula_imposto_produto...")
 	result, callErr := services.CallFiscalPackage(ctx, oracleDB, in)
 	if callErr != nil {
 		// Nunca propagar callErr.Error() cru do Oracle (T-11-18).
 		log.Printf("FiscalExecutionRunHandler: item=%s err=%v", it.ID, callErr)
+		trace.add(it.ID, produtoLabel, "erro", "Falha ao executar o pacote fiscal no Oracle.")
 		if perr := persistFiscalItemResult(pgDB, companyID, it.ID, "error",
 			"Falha ao executar o pacote fiscal no Oracle (FCCORP_BKP).", grupoFiscal, inputJSON, nil); perr != nil {
 			log.Printf("FiscalExecutionRunHandler: item=%s persist error: %v", it.ID, perr)
@@ -333,8 +386,10 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 
 	if perr := persistFiscalItemResult(pgDB, companyID, it.ID, "ok", "", grupoFiscal, inputJSON, result); perr != nil {
 		log.Printf("FiscalExecutionRunHandler: item=%s persist error: %v", it.ID, perr)
+		trace.add(it.ID, produtoLabel, "erro", "Falha ao persistir o resultado.")
 		return "error"
 	}
+	trace.add(it.ID, produtoLabel, "concluido", "Item calculado com sucesso (status ok).")
 	return "ok"
 }
 

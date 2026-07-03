@@ -104,11 +104,20 @@ interface ComparacaoRow {
   base_calculo_ibs_cbs: number | null;
 }
 
+interface FiscalDebugEntry {
+  timestamp: string;
+  item_id?: string;
+  produto?: string;
+  etapa: string;
+  mensagem: string;
+}
+
 interface ExecuteSummary {
   total: number;
   ok: number;
   sem_grupo_fiscal: number;
   error: number;
+  debug: FiscalDebugEntry[];
 }
 
 type TaxKey = 'icms' | 'icms_st' | 'pis' | 'cofins' | 'ibs' | 'cbs';
@@ -541,6 +550,25 @@ export default function ComparacaoFiscal() {
             Executar esta nota
           </Button>
         </div>
+      )}
+
+      {executar.data && executar.data.debug && executar.data.debug.length > 0 && (
+        <details className="rounded-md border bg-muted/20 px-3 py-2">
+          <summary className="text-xs font-medium cursor-pointer text-muted-foreground">
+            Debug da última execução ({executar.data.debug.length} eventos — conexão Oracle,
+            lookup de grupo fiscal, chamada do pacote fiscal por item)
+          </summary>
+          <div className="mt-2 max-h-64 overflow-y-auto space-y-1 font-mono text-[10px]">
+            {executar.data.debug.map((entry, i) => (
+              <div key={i} className="flex gap-2 border-b border-dashed pb-1 last:border-0">
+                <span className="text-muted-foreground shrink-0">{entry.timestamp}</span>
+                <span className="shrink-0 uppercase text-primary/70">[{entry.etapa}]</span>
+                {entry.produto && <span className="shrink-0 text-muted-foreground truncate max-w-[220px]">{entry.produto}</span>}
+                <span>{entry.mensagem}</span>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
 
       {notaSummary && (
