@@ -25,6 +25,12 @@ Estabilizar o produto pós-incidente de 2026-05-07 (perda de 4 meses de produç�
 
 - [x] **Phase 10: ICMS Fronteira — ST por NCM no Bloco C** - Classificação automática de ST pelo NCM (regra + segmento da empresa na UF) para NFs em XML sem SPED, independentemente do CFOP do fornecedor; fecha o caso de fornecedor sem protocolo CONFAZ (CFOP 6101/6102); remove a tela de reclassificação manual (completed 2026-06-27, UAT 5/5 em 2026-06-28)
 
+---
+*Milestone v6.00 — Módulo Teste Pacote Fiscal (início: 2026-07-03)*
+
+- [ ] **Phase 11: Motor de Execução do Pacote Fiscal (Backend)** - Lookup de grupo fiscal via Oracle, execução do PKG_FISCAL_FCTAX via PL/SQL estático com bind seguro, tabela fiscal_execution_items, endpoint de execução em lote com concorrência limitada e isolamento de erro por item
+- [ ] **Phase 12: Tela Comparação Fiscal + Navegação** - Tela item a item esperado vs. calculado com divergências destacadas, filtro "só divergentes", resumo agregado e item de navegação com gate adminOnly
+
 ## Phase Details
 
 ### Phase 1: Estabilização Crítica (Reset + Cache)
@@ -252,10 +258,56 @@ Plans:
 
 - [x] 10-01-PLAN.md — Classificação NCM-first nas 3 views do Bloco C (nao-sped, reconciliação, ST por item) + remoção da tela de reclassificação manual (retroativo)
 
+### Phase 11: Motor de Execução do Pacote Fiscal (Backend)
+
+**Goal**: Dado um item de `nfe_saidas_itens`, o sistema resolve seu grupo fiscal no Oracle (prod/PRODB), executa `PKG_FISCAL_FCTAX.calcula_imposto_produto` com bind seguro e persiste os ~88 campos de saída em `fiscal_execution_items`, em lote, com isolamento de erro e limites de concorrência/timeout — sem nenhuma tela ainda, apenas a fundação de dados que a Phase 12 vai exibir.
+**Depends on**: Nothing dentro deste milestone (reaproveita `nfe_saidas`/`nfe_saidas_itens` já existentes e a conexão ERP_BRIDGE Oracle já em produção)
+**Requirements**: TPF-01, TPF-02, TPF-03, TPF-04, TPF-05
+**Success Criteria** (what must be TRUE):
+
+  1. Para um item de `nfe_saidas_itens`, o sistema resolve o grupo fiscal correspondente via Oracle (`prod`/`PRODB`), ou retorna erro explícito quando o mapeamento (ex.: filial fora de Recife/PE) não existe
+  2. Quando confirmado necessário, despesas/desconto por item ficam disponíveis em `nfe_saidas_itens` como input do pacote fiscal
+  3. O pacote `PKG_FISCAL_FCTAX.calcula_imposto_produto` é executado via bloco PL/SQL estático com bind seguro (`sql.Named`/`go_ora.Out`, nunca concatenação de string) e os ~88 campos de saída são persistidos em `fiscal_execution_items` com status `ok`/erro por item
+  4. Em um lote com N itens, um item que falha (grupo fiscal ausente, timeout, erro Oracle) não impede o processamento dos demais itens do lote
+  5. A execução em lote respeita um limite de concorrência e um timeout por item configuráveis, evitando saturar a conexão Oracle
+
+**Plans**: 6 plans (4 waves)
+
+Plans:
+**Wave 1**
+- [ ] 11-01-PLAN.md — Driver go-ora + conexão Oracle síncrona (openFiscalOracleConn) + rota admin de smoke test de alcançabilidade (checkpoints: legitimidade go-ora + reachability)
+- [ ] 11-02-PLAN.md — TPF-02: v_desc/v_outro por item (migration 146 nas duas tabelas de itens + struct prod/insertNFeItens)
+- [ ] 11-03-PLAN.md — TPF-01 lookup de grupo fiscal (fiscal_group_lookup.go) + TPF-04 tabela fiscal_execution_items (migration 147, schema híbrido + IBS/CBS)
+
+**Wave 2** *(bloqueada até go-ora instalado)*
+- [ ] 11-04-PLAN.md — TPF-03: services/oracle_fiscal.go (bloco PL/SQL estático via reflection, 23 IN/~88 OUT, bind seguro)
+
+**Wave 3** *(bloqueada até Waves 1-2)*
+- [ ] 11-05-PLAN.md — TPF-05: endpoint de lote /api/fiscal/execute (fan-out sem cap 5, timeout 15s/item, isolamento por item, upsert) + guard tests
+
+**Wave 4** *(bloqueada até Wave 3)*
+- [ ] 11-06-PLAN.md — Checkpoint end-to-end: execução real de lote contra Oracle validando as pegadinhas do go-ora com dados reais
+
+### Phase 12: Tela Comparação Fiscal + Navegação
+
+**Goal**: Um usuário admin acessa a tela "Teste Pacote Fiscal" e vê, item a item, o valor esperado (`nfe_saidas_itens`, vindo do XML) contra o valor calculado pelo pacote fiscal (`fiscal_execution_items`), com divergências de ICMS/ICMS-ST/PIS/COFINS/IBS/CBS destacadas visualmente, podendo filtrar só os itens divergentes e ver um resumo agregado — usuários sem role admin não veem essa opção de navegação.
+**Depends on**: Phase 11 (precisa de `fiscal_execution_items` populada para exibir algo)
+**Requirements**: TPF-06, TPF-07, TPF-08
+**Success Criteria** (what must be TRUE):
+
+  1. Usuário com role admin vê o item de navegação "Teste Pacote Fiscal"; usuário sem role admin não vê essa opção (gate `adminOnly: true`)
+  2. A tela "Comparação Fiscal" lista itens executados mostrando lado a lado o valor esperado (XML/`nfe_saidas_itens`) e o calculado (`fiscal_execution_items`) para ICMS, ICMS-ST, PIS, COFINS, IBS e CBS
+  3. Itens com divergência entre esperado e calculado são destacados visualmente (cor/badge) por imposto
+  4. Usuário pode ativar um filtro "só divergentes" que oculta itens sem nenhuma divergência
+  5. A tela exibe um resumo agregado (contagem e/ou percentual de itens divergentes) por tipo de imposto
+
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -269,6 +321,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Verified | 2026-05-23 |
 | 9. Módulos 2.x — Analytics Dimensional | 2/2 | Verified | 2026-05-23 |
 | 10. ICMS Fronteira — ST por NCM no Bloco C | 1/1 | Verified (UAT 5/5) | 2026-06-28 |
+| 11. Motor de Execução do Pacote Fiscal (Backend) | 0/6 | Planned | - |
+| 12. Tela Comparação Fiscal + Navegação | 0/TBD | Not started | - |
 
 > **Milestone v5.00 fechado em 2026-05-29.** Fases 6–9 marcadas como *Verified* por
 > fechamento administrativo (sem UAT formal), a pedido do usuário — o trabalho ativo
@@ -282,3 +336,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 *Phase 5 planned: 2026-05-16*
 *Phases 6–8 planned: 2026-05-22 (milestone v5.00)*
 *Phase 6 plans finalized: 2026-05-22 (4 plans, 3 waves)*
+*Phases 11–12 planned: 2026-07-03 (milestone v6.00 — Módulo Teste Pacote Fiscal)*
