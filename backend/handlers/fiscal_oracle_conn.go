@@ -48,6 +48,9 @@ func openFiscalOracleConn(db *sql.DB, companyID string) (*sql.DB, error) {
 	if strings.HasPrefix(dsnPlain, "oracle://") {
 		connStr = dsnPlain
 	} else {
+		if strings.TrimSpace(usuarioPlain) == "" || strings.TrimSpace(senhaPlain) == "" {
+			return nil, fmt.Errorf("credenciais Oracle (usuário/senha) não configuradas para a empresa")
+		}
 		connStr = fmt.Sprintf("oracle://%s:%s@%s", usuarioPlain, senhaPlain, dsnPlain)
 	}
 

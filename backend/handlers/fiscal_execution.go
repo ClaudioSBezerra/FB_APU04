@@ -61,12 +61,13 @@ type fiscalNotaContext struct {
 }
 
 type fiscalItemInput struct {
-	ID    string
-	CProd string
-	CFOP  string
-	VProd float64
-	VDesc float64
-	VIPI  float64
+	ID     string
+	CProd  string
+	CFOP   string
+	VProd  float64
+	VDesc  float64
+	VOutro float64
+	VIPI   float64
 }
 
 type fiscalExecutionSummary struct {
@@ -147,7 +148,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		nfeCtx.CodEmpresa, nfeCtx.CodEmpresaErr = resolveCodEmpresa(emitCNPJ, emitUF)
 
 		itemRows, err := db.Query(`
-			SELECT id, COALESCE(c_prod,''), COALESCE(cfop,''), v_prod, COALESCE(v_desc,0), v_ipi
+			SELECT id, COALESCE(c_prod,''), COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_ipi,0)
 			FROM nfe_saidas_itens
 			WHERE nfe_id = $1 AND company_id = $2
 			ORDER BY n_item ASC`, req.NfeID, companyID)
@@ -159,11 +160,17 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		var itens []fiscalItemInput
 		for itemRows.Next() {
 			var it fiscalItemInput
-			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VIPI); scanErr != nil {
+			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VIPI); scanErr != nil {
 				log.Printf("FiscalExecutionRunHandler: erro ao escanear item (nfe_id=%s): %v", req.NfeID, scanErr)
 				continue
 			}
 			itens = append(itens, it)
+		}
+		if scanErr := itemRows.Err(); scanErr != nil {
+			log.Printf("FiscalExecutionRunHandler: erro ao iterar itens (nfe_id=%s): %v", req.NfeID, scanErr)
+			itemRows.Close()
+			jsonErr(w, http.StatusInternalServerError, "Erro ao carregar itens da nota")
+			return
 		}
 		itemRows.Close()
 
@@ -276,8 +283,12 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 	// Mapeamento verificado contra FB_TESTESFC fiscal_execution.go:285-309 —
 	// pUFOrigem<-emit_uf, pUFDestino<-dest_uf (NÃO emit_uf), pCodigoIbge<-
 	// dest_c_mun (código IBGE do DESTINO — NUNCA emit_municipio, que é o NOME
-	// do município), pDespesas=0 hardcoded (NF-e não carrega despesas
-	// acessórias por item; vOutro só existe no cabeçalho) (T-11-19).
+	// do município) (T-11-19). pDespesas<-v_outro por item: o original
+	// FB_TESTESFC hardcodava 0 porque seu schema não tinha despesas
+	// acessórias por item; o Plan 11-02 (migration 146 + TPF-02) adicionou
+	// v_outro a nfe_saidas_itens especificamente para alimentar este campo —
+	// hardcodar 0 aqui descartaria silenciosamente essa despesa da base de
+	// cálculo.
 	in := services.FiscalInput{
 		PCnpjEmpresa:                 nfe.EmitCNPJ,
 		PUFOrigem:                    nfe.EmitUF,
@@ -291,7 +302,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		PCnpjExcecao:                 "",
 		PIndicadorServico:            defaultIndicadorServico,
 		PPrecoTotal:                  it.VProd,
-		PDespesas:                    0, // NF-e não carrega despesas acessórias por item — nunca v_outro
+		PDespesas:                    it.VOutro,
 		PDesconto:                    it.VDesc,
 		PIPI:                         it.VIPI,
 		PAliquotaSimplesNacional:     0,
