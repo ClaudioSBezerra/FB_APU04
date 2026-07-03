@@ -90,6 +90,21 @@ Requisitos do milestone v5.00, organizados pelas fases A/B/C definidas na pesqui
 - [x] **RFMC-03**: Módulo 2.3 — Análise por UF/destino: volume de vendas por UF de destino; ICMS origem vs. IBS destino; tabela de resumo + mapa coroplético com `react-simple-maps` e `brazil-states.json`
 - [x] **RFMC-04**: Módulo 2.4 — Segmentação B2B vs. B2C: três vias (b2b_credit / b2b_nocredit / b2c) usando `ind_final` (Phase A migration) + fallback CPF/CNPJ (`LENGTH(dest_cnpj_cpf) = 11` → B2C); nota de UI sobre notas históricas sem `ind_final`
 
+## v6.00 Requirements — Módulo Teste Pacote Fiscal
+
+Requisitos do milestone v6.00: portar a validação unitária do pacote fiscal (do projeto descontinuado FB_TESTESFC) como novo módulo dentro do FB_APU04, reaproveitando `nfe_saidas`/`nfe_saidas_itens` já existentes.
+
+### Teste Pacote Fiscal (prioridade única — módulo novo)
+
+- [ ] **TPF-01**: Lookup de grupo fiscal via Oracle (`prod`/`PRODB`) por item de `nfe_saidas_itens`, portado de `fiscal_group_lookup.go`
+- [ ] **TPF-02**: Extensão de `nfe_saidas_itens`/`insertNFeItens` para persistir despesas/desconto por item, se confirmado necessário como input do pacote fiscal
+- [ ] **TPF-03**: Serviço de execução do `PKG_FISCAL_FCTAX.calcula_imposto_produto` via bloco PL/SQL estático com bind seguro (`sql.Named`/`go_ora.Out`, nunca concatenação), portado de `oracle_fiscal.go`
+- [ ] **TPF-04**: Nova tabela `fiscal_execution_items` com os ~88 campos de saída do pacote fiscal por item, incluindo status (`ok`/erro)
+- [ ] **TPF-05**: Endpoint de execução em lote com concorrência limitada, timeout por item e isolamento de erro (um item com falha não derruba o lote)
+- [ ] **TPF-06**: Tela "Comparação Fiscal" — esperado (`nfe_saidas_itens`) vs. calculado (`fiscal_execution_items`), divergências destacadas em ICMS/ICMS-ST/PIS/COFINS/IBS/CBS
+- [ ] **TPF-07**: Filtro "só divergentes" e resumo agregado de divergências na tela
+- [ ] **TPF-08**: Item de navegação novo "Teste Pacote Fiscal" com gate `adminOnly: true` (reaproveita padrão de `navigation.ts`) — trava temporária até sistema de permissão por módulo (milestone futura)
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -114,6 +129,8 @@ Deferred to future release. Tracked but not in current roadmap.
 | Reset/limpeza por API sem UI | Pós-incidente, qualquer destrutivo requer fluxo UI explícito |
 | Multi-cliente comercial agressivo neste ciclo | Tenancy lógico cobre caso interno; venda externa é decisão comercial separada |
 | Suporte a NFC-e (consumidor final) e NFS-e | Foco é NF-e (mercantil); NFS-e foi removida em commit anterior |
+| Sistema de permissão por módulo (v6.00) | Fica pra milestone futura dedicada; v6.00 usa gate binário `adminOnly` como trava temporária |
+| Mapeamento completo de `cod_empresa` por filial (v6.00) | Só a raiz de CNPJ de Recife/PE está confirmada (herdado do FB_TESTESFC); demais filiais retornam erro explícito por item até serem mapeadas |
 
 ## Traceability
 
