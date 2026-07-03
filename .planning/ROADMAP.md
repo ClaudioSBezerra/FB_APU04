@@ -325,7 +325,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Cadastro de Empresas + Ambiente Adm por UF | 3/3 | Verified | 2026-05-23 |
 | 9. Módulos 2.x — Analytics Dimensional | 2/2 | Verified | 2026-05-23 |
 | 10. ICMS Fronteira — ST por NCM no Bloco C | 1/1 | Verified (UAT 5/5) | 2026-06-28 |
-| 11. Motor de Execução do Pacote Fiscal (Backend) | 6/6 | Complete   | 2026-07-03 |
+| 11. Motor de Execução do Pacote Fiscal (Backend) | 6/6 | Complete    | 2026-07-03 |
 | 12. Tela Comparação Fiscal + Navegação | 0/TBD | Not started | - |
 
 > **Milestone v5.00 fechado em 2026-05-29.** Fases 6–9 marcadas como *Verified* por
