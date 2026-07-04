@@ -1,53 +1,57 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/sonner'
-import ImportarEFD from './pages/ImportarEFD'
-import AuditoriaEFD from './pages/AuditoriaEFD'
-import Mercadorias from './pages/Mercadorias'
-import MercadoriasXML from './pages/MercadoriasXML'
-import OperacoesSimplesNacional from './pages/OperacoesSimplesNacional'
-import Dashboard from './pages/Dashboard'
-import ExecutiveSummary from './pages/ExecutiveSummary'
-import ConsultaInteligente from './pages/ConsultaInteligente'
-import TabelaAliquotas from './pages/TabelaAliquotas'
-import TabelaCFOP from './pages/TabelaCFOP'
-import TabelaFornSimples from './pages/TabelaFornSimples'
-import ApelidosFiliais from './pages/ApelidosFiliais'
-import GestaoAmbiente from './pages/GestaoAmbiente'
-import Managers from './pages/Managers'
-import ConsultaNFesEntradas from './pages/ConsultaNFesEntradas'
-import ConsultaCTesEntradas from './pages/ConsultaCTesEntradas'
-import ImportarXMLsEntrada from './pages/ImportarXMLsEntrada'
-import ImportarXMLsSaida from './pages/ImportarXMLsSaida'
-import ImportarXMLsCTe from './pages/ImportarXMLsCTe'
-import PainelXMLs from './pages/PainelXMLs'
-import ConciliacaoBridgeXML from './pages/ConciliacaoBridgeXML'
-import ComparativoEFDvsXML from './pages/ComparativoEFDvsXML'
-import RelatorioSaneamento from './pages/RelatorioSaneamento'
-import ERPBridgeConfig from './pages/ERPBridgeConfig'
-import ERPBridgeLogs from './pages/ERPBridgeLogs'
-import ERPBridgeCredenciais from './pages/ERPBridgeCredenciais'
-import ImportarViaERP from './pages/ImportarViaERP'
-import ImportacaoERPLogs from './pages/ImportacaoERPLogs'
-import AdminUsers from './pages/AdminUsers'
-import LimparDados from './pages/LimparDados'
-import ReformaParametros from './pages/ReformaParametros'
-import EmpresaParametros from './pages/EmpresaParametros'
-import Reforma11CreditosBloqueados from './pages/Reforma11CreditosBloqueados'
-import Reforma12Reprecificacao from './pages/Reforma12Reprecificacao'
-import Reforma13RankingFornecedores from './pages/Reforma13RankingFornecedores'
-import Reforma14SplitPayment from './pages/Reforma14SplitPayment'
-import Reforma22CfopAnalysis from './pages/Reforma22CfopAnalysis'
-import Reforma21NcmAnalysis  from './pages/Reforma21NcmAnalysis'
-import Reforma23UfDestino    from './pages/Reforma23UfDestino'
-import Reforma24B2bB2c       from './pages/Reforma24B2bB2c'
-import IcmsFronteira from './pages/IcmsFronteira'
-import ComparacaoFiscal from './pages/ComparacaoFiscal'
-import ImportarXMLPacoteFiscal from './pages/ImportarXMLPacoteFiscal'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import ForgotPassword from './pages/ForgotPassword'
-import ResetPassword from './pages/ResetPassword'
+// Páginas carregadas sob demanda (code-splitting): cada rota vira um chunk
+// próprio, tirando ~2 MB do bundle de entrada. Libs pesadas usadas só por
+// algumas páginas (recharts, react-simple-maps, xlsx) saem do entry junto.
+const ImportarEFD = lazy(() => import('./pages/ImportarEFD'))
+const AuditoriaEFD = lazy(() => import('./pages/AuditoriaEFD'))
+const Mercadorias = lazy(() => import('./pages/Mercadorias'))
+const MercadoriasXML = lazy(() => import('./pages/MercadoriasXML'))
+const OperacoesSimplesNacional = lazy(() => import('./pages/OperacoesSimplesNacional'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const ExecutiveSummary = lazy(() => import('./pages/ExecutiveSummary'))
+const ConsultaInteligente = lazy(() => import('./pages/ConsultaInteligente'))
+const TabelaAliquotas = lazy(() => import('./pages/TabelaAliquotas'))
+const TabelaCFOP = lazy(() => import('./pages/TabelaCFOP'))
+const TabelaFornSimples = lazy(() => import('./pages/TabelaFornSimples'))
+const ApelidosFiliais = lazy(() => import('./pages/ApelidosFiliais'))
+const GestaoAmbiente = lazy(() => import('./pages/GestaoAmbiente'))
+const Managers = lazy(() => import('./pages/Managers'))
+const ConsultaNFesEntradas = lazy(() => import('./pages/ConsultaNFesEntradas'))
+const ConsultaCTesEntradas = lazy(() => import('./pages/ConsultaCTesEntradas'))
+const ImportarXMLsEntrada = lazy(() => import('./pages/ImportarXMLsEntrada'))
+const ImportarXMLsSaida = lazy(() => import('./pages/ImportarXMLsSaida'))
+const ImportarXMLsCTe = lazy(() => import('./pages/ImportarXMLsCTe'))
+const PainelXMLs = lazy(() => import('./pages/PainelXMLs'))
+const ConciliacaoBridgeXML = lazy(() => import('./pages/ConciliacaoBridgeXML'))
+const ComparativoEFDvsXML = lazy(() => import('./pages/ComparativoEFDvsXML'))
+const RelatorioSaneamento = lazy(() => import('./pages/RelatorioSaneamento'))
+const ERPBridgeConfig = lazy(() => import('./pages/ERPBridgeConfig'))
+const ERPBridgeLogs = lazy(() => import('./pages/ERPBridgeLogs'))
+const ERPBridgeCredenciais = lazy(() => import('./pages/ERPBridgeCredenciais'))
+const ImportarViaERP = lazy(() => import('./pages/ImportarViaERP'))
+const ImportacaoERPLogs = lazy(() => import('./pages/ImportacaoERPLogs'))
+const AdminUsers = lazy(() => import('./pages/AdminUsers'))
+const LimparDados = lazy(() => import('./pages/LimparDados'))
+const ReformaParametros = lazy(() => import('./pages/ReformaParametros'))
+const EmpresaParametros = lazy(() => import('./pages/EmpresaParametros'))
+const Reforma11CreditosBloqueados = lazy(() => import('./pages/Reforma11CreditosBloqueados'))
+const Reforma12Reprecificacao = lazy(() => import('./pages/Reforma12Reprecificacao'))
+const Reforma13RankingFornecedores = lazy(() => import('./pages/Reforma13RankingFornecedores'))
+const Reforma14SplitPayment = lazy(() => import('./pages/Reforma14SplitPayment'))
+const Reforma22CfopAnalysis = lazy(() => import('./pages/Reforma22CfopAnalysis'))
+const Reforma21NcmAnalysis = lazy(() => import('./pages/Reforma21NcmAnalysis'))
+const Reforma23UfDestino = lazy(() => import('./pages/Reforma23UfDestino'))
+const Reforma24B2bB2c = lazy(() => import('./pages/Reforma24B2bB2c'))
+const IcmsFronteira = lazy(() => import('./pages/IcmsFronteira'))
+const ComparacaoFiscal = lazy(() => import('./pages/ComparacaoFiscal'))
+const ImportarXMLPacoteFiscal = lazy(() => import('./pages/ImportarXMLPacoteFiscal'))
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 import { AppRail } from '@/components/AppRail'
 import { AjudaChat } from '@/components/AjudaChat'
 import { FilialSelector } from '@/components/FilialSelector'
@@ -58,6 +62,15 @@ import { getActiveModule, modules } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 
 const queryClient = new QueryClient()
+
+// Fallback exibido enquanto o chunk da rota (lazy) é baixado.
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-[60vh]">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-primary" />
+    </div>
+  )
+}
 
 function ComingSoon({ title }: { title: string }) {
   return (
@@ -177,6 +190,7 @@ function AppLayout() {
         <ModuleTabs />
         <main className="flex-1 overflow-auto">
           <div className="p-4">
+            <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<Navigate to="/mercadorias" replace />} />
 
@@ -252,6 +266,7 @@ function AppLayout() {
               <Route path="/config/usuarios"                   element={<AdminRoute><AdminUsers /></AdminRoute>} />
               <Route path="/config/limpar-dados"               element={<AdminRoute><LimparDados /></AdminRoute>} />
             </Routes>
+            </Suspense>
           </div>
         </main>
       </div>
@@ -268,6 +283,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login"           element={<Login />} />
             <Route path="/register"        element={<Register />} />
@@ -281,6 +297,7 @@ function App() {
               </ProtectedRoute>
             } />
           </Routes>
+          </Suspense>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

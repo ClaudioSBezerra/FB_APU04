@@ -42,5 +42,25 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Chunks dedicados para libs pesadas/estáveis: melhora cache e as
+          // mantém fora do bundle de entrada. O restante das páginas já é
+          // dividido por rota via React.lazy (ver App.tsx). recharts e
+          // react-simple-maps não precisam de regra aqui — o Rollup já os
+          // isola nos chunks das páginas lazy que os usam.
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return
+            if (id.includes('/xlsx')) return 'xlsx'
+            if (
+              id.includes('/react-router') ||
+              id.includes('/react-dom/') ||
+              id.includes('/@tanstack/')
+            ) return 'react-vendor'
+          },
+        },
+      },
+    },
   };
 });
