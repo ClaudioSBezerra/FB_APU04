@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -24,5 +25,17 @@ func TestIcmsFronteiraRegraUpdateHandler_MethodNotAllowed(t *testing.T) {
 	h(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected %d, got %d", http.StatusMethodNotAllowed, rr.Code)
+	}
+}
+
+// TestRegraUpdateCompanyScope garante a correção do tampering cross-tenant
+// (CR-02): o escopo do UPDATE de um usuário comum (não-admin) nunca pode
+// alcançar as regras globais (company_id IS NULL); só o admin global pode.
+func TestRegraUpdateCompanyScope(t *testing.T) {
+	if got := regraUpdateCompanyScope(false); strings.Contains(got, "IS NULL") {
+		t.Errorf("escopo de não-admin não pode alcançar regra global, got %q", got)
+	}
+	if got := regraUpdateCompanyScope(true); !strings.Contains(got, "IS NULL") {
+		t.Errorf("escopo de admin deve alcançar regra global, got %q", got)
 	}
 }

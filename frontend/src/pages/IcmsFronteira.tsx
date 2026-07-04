@@ -4097,6 +4097,10 @@ function ReconciliacaoTab({ token }: { token: string | null }) {
 // ---------------------------------------------------------------------------
 export function RegrasTab({ token }: { token: string | null }) {
   const queryClient = useQueryClient()
+  // Só admin global edita as regras base (globais); usuário comum edita apenas
+  // as da própria empresa. Espelha o backend (CR-02) e o botão Excluir.
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [search, setSearch] = useState('')
   const [openCreate, setOpenCreate] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -4503,16 +4507,19 @@ export function RegrasTab({ token }: { token: string | null }) {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        {/* Editar: disponível para todas as regras (da empresa e globais/base). */}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0"
-                          title={row.is_global ? 'Editar regra base (global)' : 'Editar regra'}
-                          onClick={() => setEditing({ ...row })}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
+                        {/* Editar: regras da empresa por qualquer usuário; regras
+                            globais/base só por admin (espelha o backend, CR-02). */}
+                        {(!row.is_global || isAdmin) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            title={row.is_global ? 'Editar regra base (global)' : 'Editar regra'}
+                            onClick={() => setEditing({ ...row })}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         {/* Remover: só regras da empresa — as globais são seed compartilhado. */}
                         {!row.is_global && (
                           <Button

@@ -371,6 +371,19 @@ func IcmsFronteiraRegraDeleteHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// regraUpdateCompanyScope devolve o predicado que limita quais linhas o UPDATE
+// de regras pode tocar. Usuário comum fica restrito às regras da própria empresa;
+// só o admin global pode editar a base compartilhada (company_id IS NULL). Fecha
+// o tampering cross-tenant (CR-02): sem isso, qualquer autenticado sobrescrevia
+// as regras-seed globais das quais o cálculo de ST de todos os tenants depende.
+// Espelha o handler de DELETE, que já proíbe não-admin de tocar em regra global.
+func regraUpdateCompanyScope(isAdmin bool) string {
+	if isAdmin {
+		return "(company_id = $10::uuid OR company_id IS NULL)"
+	}
+	return "company_id = $10::uuid"
+}
+
 // ---------------------------------------------------------------------------
 // IcmsFronteiraRegraUpdateHandler — PUT/PATCH /api/icms-fronteira/regras/{id}
 // ---------------------------------------------------------------------------
@@ -450,11 +463,13 @@ func IcmsFronteiraRegraUpdateHandler(db *sql.DB) http.HandlerFunc {
 			segmentoArg = *body.SegmentoCodigo
 		}
 
-		// Permite editar tanto as regras da empresa quanto as globais (seed,
-		// company_id IS NULL) — estas valem como base compartilhada e também
-		// devem ser ajustáveis. O cálculo prefere a regra da empresa quando há
-		// ambas (LATERAL ... ORDER BY company_id NULLS LAST).
-		res, err := db.Exec(`
+		// Escopo por papel: usuário comum só edita as regras da própria empresa;
+		// somente o admin global pode ajustar a base compartilhada (company_id IS
+		// NULL). O cálculo prefere a regra da empresa quando há ambas (LATERAL ...
+		// ORDER BY company_id NULLS LAST). O fragmento concatenado é constante de
+		// compilação (não há input do usuário) — todos os valores seguem como bind.
+		userRole, _ := claims["role"].(string)
+		query := `
 			UPDATE icms_fronteira_regras_ncm SET
 				descricao        = $1,
 				regime           = $2,
@@ -465,8 +480,8 @@ func IcmsFronteiraRegraUpdateHandler(db *sql.DB) http.HandlerFunc {
 				mva_ajustado_12pct = $7,
 				reducao_bc_pct   = $8,
 				segmento_codigo  = COALESCE($11, segmento_codigo)
-			WHERE id = $9::uuid AND (company_id = $10::uuid OR company_id IS NULL)
-		`, body.Descricao, body.Regime, body.AliquotaInterna,
+			WHERE id = $9::uuid AND ` + regraUpdateCompanyScope(userRole == "admin")
+		res, err := db.Exec(query, body.Descricao, body.Regime, body.AliquotaInterna,
 			body.MVAOriginal, body.MVAAjustado4pct, body.MVAAjustado7pct, body.MVAAjustado12pct,
 			body.ReducaoBCPct, id, companyID, segmentoArg)
 		if err != nil {
