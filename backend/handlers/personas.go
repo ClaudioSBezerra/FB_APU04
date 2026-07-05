@@ -114,6 +114,82 @@ func ListPersonasHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// validPersonaModules são os módulos do frontend que podem ser vinculados a
+// personas (mesmos ids de mainItems no AppRail). Config fica de fora: é
+// aberto a todos e as abas sensíveis lá dentro já são adminOnly.
+var validPersonaModules = map[string]bool{
+	"simulador":    true,
+	"notas":        true,
+	"painel":       true,
+	"reforma":      true,
+	"fronteira":    true,
+	"auditoria":    true,
+	"pacotefiscal": true,
+}
+
+// UpdatePersonaRequest é o body de POST /api/admin/personas/update?id=X.
+type UpdatePersonaRequest struct {
+	Label   string   `json:"label"`   // opcional — vazio não altera
+	Modules []string `json:"modules"` // lista completa (substitui a atual)
+}
+
+// UpdatePersonaHandler altera o label e/ou os módulos de uma persona.
+// Admin only — registrado com requiredRole "admin". A mudança vale para os
+// usuários no próximo refresh do token (≤30 min), sem novo login.
+func UpdatePersonaHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		personaID := r.URL.Query().Get("id")
+		if personaID == "" {
+			http.Error(w, "Persona ID required", http.StatusBadRequest)
+			return
+		}
+
+		var req UpdatePersonaRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		if req.Modules == nil {
+			http.Error(w, "modules é obrigatório (lista completa de módulos da persona)", http.StatusBadRequest)
+			return
+		}
+		for _, m := range req.Modules {
+			if !validPersonaModules[m] {
+				http.Error(w, "Módulo inválido: "+m, http.StatusBadRequest)
+				return
+			}
+		}
+
+		var result sql.Result
+		var err error
+		if label := strings.TrimSpace(req.Label); label != "" {
+			result, err = db.Exec("UPDATE personas SET label = $1, modules = $2 WHERE id = $3",
+				label, pq.Array(req.Modules), personaID)
+		} else {
+			result, err = db.Exec("UPDATE personas SET modules = $1 WHERE id = $2",
+				pq.Array(req.Modules), personaID)
+		}
+		if err != nil {
+			log.Printf("UpdatePersona error: %v", err)
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			return
+		}
+		if n, _ := result.RowsAffected(); n == 0 {
+			http.Error(w, "Persona não encontrada", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"message": "Persona atualizada com sucesso"})
+	}
+}
+
 // moduleAPIPrefixes mapeia prefixos de API → módulo do frontend. Só entram
 // prefixos inequívocos; caminhos fora da lista (auth, config, erp-bridge,
 // uploads transversais) não são bloqueados por módulo. Ordem importa:

@@ -34,6 +34,7 @@ const ERPBridgeCredenciais = lazy(() => import('./pages/ERPBridgeCredenciais'))
 const ImportarViaERP = lazy(() => import('./pages/ImportarViaERP'))
 const ImportacaoERPLogs = lazy(() => import('./pages/ImportacaoERPLogs'))
 const AdminUsers = lazy(() => import('./pages/AdminUsers'))
+const AdminPersonas = lazy(() => import('./pages/AdminPersonas'))
 const LimparDados = lazy(() => import('./pages/LimparDados'))
 const ReformaParametros = lazy(() => import('./pages/ReformaParametros'))
 const EmpresaParametros = lazy(() => import('./pages/EmpresaParametros'))
@@ -291,6 +292,7 @@ function AppLayout() {
               <Route path="/config/ambiente"                   element={<ProtectedRoute><GestaoAmbiente /></ProtectedRoute>} />
               <Route path="/config/erp-bridge"                 element={<AdminRoute><ERPBridgeCredenciais /></AdminRoute>} />
               <Route path="/config/usuarios"                   element={<AdminRoute><AdminUsers /></AdminRoute>} />
+              <Route path="/config/personas"                   element={<AdminRoute><AdminPersonas /></AdminRoute>} />
               <Route path="/config/limpar-dados"               element={<AdminRoute><LimparDados /></AdminRoute>} />
             </Routes>
             </ModuleGate>

@@ -88,6 +88,7 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Ambiente',           path: '/config/ambiente' },
       { label: 'Cred. ERP Bridge',   path: '/config/erp-bridge',   adminOnly: true },
       { label: 'Usuários',           path: '/config/usuarios',     adminOnly: true },
+      { label: 'Personas',           path: '/config/personas',     adminOnly: true },
       { label: 'Limpar Dados',       path: '/config/limpar-dados', adminOnly: true, danger: true },
     ],
   },

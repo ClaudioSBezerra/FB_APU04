@@ -521,6 +521,7 @@ func main() {
 	http.HandleFunc("/api/admin/refresh-views", withAuth(handlers.RefreshViewsHandler, ""))
 	http.HandleFunc("/api/admin/users", withAuth(handlers.ListUsersHandler, "admin"))
 	http.HandleFunc("/api/admin/personas", withAuth(handlers.ListPersonasHandler, "admin"))
+	http.HandleFunc("/api/admin/personas/update", withAuth(handlers.UpdatePersonaHandler, "admin"))
 	http.HandleFunc("/api/admin/users/create", withAuth(handlers.CreateUserHandler, "admin"))
 	http.HandleFunc("/api/admin/users/promote", withAuth(handlers.PromoteUserHandler, "admin"))
 	http.HandleFunc("/api/admin/users/delete", withAuth(handlers.DeleteUserHandler, "admin"))
