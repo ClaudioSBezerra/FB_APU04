@@ -26,8 +26,8 @@ import (
 
 // Version information for backend deployment validation
 const (
-	BackendVersion = "2.3.0"
-	FeatureSet     = "Escrituração de Entradas EFD, Importação ERP Bridge, NF-e Entradas, CT-e Entradas, Enriquecimento PIS/COFINS/IPI, Malha Fina, Apuração IBS/CBS, Créditos em Risco, SPED layout 020, Módulo Teste Pacote Fiscal"
+	BackendVersion = "2.4.0"
+	FeatureSet     = "Escrituração de Entradas EFD, Importação ERP Bridge, NF-e Entradas, CT-e Entradas, Enriquecimento PIS/COFINS/IPI, Malha Fina, Apuração IBS/CBS, Créditos em Risco, SPED layout 020, Módulo Teste Pacote Fiscal, Personas por Módulo"
 )
 
 func GetVersionInfo() string {
