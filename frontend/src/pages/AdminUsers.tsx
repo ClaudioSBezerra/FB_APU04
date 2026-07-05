@@ -41,6 +41,13 @@ interface User {
   group_name: string | null;
   company_id: string | null;
   company_name: string | null;
+  personas: string[];
+}
+
+interface Persona {
+  id: string;
+  label: string;
+  modules: string[];
 }
 
 interface HierarchyItem {
@@ -169,6 +176,7 @@ export default function AdminUsers() {
 
   // State for Promote/Edit
   const [newRole, setNewRole] = useState<string>("user");
+  const [newPersonas, setNewPersonas] = useState<string[]>([]);
   const [newFullName, setNewFullName] = useState<string>("");
   const [extendDays, setExtendDays] = useState<number>(0);
   const [isOfficial, setIsOfficial] = useState<boolean>(false);
@@ -197,6 +205,17 @@ export default function AdminUsers() {
           throw new Error(`Erro de Servidor (${response.status}): A API não respondeu corretamente.`);
         }
       }
+      return response.json();
+    },
+    enabled: !!token
+  });
+
+  // Catálogo de personas (checkboxes do dialog de edição)
+  const { data: personas } = useQuery<Persona[]>({
+    queryKey: ['admin-personas'],
+    queryFn: async () => {
+      const response = await fetch(`/api/admin/personas`);
+      if (!response.ok) throw new Error(`Erro ao carregar personas (${response.status})`);
       return response.json();
     },
     enabled: !!token
@@ -247,13 +266,13 @@ export default function AdminUsers() {
   });
 
   const promoteMutation = useMutation({
-    mutationFn: async (data: { userId: string, role: string, extendDays: number, isOfficial: boolean, fullName: string }) => {
+    mutationFn: async (data: { userId: string, role: string, extendDays: number, isOfficial: boolean, fullName: string, personas: string[] }) => {
       const response = await fetch(`/api/admin/users/promote?id=${data.userId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ role: data.role, extend_days: data.extendDays, is_official: data.isOfficial, full_name: data.fullName })
+        body: JSON.stringify({ role: data.role, extend_days: data.extendDays, is_official: data.isOfficial, full_name: data.fullName, personas: data.personas })
       });
       if (!response.ok) {
         const text = await response.text();
@@ -319,6 +338,7 @@ export default function AdminUsers() {
   const handleOpenPromote = (user: User) => {
     setSelectedUser(user);
     setNewRole(user.role);
+    setNewPersonas(user.personas || []);
     setNewFullName(user.full_name || "");
     setExtendDays(0);
     setIsOfficial(false);
@@ -348,6 +368,7 @@ export default function AdminUsers() {
       isOfficial: isOfficial,
       // só envia full_name se mudou — backend ignora string vazia
       fullName: trimmedName !== (selectedUser.full_name || "").trim() ? trimmedName : "",
+      personas: newPersonas,
     });
   };
 
@@ -399,6 +420,7 @@ export default function AdminUsers() {
               <TableHead>Email</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Personas</TableHead>
               <TableHead>Ambiente</TableHead>
               <TableHead>Grupo</TableHead>
               <TableHead>Empresa</TableHead>
@@ -423,6 +445,21 @@ export default function AdminUsers() {
                   <Badge variant={user.role === 'admin' ? "default" : "secondary"}>
                     {user.role}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  {user.role === 'admin' ? (
+                    <span className="text-xs italic text-muted-foreground">todas</span>
+                  ) : (user.personas?.length ? (
+                    <div className="flex flex-wrap gap-1 max-w-[220px]">
+                      {user.personas.map(pid => (
+                        <Badge key={pid} variant="outline" className="text-[10px]">
+                          {personas?.find(p => p.id === pid)?.label || pid}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px]">sem acesso</Badge>
+                  ))}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {user.environment_name || <span className="text-xs italic">—</span>}
@@ -460,7 +497,7 @@ export default function AdminUsers() {
           <DialogHeader>
             <DialogTitle>Novo Usuário</DialogTitle>
             <DialogDescription>
-              Criar um novo usuário manualmente.
+              Criar um novo usuário manualmente. Ele nasce com todas as personas — ajuste depois em Editar Usuário.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -574,6 +611,32 @@ export default function AdminUsers() {
                 </SelectContent>
               </Select>
             </div>
+            {newRole !== 'admin' && (
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label className="text-right pt-1">Personas</Label>
+                <div className="col-span-3 space-y-2">
+                  {(personas || []).map(p => (
+                    <div key={p.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`persona-${p.id}`}
+                        checked={newPersonas.includes(p.id)}
+                        onCheckedChange={(checked) => {
+                          setNewPersonas(prev => checked
+                            ? [...prev, p.id]
+                            : prev.filter(id => id !== p.id));
+                        }}
+                      />
+                      <label htmlFor={`persona-${p.id}`} className="text-sm leading-none cursor-pointer" title={`Módulos: ${p.modules.join(', ')}`}>
+                        {p.label}
+                      </label>
+                    </div>
+                  ))}
+                  {newPersonas.length === 0 && (
+                    <p className="text-xs text-red-600">Sem personas o usuário não acessa nenhum módulo.</p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="extendDays" className="text-right">Estender (dias)</Label>
               <Input

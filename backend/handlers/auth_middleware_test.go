@@ -94,3 +94,115 @@ func TestAuthMiddleware_PassesThrough(t *testing.T) {
 		t.Errorf("TestAuthMiddleware_PassesThrough: got status %d, want %d", rr.Code, http.StatusOK)
 	}
 }
+
+// makeTestJWTWithModules creates a signed JWT carrying a "modules" claim.
+func makeTestJWTWithModules(t *testing.T, role string, modules []string) string {
+	t.Helper()
+	claims := jwt.MapClaims{
+		"user_id": "test-user-id",
+		"role":    role,
+		"modules": modules,
+		"exp":     time.Now().Add(30 * time.Minute).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString(getJWTSecret())
+	if err != nil {
+		t.Fatalf("makeTestJWTWithModules: failed to sign token: %v", err)
+	}
+	return signed
+}
+
+func TestAuthMiddleware_ModuleEnforcement(t *testing.T) {
+	tests := []struct {
+		name           string
+		token          string
+		path           string
+		expectedStatus int
+	}{
+		{
+			name:           "UserWithModuleAllowed",
+			token:          "modules:fronteira",
+			path:           "/api/icms-fronteira/resumo",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "UserWithoutModuleBlocked",
+			token:          "modules:notas",
+			path:           "/api/icms-fronteira/resumo",
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "UserEmptyModulesBlocked",
+			token:          "modules:",
+			path:           "/api/reforma/parametros",
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "LegacyTokenWithoutClaimAllowed",
+			token:          "legacy",
+			path:           "/api/icms-fronteira/resumo",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "AdminBypassesModules",
+			token:          "admin",
+			path:           "/api/icms-fronteira/resumo",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "UnmappedPathNotBlocked",
+			token:          "modules:",
+			path:           "/api/auth/me",
+			expectedStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var tokenStr string
+			switch tc.token {
+			case "legacy":
+				tokenStr = makeTestJWT(t, "user")
+			case "admin":
+				tokenStr = makeTestJWT(t, "admin")
+			case "modules:":
+				tokenStr = makeTestJWTWithModules(t, "user", []string{})
+			default:
+				tokenStr = makeTestJWTWithModules(t, "user", []string{tc.token[len("modules:"):]})
+			}
+			handler := AuthMiddleware(innerOKHandler, "")
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer "+tokenStr)
+			rr := httptest.NewRecorder()
+			handler(rr, req)
+			if rr.Code != tc.expectedStatus {
+				t.Errorf("%s: got status %d, want %d", tc.name, rr.Code, tc.expectedStatus)
+			}
+		})
+	}
+}
+
+func TestModuleForAPIPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"/api/icms-fronteira/st-itens", "fronteira"},
+		{"/api/reforma/modulo1/creditos", "reforma"},
+		{"/api/auditoria-efd", "auditoria"},
+		{"/api/fiscal/comparacao", "pacotefiscal"},
+		{"/api/pacotefiscal/xml/upload", "pacotefiscal"},
+		{"/api/xml/painel/entradas-informativos", "painel"}, // prefixo mais específico vence
+		{"/api/xml/upload", "notas"},
+		{"/api/nfe-entradas", "notas"},
+		{"/api/mercadorias", "simulador"},
+		{"/api/auth/login", ""},
+		{"/api/config/aliquotas", ""},
+		{"/api/erp-bridge/pending", ""},
+	}
+	for _, tc := range tests {
+		if got := ModuleForAPIPath(tc.path); got != tc.want {
+			t.Errorf("ModuleForAPIPath(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lib/pq"
 )
 
 var reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -580,6 +581,13 @@ func CreateUserHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Usuário novo recebe todas as personas por padrão (admin ajusta na edição)
+		if req.Role != "admin" {
+			if err := GrantAllPersonas(db, userID); err != nil {
+				log.Printf("CreateUser: warning: failed to grant personas: %v", err)
+			}
+		}
+
 		if req.EnvironmentID != "" {
 			// Link to existing hierarchy
 			_, err = db.Exec("INSERT INTO user_environments (user_id, environment_id, role) VALUES ($1, $2, 'user')", userID, req.EnvironmentID)
@@ -628,6 +636,7 @@ type AdminUser struct {
 	GroupName       *string   `json:"group_name"`
 	CompanyID       *string   `json:"company_id"`
 	CompanyName     *string   `json:"company_name"`
+	Personas        []string  `json:"personas"`
 }
 
 // ListUsersHandler returns all users with hierarchy info (Admin only)
@@ -638,7 +647,9 @@ func ListUsersHandler(db *sql.DB) http.HandlerFunc {
 			       u.id, u.email, u.full_name, u.is_verified, u.trial_ends_at, u.role, u.created_at,
 			       e.id, e.name,
 			       eg.id, eg.name,
-			       c.id, c.name
+			       c.id, c.name,
+			       COALESCE((SELECT array_agg(up.persona_id ORDER BY up.persona_id)
+			                 FROM user_personas up WHERE up.user_id = u.id), '{}')
 			FROM users u
 			LEFT JOIN user_environments ue ON u.id = ue.user_id
 			LEFT JOIN environments e ON ue.environment_id = e.id
@@ -659,7 +670,8 @@ func ListUsersHandler(db *sql.DB) http.HandlerFunc {
 			if err := rows.Scan(&u.ID, &u.Email, &u.FullName, &u.IsVerified, &u.TrialEndsAt, &u.Role, &u.CreatedAt,
 				&u.EnvironmentID, &u.EnvironmentName,
 				&u.GroupID, &u.GroupName,
-				&u.CompanyID, &u.CompanyName); err != nil {
+				&u.CompanyID, &u.CompanyName,
+				pq.Array(&u.Personas)); err != nil {
 				log.Printf("ListUsers scan error: %v", err)
 				continue
 			}
@@ -677,10 +689,11 @@ func ListUsersHandler(db *sql.DB) http.HandlerFunc {
 
 // PromoteUserRequest struct
 type PromoteUserRequest struct {
-	Role       string `json:"role"`        // 'admin' or 'user'
-	ExtendDays int    `json:"extend_days"` // Days to add to trial
-	IsOfficial bool   `json:"is_official"` // If true, sets trial to 2099
-	FullName   string `json:"full_name"`   // optional — rename user
+	Role       string    `json:"role"`        // 'admin' or 'user'
+	ExtendDays int       `json:"extend_days"` // Days to add to trial
+	IsOfficial bool      `json:"is_official"` // If true, sets trial to 2099
+	FullName   string    `json:"full_name"`   // optional — rename user
+	Personas   *[]string `json:"personas"`    // optional — nil não altera; [] remove todas
 }
 
 // PromoteUserHandler updates user role or trial (Admin only)
@@ -716,6 +729,14 @@ func PromoteUserHandler(db *sql.DB) http.HandlerFunc {
 			_, err := db.Exec("UPDATE users SET role = $1 WHERE id = $2", req.Role, userID)
 			if err != nil {
 				http.Error(w, "Failed to update role", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if req.Personas != nil {
+			if err := SetUserPersonas(db, userID, *req.Personas); err != nil {
+				log.Printf("PromoteUser: failed to update personas: %v", err)
+				http.Error(w, "Failed to update personas", http.StatusInternalServerError)
 				return
 			}
 		}

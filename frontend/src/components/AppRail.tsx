@@ -43,10 +43,10 @@ const mainItems = [
 export function AppRail() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { user, company, logout, token, companyId } = useAuth()
+  const { user, company, logout, token, companyId, hasModule } = useAuth()
   const active = getActiveModule(location.pathname)
   const isAdmin = user?.role === 'admin'
-  const visibleItems = mainItems.filter(item => !item.adminOnly || isAdmin)
+  const visibleItems = mainItems.filter(item => (!item.adminOnly || isAdmin) && hasModule(item.id))
 
   // Logo da empresa — exibida no topo do rail; fallback para o ícone do sistema
   const [empresaLogoUrl, setEmpresaLogoUrl] = useState<string | null>(null)

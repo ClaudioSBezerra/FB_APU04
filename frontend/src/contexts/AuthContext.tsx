@@ -6,6 +6,9 @@ interface User {
   full_name: string;
   trial_ends_at: string;
   role?: string;
+  // Módulos liberados pelas personas (backend); null/undefined = sem restrição
+  // (admin ou token antigo emitido antes do controle por personas)
+  modules?: string[] | null;
 }
 
 interface AuthContextType {
@@ -21,6 +24,7 @@ interface AuthContextType {
   logout: () => void;
   switchCompany: (id: string, name: string, cnpj: string) => void;
   isAuthenticated: boolean;
+  hasModule: (moduleId: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -225,6 +229,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       .finally(() => window.location.reload());
   };
 
+  // Admin e sessões antigas (sem lista de módulos) enxergam tudo;
+  // demais usuários só os módulos das suas personas
+  const hasModule = (moduleId: string) => {
+    if (user?.role === 'admin') return true;
+    if (!user?.modules) return true;
+    return user.modules.includes(moduleId);
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -238,7 +250,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       login,
       logout,
       switchCompany,
-      isAuthenticated: !!user
+      isAuthenticated: !!user,
+      hasModule
     }}>
       {children}
     </AuthContext.Provider>

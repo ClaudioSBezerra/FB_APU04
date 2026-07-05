@@ -31,6 +31,8 @@ type User struct {
 	TrialEndsAt time.Time `json:"trial_ends_at"`
 	Role        string    `json:"role"`
 	CreatedAt   string    `json:"created_at"`
+	// Módulos liberados pelas personas do usuário; nil para admin (sem restrição)
+	Modules []string `json:"modules"`
 }
 
 type RegisterRequest struct {
@@ -133,11 +135,16 @@ func CheckPasswordHash(password, hash string) bool {
 	return err == nil
 }
 
-func GenerateToken(userID, role string) (string, error) {
+func GenerateToken(userID, role string, modules []string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"role":    role,
 		"exp":     time.Now().Add(30 * time.Minute).Unix(), // 30 minutes
+	}
+	// Admin não carrega claim de módulos (acesso irrestrito). Tokens antigos
+	// sem a claim também passam — o AuthMiddleware trata ausência como legado.
+	if role != "admin" && modules != nil {
+		claims["modules"] = modules
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(getJWTSecret())
@@ -201,6 +208,11 @@ func GetMeHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		user.Modules, err = GetUserModules(db, user.ID, user.Role)
+		if err != nil {
+			log.Printf("[GetMe] Warning: failed to fetch modules: %v", err)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(user)
 	}
@@ -251,6 +263,29 @@ func AuthMiddleware(next http.HandlerFunc, requiredRole string) http.HandlerFunc
 		if requiredRole != "" && userRole != requiredRole && userRole != "admin" {
 			http.Error(w, "Forbidden: insufficient permissions", http.StatusForbidden)
 			return
+		}
+
+		// Controle por módulo (personas): não-admin só acessa APIs de módulos
+		// liberados. Tokens sem a claim "modules" (emitidos antes do deploy)
+		// passam — expiram em ≤30 min e o refresh já traz a claim.
+		if userRole != "admin" {
+			if mod := ModuleForAPIPath(r.URL.Path); mod != "" {
+				if rawModules, hasClaim := claims["modules"]; hasClaim {
+					allowed := false
+					if arr, ok := rawModules.([]interface{}); ok {
+						for _, v := range arr {
+							if s, ok := v.(string); ok && s == mod {
+								allowed = true
+								break
+							}
+						}
+					}
+					if !allowed {
+						http.Error(w, "Forbidden: módulo não liberado para o seu perfil", http.StatusForbidden)
+						return
+					}
+				}
+			}
 		}
 
 		ctx := context.WithValue(r.Context(), ClaimsKey, claims)
@@ -509,8 +544,17 @@ func RegisterHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Novo usuário recebe todas as personas por padrão (admin ajusta depois)
+		if err := GrantAllPersonas(db, userID); err != nil {
+			log.Printf("[Register] Warning: failed to grant personas: %v", err)
+		}
+		userModules, err := GetUserModules(db, userID, "user")
+		if err != nil {
+			log.Printf("[Register] Warning: failed to fetch modules: %v", err)
+		}
+
 		// Generate access token
-		token, _ := GenerateToken(userID, "user")
+		token, _ := GenerateToken(userID, "user", userModules)
 
 		// Set httpOnly refresh cookie
 		refreshToken := generateRefreshTokenString()
@@ -531,6 +575,7 @@ func RegisterHandler(db *sql.DB) http.HandlerFunc {
 				IsVerified:  false,
 				TrialEndsAt: trialEnds,
 				Role:        "user",
+				Modules:     userModules,
 			},
 			Environment: envName,
 			Group:       groupName,
@@ -605,8 +650,14 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 		// Login successful — reset failure counter for this IP
 		LoginRL.Reset(ip)
 
+		// Módulos liberados pelas personas (nil para admin = sem restrição)
+		user.Modules, err = GetUserModules(db, user.ID, user.Role)
+		if err != nil {
+			log.Printf("[Login] Warning: failed to fetch modules for %s: %v", req.Email, err)
+		}
+
 		// Generate access token
-		token, err := GenerateToken(user.ID, user.Role)
+		token, err := GenerateToken(user.ID, user.Role, user.Modules)
 		if err != nil {
 			log.Printf("[Login] Error generating token: %v", err)
 			http.Error(w, "Error generating token", http.StatusInternalServerError)
@@ -1020,8 +1071,13 @@ func RefreshHandler(db *sql.DB) http.HandlerFunc {
 		})
 		setRefreshCookie(w, r, newRefreshToken)
 
-		// Issue new access token
-		accessToken, err := GenerateToken(data.UserID, data.Role)
+		// Issue new access token — módulos re-consultados do banco para que
+		// mudanças de persona valham no próximo refresh, sem exigir novo login
+		userModules, mErr := GetUserModules(db, data.UserID, data.Role)
+		if mErr != nil {
+			log.Printf("[Refresh] Warning: failed to fetch modules: %v", mErr)
+		}
+		accessToken, err := GenerateToken(data.UserID, data.Role, userModules)
 		if err != nil {
 			http.Error(w, "Error generating token", http.StatusInternalServerError)
 			return

@@ -98,6 +98,32 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Rota inicial de cada módulo — usada para redirecionar o usuário para o
+// primeiro módulo liberado pelas suas personas quando ele tenta acessar
+// (ou cai por padrão em) um módulo que não tem.
+const MODULE_HOME: Record<string, string> = {
+  simulador:    '/mercadorias',
+  notas:        '/importacoes/xml/entradas',
+  painel:       '/painel/xmls',
+  reforma:      '/reforma/creditos',
+  fronteira:    '/icms-fronteira',
+  auditoria:    '/auditoria-efd',
+  pacotefiscal: '/pacote-fiscal/comparacao',
+}
+
+// Gate por módulo (personas): envolve todas as rotas do AppLayout. Config fica
+// aberto a todos — as abas sensíveis lá dentro continuam adminOnly.
+function ModuleGate({ children }: { children: React.ReactNode }) {
+  const { user, hasModule } = useAuth()
+  const location = useLocation()
+  const moduleId = getActiveModule(location.pathname)
+
+  if (moduleId === 'config' || hasModule(moduleId)) return <>{children}</>
+
+  const firstAllowed = user?.modules?.find(m => MODULE_HOME[m])
+  return <Navigate to={firstAllowed ? MODULE_HOME[firstAllowed] : '/config/aliquotas'} replace />
+}
+
 // ── Barra de abas por módulo ─────────────────────────────────────────────────
 function ModuleTabs() {
   const location  = useLocation()
@@ -191,6 +217,7 @@ function AppLayout() {
         <main className="flex-1 overflow-auto">
           <div className="p-4">
             <Suspense fallback={<PageLoader />}>
+            <ModuleGate>
             <Routes>
               <Route path="/" element={<Navigate to="/mercadorias" replace />} />
 
@@ -266,6 +293,7 @@ function AppLayout() {
               <Route path="/config/usuarios"                   element={<AdminRoute><AdminUsers /></AdminRoute>} />
               <Route path="/config/limpar-dados"               element={<AdminRoute><LimparDados /></AdminRoute>} />
             </Routes>
+            </ModuleGate>
             </Suspense>
           </div>
         </main>

@@ -165,7 +165,7 @@ func TestJsonErr_SetsStatusAndContentType(t *testing.T) {
 }
 
 func TestGenerateToken_ReturnsNonEmptyToken(t *testing.T) {
-	token, err := GenerateToken("user-123", "admin")
+	token, err := GenerateToken("user-123", "admin", nil)
 	if err != nil {
 		t.Fatalf("GenerateToken: unexpected error: %v", err)
 	}
