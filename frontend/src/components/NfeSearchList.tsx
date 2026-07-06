@@ -95,9 +95,15 @@ function ExecStatusBadge({ status }: { status: ExecStatus }) {
 export function NfeSearchList({
   onViewDetail,
   activeId,
+  incluirIbsCbs = false,
+  onIncluirIbsCbsChange,
 }: {
   onViewDetail: (nfe: NfeSearchResult) => void;
   activeId?: string | null;
+  // Simulação "IBS/CBS na base do ICMS" — estado vive na página
+  // (ComparacaoFiscal) para valer também no botão "Executar esta nota"
+  incluirIbsCbs?: boolean;
+  onIncluirIbsCbsChange?: (v: boolean) => void;
 }) {
   const { token, companyId } = useAuth();
   const authHeaders = { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId || '' };
@@ -194,7 +200,7 @@ export function NfeSearchList({
       const res = await fetch('/api/fiscal/execute', {
         method: 'POST',
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nfe_id: id }),
+        body: JSON.stringify({ nfe_id: id, incluir_ibs_cbs_base: incluirIbsCbs }),
       });
       if (!res.ok) throw new Error(await res.text());
       const summary: ExecuteSummary = await res.json();
@@ -318,17 +324,26 @@ export function NfeSearchList({
           Buscar
         </Button>
         {rows.length > 0 && (
-          <Button
-            size="sm"
-            onClick={executeSelected}
-            disabled={!someSelected || batchRunning}
-            className="h-8 ml-auto"
-          >
-            {batchRunning
-              ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-              : <Send className="h-3.5 w-3.5 mr-1.5" />}
-            Executar Selecionadas ({selected.size})
-          </Button>
+          <div className="flex items-end gap-3 ml-auto">
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer whitespace-nowrap pb-1.5" title="Se SIM, cada item ganha uma 2ª chamada ao pacote com o preço acrescido de IBS+CBS, e a tela compara: Original × Cálculo Simulado × Cálculo do Pacote">
+              <Checkbox
+                checked={incluirIbsCbs}
+                onCheckedChange={c => onIncluirIbsCbsChange?.(c === true)}
+              />
+              Inclui IBS/CBS base ICMS?
+            </label>
+            <Button
+              size="sm"
+              onClick={executeSelected}
+              disabled={!someSelected || batchRunning}
+              className="h-8"
+            >
+              {batchRunning
+                ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                : <Send className="h-3.5 w-3.5 mr-1.5" />}
+              Executar Selecionadas ({selected.size})
+            </Button>
+          </div>
         )}
 
         {/* Filtros fiscais — valores destacados no XML da nota */}

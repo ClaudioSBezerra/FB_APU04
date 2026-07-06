@@ -114,7 +114,38 @@ interface ComparacaoRow {
   // Retorno completo do pacote (~88 campos) — seção de diagnóstico do
   // detalhe do item (mensagens, natureza da operação, CST, leis, regras).
   full_result: Record<string, unknown> | null;
+  // Simulação "IBS/CBS na base do ICMS" — presente quando a execução rodou
+  // com o toggle ligado (espelha fiscalSimulacao do backend).
+  simulacao: Simulacao | null;
 }
+
+interface Simulacao {
+  fator: number;
+  acrescimo_ibs_cbs: number;
+  preco_original: number;
+  preco_simulado: number;
+  base_icms_original: number;
+  icms_original: number;
+  st_original: number;
+  fcp_original: number;
+  difal_original: number;
+  base_icms_simulada: number;
+  icms_simulado: number;
+  st_simulado: number;
+  fcp_simulado: number;
+  difal_simulado: number;
+  base_icms_pacote: number;
+  icms_pacote: number;
+  st_pacote: number;
+  fcp_pacote: number;
+  difal_pacote: number;
+  erro?: string;
+}
+
+type SimTaxKey = 'icms' | 'icms_st' | 'fcp' | 'difal';
+const SIM_LABELS: Record<SimTaxKey, string> = {
+  icms: 'ICMS', icms_st: 'ICMS-ST', fcp: 'FCP', difal: 'DIFAL',
+};
 
 interface FiscalDebugEntry {
   timestamp: string;
@@ -333,10 +364,69 @@ function DetalheItem({ row, onClose }: { row: ComparacaoRow; onClose: () => void
             <Linha label="Grupo Fiscal" value={row.grupo_fiscal_codigo} />
           </Secao>
 
+          {row.simulacao && <SimulacaoItem sim={row.simulacao} />}
+
           {row.full_result && <RetornoPacote fr={row.full_result} />}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// SimulacaoItem — comparação por item da simulação "IBS/CBS na base":
+// Original × Simulado interno × Pacote (2ª chamada) × Diferença.
+function SimulacaoItem({ sim }: { sim: Simulacao }) {
+  if (sim.erro) {
+    return (
+      <div className="mb-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 pb-0.5 border-b">
+          Simulação IBS/CBS na base
+        </h3>
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">{sim.erro}</p>
+      </div>
+    );
+  }
+  const linhas: { label: string; original: number; simulado: number; pacote: number }[] = [
+    { label: 'Base ICMS', original: sim.base_icms_original, simulado: sim.base_icms_simulada, pacote: sim.base_icms_pacote },
+    { label: 'ICMS', original: sim.icms_original, simulado: sim.icms_simulado, pacote: sim.icms_pacote },
+    { label: 'ICMS-ST', original: sim.st_original, simulado: sim.st_simulado, pacote: sim.st_pacote },
+    { label: 'FCP', original: sim.fcp_original, simulado: sim.fcp_simulado, pacote: sim.fcp_pacote },
+    { label: 'DIFAL', original: sim.difal_original, simulado: sim.difal_simulado, pacote: sim.difal_pacote },
+  ];
+  return (
+    <div className="mb-2">
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 pb-0.5 border-b">
+        Simulação IBS/CBS na base
+      </h3>
+      <p className="text-[10px] text-muted-foreground mb-1">
+        Preço {fmtBRL(sim.preco_original)} + IBS/CBS {fmtBRL(sim.acrescimo_ibs_cbs)} = {fmtBRL(sim.preco_simulado)} (fator {sim.fator.toLocaleString('pt-BR', { minimumFractionDigits: 4 })})
+      </p>
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="text-muted-foreground border-b">
+            <th className="text-left font-normal py-0.5"></th>
+            <th className="text-right font-normal py-0.5">Original</th>
+            <th className="text-right font-normal py-0.5">Simulado</th>
+            <th className="text-right font-normal py-0.5">Pacote</th>
+            <th className="text-right font-normal py-0.5">Diferença</th>
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map(l => {
+            const dif = Math.round((l.simulado - l.pacote) * 100) / 100;
+            return (
+              <tr key={l.label} className="border-b border-dashed last:border-0">
+                <td className="py-0.5 text-muted-foreground">{l.label}</td>
+                <td className="py-0.5 text-right">{fmtBRL(l.original)}</td>
+                <td className="py-0.5 text-right font-medium">{fmtBRL(l.simulado)}</td>
+                <td className="py-0.5 text-right">{fmtBRL(l.pacote)}</td>
+                <td className={`py-0.5 text-right font-medium ${dif !== 0 ? 'text-red-700' : 'text-muted-foreground'}`}>{fmtBRL(dif)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -416,6 +506,7 @@ export default function ComparacaoFiscal() {
   const queryClient = useQueryClient();
 
   const [selectedNfe, setSelectedNfe] = useState<NfeSearchResult | null>(null);
+  const [incluirIbsCbsBase, setIncluirIbsCbsBase] = useState(false);
   const [showOnlyDivergent, setShowOnlyDivergent] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ComparacaoRow | null>(null);
   const [downloadingCSV, setDownloadingCSV] = useState(false);
@@ -449,7 +540,7 @@ export default function ComparacaoFiscal() {
       const res = await fetch('/api/fiscal/execute', {
         method: 'POST',
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nfe_id: id }),
+        body: JSON.stringify({ nfe_id: id, incluir_ibs_cbs_base: incluirIbsCbsBase }),
       });
       if (!res.ok) throw new Error((await res.text()) || 'Erro ao executar');
       return res.json() as Promise<ExecuteSummary>;
@@ -512,6 +603,36 @@ export default function ComparacaoFiscal() {
     };
     return { acumuladoCalculado, esperado, itensNaoOk, totalItens: rows.length };
   }, [rows, selectedNfe]);
+
+  // Acumulado da simulação "IBS/CBS na base" — soma dos itens que rodaram em
+  // modo simulação sem erro. Original × Simulado interno × Pacote (2ª chamada).
+  const simSummary = useMemo(() => {
+    const comSim = rows.filter(r => r.simulacao && !r.simulacao.erro);
+    const comErro = rows.filter(r => r.simulacao?.erro).length;
+    if (comSim.length === 0 && comErro === 0) return null;
+    const zero: Record<SimTaxKey, number> = { icms: 0, icms_st: 0, fcp: 0, difal: 0 };
+    const original = { ...zero };
+    const simulado = { ...zero };
+    const pacote = { ...zero };
+    let acrescimoTotal = 0;
+    comSim.forEach(r => {
+      const s = r.simulacao!;
+      original.icms += s.icms_original;
+      original.icms_st += s.st_original;
+      original.fcp += s.fcp_original;
+      original.difal += s.difal_original;
+      simulado.icms += s.icms_simulado;
+      simulado.icms_st += s.st_simulado;
+      simulado.fcp += s.fcp_simulado;
+      simulado.difal += s.difal_simulado;
+      pacote.icms += s.icms_pacote;
+      pacote.icms_st += s.st_pacote;
+      pacote.fcp += s.fcp_pacote;
+      pacote.difal += s.difal_pacote;
+      acrescimoTotal += s.acrescimo_ibs_cbs;
+    });
+    return { original, simulado, pacote, acrescimoTotal, itens: comSim.length, comErro };
+  }, [rows]);
 
   const summary = useMemo(() => {
     let semDivergencia = 0;
@@ -645,7 +766,12 @@ export default function ComparacaoFiscal() {
 
       {/* Busca de NF-e: filtro por período/número visível na página, lista com
           seleção múltipla e execução em lote do pacote fiscal */}
-      <NfeSearchList onViewDetail={setSelectedNfe} activeId={nfeId} />
+      <NfeSearchList
+        onViewDetail={setSelectedNfe}
+        activeId={nfeId}
+        incluirIbsCbs={incluirIbsCbsBase}
+        onIncluirIbsCbsChange={setIncluirIbsCbsBase}
+      />
 
       {selectedNfe && (
         <div ref={detailRef} className="flex items-center gap-3 flex-wrap border-t pt-3">
@@ -768,6 +894,79 @@ export default function ComparacaoFiscal() {
                 </TableBody>
               </Table>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {simSummary && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+              Simulação — IBS/CBS na base do ICMS
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-sky-50 text-sky-700 border-sky-200">
+                {simSummary.itens} item(ns) simulados — acréscimo IBS+CBS {fmtBRL(simSummary.acrescimoTotal)}
+              </Badge>
+              {simSummary.comErro > 0 && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">
+                  {simSummary.comErro} item(ns) sem simulação (ver detalhe)
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent bg-muted/30">
+                    <TableHead className="py-1.5 px-2 text-[11px]"></TableHead>
+                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => (
+                      <TableHead key={key} className="py-1.5 px-2 text-[11px] text-center">{SIM_LABELS[key]}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Original (sem inclusão)</TableCell>
+                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => (
+                      <TableCell key={key} className="py-1 px-2 text-right text-[11px] text-muted-foreground">
+                        {fmtBRL(simSummary.original[key])}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Cálculo Simulado (interno)</TableCell>
+                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => (
+                      <TableCell key={key} className="py-1 px-2 text-right text-[11px] font-semibold">
+                        {fmtBRL(simSummary.simulado[key])}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Cálculo Pacote Fiscal (2ª chamada)</TableCell>
+                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => (
+                      <TableCell key={key} className="py-1 px-2 text-right text-[11px]">
+                        {fmtBRL(simSummary.pacote[key])}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Diferença (simulado − pacote)</TableCell>
+                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => {
+                      const diferenca = Math.round((simSummary.simulado[key] - simSummary.pacote[key]) * 100) / 100;
+                      return (
+                        <TableCell key={key} className="py-1 px-2 text-right">
+                          <DiferencaBadge diferenca={diferenca} divergente={diferenca !== 0} />
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Simulado interno = valores originais escalados pelo fator (preço + IBS + CBS) ÷ preço, por item.
+              Diferença ≠ 0 indica que a inclusão do pacote não é linear (pauta, faixa, regra específica) — investigar no detalhe do item.
+            </p>
           </CardContent>
         </Card>
       )}

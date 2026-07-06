@@ -119,6 +119,10 @@ type ComparacaoRow struct {
 	// diagnóstico do dialog de detalhe (Mensagem1-4, natureza da operação,
 	// CST, leis, id das regras aplicadas). Null quando nunca executado.
 	FullResult json.RawMessage `json:"full_result"`
+	// Simulacao — comparação "IBS/CBS na base do ICMS" (fiscalSimulacao):
+	// original × simulado interno × pacote 2ª chamada. Null quando a execução
+	// não rodou em modo simulação.
+	Simulacao json.RawMessage `json:"simulacao"`
 }
 
 // NfeSearchResponse é o envelope paginado da busca: total de notas que batem
@@ -328,7 +332,8 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			fei.grupo_fiscal_codigo,
 			(fei.full_result->>'BaseCalculoIbsCbs')::numeric AS base_calculo_ibs_cbs,
 			(fei.full_result->>'ValorReducao')::numeric AS valor_reducao,
-			fei.full_result
+			fei.full_result,
+			fei.simulacao
 		FROM pacotefiscal_nfe_saidas_itens nsi
 		LEFT JOIN fiscal_execution_items fei ON fei.nfe_item_id = nsi.id
 		WHERE nsi.nfe_id = $1 AND nsi.company_id = $2
@@ -343,7 +348,7 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 		var row ComparacaoRow
 		var executedAt sql.NullTime
 		var hasIbsTotal sql.NullFloat64
-		var fullResult sql.NullString
+		var fullResult, simulacao sql.NullString
 
 		if err := rows.Scan(
 			&row.ID, &row.NItem, &row.CProd, &row.XProd, &row.NCM, &row.CFOP,
@@ -365,6 +370,7 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			&row.BaseCalculoIbsCbs,
 			&row.ValorReducao,
 			&fullResult,
+			&simulacao,
 		); err != nil {
 			log.Printf("[FiscalComparacaoRead] scan error: %v", err)
 			continue
@@ -376,6 +382,9 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 		}
 		if fullResult.Valid && fullResult.String != "" {
 			row.FullResult = json.RawMessage(fullResult.String)
+		}
+		if simulacao.Valid && simulacao.String != "" {
+			row.Simulacao = json.RawMessage(simulacao.String)
 		}
 		if hasIbsTotal.Valid {
 			v := hasIbsTotal.Float64

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -87,6 +88,104 @@ func tipoOperacaoPorCFOP(cfop string) int {
 		return 20
 	}
 	return 1
+}
+
+// ---------------------------------------------------------------------------
+// Simulação "IBS/CBS na base do ICMS" (fase BOA, 2026-07) — quando a execução
+// roda com incluir_ibs_cbs_base=true, cada item ganha uma 2ª chamada ao
+// pacote com pPrecoTotal = original + IBS + CBS (retornados pela 1ª chamada).
+// A simulação interna escala os valores da 1ª chamada pelo fator do acréscimo
+// (linear: mesma alíquota/redução/MVA) e compara com a 2ª chamada — se o
+// pacote divergir da simulação, ou a inclusão não está linear (pauta, faixa)
+// ou não está sendo aplicada como esperado.
+// ---------------------------------------------------------------------------
+
+type fiscalSimulacao struct {
+	Fator           float64 `json:"fator"`             // (preço+IBS+CBS)/preço
+	AcrescimoIbsCbs float64 `json:"acrescimo_ibs_cbs"` // IBS+CBS da 1ª chamada
+	PrecoOriginal   float64 `json:"preco_original"`
+	PrecoSimulado   float64 `json:"preco_simulado"`
+
+	// Original (1ª chamada, sem inclusão)
+	BaseIcmsOriginal float64 `json:"base_icms_original"`
+	IcmsOriginal     float64 `json:"icms_original"`
+	StOriginal       float64 `json:"st_original"`
+	FcpOriginal      float64 `json:"fcp_original"`
+	DifalOriginal    float64 `json:"difal_original"`
+
+	// Cálculo simulado interno (original × fator)
+	BaseIcmsSimulada float64 `json:"base_icms_simulada"`
+	IcmsSimulado     float64 `json:"icms_simulado"`
+	StSimulado       float64 `json:"st_simulado"`
+	FcpSimulado      float64 `json:"fcp_simulado"`
+	DifalSimulado    float64 `json:"difal_simulado"`
+
+	// Cálculo do pacote fiscal (2ª chamada, preço acrescido)
+	BaseIcmsPacote float64 `json:"base_icms_pacote"`
+	IcmsPacote     float64 `json:"icms_pacote"`
+	StPacote       float64 `json:"st_pacote"`
+	FcpPacote      float64 `json:"fcp_pacote"`
+	DifalPacote    float64 `json:"difal_pacote"`
+
+	Erro string `json:"erro,omitempty"` // 2ª chamada falhou / IBS+CBS zerados
+}
+
+func round2(v float64) float64 {
+	return math.Round(v*100) / 100
+}
+
+// runSimulacaoIbsCbs executa a 2ª chamada e monta a comparação. Nunca aborta
+// o item — em falha, devolve a simulação preenchida só com Erro.
+func runSimulacaoIbsCbs(ctx context.Context, oracleDB *sql.DB, in services.FiscalInput, it fiscalItemInput, r1 *services.FiscalResult, trace *fiscalDebugTrace, produtoLabel string) fiscalSimulacao {
+	sim := fiscalSimulacao{
+		PrecoOriginal:    it.VProd,
+		BaseIcmsOriginal: r1.BaseCalculo,
+		IcmsOriginal:     r1.ValorImposto,
+		StOriginal:       r1.ValorSubstituicao,
+		FcpOriginal:      r1.ValorIcmsPobreza,
+		DifalOriginal:    r1.ValorIcmsPartilhaDestino,
+	}
+
+	ibsCbs := r1.ValorIbsUF + r1.ValorIbsMUN + r1.ValorCbs
+	if it.VProd <= 0 || ibsCbs <= 0 {
+		sim.Erro = fmt.Sprintf("Sem base para simular (preço %.2f, IBS+CBS %.2f retornados pela 1ª chamada).", it.VProd, ibsCbs)
+		trace.add(it.ID, produtoLabel, "simulacao", sim.Erro)
+		return sim
+	}
+
+	sim.AcrescimoIbsCbs = round2(ibsCbs)
+	sim.PrecoSimulado = round2(it.VProd + ibsCbs)
+	fator := sim.PrecoSimulado / it.VProd
+	sim.Fator = math.Round(fator*10000) / 10000
+
+	sim.BaseIcmsSimulada = round2(r1.BaseCalculo * fator)
+	sim.IcmsSimulado = round2(r1.ValorImposto * fator)
+	sim.StSimulado = round2(r1.ValorSubstituicao * fator)
+	sim.FcpSimulado = round2(r1.ValorIcmsPobreza * fator)
+	sim.DifalSimulado = round2(r1.ValorIcmsPartilhaDestino * fator)
+
+	in2 := in
+	in2.PPrecoTotal = sim.PrecoSimulado
+	trace.add(it.ID, produtoLabel, "simulacao_chamada", fmt.Sprintf("2ª chamada (IBS/CBS na base): pPrecoTotal %.2f → %.2f (acréscimo IBS+CBS %.2f, fator %.4f)", it.VProd, sim.PrecoSimulado, sim.AcrescimoIbsCbs, sim.Fator))
+
+	r2, err := services.CallFiscalPackage(ctx, oracleDB, in2)
+	if err != nil {
+		sim.Erro = "Falha na 2ª chamada do pacote (preço acrescido): " + sanitizeOracleErrForDebug(err)
+		trace.add(it.ID, produtoLabel, "simulacao", sim.Erro)
+		return sim
+	}
+
+	sim.BaseIcmsPacote = r2.BaseCalculo
+	sim.IcmsPacote = r2.ValorImposto
+	sim.StPacote = r2.ValorSubstituicao
+	sim.FcpPacote = r2.ValorIcmsPobreza
+	sim.DifalPacote = r2.ValorIcmsPartilhaDestino
+
+	trace.add(it.ID, produtoLabel, "simulacao_concluida", fmt.Sprintf(
+		"ICMS sim %.2f × pacote %.2f | ST sim %.2f × %.2f | FCP sim %.2f × %.2f | DIFAL sim %.2f × %.2f",
+		sim.IcmsSimulado, sim.IcmsPacote, sim.StSimulado, sim.StPacote,
+		sim.FcpSimulado, sim.FcpPacote, sim.DifalSimulado, sim.DifalPacote))
+	return sim
 }
 
 // fiscalNotaContext agrega os dados de cabeçalho da nota necessários para
@@ -210,6 +309,9 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 
 		var req struct {
 			NfeID string `json:"nfe_id"`
+			// Simulação IBS/CBS na base do ICMS: 2ª chamada por item com
+			// pPrecoTotal = original + IBS + CBS (fase BOA, 2026-07)
+			IncluirIbsCbsBase bool `json:"incluir_ibs_cbs_base"`
 		}
 		if decErr := json.NewDecoder(r.Body).Decode(&req); decErr != nil || strings.TrimSpace(req.NfeID) == "" {
 			jsonErr(w, http.StatusBadRequest, "nfe_id é obrigatório")
@@ -309,7 +411,10 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 		defer cancel()
 
-		summary := processFiscalBatch(ctx, oracleConn, db, companyID, nfeCtx, itens, trace)
+		if req.IncluirIbsCbsBase {
+			trace.add("", "", "simulacao", "Modo simulação ATIVO: IBS/CBS na base do ICMS (2ª chamada por item com preço acrescido).")
+		}
+		summary := processFiscalBatch(ctx, oracleConn, db, companyID, nfeCtx, itens, trace, req.IncluirIbsCbsBase)
 		summary.Debug = trace.entries
 		json.NewEncoder(w).Encode(summary)
 	}
@@ -320,7 +425,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 // Semáforo de concorrência limitado a 5 + recover por item + upsert por item.
 // ---------------------------------------------------------------------------
 
-func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, companyID string, nfe fiscalNotaContext, itens []fiscalItemInput, trace *fiscalDebugTrace) fiscalExecutionSummary {
+func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, companyID string, nfe fiscalNotaContext, itens []fiscalItemInput, trace *fiscalDebugTrace, simularIbsCbs bool) fiscalExecutionSummary {
 	summary := fiscalExecutionSummary{Total: len(itens)}
 	var mu sync.Mutex
 	sem := make(chan struct{}, 5)
@@ -346,11 +451,16 @@ func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, com
 				}
 			}()
 
-			// Timeout POR ITEM (15s), não para o lote inteiro (T-11-16).
-			itemCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			// Timeout POR ITEM (15s; 30s com simulação — são 2 chamadas Oracle),
+			// não para o lote inteiro (T-11-16).
+			itemTimeout := 15 * time.Second
+			if simularIbsCbs {
+				itemTimeout = 30 * time.Second
+			}
+			itemCtx, cancel := context.WithTimeout(ctx, itemTimeout)
 			defer cancel()
 
-			status := processSingleFiscalItem(itemCtx, oracleDB, pgDB, companyID, nfe, it, trace)
+			status := processSingleFiscalItem(itemCtx, oracleDB, pgDB, companyID, nfe, it, trace, simularIbsCbs)
 			mu.Lock()
 			switch status {
 			case "ok":
@@ -370,7 +480,7 @@ func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, com
 // processSingleFiscalItem executa o pipeline (lookup grupo fiscal → pacote
 // fiscal → persistência) para um único item, isolando qualquer falha nesse
 // item — nunca aborta os demais itens do lote (T-11-17).
-func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, companyID string, nfe fiscalNotaContext, it fiscalItemInput, trace *fiscalDebugTrace) string {
+func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, companyID string, nfe fiscalNotaContext, it fiscalItemInput, trace *fiscalDebugTrace, simularIbsCbs bool) string {
 	produtoLabel := fmt.Sprintf("%s — %s", it.CProd, it.XProd)
 	trace.add(it.ID, produtoLabel, "inicio", fmt.Sprintf("Processando item (CFOP %s, v_prod %.2f)", it.CFOP, it.VProd))
 
@@ -475,6 +585,18 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		trace.add(it.ID, produtoLabel, "erro", "Falha ao persistir o resultado.")
 		return "error"
 	}
+
+	// Simulação IBS/CBS na base (2ª chamada) — nunca muda o status do item:
+	// o resultado normal já está persistido; a simulação é anexada à parte.
+	if simularIbsCbs {
+		sim := runSimulacaoIbsCbs(ctx, oracleDB, in, it, result, trace, produtoLabel)
+		if simJSON, mErr := json.Marshal(sim); mErr == nil {
+			if _, uErr := pgDB.Exec(`UPDATE fiscal_execution_items SET simulacao = $1 WHERE nfe_item_id = $2`, simJSON, it.ID); uErr != nil {
+				log.Printf("FiscalExecutionRunHandler: item=%s persist simulacao error: %v", it.ID, uErr)
+			}
+		}
+	}
+
 	trace.add(it.ID, produtoLabel, "concluido", "Item calculado com sucesso (status ok).")
 	return "ok"
 }
@@ -563,7 +685,8 @@ func persistFiscalItemResult(pgDB *sql.DB, companyID, nfeItemID, status, errMsg,
 			valor_ibs_uf                = EXCLUDED.valor_ibs_uf,
 			valor_ibs_mun               = EXCLUDED.valor_ibs_mun,
 			valor_cbs                   = EXCLUDED.valor_cbs,
-			full_result                 = EXCLUDED.full_result
+			full_result                 = EXCLUDED.full_result,
+			simulacao                   = NULL
 	`,
 		companyID, nfeItemID, status, errMsgSQL,
 		grupoFiscalSQL, inputParamsSQL,
