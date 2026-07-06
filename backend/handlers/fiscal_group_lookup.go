@@ -57,8 +57,10 @@ func resolveCodEmpresa(emitCNPJ, emitUF string) (int, error) {
 // (<cProd>) antes de buscar em PROD/PRODB — o código lá é composto por
 // código + dígito verificador (ex.: XML "3796949" → PROD/PRODB "379694").
 // Confirmado pelo usuário em 2026-07 comparando um produto real que não
-// batia na busca. Não mexe em nada além desta busca (o valor original de
-// it.CProd continua sendo o que é enviado como pProduto ao pacote fiscal).
+// batia na busca. O pacote fiscal (PKG_FISCAL_FCTAX) valida o produto nas
+// mesmas tabelas, então pProduto TAMBÉM vai sem o dígito (ORA-20000
+// "Código produto informado não existe no SFC" com o código cheio —
+// confirmado em execução real, 2026-07-06).
 func stripCheckDigit(codigo string) string {
 	if len(codigo) <= 1 {
 		return codigo

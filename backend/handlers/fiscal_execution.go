@@ -395,7 +395,11 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		PTipoCentroFiscal:            defaultTipoCentroFiscal,
 		PTipoOperacao:                tipoOperacaoPorCFOP(it.CFOP),
 		PEntradaSaida:                "S", // módulo cobre apenas NF-e de saída
-		PProduto:                     it.CProd,
+		// Sem o dígito verificador, como em PROD/PRODB — o pacote valida o
+		// produto nas mesmas tabelas do lookup; com o código cheio do XML o
+		// Oracle rejeita com ORA-20000 "Código produto informado não existe
+		// no SFC" (confirmado em execução real, 2026-07-06).
+		PProduto:                     stripCheckDigit(it.CProd),
 		PCodigoGrupoFiscal:           grupoFiscal,
 		PCnpjExcecao:                 "",
 		PIndicadorServico:            defaultIndicadorServico,
@@ -418,7 +422,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		inputJSON = []byte("{}")
 	}
 
-	trace.add(it.ID, produtoLabel, "chamando_pacote", "Executando PKG_FISCAL_FCTAX.calcula_imposto_produto...")
+	trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto (pProduto=%s, pTipoContribuinte=%s, pTipoOperacao=%d)...", in.PProduto, in.PTipoContribuinte, in.PTipoOperacao))
 	result, callErr := services.CallFiscalPackage(ctx, oracleDB, in)
 	if callErr != nil {
 		// Nunca propagar callErr.Error() cru do Oracle na resposta normal
