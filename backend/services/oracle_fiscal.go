@@ -66,6 +66,35 @@ type FiscalInput struct {
 	PCodigoIbge                  string
 }
 
+// FormatParams devolve a linha completa "param=valor" com os 23 parâmetros na
+// ordem exata do contrato Oracle — usada no trace de debug da execução
+// (admin-only). Gerada da mesma tabela de metadados dos binds (fiscalInParams),
+// então nunca fica defasada da chamada real.
+func (in FiscalInput) FormatParams() string {
+	inVal := reflect.ValueOf(in)
+	parts := make([]string, 0, len(fiscalInParams))
+	for _, p := range fiscalInParams {
+		fv := inVal.FieldByName(p.GoField)
+		var val string
+		switch v := fv.Interface().(type) {
+		case *time.Time:
+			if v == nil {
+				val = "null"
+			} else {
+				val = v.Format("2006-01-02")
+			}
+		case float64:
+			val = fmt.Sprintf("%.2f", v)
+		case string:
+			val = "'" + v + "'"
+		default:
+			val = fmt.Sprintf("%v", v)
+		}
+		parts = append(parts, p.OracleParam+"="+val)
+	}
+	return strings.Join(parts, ", ")
+}
+
 // fiscalInParam mapeia cada parâmetro Oracle (notação nomeada) para o campo Go
 // correspondente em FiscalInput (usado via reflection para montar os binds IN).
 type fiscalInParam struct {

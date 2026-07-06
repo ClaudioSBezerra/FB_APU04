@@ -456,7 +456,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		inputJSON = []byte("{}")
 	}
 
-	trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto (pProduto=%s, pUF=%s→%s, pTipoContribuinte=%s, pTipoOperacao=%d, pPrecoTotal=%.2f, pDespesas=%.2f [frete %.2f + outras %.2f], pDesconto=%.2f)...", in.PProduto, in.PUFOrigem, in.PUFDestino, in.PTipoContribuinte, in.PTipoOperacao, in.PPrecoTotal, in.PDespesas, it.VFrete, it.VOutro, in.PDesconto))
+	trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto com: %s [pDespesas = frete %.2f + outras %.2f]", in.FormatParams(), it.VFrete, it.VOutro))
 	result, callErr := services.CallFiscalPackage(ctx, oracleDB, in)
 	if callErr != nil {
 		// Nunca propagar callErr.Error() cru do Oracle na resposta normal
