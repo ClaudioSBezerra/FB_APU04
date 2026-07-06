@@ -102,6 +102,9 @@ interface ComparacaoRow {
   // calculado (extraído do full_result do pacote Oracle); sem "esperado"
   // correspondente no XML, por isso não entra em getTaxPairs/divergência.
   base_calculo_ibs_cbs: number | null;
+  // Redução de base concedida pelo pacote — acumulado "ICMS Reduzido" do
+  // Resumo da Nota (comparado com v_icms_deson do cabeçalho).
+  valor_reducao: number | null;
 }
 
 interface FiscalDebugEntry {
@@ -139,6 +142,17 @@ const TAX_LABELS: Record<TaxKey, string> = {
   cofins: 'COFINS',
   ibs: 'IBS',
   cbs: 'CBS',
+};
+
+// Colunas extras exibidas SÓ no "Resumo da Nota" (o XML não destaca esses
+// valores por item — só no total <ICMSTot> — então não entram na tabela
+// item a item nem na regra de divergência por item).
+type ResumoKey = TaxKey | 'fcp' | 'difal' | 'icms_reduzido';
+const RESUMO_LABELS: Record<ResumoKey, string> = {
+  ...TAX_LABELS,
+  fcp: 'FCP',
+  difal: 'DIFAL',
+  icms_reduzido: 'ICMS Reduzido',
 };
 
 // ---------------------------------------------------------------------------
@@ -384,21 +398,30 @@ export default function ComparacaoFiscal() {
   // falso positivo de divergência.
   const notaSummary = useMemo(() => {
     if (!selectedNfe || rows.length === 0) return null;
-    const acumuladoCalculado: Record<TaxKey, number> = { icms: 0, icms_st: 0, pis: 0, cofins: 0, ibs: 0, cbs: 0 };
+    const acumuladoCalculado: Record<ResumoKey, number> = {
+      icms: 0, icms_st: 0, pis: 0, cofins: 0, ibs: 0, cbs: 0,
+      fcp: 0, difal: 0, icms_reduzido: 0,
+    };
     let itensNaoOk = 0;
     rows.forEach(row => {
       if (row.status !== 'ok') { itensNaoOk++; return; }
       getTaxPairs(row).forEach(pair => {
         acumuladoCalculado[pair.key] += pair.valorCalculado ?? 0;
       });
+      acumuladoCalculado.fcp += row.valor_icms_pobreza ?? 0;
+      acumuladoCalculado.difal += row.valor_icms_partilha_destino ?? 0;
+      acumuladoCalculado.icms_reduzido += row.valor_reducao ?? 0;
     });
-    const esperado: Record<TaxKey, number> = {
+    const esperado: Record<ResumoKey, number> = {
       icms: selectedNfe.v_icms,
       icms_st: selectedNfe.v_st,
       pis: selectedNfe.v_pis,
       cofins: selectedNfe.v_cofins,
       ibs: selectedNfe.v_ibs,
       cbs: selectedNfe.v_cbs,
+      fcp: selectedNfe.v_fcp ?? 0,
+      difal: selectedNfe.v_icms_uf_dest ?? 0,
+      icms_reduzido: selectedNfe.v_icms_deson ?? 0,
     };
     return { acumuladoCalculado, esperado, itensNaoOk, totalItens: rows.length };
   }, [rows, selectedNfe]);
@@ -618,15 +641,15 @@ export default function ComparacaoFiscal() {
                 <TableHeader>
                   <TableRow className="hover:bg-transparent bg-muted/30">
                     <TableHead className="py-1.5 px-2 text-[11px]"></TableHead>
-                    {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => (
-                      <TableHead key={key} className="py-1.5 px-2 text-[11px] text-center">{TAX_LABELS[key]}</TableHead>
+                    {(Object.keys(RESUMO_LABELS) as ResumoKey[]).map(key => (
+                      <TableHead key={key} className="py-1.5 px-2 text-[11px] text-center">{RESUMO_LABELS[key]}</TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   <TableRow>
                     <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Esperado (total NF)</TableCell>
-                    {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => (
+                    {(Object.keys(RESUMO_LABELS) as ResumoKey[]).map(key => (
                       <TableCell key={key} className="py-1 px-2 text-right text-[11px] font-semibold">
                         {fmtBRL(notaSummary.esperado[key])}
                       </TableCell>
@@ -634,7 +657,7 @@ export default function ComparacaoFiscal() {
                   </TableRow>
                   <TableRow>
                     <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Calculado (soma dos itens)</TableCell>
-                    {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => (
+                    {(Object.keys(RESUMO_LABELS) as ResumoKey[]).map(key => (
                       <TableCell key={key} className="py-1 px-2 text-right text-[11px] text-muted-foreground">
                         {fmtBRL(notaSummary.acumuladoCalculado[key])}
                       </TableCell>
@@ -642,7 +665,7 @@ export default function ComparacaoFiscal() {
                   </TableRow>
                   <TableRow>
                     <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Diferença</TableCell>
-                    {(Object.keys(TAX_LABELS) as TaxKey[]).map(key => {
+                    {(Object.keys(RESUMO_LABELS) as ResumoKey[]).map(key => {
                       const diferenca = Math.round((notaSummary.esperado[key] - notaSummary.acumuladoCalculado[key]) * 100) / 100;
                       return (
                         <TableCell key={key} className="py-1 px-2 text-right">

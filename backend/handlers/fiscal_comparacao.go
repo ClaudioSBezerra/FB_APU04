@@ -45,6 +45,11 @@ type NfeSearchResult struct {
 	VDesc  float64 `json:"v_desc"`  // total de descontos
 	VFrete float64 `json:"v_frete"` // total do frete destacado
 	VNf    float64 `json:"v_nf"`    // valor total da NF
+	// Totais fiscais extras do cabeçalho para as colunas FCP/DIFAL/ICMS
+	// Reduzido do Resumo da Nota
+	VFcp        float64 `json:"v_fcp"`          // <vFCP>
+	VIcmsUfDest float64 `json:"v_icms_uf_dest"` // <vICMSUFDest> (DIFAL)
+	VIcmsDeson  float64 `json:"v_icms_deson"`   // <vICMSDeson> (ICMS desonerado/reduzido)
 }
 
 // ComparacaoRow representa um item da comparação esperado (nfe_saidas_itens)
@@ -98,6 +103,10 @@ type ComparacaoRow struct {
 	// "esperado" para comparar, não entra em getTaxPairs/divergência no
 	// frontend — é informativo.
 	BaseCalculoIbsCbs *float64 `json:"base_calculo_ibs_cbs"`
+	// ValorReducao — redução de base concedida pelo pacote (usado no acumulado
+	// "ICMS Reduzido" do Resumo da Nota, comparado com v_icms_deson do
+	// cabeçalho). Extraído do full_result JSONB, como BaseCalculoIbsCbs.
+	ValorReducao *float64 `json:"valor_reducao"`
 }
 
 // NfeSearchResponse é o envelope paginado da busca: total de notas que batem
@@ -234,7 +243,8 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 			       COALESCE(n.dest_xnome,''), TO_CHAR(n.data_emissao,'DD/MM/YYYY'),
 			       COALESCE(n.v_icms,0), COALESCE(n.v_st,0), COALESCE(n.v_pis,0),
 			       COALESCE(n.v_cofins,0), COALESCE(n.v_ibs,0), COALESCE(n.v_cbs,0),
-			       COALESCE(n.v_prod,0), COALESCE(n.v_desc,0), COALESCE(n.v_frete,0), COALESCE(n.v_nf,0)
+			       COALESCE(n.v_prod,0), COALESCE(n.v_desc,0), COALESCE(n.v_frete,0), COALESCE(n.v_nf,0),
+			       COALESCE(n.v_fcp,0), COALESCE(n.v_icms_uf_dest,0), COALESCE(n.v_icms_deson,0)
 			FROM pacotefiscal_nfe_saidas n
 			%s
 			ORDER BY n.data_emissao DESC, n.numero_nfe DESC
@@ -254,7 +264,8 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 			if err := rows.Scan(&row.ID, &row.ChaveNFe, &row.NumeroNFe, &row.Serie,
 				&row.DestNome, &row.DataEmissao,
 				&row.VIcms, &row.VSt, &row.VPis, &row.VCofins, &row.VIbs, &row.VCbs,
-				&row.VProd, &row.VDesc, &row.VFrete, &row.VNf); err != nil {
+				&row.VProd, &row.VDesc, &row.VFrete, &row.VNf,
+				&row.VFcp, &row.VIcmsUfDest, &row.VIcmsDeson); err != nil {
 				log.Printf("[FiscalComparacaoSearch] scan error: %v", err)
 				continue
 			}
@@ -302,7 +313,8 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			fei.valor_cbs,
 			fei.percentual_difal, fei.valor_icms_partilha_destino, fei.valor_icms_pobreza,
 			fei.grupo_fiscal_codigo,
-			(fei.full_result->>'BaseCalculoIbsCbs')::numeric AS base_calculo_ibs_cbs
+			(fei.full_result->>'BaseCalculoIbsCbs')::numeric AS base_calculo_ibs_cbs,
+			(fei.full_result->>'ValorReducao')::numeric AS valor_reducao
 		FROM pacotefiscal_nfe_saidas_itens nsi
 		LEFT JOIN fiscal_execution_items fei ON fei.nfe_item_id = nsi.id
 		WHERE nsi.nfe_id = $1 AND nsi.company_id = $2
@@ -335,6 +347,7 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			&row.PercentualDifal, &row.ValorIcmsPartilhaDestino, &row.ValorIcmsPobreza,
 			&row.GrupoFiscalCodigo,
 			&row.BaseCalculoIbsCbs,
+			&row.ValorReducao,
 		); err != nil {
 			log.Printf("[FiscalComparacaoRead] scan error: %v", err)
 			continue

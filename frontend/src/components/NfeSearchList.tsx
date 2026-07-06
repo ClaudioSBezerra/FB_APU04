@@ -46,6 +46,10 @@ export interface NfeSearchResult {
   v_desc: number;   // total de descontos
   v_frete: number;  // total do frete destacado
   v_nf: number;     // valor total da NF
+  // Totais fiscais extras (colunas FCP/DIFAL/ICMS Reduzido do Resumo da Nota)
+  v_fcp: number;          // <vFCP>
+  v_icms_uf_dest: number; // <vICMSUFDest> (DIFAL)
+  v_icms_deson: number;   // <vICMSDeson> (ICMS desonerado/reduzido)
 }
 
 // Envelope paginado da busca (espelha NfeSearchResponse do backend)
