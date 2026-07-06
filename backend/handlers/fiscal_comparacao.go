@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -99,11 +100,20 @@ type ComparacaoRow struct {
 	BaseCalculoIbsCbs *float64 `json:"base_calculo_ibs_cbs"`
 }
 
+// NfeSearchResponse é o envelope paginado da busca: total de notas que batem
+// nos filtros (para os controles de página) + a página solicitada.
+type NfeSearchResponse struct {
+	Total    int               `json:"total"`
+	Page     int               `json:"page"`
+	PageSize int               `json:"page_size"` // 0 = todas
+	Rows     []NfeSearchResult `json:"rows"`
+}
+
 // ---------------------------------------------------------------------------
-// GET /api/fiscal/comparacao/search?q=...
-// Busca NF-e de saída por número ou chave de acesso, company-scoped.
-// Retorna até 20 candidatos. Nunca roda a query com menos de 3 caracteres —
-// responde []  imediatamente (nunca null).
+// GET /api/fiscal/comparacao/search?q=...&page=1&page_size=50
+// Busca NF-e de saída company-scoped, com filtros fiscais opcionais
+// (com_st/com_difal/com_fcp/com_base_reduzida=1) e paginação (page_size=0
+// traz todas). Resposta paginada com total.
 // ---------------------------------------------------------------------------
 func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -135,59 +145,100 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 		cliente := strings.TrimSpace(r.URL.Query().Get("cliente"))
 		emitente := strings.TrimSpace(r.URL.Query().Get("emitente"))
 
-		// Sem nenhum filtro, roda mesmo assim e lista as 50 notas mais recentes
+		// Sem nenhum filtro, roda mesmo assim e lista as notas mais recentes
 		// da empresa (mesmo padrão de "Nota a Nota" em Painel XMLs) — não exige
 		// mais 3+ caracteres em "q" para trazer resultado.
-		where := "WHERE company_id = $1"
+		where := "WHERE n.company_id = $1"
 		args := []interface{}{companyID}
 		idx := 2
 
 		if q != "" {
-			where += fmt.Sprintf(" AND (numero_nfe ILIKE '%%'||$%d||'%%' OR chave_nfe ILIKE '%%'||$%d||'%%')", idx, idx)
+			where += fmt.Sprintf(" AND (n.numero_nfe ILIKE '%%'||$%d||'%%' OR n.chave_nfe ILIKE '%%'||$%d||'%%')", idx, idx)
 			args = append(args, q)
 			idx++
 		}
 		if dataInicio != "" {
-			where += fmt.Sprintf(" AND data_emissao >= $%d", idx)
+			where += fmt.Sprintf(" AND n.data_emissao >= $%d", idx)
 			args = append(args, dataInicio)
 			idx++
 		}
 		if dataFim != "" {
-			where += fmt.Sprintf(" AND data_emissao <= $%d", idx)
+			where += fmt.Sprintf(" AND n.data_emissao <= $%d", idx)
 			args = append(args, dataFim)
 			idx++
 		}
 		if ufOrigem != "" {
-			where += fmt.Sprintf(" AND emit_uf = $%d", idx)
+			where += fmt.Sprintf(" AND n.emit_uf = $%d", idx)
 			args = append(args, ufOrigem)
 			idx++
 		}
 		if ufDestino != "" {
-			where += fmt.Sprintf(" AND dest_uf = $%d", idx)
+			where += fmt.Sprintf(" AND n.dest_uf = $%d", idx)
 			args = append(args, ufDestino)
 			idx++
 		}
 		if cliente != "" {
-			where += fmt.Sprintf(" AND dest_xnome ILIKE '%%'||$%d||'%%'", idx)
+			where += fmt.Sprintf(" AND n.dest_xnome ILIKE '%%'||$%d||'%%'", idx)
 			args = append(args, cliente)
 			idx++
 		}
 		if emitente != "" {
-			where += fmt.Sprintf(" AND emit_xnome ILIKE '%%'||$%d||'%%'", idx)
+			where += fmt.Sprintf(" AND n.emit_xnome ILIKE '%%'||$%d||'%%'", idx)
 			args = append(args, emitente)
 			idx++
 		}
 
+		// Filtros fiscais (checkboxes da tela) — todos sobre totais do
+		// cabeçalho, exceto base reduzida, que só existe no item (CST 20/70).
+		if r.URL.Query().Get("com_st") == "1" {
+			where += " AND COALESCE(n.v_st,0) > 0"
+		}
+		if r.URL.Query().Get("com_difal") == "1" {
+			where += " AND COALESCE(n.v_icms_uf_dest,0) > 0"
+		}
+		if r.URL.Query().Get("com_fcp") == "1" {
+			where += " AND (COALESCE(n.v_fcp,0) + COALESCE(n.v_fcp_st,0) + COALESCE(n.v_fcp_uf_dest,0)) > 0"
+		}
+		if r.URL.Query().Get("com_base_reduzida") == "1" {
+			where += ` AND EXISTS (
+				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
+				WHERE i.nfe_id = n.id AND i.cst_icms IN ('20','70'))`
+		}
+
+		// Paginação: page 1-based; page_size 0 = todas (sem LIMIT).
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		pageSize := 50
+		if ps := strings.TrimSpace(r.URL.Query().Get("page_size")); ps != "" {
+			if v, convErr := strconv.Atoi(ps); convErr == nil && v >= 0 {
+				pageSize = v
+			}
+		}
+
+		var total int
+		if err := db.QueryRow("SELECT COUNT(*) FROM pacotefiscal_nfe_saidas n "+where, args...).Scan(&total); err != nil {
+			log.Printf("[FiscalComparacaoSearch] count error: %v", err)
+			jsonErr(w, http.StatusInternalServerError, "Erro ao buscar NF-e")
+			return
+		}
+
+		limitClause := ""
+		if pageSize > 0 {
+			limitClause = fmt.Sprintf(" LIMIT %d OFFSET %d", pageSize, (page-1)*pageSize)
+		}
+
 		query := fmt.Sprintf(`
-			SELECT id, chave_nfe, COALESCE(numero_nfe,''), COALESCE(serie,''),
-			       COALESCE(dest_xnome,''), TO_CHAR(data_emissao,'DD/MM/YYYY'),
-			       COALESCE(v_icms,0), COALESCE(v_st,0), COALESCE(v_pis,0),
-			       COALESCE(v_cofins,0), COALESCE(v_ibs,0), COALESCE(v_cbs,0),
-			       COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_frete,0), COALESCE(v_nf,0)
-			FROM pacotefiscal_nfe_saidas
+			SELECT n.id, n.chave_nfe, COALESCE(n.numero_nfe,''), COALESCE(n.serie,''),
+			       COALESCE(n.dest_xnome,''), TO_CHAR(n.data_emissao,'DD/MM/YYYY'),
+			       COALESCE(n.v_icms,0), COALESCE(n.v_st,0), COALESCE(n.v_pis,0),
+			       COALESCE(n.v_cofins,0), COALESCE(n.v_ibs,0), COALESCE(n.v_cbs,0),
+			       COALESCE(n.v_prod,0), COALESCE(n.v_desc,0), COALESCE(n.v_frete,0), COALESCE(n.v_nf,0)
+			FROM pacotefiscal_nfe_saidas n
 			%s
-			ORDER BY data_emissao DESC
-			LIMIT 50`, where)
+			ORDER BY n.data_emissao DESC, n.numero_nfe DESC
+			%s`, where, limitClause)
 
 		rows, err := db.Query(query, args...)
 		if err != nil {
@@ -213,7 +264,9 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 			log.Printf("[FiscalComparacaoSearch] rows error: %v", err)
 		}
 
-		if encErr := json.NewEncoder(w).Encode(result); encErr != nil {
+		if encErr := json.NewEncoder(w).Encode(NfeSearchResponse{
+			Total: total, Page: page, PageSize: pageSize, Rows: result,
+		}); encErr != nil {
 			log.Printf("[FiscalComparacaoSearch] encode error: %v", encErr)
 		}
 	}

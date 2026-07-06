@@ -151,6 +151,9 @@ type pfIcmsTot struct {
 	VCOFINS    string `xml:"vCOFINS"`
 	VOutro     string `xml:"vOutro"`
 	VNF        string `xml:"vNF"`
+	// DIFAL EC 87/2015 (consumidor final interestadual não contribuinte)
+	VICMSUFDest string `xml:"vICMSUFDest"`
+	VFCPUFDest  string `xml:"vFCPUFDest"`
 }
 
 type pfIbsCbsTot struct {
@@ -739,6 +742,7 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 					dest_c_mun, dest_x_mun, dest_uf, dest_cep, dest_c_pais, dest_x_pais,
 					v_bc, v_icms, v_icms_deson, v_fcp, v_bc_st, v_st, v_fcp_st, v_fcp_st_ret,
 					v_prod, v_frete, v_seg, v_desc, v_ii, v_ipi, v_ipi_devol, v_pis, v_cofins, v_outro, v_nf,
+					v_icms_uf_dest, v_fcp_uf_dest,
 					v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cred_pres_ibs, v_cbs, v_cred_pres_cbs,
 					source
 				) VALUES (
@@ -752,7 +756,8 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 					$42,$43,$44,$45,$46,$47,
 					$48,$49,$50,$51,$52,$53,$54,$55,
 					$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,
-					$67,$68,$69,$70,$71,$72,$73,
+					$67,$68,
+					$69,$70,$71,$72,$73,$74,$75,
 					'xml_upload'
 				)
 				ON CONFLICT ON CONSTRAINT uq_pacotefiscal_nfe_saidas_company_chave DO UPDATE SET
@@ -781,6 +786,7 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 					v_desc = EXCLUDED.v_desc, v_ii = EXCLUDED.v_ii, v_ipi = EXCLUDED.v_ipi,
 					v_ipi_devol = EXCLUDED.v_ipi_devol, v_pis = EXCLUDED.v_pis, v_cofins = EXCLUDED.v_cofins,
 					v_outro = EXCLUDED.v_outro, v_nf = EXCLUDED.v_nf,
+					v_icms_uf_dest = EXCLUDED.v_icms_uf_dest, v_fcp_uf_dest = EXCLUDED.v_fcp_uf_dest,
 					v_bc_ibs_cbs = EXCLUDED.v_bc_ibs_cbs, v_ibs_uf = EXCLUDED.v_ibs_uf,
 					v_ibs_mun = EXCLUDED.v_ibs_mun, v_ibs = EXCLUDED.v_ibs,
 					v_cred_pres_ibs = EXCLUDED.v_cred_pres_ibs, v_cbs = EXCLUDED.v_cbs,
@@ -797,6 +803,7 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 				inf.Dest.EnderDest.CMun, inf.Dest.EnderDest.XMun, inf.Dest.EnderDest.UF, inf.Dest.EnderDest.CEP, inf.Dest.EnderDest.CPais, inf.Dest.EnderDest.XPais,
 				toDecimal(ic.VBC), toDecimal(ic.VICMS), toDecimal(ic.VICMSDeson), toDecimal(ic.VFCP), toDecimal(ic.VBCST), toDecimal(ic.VST), toDecimal(ic.VFcpST), toDecimal(ic.VFcpSTRet),
 				toDecimal(ic.VProd), toDecimal(ic.VFrete), toDecimal(ic.VSeg), toDecimal(ic.VDesc), toDecimal(ic.VII), toDecimal(ic.VIPI), toDecimal(ic.VIPIDevol), toDecimal(ic.VPIS), toDecimal(ic.VCOFINS), toDecimal(ic.VOutro), toDecimal(ic.VNF),
+				toDecimal(ic.VICMSUFDest), toDecimal(ic.VFCPUFDest),
 				toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.GIBSuf.VIBSuf), toNullDecimal(ib.GIBS.GIBSMun.VIBSMun), toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GIBS.VCredPres), toNullDecimal(ib.GCBS.VCBS), toNullDecimal(ib.GCBS.VCredPres),
 			).Scan(&nfeID)
 

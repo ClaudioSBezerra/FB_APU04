@@ -48,6 +48,14 @@ export interface NfeSearchResult {
   v_nf: number;     // valor total da NF
 }
 
+// Envelope paginado da busca (espelha NfeSearchResponse do backend)
+interface NfeSearchResponse {
+  total: number;
+  page: number;
+  page_size: number; // 0 = todas
+  rows: NfeSearchResult[];
+}
+
 interface ExecuteSummary {
   total: number;
   ok: number;
@@ -97,15 +105,26 @@ export function NfeSearchList({
   const [ufDestino, setUfDestino] = useState('');
   const [cliente, setCliente] = useState('');
   const [emitente, setEmitente] = useState('');
-  const emptyApplied = { dataInicio: '', dataFim: '', q: '', ufOrigem: '', ufDestino: '', cliente: '', emitente: '' };
+  // Filtros fiscais (checkboxes): valores destacados no XML da nota
+  const [comSt, setComSt] = useState(false);
+  const [comDifal, setComDifal] = useState(false);
+  const [comFcp, setComFcp] = useState(false);
+  const [comBaseReduzida, setComBaseReduzida] = useState(false);
+  // Paginação: 0 = todas
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(1);
+  const emptyApplied = {
+    dataInicio: '', dataFim: '', q: '', ufOrigem: '', ufDestino: '', cliente: '', emitente: '',
+    comSt: false, comDifal: false, comFcp: false, comBaseReduzida: false, pageSize: 50,
+  };
   const [applied, setApplied] = useState(emptyApplied);
   const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [execStatus, setExecStatus] = useState<Record<string, ExecStatus>>({});
   const [batchRunning, setBatchRunning] = useState(false);
 
-  const { data, isLoading, isError, refetch } = useQuery<NfeSearchResult[]>({
-    queryKey: ['nfe-saidas-search', applied],
+  const { data, isLoading, isError, refetch } = useQuery<NfeSearchResponse>({
+    queryKey: ['nfe-saidas-search', applied, page],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (applied.q) params.set('q', applied.q);
@@ -115,21 +134,39 @@ export function NfeSearchList({
       if (applied.ufDestino) params.set('uf_destino', applied.ufDestino);
       if (applied.cliente) params.set('cliente', applied.cliente);
       if (applied.emitente) params.set('emitente', applied.emitente);
+      if (applied.comSt) params.set('com_st', '1');
+      if (applied.comDifal) params.set('com_difal', '1');
+      if (applied.comFcp) params.set('com_fcp', '1');
+      if (applied.comBaseReduzida) params.set('com_base_reduzida', '1');
+      params.set('page', String(page));
+      params.set('page_size', String(applied.pageSize));
       const res = await fetch(`/api/fiscal/comparacao/search?${params}`, { headers: authHeaders });
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
     // Roda a partir do primeiro clique em "Buscar" — sem exigir 3+ caracteres
-    // em nenhum campo; sem filtro nenhum, lista as 50 notas mais recentes.
+    // em nenhum campo; sem filtro nenhum, lista as notas mais recentes.
     enabled: searched,
   });
 
-  const rows = data ?? [];
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = applied.pageSize > 0 ? Math.max(1, Math.ceil(total / applied.pageSize)) : 1;
 
   const handleSearch = () => {
     setSelected(new Set());
     setSearched(true);
-    setApplied({ dataInicio, dataFim, q: q.trim(), ufOrigem, ufDestino, cliente: cliente.trim(), emitente: emitente.trim() });
+    setPage(1);
+    setApplied({
+      dataInicio, dataFim, q: q.trim(), ufOrigem, ufDestino,
+      cliente: cliente.trim(), emitente: emitente.trim(),
+      comSt, comDifal, comFcp, comBaseReduzida, pageSize,
+    });
+  };
+
+  const goToPage = (p: number) => {
+    setSelected(new Set());
+    setPage(Math.min(Math.max(1, p), totalPages));
   };
 
   const allSelected = rows.length > 0 && rows.every(r => selected.has(r.id));
@@ -258,6 +295,20 @@ export function NfeSearchList({
             className="h-8 w-44 text-xs"
           />
         </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground">Notas por página</label>
+          <select
+            value={pageSize}
+            onChange={e => setPageSize(Number(e.target.value))}
+            className="h-8 w-28 text-xs rounded-md border bg-background px-2"
+          >
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+            <option value={500}>500</option>
+            <option value={0}>Todas</option>
+          </select>
+        </div>
         <Button size="sm" onClick={handleSearch} disabled={isLoading} className="h-8">
           {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5 mr-1.5" />}
           Buscar
@@ -275,6 +326,23 @@ export function NfeSearchList({
             Executar Selecionadas ({selected.size})
           </Button>
         )}
+
+        {/* Filtros fiscais — valores destacados no XML da nota */}
+        <div className="w-full flex items-center gap-4 flex-wrap pt-1 border-t border-dashed mt-1">
+          <span className="text-[11px] text-muted-foreground font-medium">Somente notas com:</span>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <Checkbox checked={comSt} onCheckedChange={c => setComSt(c === true)} /> ST &gt; 0
+          </label>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <Checkbox checked={comDifal} onCheckedChange={c => setComDifal(c === true)} /> DIFAL &gt; 0
+          </label>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <Checkbox checked={comFcp} onCheckedChange={c => setComFcp(c === true)} /> FCP &gt; 0
+          </label>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <Checkbox checked={comBaseReduzida} onCheckedChange={c => setComBaseReduzida(c === true)} /> Base ICMS reduzida
+          </label>
+        </div>
       </div>
 
       {!searched ? (
@@ -290,6 +358,23 @@ export function NfeSearchList({
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-6">Nenhuma nota encontrada para os filtros informados.</p>
       ) : (
+        <>
+        <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
+          <span>
+            {total.toLocaleString('pt-BR')} nota(s) encontrada(s)
+            {applied.pageSize > 0 && totalPages > 1 && ` — página ${page} de ${totalPages}`}
+          </span>
+          {applied.pageSize > 0 && totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-6 px-2 text-xs" disabled={page <= 1 || isLoading} onClick={() => goToPage(page - 1)}>
+                ← Anterior
+              </Button>
+              <Button variant="outline" size="sm" className="h-6 px-2 text-xs" disabled={page >= totalPages || isLoading} onClick={() => goToPage(page + 1)}>
+                Próxima →
+              </Button>
+            </div>
+          )}
+        </div>
         <div className="overflow-x-auto rounded-md border">
           <Table>
             <TableHeader>
@@ -345,6 +430,7 @@ export function NfeSearchList({
             </TableBody>
           </Table>
         </div>
+        </>
       )}
     </div>
   );
