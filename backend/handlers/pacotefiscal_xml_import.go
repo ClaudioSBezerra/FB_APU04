@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -467,10 +468,51 @@ type pfImportErro struct {
 	Erro    string `json:"erro"`
 }
 
-type pfImportResult struct {
+// ---------------------------------------------------------------------------
+// Job assíncrono de importação (2026-07) — com milhares de XMLs a requisição
+// síncrona estourava o timeout do proxy/navegador e a tela ficava sem resposta
+// (o backend continuava importando, invisível). Agora o upload responde na
+// hora com um job_id e o processamento roda em goroutine; o frontend
+// acompanha por polling em /api/pacotefiscal/xml/upload/status.
+// Estado em memória: sobrevive à sessão, não a restart do processo (deploy no
+// meio de um import grande = job "not_found"; os XMLs já gravados ficam —
+// upsert por chave torna o reenvio seguro).
+// ---------------------------------------------------------------------------
+
+type pfImportJob struct {
+	mu         sync.Mutex
+	CompanyID  string
+	Total      int
+	Processed  int
+	Importados int
+	Ignorados  int
+	Erros      []pfImportErro
+	Done       bool
+	StartedAt  time.Time
+}
+
+type pfImportJobStatus struct {
+	JobID      string         `json:"job_id"`
+	Total      int            `json:"total"`
+	Processed  int            `json:"processed"`
 	Importados int            `json:"importados"`
 	Ignorados  int            `json:"ignorados"`
 	Erros      []pfImportErro `json:"erros"`
+	Done       bool           `json:"done"`
+}
+
+var pfImportJobs sync.Map // job_id → *pfImportJob
+
+func (j *pfImportJob) snapshot(jobID string) pfImportJobStatus {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	erros := make([]pfImportErro, len(j.Erros))
+	copy(erros, j.Erros)
+	return pfImportJobStatus{
+		JobID: jobID, Total: j.Total, Processed: j.Processed,
+		Importados: j.Importados, Ignorados: j.Ignorados,
+		Erros: erros, Done: j.Done,
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -540,37 +582,122 @@ func PacoteFiscalXMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			xmlFiles = append(xmlFiles, namedXML{Name: fh.Filename, Data: data})
 		}
 
-		result := pfImportResult{Erros: []pfImportErro{}}
+		if len(xmlFiles) == 0 {
+			jsonErr(w, http.StatusBadRequest, "Nenhum XML encontrado nos arquivos enviados")
+			return
+		}
 
-		for _, xf := range xmlFiles {
-			proc, err := pfParseNFeXML(xf.Data)
-			if err != nil {
-				result.Erros = append(result.Erros, pfImportErro{xf.Name, err.Error()})
-				continue
-			}
+		// Cria o job e processa em background — resposta imediata com job_id;
+		// o frontend acompanha via /api/pacotefiscal/xml/upload/status.
+		jobID := generateRefreshTokenString()
+		job := &pfImportJob{
+			CompanyID: companyID,
+			Total:     len(xmlFiles),
+			Erros:     []pfImportErro{},
+			StartedAt: time.Now(),
+		}
+		pfImportJobs.Store(jobID, job)
+
+		go func() {
+			processPFXMLFiles(db, companyID, xmlFiles, job)
+			// Job concluído fica disponível por 1h para a tela consultar; depois é
+			// removido para não acumular memória.
+			time.AfterFunc(1*time.Hour, func() { pfImportJobs.Delete(jobID) })
+		}()
+
+		w.WriteHeader(http.StatusAccepted)
+		if encErr := json.NewEncoder(w).Encode(map[string]interface{}{
+			"job_id": jobID,
+			"total":  len(xmlFiles),
+		}); encErr != nil {
+			log.Printf("[PacoteFiscalXMLUpload] encode error: %v", encErr)
+		}
+	}
+}
+
+// processPFXMLFiles roda o pipeline de importação (parse → upsert cabeçalho →
+// upsert itens, uma transação por XML) atualizando os contadores do job a cada
+// arquivo. Nunca usa o contexto da requisição — o import sobrevive à
+// desconexão do navegador.
+func processPFXMLFiles(db *sql.DB, companyID string, xmlFiles []namedXML, job *pfImportJob) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("[PacoteFiscalXMLUpload] panic recuperado no job: %v", rec)
+		}
+		job.mu.Lock()
+		job.Done = true
+		job.mu.Unlock()
+		log.Printf("[PacoteFiscalXMLUpload] job concluído: %d arquivos, %d importados, %d ignorados, %d erros (%.0fs)",
+			job.Total, job.Importados, job.Ignorados, len(job.Erros), time.Since(job.StartedAt).Seconds())
+	}()
+
+	addErro := func(arquivo, erro string) {
+		job.mu.Lock()
+		job.Erros = append(job.Erros, pfImportErro{arquivo, erro})
+		job.mu.Unlock()
+	}
+	step := func(campo *int) {
+		job.mu.Lock()
+		if campo != nil {
+			*campo++
+		}
+		job.Processed++
+		if job.Processed%500 == 0 {
+			log.Printf("[PacoteFiscalXMLUpload] progresso: %d/%d (importados=%d, erros=%d)",
+				job.Processed, job.Total, job.Importados, len(job.Erros))
+		}
+		job.mu.Unlock()
+	}
+
+	for _, xf := range xmlFiles {
+		if ok := importOnePFXML(db, companyID, xf, addErro); ok == pfOutcomeImportado {
+			step(&job.Importados)
+		} else if ok == pfOutcomeIgnorado {
+			step(&job.Ignorados)
+		} else {
+			step(nil) // erro já registrado via addErro
+		}
+	}
+}
+
+type pfOutcome int
+
+const (
+	pfOutcomeImportado pfOutcome = iota
+	pfOutcomeIgnorado
+	pfOutcomeErro
+)
+
+// importOnePFXML importa um único XML (transação própria). Registra falhas
+// via addErro e devolve o desfecho para os contadores do job.
+func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arquivo, erro string)) pfOutcome {
+	{
+		proc, err := pfParseNFeXML(xf.Data)
+		if err != nil {
+			addErro(xf.Name, err.Error())
+			return pfOutcomeErro
+		}
 
 			inf := proc.NFe.InfNFe
 
 			mod := strings.TrimSpace(inf.Ide.Mod)
 			if mod != "55" && mod != "65" {
-				result.Ignorados++
-				continue
+				return pfOutcomeIgnorado
 			}
 			if strings.TrimSpace(inf.Ide.TpNF) != "1" {
-				result.Ignorados++
-				continue
+				return pfOutcomeIgnorado
 			}
 
 			chave := pfExtractChave(proc)
 			if len(chave) != 44 {
-				result.Erros = append(result.Erros, pfImportErro{xf.Name, "Chave de acesso inválida ou ausente"})
-				continue
+				addErro(xf.Name, "Chave de acesso inválida ou ausente")
+				return pfOutcomeErro
 			}
 
 			dataEmissao, mesAno, err := pfParseDhEmi(inf.Ide.DhEmi)
 			if err != nil {
-				result.Erros = append(result.Erros, pfImportErro{xf.Name, err.Error()})
-				continue
+				addErro(xf.Name, err.Error())
+				return pfOutcomeErro
 			}
 
 			modInt, _ := strconv.Atoi(mod)
@@ -579,8 +706,8 @@ func PacoteFiscalXMLUploadHandler(db *sql.DB) http.HandlerFunc {
 
 			tx, err := db.Begin()
 			if err != nil {
-				result.Erros = append(result.Erros, pfImportErro{xf.Name, "Erro ao iniciar transação: " + err.Error()})
-				continue
+				addErro(xf.Name, "Erro ao iniciar transação: "+err.Error())
+				return pfOutcomeErro
 			}
 
 			var nfeID string
@@ -659,26 +786,70 @@ func PacoteFiscalXMLUploadHandler(db *sql.DB) http.HandlerFunc {
 
 			if errIns != nil {
 				tx.Rollback()
-				result.Erros = append(result.Erros, pfImportErro{xf.Name, "Erro ao gravar cabeçalho: " + errIns.Error()})
-				continue
+				addErro(xf.Name, "Erro ao gravar cabeçalho: "+errIns.Error())
+				return pfOutcomeErro
 			}
 
 			if errItens := insertPFNFeItens(tx, nfeID, companyID, inf.Det); errItens != nil {
 				tx.Rollback()
-				result.Erros = append(result.Erros, pfImportErro{xf.Name, "Erro ao gravar itens: " + errItens.Error()})
-				continue
+				addErro(xf.Name, "Erro ao gravar itens: "+errItens.Error())
+				return pfOutcomeErro
 			}
 
 			if err := tx.Commit(); err != nil {
-				result.Erros = append(result.Erros, pfImportErro{xf.Name, "Erro ao confirmar transação: " + err.Error()})
-				continue
+				addErro(xf.Name, "Erro ao confirmar transação: "+err.Error())
+				return pfOutcomeErro
 			}
 
-			result.Importados++
+			return pfOutcomeImportado
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PacoteFiscalXMLUploadStatusHandler — GET /api/pacotefiscal/xml/upload/status?job_id=...
+// Snapshot do progresso do job de importação (polling do frontend).
+// ---------------------------------------------------------------------------
+func PacoteFiscalXMLUploadStatusHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Método não permitido")
+			return
 		}
 
-		if encErr := json.NewEncoder(w).Encode(result); encErr != nil {
-			log.Printf("[PacoteFiscalXMLUpload] encode error: %v", encErr)
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa")
+			return
+		}
+
+		jobID := strings.TrimSpace(r.URL.Query().Get("job_id"))
+		if jobID == "" {
+			jsonErr(w, http.StatusBadRequest, "job_id é obrigatório")
+			return
+		}
+
+		val, found := pfImportJobs.Load(jobID)
+		if !found {
+			jsonErr(w, http.StatusNotFound, "Job não encontrado (concluído há mais de 1h ou o servidor reiniciou)")
+			return
+		}
+		job := val.(*pfImportJob)
+		if job.CompanyID != companyID {
+			jsonErr(w, http.StatusNotFound, "Job não encontrado")
+			return
+		}
+
+		if encErr := json.NewEncoder(w).Encode(job.snapshot(jobID)); encErr != nil {
+			log.Printf("[PacoteFiscalXMLUploadStatus] encode error: %v", encErr)
 		}
 	}
 }

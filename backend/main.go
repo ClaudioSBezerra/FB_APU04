@@ -547,6 +547,7 @@ func main() {
 	// grava em pacotefiscal_nfe_saidas/_itens — tabelas exclusivas deste
 	// módulo, não compartilhadas com o Painel XMLs/Conciliação/Auditoria.
 	http.HandleFunc("/api/pacotefiscal/xml/upload", withAuth(handlers.PacoteFiscalXMLUploadHandler, "admin"))
+	http.HandleFunc("/api/pacotefiscal/xml/upload/status", withAuth(handlers.PacoteFiscalXMLUploadStatusHandler, "admin"))
 
 	// Configuration Endpoints
 	http.HandleFunc("/api/config/aliquotas", withAuth(handlers.GetTaxRatesHandler, ""))
