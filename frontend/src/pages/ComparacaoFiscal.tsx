@@ -584,6 +584,31 @@ export default function ComparacaoFiscal() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Identificação da nota + valores comerciais do cabeçalho (<ICMSTot>) */}
+            {selectedNfe && (
+              <div className="flex flex-wrap gap-x-6 gap-y-1 mb-3 text-[11px] border rounded-md bg-muted/20 px-3 py-2">
+                <div>
+                  <span className="text-muted-foreground">Chave: </span>
+                  <span className="font-mono select-all">{selectedNfe.chave_nfe}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Nº NF: </span>
+                  <span className="font-semibold">{selectedNfe.numero_nfe}{selectedNfe.serie ? `/${selectedNfe.serie}` : ''}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Valor da Venda: </span>
+                  <span className="font-semibold">{fmtBRL(selectedNfe.v_prod)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Descontos: </span>
+                  <span className="font-semibold">{fmtBRL(selectedNfe.v_desc)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Total da NF: </span>
+                  <span className="font-semibold">{fmtBRL(selectedNfe.v_nf)}</span>
+                </div>
+              </div>
+            )}
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
