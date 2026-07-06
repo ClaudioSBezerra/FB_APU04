@@ -200,14 +200,14 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 
 		// Guard IDOR (T-11-14): a nota só é carregada se pertencer à company_id
 		// resolvida via JWT — nunca confiar em company_id vindo do corpo/cliente.
-		var emitCNPJ, emitUF, destUF, destCMun string
+		var emitCNPJ, emitUF, emitCMun, destUF, destCMun string
 		var modelo int
 		var dataEmissao time.Time
 		err = db.QueryRow(`
-			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), modelo, data_emissao
+			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(emit_c_mun,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), modelo, data_emissao
 			FROM pacotefiscal_nfe_saidas
 			WHERE id = $1 AND company_id = $2`, req.NfeID, companyID,
-		).Scan(&emitCNPJ, &emitUF, &destUF, &destCMun, &modelo, &dataEmissao)
+		).Scan(&emitCNPJ, &emitUF, &emitCMun, &destUF, &destCMun, &modelo, &dataEmissao)
 		if err == sql.ErrNoRows {
 			jsonErr(w, http.StatusNotFound, "Nota não encontrada")
 			return
@@ -216,6 +216,17 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 			log.Printf("FiscalExecutionRunHandler: erro ao carregar pacotefiscal_nfe_saidas (nfe_id=%s): %v", req.NfeID, err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao carregar nota")
 			return
+		}
+
+		// Consumidor não identificado (NFC-e sem <dest> no XML): o pacote exige
+		// UF de destino (ORA-20000 "E necessario informar a UF de Destino") —
+		// venda presencial assume UF e município do EMITENTE (regra do negócio
+		// 2026-07-06).
+		if strings.TrimSpace(destUF) == "" {
+			destUF = emitUF
+			if strings.TrimSpace(destCMun) == "" {
+				destCMun = emitCMun
+			}
 		}
 
 		nfeCtx := fiscalNotaContext{
@@ -426,7 +437,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		inputJSON = []byte("{}")
 	}
 
-	trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto (pProduto=%s, pTipoContribuinte=%s, pTipoOperacao=%d, pPrecoTotal=%.2f, pDespesas=%.2f [frete %.2f + outras %.2f], pDesconto=%.2f)...", in.PProduto, in.PTipoContribuinte, in.PTipoOperacao, in.PPrecoTotal, in.PDespesas, it.VFrete, it.VOutro, in.PDesconto))
+	trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto (pProduto=%s, pUF=%s→%s, pTipoContribuinte=%s, pTipoOperacao=%d, pPrecoTotal=%.2f, pDespesas=%.2f [frete %.2f + outras %.2f], pDesconto=%.2f)...", in.PProduto, in.PUFOrigem, in.PUFDestino, in.PTipoContribuinte, in.PTipoOperacao, in.PPrecoTotal, in.PDespesas, it.VFrete, it.VOutro, in.PDesconto))
 	result, callErr := services.CallFiscalPackage(ctx, oracleDB, in)
 	if callErr != nil {
 		// Nunca propagar callErr.Error() cru do Oracle na resposta normal
