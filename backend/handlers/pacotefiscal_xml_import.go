@@ -544,42 +544,58 @@ func PacoteFiscalXMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		if err := r.ParseMultipartForm(MaxUploadFileBytes); err != nil {
+		// Streaming das partes multipart (r.MultipartReader) em vez de
+		// ParseMultipartForm: o Go limita um form parseado a 1000 partes —
+		// 4000+ XMLs soltos estouravam com "multipart: too many parts"
+		// (incidente 2026-07-06). Limite por parte depende do tipo: .zip pode
+		// ir até MaxUploadFileBytes (o anti-bomb de extractXMLsFromZip protege
+		// a extração); .xml individual continua em MaxSingleXMLBytes.
+		mr, err := r.MultipartReader()
+		if err != nil {
 			jsonErr(w, http.StatusBadRequest, "Erro ao processar upload: "+err.Error())
 			return
 		}
 
-		uploadedFiles := r.MultipartForm.File["xmls"]
-		if len(uploadedFiles) == 0 {
-			jsonErr(w, http.StatusBadRequest, "Nenhum arquivo enviado (campo 'xmls')")
-			return
-		}
-
 		var xmlFiles []namedXML
-		for _, fh := range uploadedFiles {
-			f, err := fh.Open()
-			if err != nil {
+		for {
+			part, errPart := mr.NextPart()
+			if errPart == io.EOF {
+				break
+			}
+			if errPart != nil {
+				jsonErr(w, http.StatusBadRequest, "Erro ao processar upload: "+errPart.Error())
+				return
+			}
+			if part.FormName() != "xmls" || part.FileName() == "" {
+				part.Close()
 				continue
 			}
-			data, err := io.ReadAll(io.LimitReader(f, MaxSingleXMLBytes+1))
-			f.Close()
-			if err != nil {
+			fname := part.FileName()
+			isZip := strings.EqualFold(filepath.Ext(fname), ".zip")
+			limit := int64(MaxSingleXMLBytes)
+			if isZip {
+				limit = MaxUploadFileBytes
+			}
+			data, errRead := io.ReadAll(io.LimitReader(part, limit+1))
+			part.Close()
+			if errRead != nil {
 				continue
+			}
+			if int64(len(data)) > limit {
+				jsonErr(w, http.StatusBadRequest, fmt.Sprintf("Arquivo %s excede o limite permitido", fname))
+				return
 			}
 
-			if strings.EqualFold(filepath.Ext(fh.Filename), ".zip") {
-				extracted, err := extractXMLsFromZip(data)
-				if err != nil {
-					jsonErr(w, http.StatusBadRequest, fmt.Sprintf("Erro no ZIP %s: %v", fh.Filename, err))
+			if isZip {
+				extracted, errZip := extractXMLsFromZip(data)
+				if errZip != nil {
+					jsonErr(w, http.StatusBadRequest, fmt.Sprintf("Erro no ZIP %s: %v", fname, errZip))
 					return
 				}
 				xmlFiles = append(xmlFiles, extracted...)
 				continue
 			}
-			if int64(len(data)) > MaxSingleXMLBytes {
-				continue
-			}
-			xmlFiles = append(xmlFiles, namedXML{Name: fh.Filename, Data: data})
+			xmlFiles = append(xmlFiles, namedXML{Name: fname, Data: data})
 		}
 
 		if len(xmlFiles) == 0 {
