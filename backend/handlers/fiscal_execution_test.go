@@ -2,18 +2,28 @@ package handlers
 
 import "testing"
 
-func TestTipoContribuintePorModelo(t *testing.T) {
+func TestTipoContribuinte(t *testing.T) {
 	tests := []struct {
+		indIE  string
+		cfop   string
 		modelo int
 		want   string
 	}{
-		{55, "S"}, // NF-e → contribuinte
-		{65, "N"}, // NFC-e → consumidor final
-		{0, "N"},  // desconhecido → default conservador
+		{"1", "6102", 55, "S"},   // contribuinte ICMS
+		{"2", "6102", 55, "S"},   // contribuinte isento de IE
+		{"9", "6102", 55, "N"},   // NF-e para NÃO contribuinte (PJ/PF) → caso DIFAL
+		{"9", "5102", 65, "N"},   // NFC-e não contribuinte
+		{" 9 ", "6102", 55, "N"}, // com espaços
+		{"1", "6108", 55, "S"},   // indIEDest tem precedência sobre o CFOP
+		{"", "6108", 55, "N"},    // sem indIEDest, CFOP 6108 → não contribuinte
+		{"", "6107", 55, "N"},    // sem indIEDest, CFOP 6107 → não contribuinte
+		{"", "6102", 55, "S"},    // sem indIEDest, CFOP comum → fallback modelo (NF-e)
+		{"", "5102", 65, "N"},    // sem indIEDest → fallback por modelo (NFC-e)
+		{"", "", 0, "N"},         // desconhecido → default conservador
 	}
 	for _, tc := range tests {
-		if got := tipoContribuintePorModelo(tc.modelo); got != tc.want {
-			t.Errorf("tipoContribuintePorModelo(%d) = %q, want %q", tc.modelo, got, tc.want)
+		if got := tipoContribuinte(tc.indIE, tc.cfop, tc.modelo); got != tc.want {
+			t.Errorf("tipoContribuinte(%q, %q, %d) = %q, want %q", tc.indIE, tc.cfop, tc.modelo, got, tc.want)
 		}
 	}
 }

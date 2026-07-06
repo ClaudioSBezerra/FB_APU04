@@ -45,10 +45,27 @@ const (
 	defaultFornecedorSimplesNacional = "N"     // CRT do emitente não persistido em nfe_saidas
 )
 
-// tipoContribuintePorModelo deriva pTipoContribuinte do modelo do documento
-// (regra do Gilson/negócio, 2026-07-06): NFC-e (65) é venda a consumidor
-// final → "N"; NF-e (55) é operação com contribuinte → "S".
-func tipoContribuintePorModelo(modelo int) string {
+// tipoContribuinte deriva pTipoContribuinte (regra refinada em 2026-07-06
+// após NF-e 55 para PJ não contribuinte não calcular DIFAL). Precedência:
+//
+//  1. <dest><indIEDest> do XML — fonte da verdade sobre o destinatário:
+//     1 = contribuinte ICMS            → "S"
+//     2 = contribuinte isento de IE    → "S"
+//     9 = NÃO contribuinte (PF ou PJ)  → "N"  ← caso do DIFAL EC 87/2015
+//  2. CFOP do item 6107/6108 (venda interestadual destinada a NÃO
+//     contribuinte) → "N" quando o indIEDest não veio no XML
+//  3. Fallback por modelo: 55 → "S", 65 → "N"
+func tipoContribuinte(destIndIE string, cfop string, modelo int) string {
+	switch strings.TrimSpace(destIndIE) {
+	case "1", "2":
+		return "S"
+	case "9":
+		return "N"
+	}
+	switch strings.TrimSpace(cfop) {
+	case "6107", "6108":
+		return "N"
+	}
 	if modelo == 55 {
 		return "S"
 	}
@@ -81,7 +98,8 @@ type fiscalNotaContext struct {
 	EmitUF        string
 	DestUF        string
 	DestCMun      string
-	Modelo        int // 55 = NF-e, 65 = NFC-e — deriva pTipoContribuinte
+	DestIndIE     string // <indIEDest>: 1/2 = contribuinte, 9 = não contribuinte
+	Modelo        int    // 55 = NF-e, 65 = NFC-e — fallback do pTipoContribuinte
 	DataEmissao   time.Time
 	CodEmpresa    int
 	CodEmpresaErr error
@@ -200,14 +218,14 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 
 		// Guard IDOR (T-11-14): a nota só é carregada se pertencer à company_id
 		// resolvida via JWT — nunca confiar em company_id vindo do corpo/cliente.
-		var emitCNPJ, emitUF, emitCMun, destUF, destCMun string
+		var emitCNPJ, emitUF, emitCMun, destUF, destCMun, destIndIE string
 		var modelo int
 		var dataEmissao time.Time
 		err = db.QueryRow(`
-			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(emit_c_mun,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), modelo, data_emissao
+			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(emit_c_mun,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), COALESCE(dest_ind_ie,''), modelo, data_emissao
 			FROM pacotefiscal_nfe_saidas
 			WHERE id = $1 AND company_id = $2`, req.NfeID, companyID,
-		).Scan(&emitCNPJ, &emitUF, &emitCMun, &destUF, &destCMun, &modelo, &dataEmissao)
+		).Scan(&emitCNPJ, &emitUF, &emitCMun, &destUF, &destCMun, &destIndIE, &modelo, &dataEmissao)
 		if err == sql.ErrNoRows {
 			jsonErr(w, http.StatusNotFound, "Nota não encontrada")
 			return
@@ -234,6 +252,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 			EmitUF:      emitUF,
 			DestUF:      destUF,
 			DestCMun:    destCMun,
+			DestIndIE:   destIndIE,
 			Modelo:      modelo,
 			DataEmissao: dataEmissao,
 		}
@@ -403,7 +422,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		PCnpjEmpresa:                 nfe.EmitCNPJ,
 		PUFOrigem:                    nfe.EmitUF,
 		PUFDestino:                   nfe.DestUF,
-		PTipoContribuinte:            tipoContribuintePorModelo(nfe.Modelo),
+		PTipoContribuinte:            tipoContribuinte(nfe.DestIndIE, it.CFOP, nfe.Modelo),
 		PTipoCentroFiscal:            defaultTipoCentroFiscal,
 		PTipoOperacao:                tipoOperacaoPorCFOP(it.CFOP),
 		PEntradaSaida:                "S", // módulo cobre apenas NF-e de saída
