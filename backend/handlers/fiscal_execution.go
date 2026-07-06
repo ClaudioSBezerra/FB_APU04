@@ -468,10 +468,13 @@ func persistFiscalItemResult(pgDB *sql.DB, companyID, nfeItemID, status, errMsg,
 		valorICMS = &result.ValorImposto
 		baseST = &result.BaseSubstituicao
 		valorST = &result.ValorSubstituicao
-		basePIS = &result.BaseCalculoPIS
-		valorPIS = &result.ValorPIS
-		baseCOFINS = &result.BaseCalculoCOFINS
-		valorCOFINS = &result.ValorCOFINS
+		// PIS/COFINS SEM ICMS na base (tese da exclusão do ICMS — regra do
+		// negócio 2026-07-06): é o que a NF-e declara, então é o comparável.
+		// As variantes com ICMS continuam disponíveis no full_result JSON.
+		basePIS = &result.BaseCalculoPISSemIcms
+		valorPIS = &result.ValorPISSemIcms
+		baseCOFINS = &result.BaseCalculoCOFINSSemIcms
+		valorCOFINS = &result.ValorCOFINSSemIcms
 		percDifal = &result.PercentualDifal
 		valorPartilhaDest = &result.ValorIcmsPartilhaDestino
 		valorPobreza = &result.ValorIcmsPobreza
