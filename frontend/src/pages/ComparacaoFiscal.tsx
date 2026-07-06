@@ -926,7 +926,7 @@ export default function ComparacaoFiscal() {
                 </TableHeader>
                 <TableBody>
                   <TableRow>
-                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Original (sem inclusão)</TableCell>
+                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Original (XML, sem inclusão)</TableCell>
                     {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => (
                       <TableCell key={key} className="py-1 px-2 text-right text-[11px] text-muted-foreground">
                         {fmtBRL(simSummary.original[key])}
@@ -964,8 +964,10 @@ export default function ComparacaoFiscal() {
               </Table>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2">
-              Simulado interno = valores originais escalados pelo fator (preço + IBS + CBS) ÷ preço, por item.
-              Diferença ≠ 0 indica que a inclusão do pacote não é linear (pauta, faixa, regra específica) — investigar no detalhe do item.
+              Original = ICMS/ST destacados no XML da nota (mesma fonte do "Esperado" acima; FCP e DIFAL vêm da
+              1ª chamada do pacote, pois o XML não os destaca por item). Simulado interno = Original × fator
+              (preço + IBS + CBS) ÷ preço, por item. Diferença ≠ 0 combina divergência pré-existente (XML × pacote)
+              com eventual não-linearidade da inclusão — investigar no detalhe do item.
             </p>
           </CardContent>
         </Card>

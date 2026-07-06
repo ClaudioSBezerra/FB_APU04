@@ -137,11 +137,14 @@ func round2(v float64) float64 {
 // runSimulacaoIbsCbs executa a 2ª chamada e monta a comparação. Nunca aborta
 // o item — em falha, devolve a simulação preenchida só com Erro.
 func runSimulacaoIbsCbs(ctx context.Context, oracleDB *sql.DB, in services.FiscalInput, it fiscalItemInput, r1 *services.FiscalResult, trace *fiscalDebugTrace, produtoLabel string) fiscalSimulacao {
+	// Original = o que a nota DECLAROU no XML (base da simulação, coerente com
+	// o "Esperado" do Resumo). FCP e DIFAL não são destacados por item no XML
+	// — nesses dois o original vem da 1ª chamada do pacote.
 	sim := fiscalSimulacao{
 		PrecoOriginal:    it.VProd,
-		BaseIcmsOriginal: r1.BaseCalculo,
-		IcmsOriginal:     r1.ValorImposto,
-		StOriginal:       r1.ValorSubstituicao,
+		BaseIcmsOriginal: it.VBcIcmsXML,
+		IcmsOriginal:     it.VIcmsXML,
+		StOriginal:       it.VStXML,
 		FcpOriginal:      r1.ValorIcmsPobreza,
 		DifalOriginal:    r1.ValorIcmsPartilhaDestino,
 	}
@@ -158,11 +161,11 @@ func runSimulacaoIbsCbs(ctx context.Context, oracleDB *sql.DB, in services.Fisca
 	fator := sim.PrecoSimulado / it.VProd
 	sim.Fator = math.Round(fator*10000) / 10000
 
-	sim.BaseIcmsSimulada = round2(r1.BaseCalculo * fator)
-	sim.IcmsSimulado = round2(r1.ValorImposto * fator)
-	sim.StSimulado = round2(r1.ValorSubstituicao * fator)
-	sim.FcpSimulado = round2(r1.ValorIcmsPobreza * fator)
-	sim.DifalSimulado = round2(r1.ValorIcmsPartilhaDestino * fator)
+	sim.BaseIcmsSimulada = round2(sim.BaseIcmsOriginal * fator)
+	sim.IcmsSimulado = round2(sim.IcmsOriginal * fator)
+	sim.StSimulado = round2(sim.StOriginal * fator)
+	sim.FcpSimulado = round2(sim.FcpOriginal * fator)
+	sim.DifalSimulado = round2(sim.DifalOriginal * fator)
 
 	in2 := in
 	in2.PPrecoTotal = sim.PrecoSimulado
@@ -214,6 +217,11 @@ type fiscalItemInput struct {
 	VOutro float64
 	VFrete float64
 	VIPI   float64
+	// Valores DECLARADOS no XML — linha "Original" da simulação IBS/CBS
+	// (a base da simulação é o que a nota destacou, não a 1ª chamada)
+	VBcIcmsXML float64
+	VIcmsXML   float64
+	VStXML     float64
 }
 
 type fiscalExecutionSummary struct {
@@ -361,7 +369,8 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		nfeCtx.CodEmpresa, nfeCtx.CodEmpresaErr = resolveCodEmpresa(emitCNPJ, emitUF)
 
 		itemRows, err := db.Query(`
-			SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_frete,0), COALESCE(v_ipi,0)
+			SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_frete,0), COALESCE(v_ipi,0),
+			       COALESCE(v_bc_icms,0), COALESCE(v_icms,0), COALESCE(v_st,0)
 			FROM pacotefiscal_nfe_saidas_itens
 			WHERE nfe_id = $1 AND company_id = $2
 			ORDER BY n_item ASC`, req.NfeID, companyID)
@@ -373,7 +382,8 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		var itens []fiscalItemInput
 		for itemRows.Next() {
 			var it fiscalItemInput
-			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VFrete, &it.VIPI); scanErr != nil {
+			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VFrete, &it.VIPI,
+				&it.VBcIcmsXML, &it.VIcmsXML, &it.VStXML); scanErr != nil {
 				log.Printf("FiscalExecutionRunHandler: erro ao escanear item (nfe_id=%s): %v", req.NfeID, scanErr)
 				continue
 			}
