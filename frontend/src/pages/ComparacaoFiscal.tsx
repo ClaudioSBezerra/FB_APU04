@@ -604,6 +604,10 @@ export default function ComparacaoFiscal() {
                   <span className="font-semibold">{fmtBRL(selectedNfe.v_desc)}</span>
                 </div>
                 <div>
+                  <span className="text-muted-foreground">Frete: </span>
+                  <span className="font-semibold">{fmtBRL(selectedNfe.v_frete)}</span>
+                </div>
+                <div>
                   <span className="text-muted-foreground">Total da NF: </span>
                   <span className="font-semibold">{fmtBRL(selectedNfe.v_nf)}</span>
                 </div>

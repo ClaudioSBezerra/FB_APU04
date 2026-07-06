@@ -95,6 +95,7 @@ type fiscalItemInput struct {
 	VProd  float64
 	VDesc  float64
 	VOutro float64
+	VFrete float64
 	VIPI   float64
 }
 
@@ -228,7 +229,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		nfeCtx.CodEmpresa, nfeCtx.CodEmpresaErr = resolveCodEmpresa(emitCNPJ, emitUF)
 
 		itemRows, err := db.Query(`
-			SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_ipi,0)
+			SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_frete,0), COALESCE(v_ipi,0)
 			FROM pacotefiscal_nfe_saidas_itens
 			WHERE nfe_id = $1 AND company_id = $2
 			ORDER BY n_item ASC`, req.NfeID, companyID)
@@ -240,7 +241,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		var itens []fiscalItemInput
 		for itemRows.Next() {
 			var it fiscalItemInput
-			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VIPI); scanErr != nil {
+			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VFrete, &it.VIPI); scanErr != nil {
 				log.Printf("FiscalExecutionRunHandler: erro ao escanear item (nfe_id=%s): %v", req.NfeID, scanErr)
 				continue
 			}
@@ -404,7 +405,10 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		PCnpjExcecao:                 "",
 		PIndicadorServico:            defaultIndicadorServico,
 		PPrecoTotal:                  it.VProd,
-		PDespesas:                    it.VOutro,
+		// Despesas acessórias = frete destacado no item (<prod><vFrete>) +
+		// outras despesas (<prod><vOutro>) — ambos compõem a base de cálculo
+		// (regra do negócio 2026-07-06: frete do XML entra em pDespesas).
+		PDespesas:                    it.VOutro + it.VFrete,
 		PDesconto:                    it.VDesc,
 		PIPI:                         it.VIPI,
 		PAliquotaSimplesNacional:     0,
@@ -422,7 +426,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		inputJSON = []byte("{}")
 	}
 
-	trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto (pProduto=%s, pTipoContribuinte=%s, pTipoOperacao=%d)...", in.PProduto, in.PTipoContribuinte, in.PTipoOperacao))
+	trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto (pProduto=%s, pTipoContribuinte=%s, pTipoOperacao=%d, pPrecoTotal=%.2f, pDespesas=%.2f [frete %.2f + outras %.2f], pDesconto=%.2f)...", in.PProduto, in.PTipoContribuinte, in.PTipoOperacao, in.PPrecoTotal, in.PDespesas, it.VFrete, it.VOutro, in.PDesconto))
 	result, callErr := services.CallFiscalPackage(ctx, oracleDB, in)
 	if callErr != nil {
 		// Nunca propagar callErr.Error() cru do Oracle na resposta normal

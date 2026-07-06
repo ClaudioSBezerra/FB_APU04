@@ -42,9 +42,10 @@ export interface NfeSearchResult {
   v_ibs: number;
   v_cbs: number;
   // Identificação/valores do cabeçalho para o strip do "Resumo da Nota"
-  v_prod: number;  // total dos produtos (valor da venda)
-  v_desc: number;  // total de descontos
-  v_nf: number;    // valor total da NF
+  v_prod: number;   // total dos produtos (valor da venda)
+  v_desc: number;   // total de descontos
+  v_frete: number;  // total do frete destacado
+  v_nf: number;     // valor total da NF
 }
 
 interface ExecuteSummary {

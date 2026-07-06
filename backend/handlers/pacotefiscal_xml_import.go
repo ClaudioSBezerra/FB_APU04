@@ -205,6 +205,7 @@ type pfProd struct {
 	UTrib   string `xml:"uTrib"`
 	QTrib   string `xml:"qTrib"`
 	VUnTrib string `xml:"vUnTrib"`
+	VFrete  string `xml:"vFrete"`
 	VDesc   string `xml:"vDesc"`
 	VOutro  string `xml:"vOutro"`
 }
@@ -396,7 +397,7 @@ func insertPFNFeItens(tx *sql.Tx, nfeID, companyID string, dets []pfDet) error {
 				nfe_id, company_id, n_item,
 				c_prod, c_ean, x_prod, ncm, cest, cfop,
 				u_com, q_com, v_un_com, v_prod, u_trib, q_trib, v_un_trib,
-				v_desc, v_outro,
+				v_desc, v_outro, v_frete,
 				cst_orig, cst_icms, v_bc_icms, p_icms, v_icms, v_bc_st, p_mva_st, v_st,
 				v_bc_ipi, p_ipi, v_ipi,
 				cst_pis, v_bc_pis, p_pis, v_pis,
@@ -406,12 +407,12 @@ func insertPFNFeItens(tx *sql.Tx, nfeID, companyID string, dets []pfDet) error {
 				$1, $2, $3,
 				$4, $5, $6, $7, $8, $9,
 				$10, $11, $12, $13, $14, $15, $16,
-				$17, $18,
-				$19, $20, $21, $22, $23, $24, $25, $26,
-				$27, $28, $29,
-				$30, $31, $32, $33,
-				$34, $35, $36, $37,
-				$38, $39, $40, $41, $42
+				$17, $18, $19,
+				$20, $21, $22, $23, $24, $25, $26, $27,
+				$28, $29, $30,
+				$31, $32, $33, $34,
+				$35, $36, $37, $38,
+				$39, $40, $41, $42, $43
 			)
 			ON CONFLICT (nfe_id, n_item) DO UPDATE SET
 				c_prod = EXCLUDED.c_prod, c_ean = EXCLUDED.c_ean, x_prod = EXCLUDED.x_prod,
@@ -419,7 +420,7 @@ func insertPFNFeItens(tx *sql.Tx, nfeID, companyID string, dets []pfDet) error {
 				u_com = EXCLUDED.u_com, q_com = EXCLUDED.q_com, v_un_com = EXCLUDED.v_un_com,
 				v_prod = EXCLUDED.v_prod, u_trib = EXCLUDED.u_trib, q_trib = EXCLUDED.q_trib,
 				v_un_trib = EXCLUDED.v_un_trib,
-				v_desc = EXCLUDED.v_desc, v_outro = EXCLUDED.v_outro,
+				v_desc = EXCLUDED.v_desc, v_outro = EXCLUDED.v_outro, v_frete = EXCLUDED.v_frete,
 				cst_orig = EXCLUDED.cst_orig, cst_icms = EXCLUDED.cst_icms,
 				v_bc_icms = EXCLUDED.v_bc_icms, p_icms = EXCLUDED.p_icms, v_icms = EXCLUDED.v_icms,
 				v_bc_st = EXCLUDED.v_bc_st, p_mva_st = EXCLUDED.p_mva_st, v_st = EXCLUDED.v_st,
@@ -435,7 +436,7 @@ func insertPFNFeItens(tx *sql.Tx, nfeID, companyID string, dets []pfDet) error {
 			d.Prod.CProd, d.Prod.CEAN, d.Prod.XProd, d.Prod.NCM, d.Prod.CEST, d.Prod.CFOP,
 			d.Prod.UCom, toDecimal(d.Prod.QCom), toDecimal(d.Prod.VUnCom), toDecimal(d.Prod.VProd),
 			d.Prod.UTrib, toDecimal(d.Prod.QTrib), toDecimal(d.Prod.VUnTrib),
-			toDecimal(d.Prod.VDesc), toDecimal(d.Prod.VOutro),
+			toDecimal(d.Prod.VDesc), toDecimal(d.Prod.VOutro), toDecimal(d.Prod.VFrete),
 			cstOrig, cstICMS, vBCICMS, pICMS, vICMS, vBCST, pMVAST, vST,
 			toDecimal(d.Imposto.IPI.VBCIPI), toDecimal(d.Imposto.IPI.PIPI), toDecimal(d.Imposto.IPI.VIPI),
 			d.Imposto.PIS.CST, toDecimal(d.Imposto.PIS.VBCPIS), toDecimal(d.Imposto.PIS.PPIS), toDecimal(d.Imposto.PIS.VPIS),

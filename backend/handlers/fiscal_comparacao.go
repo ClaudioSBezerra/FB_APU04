@@ -40,9 +40,10 @@ type NfeSearchResult struct {
 	VIbs        float64 `json:"v_ibs"`
 	VCbs        float64 `json:"v_cbs"`
 	// Identificação/valores do cabeçalho para o strip do "Resumo da Nota"
-	VProd float64 `json:"v_prod"` // total dos produtos (valor da venda)
-	VDesc float64 `json:"v_desc"` // total de descontos
-	VNf   float64 `json:"v_nf"`   // valor total da NF
+	VProd  float64 `json:"v_prod"`  // total dos produtos (valor da venda)
+	VDesc  float64 `json:"v_desc"`  // total de descontos
+	VFrete float64 `json:"v_frete"` // total do frete destacado
+	VNf    float64 `json:"v_nf"`    // valor total da NF
 }
 
 // ComparacaoRow representa um item da comparação esperado (nfe_saidas_itens)
@@ -182,7 +183,7 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 			       COALESCE(dest_xnome,''), TO_CHAR(data_emissao,'DD/MM/YYYY'),
 			       COALESCE(v_icms,0), COALESCE(v_st,0), COALESCE(v_pis,0),
 			       COALESCE(v_cofins,0), COALESCE(v_ibs,0), COALESCE(v_cbs,0),
-			       COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_nf,0)
+			       COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_frete,0), COALESCE(v_nf,0)
 			FROM pacotefiscal_nfe_saidas
 			%s
 			ORDER BY data_emissao DESC
@@ -202,7 +203,7 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 			if err := rows.Scan(&row.ID, &row.ChaveNFe, &row.NumeroNFe, &row.Serie,
 				&row.DestNome, &row.DataEmissao,
 				&row.VIcms, &row.VSt, &row.VPis, &row.VCofins, &row.VIbs, &row.VCbs,
-				&row.VProd, &row.VDesc, &row.VNf); err != nil {
+				&row.VProd, &row.VDesc, &row.VFrete, &row.VNf); err != nil {
 				log.Printf("[FiscalComparacaoSearch] scan error: %v", err)
 				continue
 			}
