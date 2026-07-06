@@ -65,6 +65,14 @@ type ComparacaoRow struct {
 	CFOP   string  `json:"cfop"`
 
 	// Esperado (nfe_saidas_itens)
+	// CST/valores comerciais do item — usados para derivar a "base reduzida
+	// esperada" do XML (CST 20/70: valor bruto do item − v_bc_icms)
+	CstIcms string  `json:"cst_icms"`
+	VProd   float64 `json:"v_prod"`
+	VFrete  float64 `json:"v_frete"`
+	VDesc   float64 `json:"v_desc"`
+	VOutro  float64 `json:"v_outro"`
+
 	VBcIcms    float64 `json:"v_bc_icms"`
 	VIcms      float64 `json:"v_icms"`
 	VBcSt      float64 `json:"v_bc_st"`
@@ -303,6 +311,7 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 	rows, err := db.Query(`
 		SELECT
 			nsi.id, nsi.n_item, COALESCE(nsi.c_prod,''), nsi.x_prod, COALESCE(nsi.ncm,''), COALESCE(nsi.cfop,''),
+			COALESCE(nsi.cst_icms,''), COALESCE(nsi.v_prod,0), COALESCE(nsi.v_frete,0), COALESCE(nsi.v_desc,0), COALESCE(nsi.v_outro,0),
 			COALESCE(nsi.v_bc_icms,0), COALESCE(nsi.v_icms,0),
 			COALESCE(nsi.v_bc_st,0), COALESCE(nsi.v_st,0),
 			COALESCE(nsi.v_bc_pis,0), COALESCE(nsi.v_pis,0),
@@ -338,6 +347,7 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 
 		if err := rows.Scan(
 			&row.ID, &row.NItem, &row.CProd, &row.XProd, &row.NCM, &row.CFOP,
+			&row.CstIcms, &row.VProd, &row.VFrete, &row.VDesc, &row.VOutro,
 			&row.VBcIcms, &row.VIcms,
 			&row.VBcSt, &row.VSt,
 			&row.VBcPis, &row.VPis,

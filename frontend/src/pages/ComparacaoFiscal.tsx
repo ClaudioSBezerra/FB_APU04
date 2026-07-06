@@ -69,7 +69,13 @@ interface ComparacaoRow {
   x_prod: string;
   ncm: string;
   cfop: string;
-  // Esperado (nfe_saidas_itens)
+  // Esperado (nfe_saidas_itens) — CST/valores comerciais para derivar a
+  // "base reduzida esperada" (CST 20/70: valor bruto do item − v_bc_icms)
+  cst_icms: string;
+  v_prod: number;
+  v_frete: number;
+  v_desc: number;
+  v_outro: number;
   v_bc_icms: number;
   v_icms: number;
   v_bc_st: number;
@@ -476,7 +482,15 @@ export default function ComparacaoFiscal() {
       fcp: 0, difal: 0, icms_reduzido: 0,
     };
     let itensNaoOk = 0;
+    // Base reduzida ESPERADA: quanto de base o próprio XML reduziu — itens
+    // com CST 20/70, valor bruto (produtos+frete+outras−desconto) − vBC
+    // declarada. (vICMSDeson NÃO serve aqui: é desoneração, outro instituto.)
+    let esperadoReduzido = 0;
     rows.forEach(row => {
+      if (row.cst_icms === '20' || row.cst_icms === '70') {
+        const bruto = row.v_prod + row.v_frete + row.v_outro - row.v_desc;
+        esperadoReduzido += Math.max(0, bruto - row.v_bc_icms);
+      }
       if (row.status !== 'ok') { itensNaoOk++; return; }
       getTaxPairs(row).forEach(pair => {
         acumuladoCalculado[pair.key] += pair.valorCalculado ?? 0;
@@ -494,7 +508,7 @@ export default function ComparacaoFiscal() {
       cbs: selectedNfe.v_cbs,
       fcp: selectedNfe.v_fcp ?? 0,
       difal: selectedNfe.v_icms_uf_dest ?? 0,
-      icms_reduzido: selectedNfe.v_icms_deson ?? 0,
+      icms_reduzido: Math.round(esperadoReduzido * 100) / 100,
     };
     return { acumuladoCalculado, esperado, itensNaoOk, totalItens: rows.length };
   }, [rows, selectedNfe]);
