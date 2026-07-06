@@ -159,7 +159,7 @@ export default function AdminPersonas() {
         <div className="space-y-1">
           <p><strong>Como funciona:</strong> os módulos são as áreas fixas do sistema (ícones do menu lateral) — não são cadastráveis, novos módulos surgem com novas versões do sistema. O que se configura aqui é quais deles cada persona libera.</p>
           <p><strong>Configurações</strong> não aparece na lista porque é acessível a todos os usuários; as abas sensíveis dentro dele (Usuários, Limpar Dados, etc.) continuam restritas a admin.</p>
-          <p><strong>Teste Pacote Fiscal</strong> hoje também exige role admin, independente de persona.</p>
+          <p><strong>Teste Pacote Fiscal</strong>: a Comparação Fiscal é liberada pela persona; a aba de Importar XML continua restrita a admin.</p>
           <p>Alterações valem para os usuários logados em até 30 minutos (próxima renovação automática do token), sem precisar de novo login.</p>
         </div>
       </div>

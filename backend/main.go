@@ -531,17 +531,20 @@ func main() {
 	// ── Motor de Execução do Pacote Fiscal (Fase 11) ──
 	// Smoke test admin de conectividade Oracle síncrona (D-03) — primeira conexão
 	// Oracle aberta pelo próprio backend Go em tempo de requisição.
-	http.HandleFunc("/api/fiscal/oracle-ping", withAuth(handlers.FiscalOraclePingHandler, "admin"))
+	// Rotas de comparação/execução liberadas por persona (módulo pacotefiscal
+	// no claim "modules" do JWT — enforcement no AuthMiddleware, 2026-07-06);
+	// importação de XML segue admin-only.
+	http.HandleFunc("/api/fiscal/oracle-ping", withAuth(handlers.FiscalOraclePingHandler, ""))
 	// Execução em lote: lookup grupo fiscal + PKG_FISCAL_FCTAX + persistência
 	// em fiscal_execution_items, com concorrência 5/timeout 15s por item (TPF-05).
-	http.HandleFunc("/api/fiscal/execute", withAuth(handlers.FiscalExecutionRunHandler, "admin"))
+	http.HandleFunc("/api/fiscal/execute", withAuth(handlers.FiscalExecutionRunHandler, ""))
 
 	// Tela "Comparação Fiscal" (Fase 12, TPF-06/07): busca NF-e, leitura
 	// esperado x calculado item a item, e exportação CSV. Todas admin-gated
 	// e company-scoped (T-12-01/T-12-02) — rotas mais específicas primeiro.
-	http.HandleFunc("/api/fiscal/comparacao/search", withAuth(handlers.FiscalComparacaoSearchHandler, "admin"))
-	http.HandleFunc("/api/fiscal/comparacao/csv", withAuth(handlers.FiscalComparacaoCSVHandler, "admin"))
-	http.HandleFunc("/api/fiscal/comparacao", withAuth(handlers.FiscalComparacaoReadHandler, "admin"))
+	http.HandleFunc("/api/fiscal/comparacao/search", withAuth(handlers.FiscalComparacaoSearchHandler, ""))
+	http.HandleFunc("/api/fiscal/comparacao/csv", withAuth(handlers.FiscalComparacaoCSVHandler, ""))
+	http.HandleFunc("/api/fiscal/comparacao", withAuth(handlers.FiscalComparacaoReadHandler, ""))
 
 	// Importação de XML isolada do módulo Teste Pacote Fiscal (2026-07):
 	// grava em pacotefiscal_nfe_saidas/_itens — tabelas exclusivas deste

@@ -37,7 +37,9 @@ const mainItems = [
   { id: 'reforma',   icon: Scale,       label: 'Análise Reforma Trib.', path: '/reforma/creditos' },
   { id: 'fronteira', icon: MapPin,      label: 'Módulo ICMS Fronteira', path: '/icms-fronteira' },
   { id: 'auditoria', icon: ShieldCheck, label: 'Auditoria Fiscal',      path: '/auditoria-efd' },
-  { id: 'pacotefiscal', icon: FlaskConical, label: 'Teste Pacote Fiscal', path: '/pacote-fiscal/comparacao', adminOnly: true },
+  // Liberado por persona desde 2026-07-06 (antes admin-only) — o filtro
+  // hasModule() abaixo é quem decide a visibilidade
+  { id: 'pacotefiscal', icon: FlaskConical, label: 'Teste Pacote Fiscal', path: '/pacote-fiscal/comparacao' },
 ]
 
 export function AppRail() {
@@ -46,7 +48,8 @@ export function AppRail() {
   const { user, company, logout, token, companyId, hasModule } = useAuth()
   const active = getActiveModule(location.pathname)
   const isAdmin = user?.role === 'admin'
-  const visibleItems = mainItems.filter(item => (!item.adminOnly || isAdmin) && hasModule(item.id))
+  // Visibilidade dos módulos é 100% por persona (hasModule); admin vê tudo
+  const visibleItems = mainItems.filter(item => hasModule(item.id))
 
   // Logo da empresa — exibida no topo do rail; fallback para o ícone do sistema
   const [empresaLogoUrl, setEmpresaLogoUrl] = useState<string | null>(null)

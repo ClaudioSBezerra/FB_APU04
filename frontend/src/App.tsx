@@ -225,8 +225,9 @@ function AppLayout() {
               {/* Simulador da Reforma Tributária - SPED */}
               <Route path="/importar-efd"                      element={<ImportarEFD />} />
               <Route path="/auditoria-efd"                     element={<AuditoriaEFD />} />
+              {/* Comparação liberada por persona (ModuleGate); importação segue admin-only */}
               <Route path="/pacote-fiscal/importar"            element={<AdminRoute><ImportarXMLPacoteFiscal /></AdminRoute>} />
-              <Route path="/pacote-fiscal/comparacao"          element={<AdminRoute><ComparacaoFiscal /></AdminRoute>} />
+              <Route path="/pacote-fiscal/comparacao"          element={<ComparacaoFiscal />} />
               <Route path="/mercadorias/xml"                   element={<MercadoriasXML />} />
               <Route path="/mercadorias"                       element={<Mercadorias />} />
               <Route path="/operacoes/simples"                 element={<OperacoesSimplesNacional />} />
