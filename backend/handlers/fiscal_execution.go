@@ -40,12 +40,37 @@ import (
 // não travam este endpoint.
 // ---------------------------------------------------------------------------
 const (
-	defaultTipoContribuinte          = "N"     // não contribuinte — sem indIEDest persistido para refinar
 	defaultTipoCentroFiscal          = "VRJNE" // valor do script de teste do pacote fiscal original
-	defaultTipoOperacao              = 1       // 1 = operação normal de venda
 	defaultIndicadorServico          = "N"     // comércio, não serviço
 	defaultFornecedorSimplesNacional = "N"     // CRT do emitente não persistido em nfe_saidas
 )
+
+// tipoContribuintePorModelo deriva pTipoContribuinte do modelo do documento
+// (regra do Gilson/negócio, 2026-07-06): NFC-e (65) é venda a consumidor
+// final → "N"; NF-e (55) é operação com contribuinte → "S".
+func tipoContribuintePorModelo(modelo int) string {
+	if modelo == 55 {
+		return "S"
+	}
+	return "N"
+}
+
+// cfopsTransferencia são os CFOPs de saída por transferência (mesma empresa,
+// filial→filial). Para eles o pacote fiscal recebe pTipoOperacao=20; qualquer
+// outro CFOP de saída é tratado como venda (1).
+var cfopsTransferencia = map[string]bool{
+	"5151": true, "5152": true, "5155": true, "5156": true,
+	"5408": true, "5409": true,
+	"6151": true, "6152": true, "6155": true, "6156": true,
+	"6408": true, "6409": true,
+}
+
+func tipoOperacaoPorCFOP(cfop string) int {
+	if cfopsTransferencia[strings.TrimSpace(cfop)] {
+		return 20
+	}
+	return 1
+}
 
 // fiscalNotaContext agrega os dados de cabeçalho da nota necessários para
 // montar o FiscalInput de cada item + o cod_empresa resolvido uma única vez
@@ -56,6 +81,7 @@ type fiscalNotaContext struct {
 	EmitUF        string
 	DestUF        string
 	DestCMun      string
+	Modelo        int // 55 = NF-e, 65 = NFC-e — deriva pTipoContribuinte
 	DataEmissao   time.Time
 	CodEmpresa    int
 	CodEmpresaErr error
@@ -174,12 +200,13 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		// Guard IDOR (T-11-14): a nota só é carregada se pertencer à company_id
 		// resolvida via JWT — nunca confiar em company_id vindo do corpo/cliente.
 		var emitCNPJ, emitUF, destUF, destCMun string
+		var modelo int
 		var dataEmissao time.Time
 		err = db.QueryRow(`
-			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), data_emissao
+			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), modelo, data_emissao
 			FROM pacotefiscal_nfe_saidas
 			WHERE id = $1 AND company_id = $2`, req.NfeID, companyID,
-		).Scan(&emitCNPJ, &emitUF, &destUF, &destCMun, &dataEmissao)
+		).Scan(&emitCNPJ, &emitUF, &destUF, &destCMun, &modelo, &dataEmissao)
 		if err == sql.ErrNoRows {
 			jsonErr(w, http.StatusNotFound, "Nota não encontrada")
 			return
@@ -195,6 +222,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 			EmitUF:      emitUF,
 			DestUF:      destUF,
 			DestCMun:    destCMun,
+			Modelo:      modelo,
 			DataEmissao: dataEmissao,
 		}
 		nfeCtx.CodEmpresa, nfeCtx.CodEmpresaErr = resolveCodEmpresa(emitCNPJ, emitUF)
@@ -363,9 +391,9 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		PCnpjEmpresa:                 nfe.EmitCNPJ,
 		PUFOrigem:                    nfe.EmitUF,
 		PUFDestino:                   nfe.DestUF,
-		PTipoContribuinte:            defaultTipoContribuinte,
+		PTipoContribuinte:            tipoContribuintePorModelo(nfe.Modelo),
 		PTipoCentroFiscal:            defaultTipoCentroFiscal,
-		PTipoOperacao:                defaultTipoOperacao,
+		PTipoOperacao:                tipoOperacaoPorCFOP(it.CFOP),
 		PEntradaSaida:                "S", // módulo cobre apenas NF-e de saída
 		PProduto:                     it.CProd,
 		PCodigoGrupoFiscal:           grupoFiscal,

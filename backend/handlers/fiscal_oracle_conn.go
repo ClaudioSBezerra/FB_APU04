@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -51,7 +52,12 @@ func openFiscalOracleConn(db *sql.DB, companyID string) (*sql.DB, error) {
 		if strings.TrimSpace(usuarioPlain) == "" || strings.TrimSpace(senhaPlain) == "" {
 			return nil, fmt.Errorf("credenciais Oracle (usuário/senha) não configuradas para a empresa")
 		}
-		connStr = fmt.Sprintf("oracle://%s:%s@%s", usuarioPlain, senhaPlain, dsnPlain)
+		// url.UserPassword escapa caracteres especiais de usuário/senha (@ / : #).
+		// Sem o escape, uma senha com '@' ou '/' quebra o parse de URL do go-ora
+		// com erros como "address <fragmento-da-senha>: missing port in address"
+		// (incidente 2026-07-06 — o bridge Python não sofre disso porque passa
+		// host/porta/senha como argumentos separados, não como URL).
+		connStr = fmt.Sprintf("oracle://%s@%s", url.UserPassword(usuarioPlain, senhaPlain).String(), dsnPlain)
 	}
 
 	conn, err := sql.Open("oracle", connStr)
@@ -60,6 +66,17 @@ func openFiscalOracleConn(db *sql.DB, companyID string) (*sql.DB, error) {
 		return nil, fmt.Errorf("falha ao inicializar conexão Oracle")
 	}
 	conn.SetMaxOpenConns(5) // deve casar com o cap do semáforo usado nas fases futuras (Pitfall 4)
+
+	// sql.Open é lazy (não conecta nem valida o DSN) — sem este ping, um DSN
+	// malformado ou Oracle inacessível só estouraria na primeira query, com o
+	// trace já dizendo "conexão estabelecida" (enganoso para diagnóstico).
+	pingCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := conn.PingContext(pingCtx); err != nil {
+		conn.Close()
+		log.Printf("openFiscalOracleConn: ping Oracle falhou para company_id=%s: %v", companyID, err)
+		return nil, fmt.Errorf("Oracle inacessível ou credenciais inválidas")
+	}
 	return conn, nil
 }
 
