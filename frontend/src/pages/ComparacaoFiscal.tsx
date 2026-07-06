@@ -105,6 +105,9 @@ interface ComparacaoRow {
   // Redução de base concedida pelo pacote — acumulado "ICMS Reduzido" do
   // Resumo da Nota (comparado com v_icms_deson do cabeçalho).
   valor_reducao: number | null;
+  // Retorno completo do pacote (~88 campos) — seção de diagnóstico do
+  // detalhe do item (mensagens, natureza da operação, CST, leis, regras).
+  full_result: Record<string, unknown> | null;
 }
 
 interface FiscalDebugEntry {
@@ -323,9 +326,79 @@ function DetalheItem({ row, onClose }: { row: ComparacaoRow; onClose: () => void
             <Linha label="Base IBS/CBS" value={fmtBRL(row.base_calculo_ibs_cbs)} />
             <Linha label="Grupo Fiscal" value={row.grupo_fiscal_codigo} />
           </Secao>
+
+          {row.full_result && <RetornoPacote fr={row.full_result} />}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// RetornoPacote — diagnóstico do retorno do pacote fiscal: as mensagens e
+// metadados que explicam POR QUE o pacote calculou o que calculou (natureza
+// da operação, CST, alíquotas, leis aplicadas e id das regras). É onde se
+// entende uma divergência como "ICMS calculado = 0" (isento/outras).
+function RetornoPacote({ fr }: { fr: Record<string, unknown> }) {
+  const s = (k: string): string | null => {
+    const v = fr[k];
+    return typeof v === 'string' && v.trim() !== '' ? v : null;
+  };
+  const n = (k: string): number | null => {
+    const v = fr[k];
+    return typeof v === 'number' ? v : null;
+  };
+  const pct = (k: string): string | null => {
+    const v = n(k);
+    return v != null ? `${v.toLocaleString('pt-BR')}%` : null;
+  };
+  const brl = (k: string): string | null => {
+    const v = n(k);
+    return v != null ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : null;
+  };
+
+  const mensagens = ['Mensagem1', 'Mensagem2', 'Mensagem3', 'Mensagem4']
+    .map(k => s(k))
+    .filter((m): m is string => m !== null);
+
+  const Linha = ({ label, value }: { label: string; value: string | null }) => (
+    value == null ? null : (
+      <div className="flex justify-between py-0.5 border-b border-dashed last:border-0 gap-3">
+        <span className="text-[11px] text-muted-foreground w-40 shrink-0">{label}</span>
+        <span className="text-[11px] font-medium text-right break-words min-w-0">{value}</span>
+      </div>
+    )
+  );
+
+  return (
+    <div className="mb-2">
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 pb-0.5 border-b">
+        Retorno do Pacote (diagnóstico)
+      </h3>
+      {mensagens.length > 0 && (
+        <div className="rounded bg-amber-50 border border-amber-200 p-2 mb-1.5 space-y-1">
+          {mensagens.map((m, i) => (
+            <p key={i} className="text-[11px] text-amber-900">{m}</p>
+          ))}
+        </div>
+      )}
+      <Linha label="Tipo Imposto" value={s('TipoImposto')} />
+      <Linha label="CST / Cód. Tributação" value={s('CodigoTributFiscal')} />
+      <Linha label="Natureza da Operação" value={s('NaturezaOperacao') ?? s('NaturezaOperacaoRetorno')} />
+      <Linha label="Alíquota ICMS" value={pct('AliquotaImposto')} />
+      <Linha label="Valor Isentas" value={brl('ValorIsentas')} />
+      <Linha label="Valor Outras" value={brl('ValorOutras')} />
+      <Linha label="Alíquota PIS / COFINS" value={n('AliquotaPIS') != null ? `${pct('AliquotaPIS')} / ${pct('AliquotaCOFINS')}` : null} />
+      <Linha label="Lei ICMS" value={s('ICMSLaw')} />
+      <Linha label="Lei PIS" value={s('PISLaw')} />
+      <Linha label="Lei COFINS" value={s('COFINSLaw')} />
+      <Linha label="Regra ICMS / PIS-COFINS" value={s('IdRegraCalculoIcms') != null || s('IdRegraCalculoPisCofins') != null ? `${s('IdRegraCalculoIcms') ?? '—'} / ${s('IdRegraCalculoPisCofins') ?? '—'}` : null} />
+      <details className="mt-1.5">
+        <summary className="text-[10px] text-muted-foreground cursor-pointer">Retorno completo (JSON, ~88 campos)</summary>
+        <pre className="mt-1 max-h-56 overflow-auto rounded bg-muted/40 p-2 text-[10px] leading-tight">
+          {JSON.stringify(fr, null, 2)}
+        </pre>
+      </details>
+    </div>
   );
 }
 

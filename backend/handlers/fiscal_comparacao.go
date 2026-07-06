@@ -107,6 +107,10 @@ type ComparacaoRow struct {
 	// "ICMS Reduzido" do Resumo da Nota, comparado com v_icms_deson do
 	// cabeçalho). Extraído do full_result JSONB, como BaseCalculoIbsCbs.
 	ValorReducao *float64 `json:"valor_reducao"`
+	// FullResult — retorno completo do pacote (~88 campos), para a seção de
+	// diagnóstico do dialog de detalhe (Mensagem1-4, natureza da operação,
+	// CST, leis, id das regras aplicadas). Null quando nunca executado.
+	FullResult json.RawMessage `json:"full_result"`
 }
 
 // NfeSearchResponse é o envelope paginado da busca: total de notas que batem
@@ -314,7 +318,8 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			fei.percentual_difal, fei.valor_icms_partilha_destino, fei.valor_icms_pobreza,
 			fei.grupo_fiscal_codigo,
 			(fei.full_result->>'BaseCalculoIbsCbs')::numeric AS base_calculo_ibs_cbs,
-			(fei.full_result->>'ValorReducao')::numeric AS valor_reducao
+			(fei.full_result->>'ValorReducao')::numeric AS valor_reducao,
+			fei.full_result
 		FROM pacotefiscal_nfe_saidas_itens nsi
 		LEFT JOIN fiscal_execution_items fei ON fei.nfe_item_id = nsi.id
 		WHERE nsi.nfe_id = $1 AND nsi.company_id = $2
@@ -329,6 +334,7 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 		var row ComparacaoRow
 		var executedAt sql.NullTime
 		var hasIbsTotal sql.NullFloat64
+		var fullResult sql.NullString
 
 		if err := rows.Scan(
 			&row.ID, &row.NItem, &row.CProd, &row.XProd, &row.NCM, &row.CFOP,
@@ -348,6 +354,7 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			&row.GrupoFiscalCodigo,
 			&row.BaseCalculoIbsCbs,
 			&row.ValorReducao,
+			&fullResult,
 		); err != nil {
 			log.Printf("[FiscalComparacaoRead] scan error: %v", err)
 			continue
@@ -356,6 +363,9 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 		if executedAt.Valid {
 			s := executedAt.Time.Format("2006-01-02T15:04:05Z07:00")
 			row.ExecutedAt = &s
+		}
+		if fullResult.Valid && fullResult.String != "" {
+			row.FullResult = json.RawMessage(fullResult.String)
 		}
 		if hasIbsTotal.Valid {
 			v := hasIbsTotal.Float64
