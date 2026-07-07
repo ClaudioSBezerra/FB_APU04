@@ -41,10 +41,20 @@ import (
 // não travam este endpoint.
 // ---------------------------------------------------------------------------
 const (
-	defaultTipoCentroFiscal          = "VRJNE" // valor do script de teste do pacote fiscal original
-	defaultIndicadorServico          = "N"     // comércio, não serviço
-	defaultFornecedorSimplesNacional = "N"     // CRT do emitente não persistido em nfe_saidas
+	defaultIndicadorServico          = "N" // comércio, não serviço
+	defaultFornecedorSimplesNacional = "N" // CRT do emitente não persistido em nfe_saidas
 )
+
+// centrosFiscaisPorCFOP devolve a ordem de tentativa do pTipoCentroFiscal
+// (regra do negócio 2026-07-07): transferência opera pelo CDNE (mas pode
+// cair no VRJNE); venda opera pelo VRJNE (mas existem vendas pelo CDNE).
+// A execução tenta na ordem e só marca erro se falhar nas duas.
+func centrosFiscaisPorCFOP(cfop string) []string {
+	if cfopsTransferencia[strings.TrimSpace(cfop)] {
+		return []string{"CDNE", "VRJNE"}
+	}
+	return []string{"VRJNE", "CDNE"}
+}
 
 // tipoContribuinte deriva pTipoContribuinte (regra refinada em 2026-07-06
 // após NF-e 55 para PJ não contribuinte não calcular DIFAL). Precedência:
@@ -626,7 +636,6 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		PUFOrigem:         nfe.EmitUF,
 		PUFDestino:        nfe.DestUF,
 		PTipoContribuinte: tipoContribuinte(nfe.DestIndIE, it.CFOP, nfe.Modelo),
-		PTipoCentroFiscal: defaultTipoCentroFiscal,
 		PTipoOperacao:     tipoOperacaoPorCFOP(it.CFOP),
 		PEntradaSaida:     "S", // módulo cobre apenas NF-e de saída
 		// Sem o dígito verificador, como em PROD/PRODB — o pacote valida o
@@ -654,20 +663,36 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		PCodigoIbge:                  nfe.DestCMun,
 	}
 
+	// Centro fiscal com fallback (regra do negócio 2026-07-07): transferência
+	// tenta CDNE e depois VRJNE; venda tenta VRJNE e depois CDNE. Só erra se
+	// falhar nas duas.
+	var result *services.FiscalResult
+	var callErr error
+	centros := centrosFiscaisPorCFOP(it.CFOP)
+	for i, centro := range centros {
+		in.PTipoCentroFiscal = centro
+		trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto com: %s [pDespesas = frete %.2f + outras %.2f]", in.FormatParams(), it.VFrete, it.VOutro))
+		result, callErr = services.CallFiscalPackage(ctx, oracleDB, in)
+		if callErr == nil {
+			break
+		}
+		log.Printf("FiscalExecutionRunHandler: item=%s centro=%s err=%v", it.ID, centro, callErr)
+		if i < len(centros)-1 {
+			trace.add(it.ID, produtoLabel, "centro_fiscal_fallback", fmt.Sprintf("Falhou com pTipoCentroFiscal=%s (%s) — tentando %s...", centro, sanitizeOracleErrForDebug(callErr), centros[i+1]))
+		}
+	}
+
 	inputJSON, marshalErr := json.Marshal(in)
 	if marshalErr != nil {
 		inputJSON = []byte("{}")
 	}
 
-	trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto com: %s [pDespesas = frete %.2f + outras %.2f]", in.FormatParams(), it.VFrete, it.VOutro))
-	result, callErr := services.CallFiscalPackage(ctx, oracleDB, in)
 	if callErr != nil {
 		// Nunca propagar callErr.Error() cru do Oracle na resposta normal
 		// (T-11-18) — debug trace é admin-only/efêmero, inclui detalhe sanitizado.
-		log.Printf("FiscalExecutionRunHandler: item=%s err=%v", it.ID, callErr)
-		trace.add(it.ID, produtoLabel, "erro", "Falha ao executar o pacote fiscal no Oracle: "+sanitizeOracleErrForDebug(callErr))
+		trace.add(it.ID, produtoLabel, "erro", fmt.Sprintf("Falha ao executar o pacote fiscal no Oracle (tentado %s): %s", strings.Join(centros, " e "), sanitizeOracleErrForDebug(callErr)))
 		if perr := persistFiscalItemResult(pgDB, companyID, it.ID, "error",
-			"Falha ao executar o pacote fiscal no Oracle (FCCORP_BKP).", grupoFiscal, inputJSON, nil); perr != nil {
+			fmt.Sprintf("Falha ao executar o pacote fiscal no Oracle (tentado pTipoCentroFiscal %s).", strings.Join(centros, " e ")), grupoFiscal, inputJSON, nil); perr != nil {
 			log.Printf("FiscalExecutionRunHandler: item=%s persist error: %v", it.ID, perr)
 		}
 		return "error"

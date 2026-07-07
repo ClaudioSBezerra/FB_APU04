@@ -28,6 +28,29 @@ func TestTipoContribuinte(t *testing.T) {
 	}
 }
 
+func TestCentrosFiscaisPorCFOP(t *testing.T) {
+	tests := []struct {
+		cfop  string
+		first string
+	}{
+		{"5152", "CDNE"},  // transferência → CDNE primeiro
+		{"6152", "CDNE"},  // transferência interestadual
+		{"5408", "CDNE"},  // transferência ST
+		{"5102", "VRJNE"}, // venda → VRJNE primeiro
+		{"5405", "VRJNE"}, // venda ST
+		{"", "VRJNE"},     // default venda
+	}
+	for _, tc := range tests {
+		got := centrosFiscaisPorCFOP(tc.cfop)
+		if len(got) != 2 || got[0] != tc.first {
+			t.Errorf("centrosFiscaisPorCFOP(%q) = %v, want [%s ...] com fallback", tc.cfop, got, tc.first)
+		}
+		if got[0] == got[1] {
+			t.Errorf("centrosFiscaisPorCFOP(%q): fallback igual ao primeiro (%v)", tc.cfop, got)
+		}
+	}
+}
+
 func TestTipoOperacaoPorCFOP(t *testing.T) {
 	tests := []struct {
 		cfop string
