@@ -45,6 +45,12 @@ type NfeSearchResult struct {
 	VDesc  float64 `json:"v_desc"`  // total de descontos
 	VFrete float64 `json:"v_frete"` // total do frete destacado
 	VNf    float64 `json:"v_nf"`    // valor total da NF
+	// FCP nos 3 sabores do XML: próprio (<vFCP>), do ST (<vFCPST>) e do DIFAL
+	// (<vFCPUFDest>). O pacote devolve o FCP de destino EMBUTIDO no DIFAL
+	// (ValorIcmsPobreza=0, alíquota interna cheia) — a tela compara
+	// DIFAL = vICMSUFDest+vFCPUFDest e FCP = vFCP+vFCPST.
+	VFcpSt     float64 `json:"v_fcp_st"`
+	VFcpUfDest float64 `json:"v_fcp_uf_dest"`
 	// Totais fiscais extras do cabeçalho para as colunas FCP/DIFAL/ICMS
 	// Reduzido do Resumo da Nota
 	VFcp        float64 `json:"v_fcp"`          // <vFCP>
@@ -265,7 +271,8 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 			       COALESCE(n.v_icms,0), COALESCE(n.v_st,0), COALESCE(n.v_pis,0),
 			       COALESCE(n.v_cofins,0), COALESCE(n.v_ibs,0), COALESCE(n.v_cbs,0),
 			       COALESCE(n.v_prod,0), COALESCE(n.v_desc,0), COALESCE(n.v_frete,0), COALESCE(n.v_nf,0),
-			       COALESCE(n.v_fcp,0), COALESCE(n.v_icms_uf_dest,0), COALESCE(n.v_icms_deson,0)
+			       COALESCE(n.v_fcp,0), COALESCE(n.v_icms_uf_dest,0), COALESCE(n.v_icms_deson,0),
+			       COALESCE(n.v_fcp_st,0), COALESCE(n.v_fcp_uf_dest,0)
 			FROM pacotefiscal_nfe_saidas n
 			%s
 			ORDER BY n.data_emissao DESC, n.numero_nfe DESC
@@ -286,7 +293,8 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 				&row.DestNome, &row.DataEmissao,
 				&row.VIcms, &row.VSt, &row.VPis, &row.VCofins, &row.VIbs, &row.VCbs,
 				&row.VProd, &row.VDesc, &row.VFrete, &row.VNf,
-				&row.VFcp, &row.VIcmsUfDest, &row.VIcmsDeson); err != nil {
+				&row.VFcp, &row.VIcmsUfDest, &row.VIcmsDeson,
+				&row.VFcpSt, &row.VFcpUfDest); err != nil {
 				log.Printf("[FiscalComparacaoSearch] scan error: %v", err)
 				continue
 			}

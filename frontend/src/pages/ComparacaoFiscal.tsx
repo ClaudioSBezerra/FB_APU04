@@ -216,10 +216,13 @@ const TAX_LABELS: Record<TaxKey, string> = {
 // valores por item — só no total <ICMSTot> — então não entram na tabela
 // item a item nem na regra de divergência por item).
 type ResumoKey = TaxKey | 'fcp' | 'difal' | 'icms_reduzido';
+// DIFAL compara vICMSUFDest+vFCPUFDest do XML contra a partilha destino do
+// pacote (que EMBUTE o FCP de destino na alíquota interna — ValorIcmsPobreza
+// vem 0 nesses casos). FCP compara só o próprio/ST (vFCP+vFCPST).
 const RESUMO_LABELS: Record<ResumoKey, string> = {
   ...TAX_LABELS,
-  fcp: 'FCP',
-  difal: 'DIFAL',
+  fcp: 'FCP (próprio/ST)',
+  difal: 'DIFAL (c/ FCP dest.)',
   icms_reduzido: 'ICMS Reduzido',
 };
 
@@ -696,8 +699,10 @@ export default function ComparacaoFiscal() {
           cofins: selectedNfe.v_cofins,
           ibs: selectedNfe.v_ibs,
           cbs: selectedNfe.v_cbs,
-          fcp: selectedNfe.v_fcp ?? 0,
-          difal: selectedNfe.v_icms_uf_dest ?? 0,
+          // FCP próprio/ST; o FCP do DIFAL (vFCPUFDest) entra na coluna DIFAL,
+          // porque o pacote o devolve embutido na partilha destino
+          fcp: (selectedNfe.v_fcp ?? 0) + (selectedNfe.v_fcp_st ?? 0),
+          difal: (selectedNfe.v_icms_uf_dest ?? 0) + (selectedNfe.v_fcp_uf_dest ?? 0),
           icms_reduzido: Math.round(esperadoReduzido * 100) / 100,
         };
     // Tolerância da linha Diferença: 1 centavo por item no modo inclusão

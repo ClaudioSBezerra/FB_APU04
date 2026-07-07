@@ -50,6 +50,8 @@ export interface NfeSearchResult {
   v_fcp: number;          // <vFCP>
   v_icms_uf_dest: number; // <vICMSUFDest> (DIFAL)
   v_icms_deson: number;   // <vICMSDeson> (ICMS desonerado/reduzido)
+  v_fcp_st: number;       // <vFCPST> (FCP retido por ST)
+  v_fcp_uf_dest: number;  // <vFCPUFDest> (FCP do DIFAL — o pacote o embute no DIFAL)
 }
 
 // Envelope paginado da busca (espelha NfeSearchResponse do backend)
