@@ -137,7 +137,7 @@ type NfeSearchResponse struct {
 // ---------------------------------------------------------------------------
 // GET /api/fiscal/comparacao/search?q=...&page=1&page_size=50
 // Busca NF-e de saída company-scoped, com filtros fiscais opcionais
-// (com_st/com_difal/com_fcp/com_base_reduzida=1) e paginação (page_size=0
+// (com_icms/com_st/com_difal/com_fcp/com_base_reduzida=1) e paginação (page_size=0
 // traz todas). Resposta paginada com total.
 // ---------------------------------------------------------------------------
 func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
@@ -215,6 +215,9 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 
 		// Filtros fiscais (checkboxes da tela) — todos sobre totais do
 		// cabeçalho, exceto base reduzida, que só existe no item (CST 20/70).
+		if r.URL.Query().Get("com_icms") == "1" {
+			where += " AND COALESCE(n.v_icms,0) > 0"
+		}
 		if r.URL.Query().Get("com_st") == "1" {
 			where += " AND COALESCE(n.v_st,0) > 0"
 		}

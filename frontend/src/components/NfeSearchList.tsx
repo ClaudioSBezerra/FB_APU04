@@ -116,6 +116,7 @@ export function NfeSearchList({
   const [cliente, setCliente] = useState('');
   const [emitente, setEmitente] = useState('');
   // Filtros fiscais (checkboxes): valores destacados no XML da nota
+  const [comIcms, setComIcms] = useState(false);
   const [comSt, setComSt] = useState(false);
   const [comDifal, setComDifal] = useState(false);
   const [comFcp, setComFcp] = useState(false);
@@ -125,7 +126,7 @@ export function NfeSearchList({
   const [page, setPage] = useState(1);
   const emptyApplied = {
     dataInicio: '', dataFim: '', q: '', ufOrigem: '', ufDestino: '', cliente: '', emitente: '',
-    comSt: false, comDifal: false, comFcp: false, comBaseReduzida: false, pageSize: 50,
+    comIcms: false, comSt: false, comDifal: false, comFcp: false, comBaseReduzida: false, pageSize: 50,
   };
   const [applied, setApplied] = useState(emptyApplied);
   const [searched, setSearched] = useState(false);
@@ -144,6 +145,7 @@ export function NfeSearchList({
       if (applied.ufDestino) params.set('uf_destino', applied.ufDestino);
       if (applied.cliente) params.set('cliente', applied.cliente);
       if (applied.emitente) params.set('emitente', applied.emitente);
+      if (applied.comIcms) params.set('com_icms', '1');
       if (applied.comSt) params.set('com_st', '1');
       if (applied.comDifal) params.set('com_difal', '1');
       if (applied.comFcp) params.set('com_fcp', '1');
@@ -170,7 +172,7 @@ export function NfeSearchList({
     setApplied({
       dataInicio, dataFim, q: q.trim(), ufOrigem, ufDestino,
       cliente: cliente.trim(), emitente: emitente.trim(),
-      comSt, comDifal, comFcp, comBaseReduzida, pageSize,
+      comIcms, comSt, comDifal, comFcp, comBaseReduzida, pageSize,
     });
   };
 
@@ -349,6 +351,9 @@ export function NfeSearchList({
         {/* Filtros fiscais — valores destacados no XML da nota */}
         <div className="w-full flex items-center gap-4 flex-wrap pt-1 border-t border-dashed mt-1">
           <span className="text-[11px] text-muted-foreground font-medium">Somente notas com:</span>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <Checkbox checked={comIcms} onCheckedChange={c => setComIcms(c === true)} /> ICMS &gt; 0
+          </label>
           <label className="flex items-center gap-1.5 text-xs cursor-pointer">
             <Checkbox checked={comSt} onCheckedChange={c => setComSt(c === true)} /> ST &gt; 0
           </label>
