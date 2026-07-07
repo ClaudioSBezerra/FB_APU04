@@ -230,15 +230,21 @@ func runSimulacaoIbsCbs(it fiscalItemInput, r1 *services.FiscalResult, trace *fi
 	}
 
 	// 3. Nova base = base XML + acréscimo integral; novo ICMS recalculado
-	//    pela alíquota do item (p_icms do XML; fallback: alíquota do pacote)
+	//    pela alíquota do item (p_icms do XML; fallback: alíquota do pacote).
+	//    Item SEM base de ICMS (CST 60/ST retido, isento — vBC=0 no XML) não
+	//    tem onde incluir o acréscimo: base e ICMS simulados ficam 0 (o
+	//    pacote também devolve base 0 nesses casos).
 	aliqIcms := it.PIcmsXML
 	if aliqIcms <= 0 {
 		aliqIcms = r1.AliquotaImposto
 	}
 	sim.AliquotaIcms = aliqIcms
-	novaBase := sim.BaseIcmsOriginal + acrescimo
-	sim.BaseIcmsSimulada = round2(novaBase)
-	sim.IcmsSimulado = round2(novaBase * aliqIcms / 100)
+	novaBase := 0.0
+	if sim.BaseIcmsOriginal > 0 {
+		novaBase = sim.BaseIcmsOriginal + acrescimo
+		sim.BaseIcmsSimulada = round2(novaBase)
+		sim.IcmsSimulado = round2(novaBase * aliqIcms / 100)
+	}
 
 	// ST: base aditiva; valor proporcional à variação da base (MVA não muda)
 	if sim.BaseStOriginal > 0 {

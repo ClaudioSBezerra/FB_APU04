@@ -98,6 +98,28 @@ func TestRunSimulacaoIbsCbs_ComST(t *testing.T) {
 	}
 }
 
+func TestRunSimulacaoIbsCbs_ItemSemBaseIcms(t *testing.T) {
+	// CST 60 (ST já retido, CFOP 5405): vBC=0 no XML — não há base onde
+	// incluir o acréscimo. Base e ICMS simulados devem ficar 0 (o pacote
+	// também devolve 0) — sem falsa divergência de base (NF 10716531).
+	it := fiscalItemInput{
+		ID: "item-st-retido", VProd: 1.60,
+		VBcIcmsXML: 0, VIcmsXML: 0, PIcmsXML: 0,
+		VPisXML: 0.02, VCofinsXML: 0.12,
+	}
+	r1 := &services.FiscalResult{
+		AliquotaImposto: 0, BaseCalculo: 0, BaseCalculoOriginal: 1.60,
+		AliquotaIbsUF: 0.1, AliquotaCbs: 0.9,
+	}
+	sim := runSimulacaoIbsCbs(it, r1, &fiscalDebugTrace{}, "item st retido")
+	if sim.Erro != "" {
+		t.Fatalf("não deveria falhar: %s", sim.Erro)
+	}
+	if sim.BaseIcmsSimulada != 0 || sim.IcmsSimulado != 0 {
+		t.Errorf("item sem base de ICMS: base sim %.2f / icms sim %.2f, ambos deveriam ser 0", sim.BaseIcmsSimulada, sim.IcmsSimulado)
+	}
+}
+
 func TestRunSimulacaoIbsCbs_SemBase(t *testing.T) {
 	// Sem alíquotas de Reforma e sem valores IBS/CBS → erro explícito, sem panic
 	it := fiscalItemInput{ID: "item-x", VProd: 100, VBcIcmsXML: 100, VIcmsXML: 12}

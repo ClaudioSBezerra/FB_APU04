@@ -665,7 +665,13 @@ export default function ComparacaoFiscal() {
     rows.forEach(row => {
       if (row.cst_icms === '20' || row.cst_icms === '70') {
         const bruto = row.v_prod + row.v_frete + row.v_outro - row.v_desc;
-        esperadoReduzido += Math.max(0, bruto - row.v_bc_icms);
+        let red = Math.max(0, bruto - row.v_bc_icms);
+        // Modo inclusão: o pacote reduz também o acréscimo IBS/CBS — a
+        // redução esperada escala pelo (bruto + acréscimo) / bruto
+        if (simAtiva(row) && bruto > 0) {
+          red *= (bruto + (row.simulacao!.acrescimo_ibs_cbs ?? 0)) / bruto;
+        }
+        esperadoReduzido += red;
       }
       if (row.status !== 'ok') { itensNaoOk++; return; }
       getTaxPairs(row).forEach(pair => {
