@@ -174,13 +174,6 @@ func round2(v float64) float64 {
 // Isso também explica a divergência sistemática ICMS XML × pacote na
 // comparação normal (o pacote calcula com inclusão; o XML foi emitido sem).
 func runSimulacaoIbsCbs(it fiscalItemInput, r1 *services.FiscalResult, trace *fiscalDebugTrace, produtoLabel string) fiscalSimulacao {
-	// Proporção original/inclusão do próprio pacote — usada para reconstituir
-	// o "antes" de FCP/DIFAL (o XML não os destaca por item).
-	ratioPacote := 1.0
-	if r1.BaseCalculo > 0 && r1.BaseCalculoOriginal > 0 {
-		ratioPacote = r1.BaseCalculoOriginal / r1.BaseCalculo
-	}
-
 	sim := fiscalSimulacao{
 		PrecoOriginal:    it.VProd,
 		BaseIbsCbsPacote: r1.BaseCalculoIbsCbs,
@@ -190,8 +183,13 @@ func runSimulacaoIbsCbs(it fiscalItemInput, r1 *services.FiscalResult, trace *fi
 		IcmsOriginal:     it.VIcmsXML,
 		BaseStOriginal:   it.VBcStXML,
 		StOriginal:       it.VStXML,
-		FcpOriginal:      round2(r1.ValorIcmsPobreza * ratioPacote),
-		DifalOriginal:    round2(r1.ValorIcmsPartilhaDestino * ratioPacote),
+		// FCP/DIFAL "antes" são preenchidos adiante: o XML não os destaca por
+		// item, então reconstitui-se removendo o efeito da inclusão (÷ fator)
+		// dos valores do pacote — nunca via BaseCalculoOriginal/BaseCalculo,
+		// que em nota com redução compara bruto contra base reduzida (escala
+		// errada; bug corrigido em 2026-07-07, NF 2655571).
+		FcpOriginal:   r1.ValorIcmsPobreza,
+		DifalOriginal: r1.ValorIcmsPartilhaDestino,
 		// Pacote (chamada única, já com IBS/CBS na base)
 		BaseIcmsPacote: r1.BaseCalculo,
 		IcmsPacote:     r1.ValorImposto,
@@ -245,6 +243,9 @@ func runSimulacaoIbsCbs(it fiscalItemInput, r1 *services.FiscalResult, trace *fi
 	if bruto > 0 {
 		fatorBase = (bruto + acrescimo) / bruto
 	}
+	// "Antes" de FCP/DIFAL = valor do pacote com o efeito da inclusão removido
+	sim.FcpOriginal = round2(r1.ValorIcmsPobreza / fatorBase)
+	sim.DifalOriginal = round2(r1.ValorIcmsPartilhaDestino / fatorBase)
 	novaBase := 0.0
 	if sim.BaseIcmsOriginal > 0 {
 		novaBase = sim.BaseIcmsOriginal * fatorBase

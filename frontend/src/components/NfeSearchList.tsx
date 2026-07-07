@@ -9,8 +9,9 @@
 // Selecionadas" dispara POST /api/fiscal/execute para cada nota marcada
 // (3 em paralelo — o backend já limita a 5 itens em paralelo DENTRO de
 // cada nota, então 3 notas simultâneas é um teto conservador no navegador).
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { type ComparacaoRow, avaliarDivergenciaNota } from '@/lib/fiscalComparacao';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -198,6 +199,48 @@ export function NfeSearchList({
     });
   };
 
+  // Avaliação por nota: Executado (existe resultado do pacote) + Divergência
+  // (SIM/NÃO, mesma régua do detalhe — avaliarDivergenciaNota da lib).
+  type AvalNota = { executado: boolean; divergente: boolean | null };
+  const [aval, setAval] = useState<Record<string, AvalNota>>({});
+  const avalEmAndamento = useRef<Set<string>>(new Set());
+
+  const avaliarNota = async (nfe: NfeSearchResult) => {
+    if (avalEmAndamento.current.has(nfe.id)) return;
+    avalEmAndamento.current.add(nfe.id);
+    try {
+      const res = await fetch(`/api/fiscal/comparacao?nfe_id=${encodeURIComponent(nfe.id)}`, { headers: authHeaders });
+      if (!res.ok) return;
+      const compRows: ComparacaoRow[] = await res.json();
+      const executado = compRows.length > 0 && compRows.some(r => r.status !== 'not_executed');
+      setAval(prev => ({
+        ...prev,
+        [nfe.id]: { executado, divergente: executado ? avaliarDivergenciaNota(nfe, compRows) : null },
+      }));
+    } catch {
+      // silencioso — célula fica em "—"
+    } finally {
+      avalEmAndamento.current.delete(nfe.id);
+    }
+  };
+
+  // Avalia automaticamente as notas do resultado (páginas de até 100 — acima
+  // disso só sob demanda, para não disparar centenas de requests).
+  useEffect(() => {
+    if (rows.length === 0 || rows.length > 100) return;
+    const pendentes = rows.filter(r => aval[r.id] === undefined);
+    if (pendentes.length === 0) return;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < pendentes.length) {
+        const nfe = pendentes[cursor++];
+        await avaliarNota(nfe);
+      }
+    };
+    Promise.all(Array.from({ length: Math.min(4, pendentes.length) }, worker));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
   const executeOne = async (id: string) => {
     setExecStatus(prev => ({ ...prev, [id]: 'running' }));
     try {
@@ -215,6 +258,9 @@ export function NfeSearchList({
     } catch {
       setExecStatus(prev => ({ ...prev, [id]: 'failed' }));
     }
+    // Reavalia o veredito de divergência com o resultado fresco
+    const nfe = rows.find(r => r.id === id);
+    if (nfe) await avaliarNota(nfe);
   };
 
   const executeSelected = async () => {
@@ -412,7 +458,8 @@ export function NfeSearchList({
                 <TableHead className="py-1.5 px-2 text-[11px]">Destinatário</TableHead>
                 <TableHead className="py-1.5 px-2 text-[11px]">Emissão</TableHead>
                 <TableHead className="py-1.5 px-2 text-[11px]">Chave</TableHead>
-                <TableHead className="py-1.5 px-2 text-[11px]">Status Execução</TableHead>
+                <TableHead className="py-1.5 px-2 text-[11px]">Executado</TableHead>
+                <TableHead className="py-1.5 px-2 text-[11px]">Divergência</TableHead>
                 <TableHead className="py-1.5 px-2 text-[11px] w-10"></TableHead>
               </TableRow>
             </TableHeader>
@@ -437,7 +484,30 @@ export function NfeSearchList({
                       {row.chave_nfe.slice(0, 8)}...{row.chave_nfe.slice(-6)}
                     </TableCell>
                     <TableCell className="py-1 px-2">
-                      <ExecStatusBadge status={status} />
+                      {status !== 'idle' ? (
+                        <ExecStatusBadge status={status} />
+                      ) : aval[row.id]?.executado ? (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">OK</Badge>
+                      ) : aval[row.id] ? (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-gray-50 text-gray-400 border-dashed">Nunca</Badge>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-1 px-2">
+                      {(() => {
+                        const a = aval[row.id];
+                        if (status === 'running' || a === undefined) {
+                          return <span className="text-[11px] text-muted-foreground">—</span>;
+                        }
+                        if (a.divergente === true) {
+                          return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-50 text-red-700 border-red-200">SIM</Badge>;
+                        }
+                        if (a.divergente === false) {
+                          return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">NÃO</Badge>;
+                        }
+                        return <span className="text-[11px] text-muted-foreground">—</span>;
+                      })()}
                     </TableCell>
                     <TableCell className="py-1 px-2">
                       <Button
