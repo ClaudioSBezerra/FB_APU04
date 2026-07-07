@@ -105,10 +105,11 @@ type fiscalSimulacao struct {
 	AcrescimoIbsCbs float64 `json:"acrescimo_ibs_cbs"` // IBS+CBS da 1ª chamada
 	PrecoOriginal   float64 `json:"preco_original"`
 	PrecoSimulado   float64 `json:"preco_simulado"`
-	// Preço Líquido = venda − ICMS − ICMS-ST − PIS − COFINS − ISS (valores
-	// declarados no XML; ISS = 0 em NF-e de mercadoria). É a base legal do
-	// IBS/CBS na transição — comparável com BaseIbsCbsPacote (o que o pacote
-	// de fato usou como base na 1ª chamada).
+	// Preço Líquido = (venda − descontos + frete + outras despesas) − ICMS −
+	// ICMS-ST − PIS − COFINS − ISS (valores declarados no XML; ISS = 0 em
+	// NF-e de mercadoria). É a base legal do IBS/CBS na transição —
+	// comparável com BaseIbsCbsPacote (o que o pacote de fato usou na 1ª
+	// chamada).
 	PrecoLiquido     float64 `json:"preco_liquido"`
 	BaseIbsCbsPacote float64 `json:"base_ibs_cbs_pacote"`
 
@@ -148,7 +149,7 @@ func runSimulacaoIbsCbs(ctx context.Context, oracleDB *sql.DB, in services.Fisca
 	// — nesses dois o original vem da 1ª chamada do pacote.
 	sim := fiscalSimulacao{
 		PrecoOriginal:    it.VProd,
-		PrecoLiquido:     round2(it.VProd - it.VIcmsXML - it.VStXML - it.VPisXML - it.VCofinsXML),
+		PrecoLiquido:     round2((it.VProd - it.VDesc + it.VFrete + it.VOutro) - it.VIcmsXML - it.VStXML - it.VPisXML - it.VCofinsXML),
 		BaseIbsCbsPacote: r1.BaseCalculoIbsCbs,
 		BaseIcmsOriginal: it.VBcIcmsXML,
 		IcmsOriginal:     it.VIcmsXML,
