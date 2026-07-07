@@ -79,8 +79,10 @@ type ComparacaoRow struct {
 	VSt        float64 `json:"v_st"`
 	VBcPis     float64 `json:"v_bc_pis"`
 	VPis       float64 `json:"v_pis"`
+	PPis       float64 `json:"p_pis"` // alíquota — ajusta o esperado no modo inclusão IBS/CBS
 	VBcCofins  float64 `json:"v_bc_cofins"`
 	VCofins    float64 `json:"v_cofins"`
+	PCofins    float64 `json:"p_cofins"`
 	VIbs       float64 `json:"v_ibs"`
 	VCbs       float64 `json:"v_cbs"`
 
@@ -321,8 +323,8 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			COALESCE(nsi.cst_icms,''), COALESCE(nsi.v_prod,0), COALESCE(nsi.v_frete,0), COALESCE(nsi.v_desc,0), COALESCE(nsi.v_outro,0),
 			COALESCE(nsi.v_bc_icms,0), COALESCE(nsi.v_icms,0),
 			COALESCE(nsi.v_bc_st,0), COALESCE(nsi.v_st,0),
-			COALESCE(nsi.v_bc_pis,0), COALESCE(nsi.v_pis,0),
-			COALESCE(nsi.v_bc_cofins,0), COALESCE(nsi.v_cofins,0),
+			COALESCE(nsi.v_bc_pis,0), COALESCE(nsi.v_pis,0), COALESCE(nsi.p_pis,0),
+			COALESCE(nsi.v_bc_cofins,0), COALESCE(nsi.v_cofins,0), COALESCE(nsi.p_cofins,0),
 			COALESCE(nsi.v_ibs,0), COALESCE(nsi.v_cbs,0),
 			COALESCE(fei.status, 'not_executed'), fei.error_message, fei.executed_at,
 			fei.base_calculo_icms, fei.valor_icms,
@@ -358,8 +360,8 @@ func queryComparacaoRows(db *sql.DB, nfeID, companyID string) ([]ComparacaoRow, 
 			&row.CstIcms, &row.VProd, &row.VFrete, &row.VDesc, &row.VOutro,
 			&row.VBcIcms, &row.VIcms,
 			&row.VBcSt, &row.VSt,
-			&row.VBcPis, &row.VPis,
-			&row.VBcCofins, &row.VCofins,
+			&row.VBcPis, &row.VPis, &row.PPis,
+			&row.VBcCofins, &row.VCofins, &row.PCofins,
 			&row.VIbs, &row.VCbs,
 			&row.Status, &row.ErrorMessage, &executedAt,
 			&row.BaseCalculoIcms, &row.ValorIcms,

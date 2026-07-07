@@ -82,8 +82,10 @@ interface ComparacaoRow {
   v_st: number;
   v_bc_pis: number;
   v_pis: number;
+  p_pis: number;
   v_bc_cofins: number;
   v_cofins: number;
+  p_cofins: number;
   v_ibs: number;
   v_cbs: number;
   // Calculado (fiscal_execution_items) — null quando nunca executado
@@ -229,7 +231,31 @@ function fmtBRL(v: number | null | undefined): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+const round2ts = (v: number) => Math.round(v * 100) / 100;
+
+// Item executado com "Inclusão de IBS/CBS" ativa e simulação válida
+function simAtiva(row: ComparacaoRow): boolean {
+  return !!row.simulacao && !row.simulacao.erro;
+}
+
+// No modo inclusão IBS/CBS, o pacote calcula COM inclusão e o XML foi emitido
+// SEM — comparar cru acusaria erro sistemático em toda nota. O "Esperado"
+// vira o esperado AJUSTADO para a inclusão: ICMS/ST usam o simulado interno
+// (método aditivo da planilha); PIS/COFINS ajustam o XML pelo ΔICMS ×
+// alíquota do item (a base sem-ICMS do pacote usa o ICMS novo).
 function getTaxPairs(row: ComparacaoRow): TaxPairDef[] {
+  if (simAtiva(row)) {
+    const s = row.simulacao!;
+    const deltaIcms = (row.valor_icms ?? s.icms_pacote) - row.v_icms;
+    return [
+      { key: 'icms', label: 'ICMS', baseEsperado: s.base_icms_simulada, baseCalculado: row.base_calculo_icms, valorEsperado: s.icms_simulado, valorCalculado: row.valor_icms },
+      { key: 'icms_st', label: 'ICMS-ST', baseEsperado: s.base_st_simulada, baseCalculado: row.base_substituicao, valorEsperado: s.st_simulado, valorCalculado: row.valor_substituicao },
+      { key: 'pis', label: 'PIS', baseEsperado: round2ts(row.v_bc_pis - deltaIcms), baseCalculado: row.base_calculo_pis, valorEsperado: round2ts(row.v_pis - deltaIcms * (row.p_pis ?? 0) / 100), valorCalculado: row.valor_pis },
+      { key: 'cofins', label: 'COFINS', baseEsperado: round2ts(row.v_bc_cofins - deltaIcms), baseCalculado: row.base_calculo_cofins, valorEsperado: round2ts(row.v_cofins - deltaIcms * (row.p_cofins ?? 0) / 100), valorCalculado: row.valor_cofins },
+      { key: 'ibs', label: 'IBS', valorEsperado: row.v_ibs, valorCalculado: row.valor_ibs_total },
+      { key: 'cbs', label: 'CBS', valorEsperado: row.v_cbs, valorCalculado: row.valor_cbs },
+    ];
+  }
   return [
     { key: 'icms', label: 'ICMS', baseEsperado: row.v_bc_icms, baseCalculado: row.base_calculo_icms, valorEsperado: row.v_icms, valorCalculado: row.valor_icms },
     { key: 'icms_st', label: 'ICMS-ST', baseEsperado: row.v_bc_st, baseCalculado: row.base_substituicao, valorEsperado: row.v_st, valorCalculado: row.valor_substituicao },
@@ -240,16 +266,22 @@ function getTaxPairs(row: ComparacaoRow): TaxPairDef[] {
   ];
 }
 
-// Tolerância ZERO — abs(esperado - calculado) !== 0 (base e valor).
-// NÃO usar o threshold de um centavo de ConciliacaoBridgeXML.tsx — não se aplica aqui.
-function isPairDivergente(pair: TaxPairDef): boolean {
+// Tolerância ZERO no modo normal — abs(esperado - calculado) !== 0 (base e
+// valor). NÃO usar o threshold de um centavo de ConciliacaoBridgeXML.tsx.
+// No modo inclusão IBS/CBS, tolerância de 1 centavo: o esperado ajustado
+// carrega arredondamento de precisão cheia × valores destacados.
+function isPairDivergente(pair: TaxPairDef, tolerancia = 0): boolean {
   const diffValor = Math.abs((pair.valorEsperado ?? 0) - (pair.valorCalculado ?? 0));
-  if (diffValor !== 0) return true;
+  if (diffValor > tolerancia) return true;
   if (pair.baseEsperado !== undefined) {
     const diffBase = Math.abs((pair.baseEsperado ?? 0) - (pair.baseCalculado ?? 0));
-    if (diffBase !== 0) return true;
+    if (diffBase > tolerancia) return true;
   }
   return false;
+}
+
+function rowTolerancia(row: ComparacaoRow): number {
+  return simAtiva(row) ? 0.011 : 0;
 }
 
 // Precedência de status: item com status != 'ok' NUNCA é avaliado como
@@ -258,7 +290,8 @@ function isPairDivergente(pair: TaxPairDef): boolean {
 function getRowBadge(row: ComparacaoRow): { badge: RowBadge; divergentTaxes: TaxKey[] } {
   if (row.status === 'not_executed') return { badge: 'nunca_executado', divergentTaxes: [] };
   if (row.status !== 'ok') return { badge: 'nao_calculado', divergentTaxes: [] };
-  const divergentTaxes = getTaxPairs(row).filter(isPairDivergente).map(p => p.key);
+  const tol = rowTolerancia(row);
+  const divergentTaxes = getTaxPairs(row).filter(p => isPairDivergente(p, tol)).map(p => p.key);
   return { badge: divergentTaxes.length > 0 ? 'divergente' : 'ok', divergentTaxes };
 }
 
@@ -618,6 +651,14 @@ export default function ComparacaoFiscal() {
     // com CST 20/70, valor bruto (produtos+frete+outras−desconto) − vBC
     // declarada. (vICMSDeson NÃO serve aqui: é desoneração, outro instituto.)
     let esperadoReduzido = 0;
+    // Modo inclusão IBS/CBS: o esperado dos tributos afetados é AJUSTADO por
+    // item (getTaxPairs já devolve o esperado ajustado quando simAtiva) —
+    // sem isso, toda nota executada com o toggle divergiria por construção.
+    const temSimulacao = rows.some(simAtiva);
+    const esperadoAjustado: Record<ResumoKey, number> = {
+      icms: 0, icms_st: 0, pis: 0, cofins: 0, ibs: 0, cbs: 0,
+      fcp: 0, difal: 0, icms_reduzido: 0,
+    };
     rows.forEach(row => {
       if (row.cst_icms === '20' || row.cst_icms === '70') {
         const bruto = row.v_prod + row.v_frete + row.v_outro - row.v_desc;
@@ -626,23 +667,42 @@ export default function ComparacaoFiscal() {
       if (row.status !== 'ok') { itensNaoOk++; return; }
       getTaxPairs(row).forEach(pair => {
         acumuladoCalculado[pair.key] += pair.valorCalculado ?? 0;
+        esperadoAjustado[pair.key] += pair.valorEsperado ?? 0;
       });
       acumuladoCalculado.fcp += row.valor_icms_pobreza ?? 0;
       acumuladoCalculado.difal += row.valor_icms_partilha_destino ?? 0;
       acumuladoCalculado.icms_reduzido += row.valor_reducao ?? 0;
+      if (simAtiva(row)) {
+        esperadoAjustado.fcp += row.simulacao!.fcp_simulado ?? 0;
+        esperadoAjustado.difal += row.simulacao!.difal_simulado ?? 0;
+      }
     });
-    const esperado: Record<ResumoKey, number> = {
-      icms: selectedNfe.v_icms,
-      icms_st: selectedNfe.v_st,
-      pis: selectedNfe.v_pis,
-      cofins: selectedNfe.v_cofins,
-      ibs: selectedNfe.v_ibs,
-      cbs: selectedNfe.v_cbs,
-      fcp: selectedNfe.v_fcp ?? 0,
-      difal: selectedNfe.v_icms_uf_dest ?? 0,
-      icms_reduzido: Math.round(esperadoReduzido * 100) / 100,
-    };
-    return { acumuladoCalculado, esperado, itensNaoOk, totalItens: rows.length };
+    const esperado: Record<ResumoKey, number> = temSimulacao
+      ? {
+          icms: round2ts(esperadoAjustado.icms),
+          icms_st: round2ts(esperadoAjustado.icms_st),
+          pis: round2ts(esperadoAjustado.pis),
+          cofins: round2ts(esperadoAjustado.cofins),
+          ibs: selectedNfe.v_ibs,
+          cbs: selectedNfe.v_cbs,
+          fcp: round2ts(esperadoAjustado.fcp),
+          difal: round2ts(esperadoAjustado.difal),
+          icms_reduzido: Math.round(esperadoReduzido * 100) / 100,
+        }
+      : {
+          icms: selectedNfe.v_icms,
+          icms_st: selectedNfe.v_st,
+          pis: selectedNfe.v_pis,
+          cofins: selectedNfe.v_cofins,
+          ibs: selectedNfe.v_ibs,
+          cbs: selectedNfe.v_cbs,
+          fcp: selectedNfe.v_fcp ?? 0,
+          difal: selectedNfe.v_icms_uf_dest ?? 0,
+          icms_reduzido: Math.round(esperadoReduzido * 100) / 100,
+        };
+    // Tolerância da linha Diferença: 1 centavo por item no modo inclusão
+    const tolerancia = temSimulacao ? 0.011 * Math.max(1, rows.length) : 0;
+    return { acumuladoCalculado, esperado, itensNaoOk, totalItens: rows.length, temSimulacao, tolerancia };
   }, [rows, selectedNfe]);
 
   // Acumulado da simulação "IBS/CBS na base" — soma dos itens que rodaram em
@@ -912,7 +972,9 @@ export default function ComparacaoFiscal() {
                 </TableHeader>
                 <TableBody>
                   <TableRow>
-                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Esperado (total NF)</TableCell>
+                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">
+                      {notaSummary.temSimulacao ? 'Esperado (ajustado p/ inclusão IBS/CBS)' : 'Esperado (total NF)'}
+                    </TableCell>
                     {(Object.keys(RESUMO_LABELS) as ResumoKey[]).map(key => (
                       <TableCell key={key} className="py-1 px-2 text-right text-[11px] font-semibold">
                         {fmtBRL(notaSummary.esperado[key])}
@@ -936,7 +998,7 @@ export default function ComparacaoFiscal() {
                           {notaSummary.itensNaoOk > 0 ? (
                             <span className="text-[11px] text-muted-foreground">—</span>
                           ) : (
-                            <DiferencaBadge diferenca={diferenca} divergente={diferenca !== 0} />
+                            <DiferencaBadge diferenca={diferenca} divergente={Math.abs(diferenca) > notaSummary.tolerancia} />
                           )}
                         </TableCell>
                       );
@@ -1200,7 +1262,7 @@ export default function ComparacaoFiscal() {
                         </TableCell>
                         {pairs.map(pair => {
                           const diferenca = (pair.valorEsperado ?? 0) - (pair.valorCalculado ?? 0);
-                          const divergente = !naoOk && isPairDivergente(pair);
+                          const divergente = !naoOk && isPairDivergente(pair, rowTolerancia(row));
                           return (
                             <Fragment key={pair.key}>
                               <TableCell className="py-1 px-2 text-right text-[11px] font-semibold border-l">
