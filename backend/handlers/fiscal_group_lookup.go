@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // errSemGrupoFiscal sinaliza que o produto não foi encontrado em prod/PRODB —
@@ -53,19 +54,30 @@ func resolveCodEmpresa(emitCNPJ, emitUF string) (int, error) {
 // O filtro por cod_empresa é obrigatório — sem ele, o mesmo código de produto
 // pode existir em mais de uma filial com grupo fiscal diferente.
 // sql.ErrNoRows é traduzido para errSemGrupoFiscal (não fatal).
-// stripCheckDigit remove o último dígito do código do produto do XML
-// (<cProd>) antes de buscar em PROD/PRODB — o código lá é composto por
-// código + dígito verificador (ex.: XML "3796949" → PROD/PRODB "379694").
-// Confirmado pelo usuário em 2026-07 comparando um produto real que não
-// batia na busca. O pacote fiscal (PKG_FISCAL_FCTAX) valida o produto nas
-// mesmas tabelas, então pProduto TAMBÉM vai sem o dígito (ORA-20000
-// "Código produto informado não existe no SFC" com o código cheio —
-// confirmado em execução real, 2026-07-06).
-func stripCheckDigit(codigo string) string {
-	if len(codigo) <= 1 {
-		return codigo
+// normalizeCodigoProduto converte o <cProd> do XML para a chave de PROD/PRODB:
+//  1. remove ZEROS À ESQUERDA — XMLs de transferência (SAP-like) trazem o
+//     código com padding de 18 dígitos ("000000000004251830"), e PROD/PRODB
+//     guarda sem zeros (caso real 2026-07-07, item "sem_grupo_fiscal" falso);
+//  2. remove o último dígito (verificador) — o código lá é composto por
+//     código + DV (ex.: XML "3796949" → PROD/PRODB "379694"), confirmado
+//     pelo usuário em 2026-07 com produto real.
+//
+// O pacote fiscal (PKG_FISCAL_FCTAX) valida o produto nas mesmas tabelas,
+// então pProduto TAMBÉM vai normalizado (ORA-20000 "Código produto informado
+// não existe no SFC" com o código cheio — confirmado em execução real).
+func normalizeCodigoProduto(codigo string) string {
+	codigo = strings.TrimSpace(codigo)
+	if codigo == "" {
+		return ""
 	}
-	return codigo[:len(codigo)-1]
+	semZeros := strings.TrimLeft(codigo, "0")
+	if semZeros == "" {
+		return "0" // era tudo zero — nunca devolver vazio
+	}
+	if len(semZeros) <= 1 {
+		return semZeros
+	}
+	return semZeros[:len(semZeros)-1]
 }
 
 func lookupGrupoFiscal(ctx context.Context, oracleDB *sql.DB, codigoProduto string, codEmpresa int) (grupoFiscal, origem, ncm string, err error) {
@@ -76,7 +88,7 @@ func lookupGrupoFiscal(ctx context.Context, oracleDB *sql.DB, codigoProduto stri
 		  AND pb.codigo = :codigoProduto
 		  AND pb.cod_empresa = :codEmpresa`
 
-	codigoBusca := stripCheckDigit(codigoProduto)
+	codigoBusca := normalizeCodigoProduto(codigoProduto)
 	var grupoFiscalNS, origemNS, ncmNS sql.NullString
 	row := oracleDB.QueryRowContext(ctx, query,
 		sql.Named("codigoProduto", codigoBusca),

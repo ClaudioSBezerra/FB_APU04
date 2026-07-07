@@ -587,7 +587,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		return "error"
 	}
 
-	trace.add(it.ID, produtoLabel, "lookup_grupo_fiscal", fmt.Sprintf("Buscando grupo fiscal em PROD/PRODB (cod_empresa=%d, código XML=%s, código buscado=%s)...", nfe.CodEmpresa, it.CProd, stripCheckDigit(it.CProd)))
+	trace.add(it.ID, produtoLabel, "lookup_grupo_fiscal", fmt.Sprintf("Buscando grupo fiscal em PROD/PRODB (cod_empresa=%d, código XML=%s, código buscado=%s)...", nfe.CodEmpresa, it.CProd, normalizeCodigoProduto(it.CProd)))
 	grupoFiscal, _, _, err := lookupGrupoFiscal(ctx, oracleDB, it.CProd, nfe.CodEmpresa)
 	if err != nil {
 		if errors.Is(err, errSemGrupoFiscal) {
@@ -633,7 +633,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		// produto nas mesmas tabelas do lookup; com o código cheio do XML o
 		// Oracle rejeita com ORA-20000 "Código produto informado não existe
 		// no SFC" (confirmado em execução real, 2026-07-06).
-		PProduto:           stripCheckDigit(it.CProd),
+		PProduto:           normalizeCodigoProduto(it.CProd),
 		PCodigoGrupoFiscal: grupoFiscal,
 		PCnpjExcecao:       "",
 		PIndicadorServico:  defaultIndicadorServico,

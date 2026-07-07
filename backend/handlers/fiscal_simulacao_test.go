@@ -212,6 +212,22 @@ func TestPfImportJobSnapshot(t *testing.T) {
 	}
 }
 
+func TestNormalizeCodigoProduto(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"3796949", "379694"},            // caso base: só o dígito verificador
+		{"000000000004251830", "425183"}, // zero-padding SAP (transferência) + DV
+		{"000000000000000000", "0"},      // tudo zero — não pode virar vazio
+		{" 4251830 ", "425183"},          // espaços
+		{"7", "7"},                       // 1 char: mantém
+		{"", ""},                         // vazio: mantém
+	}
+	for _, tc := range tests {
+		if got := normalizeCodigoProduto(tc.in); got != tc.want {
+			t.Errorf("normalizeCodigoProduto(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestFiscalDebugTraceAdd(t *testing.T) {
 	tr := &fiscalDebugTrace{}
 	tr.add("id1", "produto x", "etapa1", "mensagem 1")
