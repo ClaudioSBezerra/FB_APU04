@@ -115,9 +115,15 @@ type fiscalSimulacao struct {
 	PrecoLiquido     float64 `json:"preco_liquido"`
 	BaseIbsCbsPacote float64 `json:"base_ibs_cbs_pacote"`
 
-	// Original (1ª chamada, sem inclusão)
+	// Alíquotas retornadas pela 1ª chamada do pacote (memória de cálculo)
+	AliquotaIcms    float64 `json:"aliquota_icms"`    // %
+	AliquotaFcp     float64 `json:"aliquota_fcp"`     // % (fundo pobreza)
+	PercentualDifal float64 `json:"percentual_difal"` // %
+
+	// Original (XML, sem inclusão; FCP/DIFAL da 1ª chamada — XML não destaca por item)
 	BaseIcmsOriginal float64 `json:"base_icms_original"`
 	IcmsOriginal     float64 `json:"icms_original"`
+	BaseStOriginal   float64 `json:"base_st_original"`
 	StOriginal       float64 `json:"st_original"`
 	FcpOriginal      float64 `json:"fcp_original"`
 	DifalOriginal    float64 `json:"difal_original"`
@@ -125,6 +131,7 @@ type fiscalSimulacao struct {
 	// Cálculo simulado interno (original × fator)
 	BaseIcmsSimulada float64 `json:"base_icms_simulada"`
 	IcmsSimulado     float64 `json:"icms_simulado"`
+	BaseStSimulada   float64 `json:"base_st_simulada"`
 	StSimulado       float64 `json:"st_simulado"`
 	FcpSimulado      float64 `json:"fcp_simulado"`
 	DifalSimulado    float64 `json:"difal_simulado"`
@@ -132,6 +139,7 @@ type fiscalSimulacao struct {
 	// Cálculo do pacote fiscal (2ª chamada, preço acrescido)
 	BaseIcmsPacote float64 `json:"base_icms_pacote"`
 	IcmsPacote     float64 `json:"icms_pacote"`
+	BaseStPacote   float64 `json:"base_st_pacote"`
 	StPacote       float64 `json:"st_pacote"`
 	FcpPacote      float64 `json:"fcp_pacote"`
 	DifalPacote    float64 `json:"difal_pacote"`
@@ -153,8 +161,12 @@ func runSimulacaoIbsCbs(ctx context.Context, oracleDB *sql.DB, in services.Fisca
 		PrecoOriginal:    it.VProd,
 		PrecoLiquido:     round2((it.VProd - it.VDesc + it.VFrete + it.VOutro) - it.VIcmsXML - it.VStXML - it.VPisXML - it.VCofinsXML),
 		BaseIbsCbsPacote: r1.BaseCalculoIbsCbs,
+		AliquotaIcms:     r1.AliquotaImposto,
+		AliquotaFcp:      r1.AliquotaFundoPobreza,
+		PercentualDifal:  r1.PercentualDifal,
 		BaseIcmsOriginal: it.VBcIcmsXML,
 		IcmsOriginal:     it.VIcmsXML,
+		BaseStOriginal:   it.VBcStXML,
 		StOriginal:       it.VStXML,
 		FcpOriginal:      r1.ValorIcmsPobreza,
 		DifalOriginal:    r1.ValorIcmsPartilhaDestino,
@@ -174,6 +186,7 @@ func runSimulacaoIbsCbs(ctx context.Context, oracleDB *sql.DB, in services.Fisca
 
 	sim.BaseIcmsSimulada = round2(sim.BaseIcmsOriginal * fator)
 	sim.IcmsSimulado = round2(sim.IcmsOriginal * fator)
+	sim.BaseStSimulada = round2(sim.BaseStOriginal * fator)
 	sim.StSimulado = round2(sim.StOriginal * fator)
 	sim.FcpSimulado = round2(sim.FcpOriginal * fator)
 	sim.DifalSimulado = round2(sim.DifalOriginal * fator)
@@ -191,6 +204,7 @@ func runSimulacaoIbsCbs(ctx context.Context, oracleDB *sql.DB, in services.Fisca
 
 	sim.BaseIcmsPacote = r2.BaseCalculo
 	sim.IcmsPacote = r2.ValorImposto
+	sim.BaseStPacote = r2.BaseSubstituicao
 	sim.StPacote = r2.ValorSubstituicao
 	sim.FcpPacote = r2.ValorIcmsPobreza
 	sim.DifalPacote = r2.ValorIcmsPartilhaDestino
@@ -232,6 +246,7 @@ type fiscalItemInput struct {
 	// (a base da simulação é o que a nota destacou, não a 1ª chamada)
 	VBcIcmsXML float64
 	VIcmsXML   float64
+	VBcStXML   float64
 	VStXML     float64
 	VPisXML    float64
 	VCofinsXML float64
@@ -383,7 +398,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 
 		itemRows, err := db.Query(`
 			SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_frete,0), COALESCE(v_ipi,0),
-			       COALESCE(v_bc_icms,0), COALESCE(v_icms,0), COALESCE(v_st,0), COALESCE(v_pis,0), COALESCE(v_cofins,0)
+			       COALESCE(v_bc_icms,0), COALESCE(v_icms,0), COALESCE(v_bc_st,0), COALESCE(v_st,0), COALESCE(v_pis,0), COALESCE(v_cofins,0)
 			FROM pacotefiscal_nfe_saidas_itens
 			WHERE nfe_id = $1 AND company_id = $2
 			ORDER BY n_item ASC`, req.NfeID, companyID)
@@ -396,7 +411,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		for itemRows.Next() {
 			var it fiscalItemInput
 			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VFrete, &it.VIPI,
-				&it.VBcIcmsXML, &it.VIcmsXML, &it.VStXML, &it.VPisXML, &it.VCofinsXML); scanErr != nil {
+				&it.VBcIcmsXML, &it.VIcmsXML, &it.VBcStXML, &it.VStXML, &it.VPisXML, &it.VCofinsXML); scanErr != nil {
 				log.Printf("FiscalExecutionRunHandler: erro ao escanear item (nfe_id=%s): %v", req.NfeID, scanErr)
 				continue
 			}

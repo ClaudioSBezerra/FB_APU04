@@ -128,22 +128,39 @@ interface Simulacao {
   // base legal do IBS/CBS — comparável com a base que o pacote usou
   preco_liquido: number;
   base_ibs_cbs_pacote: number;
+  aliquota_icms: number;
+  aliquota_fcp: number;
+  percentual_difal: number;
   base_icms_original: number;
   icms_original: number;
+  base_st_original: number;
   st_original: number;
   fcp_original: number;
   difal_original: number;
   base_icms_simulada: number;
   icms_simulado: number;
+  base_st_simulada: number;
   st_simulado: number;
   fcp_simulado: number;
   difal_simulado: number;
   base_icms_pacote: number;
   icms_pacote: number;
+  base_st_pacote: number;
   st_pacote: number;
   fcp_pacote: number;
   difal_pacote: number;
   erro?: string;
+}
+
+// Agregado por tributo da simulação — memória de cálculo do card
+interface SimTributoAgg {
+  baseOrig: number;
+  baseSim: number;
+  basePac: number;
+  valOrig: number;
+  valSim: number;
+  valPac: number;
+  aliqs: Set<number>;
 }
 
 type SimTaxKey = 'icms' | 'icms_st' | 'fcp' | 'difal';
@@ -390,12 +407,13 @@ function SimulacaoItem({ sim }: { sim: Simulacao }) {
       </div>
     );
   }
-  const linhas: { label: string; original: number; simulado: number; pacote: number }[] = [
-    { label: 'Base ICMS', original: sim.base_icms_original, simulado: sim.base_icms_simulada, pacote: sim.base_icms_pacote },
-    { label: 'ICMS', original: sim.icms_original, simulado: sim.icms_simulado, pacote: sim.icms_pacote },
-    { label: 'ICMS-ST', original: sim.st_original, simulado: sim.st_simulado, pacote: sim.st_pacote },
-    { label: 'FCP', original: sim.fcp_original, simulado: sim.fcp_simulado, pacote: sim.fcp_pacote },
-    { label: 'DIFAL', original: sim.difal_original, simulado: sim.difal_simulado, pacote: sim.difal_pacote },
+  const fmtPct = (v: number | null | undefined) =>
+    v != null ? `${v.toLocaleString('pt-BR')}%` : '—';
+  const linhas: { label: string; aliq: string; baseOrig: number | null; baseSim: number | null; basePac: number | null; original: number; simulado: number; pacote: number }[] = [
+    { label: 'ICMS', aliq: fmtPct(sim.aliquota_icms), baseOrig: sim.base_icms_original, baseSim: sim.base_icms_simulada, basePac: sim.base_icms_pacote, original: sim.icms_original, simulado: sim.icms_simulado, pacote: sim.icms_pacote },
+    { label: 'ICMS-ST', aliq: 'MVA', baseOrig: sim.base_st_original ?? 0, baseSim: sim.base_st_simulada ?? 0, basePac: sim.base_st_pacote ?? 0, original: sim.st_original, simulado: sim.st_simulado, pacote: sim.st_pacote },
+    { label: 'FCP', aliq: fmtPct(sim.aliquota_fcp), baseOrig: null, baseSim: null, basePac: null, original: sim.fcp_original, simulado: sim.fcp_simulado, pacote: sim.fcp_pacote },
+    { label: 'DIFAL', aliq: fmtPct(sim.percentual_difal), baseOrig: null, baseSim: null, basePac: null, original: sim.difal_original, simulado: sim.difal_simulado, pacote: sim.difal_pacote },
   ];
   return (
     <div className="mb-2">
@@ -409,31 +427,41 @@ function SimulacaoItem({ sim }: { sim: Simulacao }) {
         Preço Líquido (venda − desc + frete + desp − ICMS − ICMS-ST − PIS − COFINS − ISS): <span className="font-semibold text-foreground">{fmtBRL(sim.preco_liquido)}</span>
         {' '}· Base IBS/CBS do pacote: <span className={`font-semibold ${Math.abs((sim.preco_liquido ?? 0) - (sim.base_ibs_cbs_pacote ?? 0)) > 0.01 ? 'text-red-700' : 'text-foreground'}`}>{fmtBRL(sim.base_ibs_cbs_pacote)}</span>
       </p>
-      <table className="w-full text-[11px]">
-        <thead>
-          <tr className="text-muted-foreground border-b">
-            <th className="text-left font-normal py-0.5"></th>
-            <th className="text-right font-normal py-0.5">Original</th>
-            <th className="text-right font-normal py-0.5">Simulado</th>
-            <th className="text-right font-normal py-0.5">Pacote</th>
-            <th className="text-right font-normal py-0.5">Diferença</th>
-          </tr>
-        </thead>
-        <tbody>
-          {linhas.map(l => {
-            const dif = Math.round((l.simulado - l.pacote) * 100) / 100;
-            return (
-              <tr key={l.label} className="border-b border-dashed last:border-0">
-                <td className="py-0.5 text-muted-foreground">{l.label}</td>
-                <td className="py-0.5 text-right">{fmtBRL(l.original)}</td>
-                <td className="py-0.5 text-right font-medium">{fmtBRL(l.simulado)}</td>
-                <td className="py-0.5 text-right">{fmtBRL(l.pacote)}</td>
-                <td className={`py-0.5 text-right font-medium ${dif !== 0 ? 'text-red-700' : 'text-muted-foreground'}`}>{fmtBRL(dif)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="text-muted-foreground border-b">
+              <th className="text-left font-normal py-0.5"></th>
+              <th className="text-right font-normal py-0.5">Base antes</th>
+              <th className="text-right font-normal py-0.5">Nova base (sim)</th>
+              <th className="text-right font-normal py-0.5">Nova base (pacote)</th>
+              <th className="text-center font-normal py-0.5">Alíq.</th>
+              <th className="text-right font-normal py-0.5">Valor antes</th>
+              <th className="text-right font-normal py-0.5">Novo (sim)</th>
+              <th className="text-right font-normal py-0.5">Novo (pacote)</th>
+              <th className="text-right font-normal py-0.5">Dif.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map(l => {
+              const dif = Math.round((l.simulado - l.pacote) * 100) / 100;
+              return (
+                <tr key={l.label} className="border-b border-dashed last:border-0">
+                  <td className="py-0.5 text-muted-foreground whitespace-nowrap">{l.label}</td>
+                  <td className="py-0.5 text-right">{l.baseOrig != null ? fmtBRL(l.baseOrig) : '—'}</td>
+                  <td className="py-0.5 text-right font-medium">{l.baseSim != null ? fmtBRL(l.baseSim) : '—'}</td>
+                  <td className="py-0.5 text-right">{l.basePac != null ? fmtBRL(l.basePac) : '—'}</td>
+                  <td className="py-0.5 text-center text-muted-foreground">{l.aliq}</td>
+                  <td className="py-0.5 text-right">{fmtBRL(l.original)}</td>
+                  <td className="py-0.5 text-right font-medium">{fmtBRL(l.simulado)}</td>
+                  <td className="py-0.5 text-right">{fmtBRL(l.pacote)}</td>
+                  <td className={`py-0.5 text-right font-medium ${dif !== 0 ? 'text-red-700' : 'text-muted-foreground'}`}>{fmtBRL(dif)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -618,10 +646,8 @@ export default function ComparacaoFiscal() {
     const comSim = rows.filter(r => r.simulacao && !r.simulacao.erro);
     const comErro = rows.filter(r => r.simulacao?.erro).length;
     if (comSim.length === 0 && comErro === 0) return null;
-    const zero: Record<SimTaxKey, number> = { icms: 0, icms_st: 0, fcp: 0, difal: 0 };
-    const original = { ...zero };
-    const simulado = { ...zero };
-    const pacote = { ...zero };
+    const mk = (): SimTributoAgg => ({ baseOrig: 0, baseSim: 0, basePac: 0, valOrig: 0, valSim: 0, valPac: 0, aliqs: new Set<number>() });
+    const trib: Record<SimTaxKey, SimTributoAgg> = { icms: mk(), icms_st: mk(), fcp: mk(), difal: mk() };
     let acrescimoTotal = 0;
     let precoLiquidoTotal = 0;
     let baseIbsCbsPacoteTotal = 0;
@@ -629,22 +655,19 @@ export default function ComparacaoFiscal() {
       const s = r.simulacao!;
       precoLiquidoTotal += s.preco_liquido ?? 0;
       baseIbsCbsPacoteTotal += s.base_ibs_cbs_pacote ?? 0;
-      original.icms += s.icms_original;
-      original.icms_st += s.st_original;
-      original.fcp += s.fcp_original;
-      original.difal += s.difal_original;
-      simulado.icms += s.icms_simulado;
-      simulado.icms_st += s.st_simulado;
-      simulado.fcp += s.fcp_simulado;
-      simulado.difal += s.difal_simulado;
-      pacote.icms += s.icms_pacote;
-      pacote.icms_st += s.st_pacote;
-      pacote.fcp += s.fcp_pacote;
-      pacote.difal += s.difal_pacote;
       acrescimoTotal += s.acrescimo_ibs_cbs;
+      trib.icms.baseOrig += s.base_icms_original; trib.icms.baseSim += s.base_icms_simulada; trib.icms.basePac += s.base_icms_pacote;
+      trib.icms.valOrig += s.icms_original; trib.icms.valSim += s.icms_simulado; trib.icms.valPac += s.icms_pacote;
+      trib.icms.aliqs.add(s.aliquota_icms ?? 0);
+      trib.icms_st.baseOrig += s.base_st_original ?? 0; trib.icms_st.baseSim += s.base_st_simulada ?? 0; trib.icms_st.basePac += s.base_st_pacote ?? 0;
+      trib.icms_st.valOrig += s.st_original; trib.icms_st.valSim += s.st_simulado; trib.icms_st.valPac += s.st_pacote;
+      trib.fcp.valOrig += s.fcp_original; trib.fcp.valSim += s.fcp_simulado; trib.fcp.valPac += s.fcp_pacote;
+      trib.fcp.aliqs.add(s.aliquota_fcp ?? 0);
+      trib.difal.valOrig += s.difal_original; trib.difal.valSim += s.difal_simulado; trib.difal.valPac += s.difal_pacote;
+      trib.difal.aliqs.add(s.percentual_difal ?? 0);
     });
     return {
-      original, simulado, pacote, acrescimoTotal,
+      trib, acrescimoTotal,
       precoLiquidoTotal: Math.round(precoLiquidoTotal * 100) / 100,
       baseIbsCbsPacoteTotal: Math.round(baseIbsCbsPacoteTotal * 100) / 100,
       itens: comSim.length, comErro,
@@ -951,60 +974,64 @@ export default function ComparacaoFiscal() {
                 </span>
               </div>
             </div>
+            {/* Memória de cálculo: base antes → nova base (com IBS/CBS) → alíquota → valor antes → novo valor */}
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent bg-muted/30">
-                    <TableHead className="py-1.5 px-2 text-[11px]"></TableHead>
-                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => (
-                      <TableHead key={key} className="py-1.5 px-2 text-[11px] text-center">{SIM_LABELS[key]}</TableHead>
-                    ))}
+                    <TableHead className="py-1.5 px-2 text-[11px]">Tributo</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right border-l">Base antes (XML)</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">Nova base (simulada)</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">Nova base (pacote)</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-center border-l">Alíq.</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right border-l">Valor antes</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">Novo valor (simulado)</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right">Novo valor (pacote)</TableHead>
+                    <TableHead className="py-1.5 px-2 text-[11px] text-right border-l">Diferença</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow>
-                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Original (XML, sem inclusão)</TableCell>
-                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => (
-                      <TableCell key={key} className="py-1 px-2 text-right text-[11px] text-muted-foreground">
-                        {fmtBRL(simSummary.original[key])}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Cálculo Simulado (interno)</TableCell>
-                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => (
-                      <TableCell key={key} className="py-1 px-2 text-right text-[11px] font-semibold">
-                        {fmtBRL(simSummary.simulado[key])}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Cálculo Pacote Fiscal (2ª chamada)</TableCell>
-                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => (
-                      <TableCell key={key} className="py-1 px-2 text-right text-[11px]">
-                        {fmtBRL(simSummary.pacote[key])}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">Diferença (simulado − pacote)</TableCell>
-                    {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => {
-                      const diferenca = Math.round((simSummary.simulado[key] - simSummary.pacote[key]) * 100) / 100;
-                      return (
-                        <TableCell key={key} className="py-1 px-2 text-right">
+                  {(Object.keys(SIM_LABELS) as SimTaxKey[]).map(key => {
+                    const t = simSummary.trib[key];
+                    const temBase = key === 'icms' || key === 'icms_st';
+                    const aliq = t.aliqs.size === 1 ? [...t.aliqs][0] : null;
+                    const diferenca = Math.round((t.valSim - t.valPac) * 100) / 100;
+                    return (
+                      <TableRow key={key}>
+                        <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">{SIM_LABELS[key]}</TableCell>
+                        <TableCell className="py-1 px-2 text-right text-[11px] text-muted-foreground border-l">
+                          {temBase ? fmtBRL(t.baseOrig) : '—'}
+                        </TableCell>
+                        <TableCell className="py-1 px-2 text-right text-[11px] font-semibold">
+                          {temBase ? fmtBRL(t.baseSim) : '—'}
+                        </TableCell>
+                        <TableCell className="py-1 px-2 text-right text-[11px]">
+                          {temBase ? fmtBRL(t.basePac) : '—'}
+                        </TableCell>
+                        <TableCell className="py-1 px-2 text-center text-[11px] border-l">
+                          {key === 'icms_st'
+                            ? 'MVA'
+                            : aliq != null
+                              ? `${aliq.toLocaleString('pt-BR')}%`
+                              : 'várias'}
+                        </TableCell>
+                        <TableCell className="py-1 px-2 text-right text-[11px] text-muted-foreground border-l">{fmtBRL(t.valOrig)}</TableCell>
+                        <TableCell className="py-1 px-2 text-right text-[11px] font-semibold">{fmtBRL(t.valSim)}</TableCell>
+                        <TableCell className="py-1 px-2 text-right text-[11px]">{fmtBRL(t.valPac)}</TableCell>
+                        <TableCell className="py-1 px-2 text-right border-l">
                           <DiferencaBadge diferenca={diferenca} divergente={diferenca !== 0} />
                         </TableCell>
-                      );
-                    })}
-                  </TableRow>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2">
-              Original = ICMS/ST destacados no XML da nota (mesma fonte do "Esperado" acima; FCP e DIFAL vêm da
-              1ª chamada do pacote, pois o XML não os destaca por item). Simulado interno = Original × fator
-              (preço + IBS + CBS) ÷ preço, por item. Diferença ≠ 0 combina divergência pré-existente (XML × pacote)
-              com eventual não-linearidade da inclusão — investigar no detalhe do item.
+              Base/valor "antes" = destacados no XML da nota (FCP e DIFAL vêm da 1ª chamada do pacote — o XML não
+              os destaca por item). Nova base/valor simulados = antes × fator (preço líquido + IBS + CBS acréscimo),
+              por item. Alíquota da 1ª chamada do pacote ("várias" quando os itens têm alíquotas diferentes;
+              ST usa MVA, não alíquota única). Diferença = novo valor simulado − novo valor do pacote.
             </p>
           </CardContent>
         </Card>
