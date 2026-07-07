@@ -149,6 +149,11 @@ interface Simulacao {
   st_pacote: number;
   fcp_pacote: number;
   difal_pacote: number;
+  // IBS/CBS calculados internamente sobre o preço líquido
+  aliquota_ibs: number;
+  aliquota_cbs: number;
+  valor_ibs_simulado: number;
+  valor_cbs_simulado: number;
   erro?: string;
 }
 
@@ -395,7 +400,7 @@ function DetalheItem({ row, onClose }: { row: ComparacaoRow; onClose: () => void
 }
 
 // SimulacaoItem — comparação por item da simulação "IBS/CBS na base":
-// Original × Simulado interno × Pacote (2ª chamada) × Diferença.
+// Original × Simulado interno (método aditivo) × Pacote (chamada única) × Diferença.
 function SimulacaoItem({ sim }: { sim: Simulacao }) {
   if (sim.erro) {
     return (
@@ -421,7 +426,7 @@ function SimulacaoItem({ sim }: { sim: Simulacao }) {
         Simulação IBS/CBS na base
       </h3>
       <p className="text-[10px] text-muted-foreground mb-1">
-        Preço {fmtBRL(sim.preco_original)} + IBS/CBS {fmtBRL(sim.acrescimo_ibs_cbs)} = {fmtBRL(sim.preco_simulado)} (fator {sim.fator.toLocaleString('pt-BR', { minimumFractionDigits: 4 })})
+        IBS {fmtBRL(sim.valor_ibs_simulado)} ({sim.aliquota_ibs?.toLocaleString('pt-BR')}%) + CBS {fmtBRL(sim.valor_cbs_simulado)} ({sim.aliquota_cbs?.toLocaleString('pt-BR')}%) = acréscimo {fmtBRL(sim.acrescimo_ibs_cbs)} sobre a base
       </p>
       <p className="text-[10px] text-muted-foreground mb-1">
         Preço Líquido (venda − desc + frete + desp − ICMS − ICMS-ST − PIS − COFINS − ISS): <span className="font-semibold text-foreground">{fmtBRL(sim.preco_liquido)}</span>
@@ -641,7 +646,7 @@ export default function ComparacaoFiscal() {
   }, [rows, selectedNfe]);
 
   // Acumulado da simulação "IBS/CBS na base" — soma dos itens que rodaram em
-  // modo simulação sem erro. Original × Simulado interno × Pacote (2ª chamada).
+  // modo simulação sem erro. Original × Simulado interno × Pacote (chamada única).
   const simSummary = useMemo(() => {
     const comSim = rows.filter(r => r.simulacao && !r.simulacao.erro);
     const comErro = rows.filter(r => r.simulacao?.erro).length;
@@ -651,11 +656,15 @@ export default function ComparacaoFiscal() {
     let acrescimoTotal = 0;
     let precoLiquidoTotal = 0;
     let baseIbsCbsPacoteTotal = 0;
+    let ibsSimTotal = 0;
+    let cbsSimTotal = 0;
     comSim.forEach(r => {
       const s = r.simulacao!;
       precoLiquidoTotal += s.preco_liquido ?? 0;
       baseIbsCbsPacoteTotal += s.base_ibs_cbs_pacote ?? 0;
       acrescimoTotal += s.acrescimo_ibs_cbs;
+      ibsSimTotal += s.valor_ibs_simulado ?? 0;
+      cbsSimTotal += s.valor_cbs_simulado ?? 0;
       trib.icms.baseOrig += s.base_icms_original; trib.icms.baseSim += s.base_icms_simulada; trib.icms.basePac += s.base_icms_pacote;
       trib.icms.valOrig += s.icms_original; trib.icms.valSim += s.icms_simulado; trib.icms.valPac += s.icms_pacote;
       trib.icms.aliqs.add(s.aliquota_icms ?? 0);
@@ -670,6 +679,8 @@ export default function ComparacaoFiscal() {
       trib, acrescimoTotal,
       precoLiquidoTotal: Math.round(precoLiquidoTotal * 100) / 100,
       baseIbsCbsPacoteTotal: Math.round(baseIbsCbsPacoteTotal * 100) / 100,
+      ibsSimTotal: Math.round(ibsSimTotal * 100) / 100,
+      cbsSimTotal: Math.round(cbsSimTotal * 100) / 100,
       itens: comSim.length, comErro,
     };
   }, [rows]);
@@ -973,6 +984,13 @@ export default function ComparacaoFiscal() {
                   {fmtBRL(Math.round((simSummary.precoLiquidoTotal - simSummary.baseIbsCbsPacoteTotal) * 100) / 100)}
                 </span>
               </div>
+              <div>
+                <span className="text-muted-foreground">IBS simulado: </span>
+                <span className="font-semibold">{fmtBRL(simSummary.ibsSimTotal)}</span>
+                <span className="text-muted-foreground"> + CBS simulado: </span>
+                <span className="font-semibold">{fmtBRL(simSummary.cbsSimTotal)}</span>
+                <span className="text-muted-foreground"> = acréscimo na base</span>
+              </div>
             </div>
             {/* Memória de cálculo: base antes → nova base (com IBS/CBS) → alíquota → valor antes → novo valor */}
             <div className="overflow-x-auto rounded-md border">
@@ -1028,10 +1046,10 @@ export default function ComparacaoFiscal() {
               </Table>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2">
-              Base/valor "antes" = destacados no XML da nota (FCP e DIFAL vêm da 1ª chamada do pacote — o XML não
-              os destaca por item). Nova base/valor simulados = antes × fator (preço líquido + IBS + CBS acréscimo),
-              por item. Alíquota da 1ª chamada do pacote ("várias" quando os itens têm alíquotas diferentes;
-              ST usa MVA, não alíquota única). Diferença = novo valor simulado − novo valor do pacote.
+              Simulado (método aditivo): IBS/CBS = preço líquido × alíquotas; nova base = base do XML + IBS + CBS
+              (acréscimo integral, precisão cheia); novo valor = nova base × alíquota do item. Pacote: a versão nova
+              do PKG_FISCAL_FCTAX já embute IBS/CBS na base na própria chamada — colunas "pacote" vêm da chamada
+              única (BaseCalculo/ValorImposto). Diferença = novo valor simulado − pacote.
             </p>
           </CardContent>
         </Card>

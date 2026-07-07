@@ -144,75 +144,124 @@ type fiscalSimulacao struct {
 	FcpPacote      float64 `json:"fcp_pacote"`
 	DifalPacote    float64 `json:"difal_pacote"`
 
-	Erro string `json:"erro,omitempty"` // 2ª chamada falhou / IBS+CBS zerados
+	// IBS/CBS calculados internamente sobre o preço líquido (memória de cálculo)
+	AliquotaIbs      float64 `json:"aliquota_ibs"`
+	AliquotaCbs      float64 `json:"aliquota_cbs"`
+	ValorIbsSimulado float64 `json:"valor_ibs_simulado"`
+	ValorCbsSimulado float64 `json:"valor_cbs_simulado"`
+
+	Erro string `json:"erro,omitempty"` // sem base/alíquotas para simular
 }
 
 func round2(v float64) float64 {
 	return math.Round(v*100) / 100
 }
 
-// runSimulacaoIbsCbs executa a 2ª chamada e monta a comparação. Nunca aborta
-// o item — em falha, devolve a simulação preenchida só com Erro.
-func runSimulacaoIbsCbs(ctx context.Context, oracleDB *sql.DB, in services.FiscalInput, it fiscalItemInput, r1 *services.FiscalResult, trace *fiscalDebugTrace, produtoLabel string) fiscalSimulacao {
-	// Original = o que a nota DECLAROU no XML (base da simulação, coerente com
-	// o "Esperado" do Resumo). FCP e DIFAL não são destacados por item no XML
-	// — nesses dois o original vem da 1ª chamada do pacote.
+// runSimulacaoIbsCbs monta a comparação da inclusão de IBS/CBS na base.
+//
+// MÉTODO ADITIVO (planilha do Claudio, 2026-07-07), tudo em precisão cheia:
+//
+//	líquido    = (venda − desc + frete + desp) − ICMS − ST − PIS − COFINS − ISS
+//	IBS        = líquido × alíquota IBS   (alíquotas da chamada do pacote)
+//	CBS        = líquido × alíquota CBS
+//	nova base  = base XML + IBS + CBS     (acréscimo INTEGRAL, não proporcional)
+//	novo ICMS  = nova base × alíquota ICMS do item (p_icms do XML)
+//
+// Lado "pacote": a versão nova do PKG_FISCAL_FCTAX JÁ EMBUTE IBS/CBS na base
+// na PRÓPRIA chamada (comprovado por script em 2026-07-07: BaseCalculoOriginal
+// 2599,90 → BaseCalculo 2620,67 numa chamada única) — então NÃO há 2ª chamada:
+// BaseCalculo/ValorImposto da chamada normal são o "com inclusão" do pacote.
+// Isso também explica a divergência sistemática ICMS XML × pacote na
+// comparação normal (o pacote calcula com inclusão; o XML foi emitido sem).
+func runSimulacaoIbsCbs(it fiscalItemInput, r1 *services.FiscalResult, trace *fiscalDebugTrace, produtoLabel string) fiscalSimulacao {
+	// Proporção original/inclusão do próprio pacote — usada para reconstituir
+	// o "antes" de FCP/DIFAL (o XML não os destaca por item).
+	ratioPacote := 1.0
+	if r1.BaseCalculo > 0 && r1.BaseCalculoOriginal > 0 {
+		ratioPacote = r1.BaseCalculoOriginal / r1.BaseCalculo
+	}
+
 	sim := fiscalSimulacao{
 		PrecoOriginal:    it.VProd,
-		PrecoLiquido:     round2((it.VProd - it.VDesc + it.VFrete + it.VOutro) - it.VIcmsXML - it.VStXML - it.VPisXML - it.VCofinsXML),
 		BaseIbsCbsPacote: r1.BaseCalculoIbsCbs,
-		AliquotaIcms:     r1.AliquotaImposto,
 		AliquotaFcp:      r1.AliquotaFundoPobreza,
 		PercentualDifal:  r1.PercentualDifal,
 		BaseIcmsOriginal: it.VBcIcmsXML,
 		IcmsOriginal:     it.VIcmsXML,
 		BaseStOriginal:   it.VBcStXML,
 		StOriginal:       it.VStXML,
-		FcpOriginal:      r1.ValorIcmsPobreza,
-		DifalOriginal:    r1.ValorIcmsPartilhaDestino,
+		FcpOriginal:      round2(r1.ValorIcmsPobreza * ratioPacote),
+		DifalOriginal:    round2(r1.ValorIcmsPartilhaDestino * ratioPacote),
+		// Pacote (chamada única, já com IBS/CBS na base)
+		BaseIcmsPacote: r1.BaseCalculo,
+		IcmsPacote:     r1.ValorImposto,
+		BaseStPacote:   r1.BaseSubstituicao,
+		StPacote:       r1.ValorSubstituicao,
+		FcpPacote:      r1.ValorIcmsPobreza,
+		DifalPacote:    r1.ValorIcmsPartilhaDestino,
 	}
 
-	ibsCbs := r1.ValorIbsUF + r1.ValorIbsMUN + r1.ValorCbs
-	if it.VProd <= 0 || ibsCbs <= 0 {
-		sim.Erro = fmt.Sprintf("Sem base para simular (preço %.2f, IBS+CBS %.2f retornados pela 1ª chamada).", it.VProd, ibsCbs)
+	// 1. Preço líquido em precisão cheia (base do IBS/CBS)
+	liquido := (it.VProd - it.VDesc + it.VFrete + it.VOutro) - it.VIcmsXML - it.VStXML - it.VPisXML - it.VCofinsXML
+	sim.PrecoLiquido = round2(liquido)
+
+	// 2. IBS/CBS internos = líquido × alíquotas retornadas pelo pacote
+	sim.AliquotaIbs = r1.AliquotaIbsUF + r1.AliquotaIbsMUN
+	sim.AliquotaCbs = r1.AliquotaCbs
+	ibs := liquido * sim.AliquotaIbs / 100
+	cbs := liquido * sim.AliquotaCbs / 100
+	if ibs+cbs <= 0 {
+		// Pacote sem alíquotas da Reforma → usa os valores que ele retornou
+		ibs = r1.ValorIbsUF + r1.ValorIbsMUN
+		cbs = r1.ValorCbs
+	}
+	acrescimo := ibs + cbs
+	if liquido <= 0 || acrescimo <= 0 {
+		sim.Erro = fmt.Sprintf("Sem base para simular (líquido %.2f, IBS+CBS %.2f).", liquido, acrescimo)
 		trace.add(it.ID, produtoLabel, "simulacao", sim.Erro)
 		return sim
 	}
-
-	sim.AcrescimoIbsCbs = round2(ibsCbs)
-	sim.PrecoSimulado = round2(it.VProd + ibsCbs)
-	fator := sim.PrecoSimulado / it.VProd
-	sim.Fator = math.Round(fator*10000) / 10000
-
-	sim.BaseIcmsSimulada = round2(sim.BaseIcmsOriginal * fator)
-	sim.IcmsSimulado = round2(sim.IcmsOriginal * fator)
-	sim.BaseStSimulada = round2(sim.BaseStOriginal * fator)
-	sim.StSimulado = round2(sim.StOriginal * fator)
-	sim.FcpSimulado = round2(sim.FcpOriginal * fator)
-	sim.DifalSimulado = round2(sim.DifalOriginal * fator)
-
-	in2 := in
-	in2.PPrecoTotal = sim.PrecoSimulado
-	trace.add(it.ID, produtoLabel, "simulacao_chamada", fmt.Sprintf("2ª chamada (IBS/CBS na base): pPrecoTotal %.2f → %.2f (acréscimo IBS+CBS %.2f, fator %.4f)", it.VProd, sim.PrecoSimulado, sim.AcrescimoIbsCbs, sim.Fator))
-
-	r2, err := services.CallFiscalPackage(ctx, oracleDB, in2)
-	if err != nil {
-		sim.Erro = "Falha na 2ª chamada do pacote (preço acrescido): " + sanitizeOracleErrForDebug(err)
-		trace.add(it.ID, produtoLabel, "simulacao", sim.Erro)
-		return sim
+	sim.ValorIbsSimulado = round2(ibs)
+	sim.ValorCbsSimulado = round2(cbs)
+	sim.AcrescimoIbsCbs = round2(acrescimo)
+	sim.PrecoSimulado = round2(it.VProd + acrescimo)
+	if it.VProd > 0 {
+		sim.Fator = math.Round((it.VProd+acrescimo)/it.VProd*10000) / 10000
 	}
 
-	sim.BaseIcmsPacote = r2.BaseCalculo
-	sim.IcmsPacote = r2.ValorImposto
-	sim.BaseStPacote = r2.BaseSubstituicao
-	sim.StPacote = r2.ValorSubstituicao
-	sim.FcpPacote = r2.ValorIcmsPobreza
-	sim.DifalPacote = r2.ValorIcmsPartilhaDestino
+	// 3. Nova base = base XML + acréscimo integral; novo ICMS recalculado
+	//    pela alíquota do item (p_icms do XML; fallback: alíquota do pacote)
+	aliqIcms := it.PIcmsXML
+	if aliqIcms <= 0 {
+		aliqIcms = r1.AliquotaImposto
+	}
+	sim.AliquotaIcms = aliqIcms
+	novaBase := sim.BaseIcmsOriginal + acrescimo
+	sim.BaseIcmsSimulada = round2(novaBase)
+	sim.IcmsSimulado = round2(novaBase * aliqIcms / 100)
 
-	trace.add(it.ID, produtoLabel, "simulacao_concluida", fmt.Sprintf(
-		"ICMS sim %.2f × pacote %.2f | ST sim %.2f × %.2f | FCP sim %.2f × %.2f | DIFAL sim %.2f × %.2f",
-		sim.IcmsSimulado, sim.IcmsPacote, sim.StSimulado, sim.StPacote,
-		sim.FcpSimulado, sim.FcpPacote, sim.DifalSimulado, sim.DifalPacote))
+	// ST: base aditiva; valor proporcional à variação da base (MVA não muda)
+	if sim.BaseStOriginal > 0 {
+		novaBaseSt := sim.BaseStOriginal + acrescimo
+		sim.BaseStSimulada = round2(novaBaseSt)
+		sim.StSimulado = round2(sim.StOriginal * novaBaseSt / sim.BaseStOriginal)
+	}
+	// FCP: recalculado pela alíquota sobre a nova base (ou proporcional)
+	if r1.AliquotaFundoPobreza > 0 {
+		sim.FcpSimulado = round2(novaBase * r1.AliquotaFundoPobreza / 100)
+	} else if sim.BaseIcmsOriginal > 0 {
+		sim.FcpSimulado = round2(sim.FcpOriginal * novaBase / sim.BaseIcmsOriginal)
+	}
+	// DIFAL: proporcional à variação da base
+	if sim.BaseIcmsOriginal > 0 {
+		sim.DifalSimulado = round2(sim.DifalOriginal * novaBase / sim.BaseIcmsOriginal)
+	} else {
+		sim.DifalSimulado = sim.DifalOriginal
+	}
+
+	trace.add(it.ID, produtoLabel, "simulacao", fmt.Sprintf(
+		"líquido %.2f | IBS %.4f + CBS %.4f = acréscimo %.4f | nova base %.2f × %.2f%% = ICMS sim %.2f × pacote %.2f (base pacote %.2f, original %.2f)",
+		liquido, ibs, cbs, acrescimo, novaBase, aliqIcms, sim.IcmsSimulado, sim.IcmsPacote, r1.BaseCalculo, r1.BaseCalculoOriginal))
 	return sim
 }
 
@@ -246,6 +295,7 @@ type fiscalItemInput struct {
 	// (a base da simulação é o que a nota destacou, não a 1ª chamada)
 	VBcIcmsXML float64
 	VIcmsXML   float64
+	PIcmsXML   float64 // alíquota ICMS destacada no item — recalcula o novo ICMS na simulação
 	VBcStXML   float64
 	VStXML     float64
 	VPisXML    float64
@@ -398,7 +448,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 
 		itemRows, err := db.Query(`
 			SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_frete,0), COALESCE(v_ipi,0),
-			       COALESCE(v_bc_icms,0), COALESCE(v_icms,0), COALESCE(v_bc_st,0), COALESCE(v_st,0), COALESCE(v_pis,0), COALESCE(v_cofins,0)
+			       COALESCE(v_bc_icms,0), COALESCE(v_icms,0), COALESCE(p_icms,0), COALESCE(v_bc_st,0), COALESCE(v_st,0), COALESCE(v_pis,0), COALESCE(v_cofins,0)
 			FROM pacotefiscal_nfe_saidas_itens
 			WHERE nfe_id = $1 AND company_id = $2
 			ORDER BY n_item ASC`, req.NfeID, companyID)
@@ -411,7 +461,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		for itemRows.Next() {
 			var it fiscalItemInput
 			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VFrete, &it.VIPI,
-				&it.VBcIcmsXML, &it.VIcmsXML, &it.VBcStXML, &it.VStXML, &it.VPisXML, &it.VCofinsXML); scanErr != nil {
+				&it.VBcIcmsXML, &it.VIcmsXML, &it.PIcmsXML, &it.VBcStXML, &it.VStXML, &it.VPisXML, &it.VCofinsXML); scanErr != nil {
 				log.Printf("FiscalExecutionRunHandler: erro ao escanear item (nfe_id=%s): %v", req.NfeID, scanErr)
 				continue
 			}
@@ -489,13 +539,9 @@ func processFiscalBatch(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB, com
 				}
 			}()
 
-			// Timeout POR ITEM (15s; 30s com simulação — são 2 chamadas Oracle),
-			// não para o lote inteiro (T-11-16).
-			itemTimeout := 15 * time.Second
-			if simularIbsCbs {
-				itemTimeout = 30 * time.Second
-			}
-			itemCtx, cancel := context.WithTimeout(ctx, itemTimeout)
+			// Timeout POR ITEM (15s), não para o lote inteiro (T-11-16).
+			// A simulação IBS/CBS é 100% interna (sem 2ª chamada Oracle).
+			itemCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			defer cancel()
 
 			status := processSingleFiscalItem(itemCtx, oracleDB, pgDB, companyID, nfe, it, trace, simularIbsCbs)
@@ -627,7 +673,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 	// Simulação IBS/CBS na base (2ª chamada) — nunca muda o status do item:
 	// o resultado normal já está persistido; a simulação é anexada à parte.
 	if simularIbsCbs {
-		sim := runSimulacaoIbsCbs(ctx, oracleDB, in, it, result, trace, produtoLabel)
+		sim := runSimulacaoIbsCbs(it, result, trace, produtoLabel)
 		if simJSON, mErr := json.Marshal(sim); mErr == nil {
 			if _, uErr := pgDB.Exec(`UPDATE fiscal_execution_items SET simulacao = $1 WHERE nfe_item_id = $2`, simJSON, it.ID); uErr != nil {
 				log.Printf("FiscalExecutionRunHandler: item=%s persist simulacao error: %v", it.ID, uErr)

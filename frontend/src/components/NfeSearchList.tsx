@@ -327,7 +327,7 @@ export function NfeSearchList({
         </Button>
         {rows.length > 0 && (
           <div className="flex items-end gap-3 ml-auto">
-            <label className="flex items-center gap-1.5 text-xs cursor-pointer whitespace-nowrap pb-1.5" title="Se SIM, cada item ganha uma 2ª chamada ao pacote com o preço acrescido de IBS+CBS, e a tela compara: Original × Cálculo Simulado × Cálculo do Pacote">
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer whitespace-nowrap pb-1.5" title="Se SIM, a tela compara a inclusão de IBS/CBS na base: Original (XML) × Cálculo Simulado (interno: nova base = base + IBS + CBS calculados sobre o preço líquido) × Cálculo do Pacote (que já embute a inclusão na chamada)">
               <Checkbox
                 checked={incluirIbsCbs}
                 onCheckedChange={c => onIncluirIbsCbsChange?.(c === true)}
