@@ -45,15 +45,23 @@ const (
 	defaultFornecedorSimplesNacional = "N" // CRT do emitente não persistido em nfe_saidas
 )
 
-// centrosFiscaisPorCFOP devolve a ordem de tentativa do pTipoCentroFiscal
-// (regra do negócio 2026-07-07): transferência opera pelo CDNE (mas pode
-// cair no VRJNE); venda opera pelo VRJNE (mas existem vendas pelo CDNE).
+// centrosFiscais devolve a ordem de tentativa do pTipoCentroFiscal (regra do
+// negócio 2026-07-07): transferência (CFOP da lista OU nota para a PRÓPRIA
+// empresa — mesma raiz de CNPJ, ex: 5949 entre filiais) opera pelo CDNE (mas
+// pode cair no VRJNE); venda opera pelo VRJNE (mas existem vendas pelo CDNE).
 // A execução tenta na ordem e só marca erro se falhar nas duas.
-func centrosFiscaisPorCFOP(cfop string) []string {
-	if cfopsTransferencia[strings.TrimSpace(cfop)] {
+func centrosFiscais(cfop string, mesmaEmpresa bool) []string {
+	if mesmaEmpresa || cfopsTransferencia[strings.TrimSpace(cfop)] {
 		return []string{"CDNE", "VRJNE"}
 	}
 	return []string{"VRJNE", "CDNE"}
+}
+
+// mesmaEmpresa: destinatário com a mesma raiz de CNPJ (8 dígitos) do emitente
+func mesmaEmpresa(emitCNPJ, destCNPJ string) bool {
+	e := onlyDigits(emitCNPJ)
+	d := onlyDigits(destCNPJ)
+	return len(e) >= 8 && len(d) >= 8 && e[:8] == d[:8]
 }
 
 // tipoContribuinte deriva pTipoContribuinte (regra refinada em 2026-07-06
@@ -295,6 +303,7 @@ type fiscalNotaContext struct {
 	DestCMun      string
 	DestIndIE     string // <indIEDest>: 1/2 = contribuinte, 9 = não contribuinte
 	Modelo        int    // 55 = NF-e, 65 = NFC-e — fallback do pTipoContribuinte
+	MesmaEmpresa  bool   // destinatário com a mesma raiz de CNPJ (transferência/5949 entre filiais)
 	DataEmissao   time.Time
 	CodEmpresa    int
 	CodEmpresaErr error
@@ -425,14 +434,14 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 
 		// Guard IDOR (T-11-14): a nota só é carregada se pertencer à company_id
 		// resolvida via JWT — nunca confiar em company_id vindo do corpo/cliente.
-		var emitCNPJ, emitUF, emitCMun, destUF, destCMun, destIndIE string
+		var emitCNPJ, emitUF, emitCMun, destCNPJ, destUF, destCMun, destIndIE string
 		var modelo int
 		var dataEmissao time.Time
 		err = db.QueryRow(`
-			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(emit_c_mun,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), COALESCE(dest_ind_ie,''), modelo, data_emissao
+			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(emit_c_mun,''), COALESCE(dest_cnpj,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), COALESCE(dest_ind_ie,''), modelo, data_emissao
 			FROM pacotefiscal_nfe_saidas
 			WHERE id = $1 AND company_id = $2`, req.NfeID, companyID,
-		).Scan(&emitCNPJ, &emitUF, &emitCMun, &destUF, &destCMun, &destIndIE, &modelo, &dataEmissao)
+		).Scan(&emitCNPJ, &emitUF, &emitCMun, &destCNPJ, &destUF, &destCMun, &destIndIE, &modelo, &dataEmissao)
 		if err == sql.ErrNoRows {
 			jsonErr(w, http.StatusNotFound, "Nota não encontrada")
 			return
@@ -455,13 +464,14 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		nfeCtx := fiscalNotaContext{
-			EmitCNPJ:    emitCNPJ,
-			EmitUF:      emitUF,
-			DestUF:      destUF,
-			DestCMun:    destCMun,
-			DestIndIE:   destIndIE,
-			Modelo:      modelo,
-			DataEmissao: dataEmissao,
+			EmitCNPJ:     emitCNPJ,
+			EmitUF:       emitUF,
+			DestUF:       destUF,
+			DestCMun:     destCMun,
+			DestIndIE:    destIndIE,
+			Modelo:       modelo,
+			MesmaEmpresa: mesmaEmpresa(emitCNPJ, destCNPJ),
+			DataEmissao:  dataEmissao,
 		}
 		nfeCtx.CodEmpresa, nfeCtx.CodEmpresaErr = resolveCodEmpresa(emitCNPJ, emitUF)
 
@@ -668,7 +678,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 	// falhar nas duas.
 	var result *services.FiscalResult
 	var callErr error
-	centros := centrosFiscaisPorCFOP(it.CFOP)
+	centros := centrosFiscais(it.CFOP, nfe.MesmaEmpresa)
 	for i, centro := range centros {
 		in.PTipoCentroFiscal = centro
 		trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto com: %s [pDespesas = frete %.2f + outras %.2f]", in.FormatParams(), it.VFrete, it.VOutro))

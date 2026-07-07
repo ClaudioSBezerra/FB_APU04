@@ -28,25 +28,45 @@ func TestTipoContribuinte(t *testing.T) {
 	}
 }
 
-func TestCentrosFiscaisPorCFOP(t *testing.T) {
+func TestCentrosFiscais(t *testing.T) {
 	tests := []struct {
-		cfop  string
-		first string
+		cfop         string
+		mesmaEmpresa bool
+		first        string
 	}{
-		{"5152", "CDNE"},  // transferência → CDNE primeiro
-		{"6152", "CDNE"},  // transferência interestadual
-		{"5408", "CDNE"},  // transferência ST
-		{"5102", "VRJNE"}, // venda → VRJNE primeiro
-		{"5405", "VRJNE"}, // venda ST
-		{"", "VRJNE"},     // default venda
+		{"5152", false, "CDNE"},  // transferência → CDNE primeiro
+		{"6152", false, "CDNE"},  // transferência interestadual
+		{"5408", false, "CDNE"},  // transferência ST
+		{"5102", false, "VRJNE"}, // venda → VRJNE primeiro
+		{"5405", false, "VRJNE"}, // venda ST
+		{"", false, "VRJNE"},     // default venda
+		{"5949", true, "CDNE"},   // outra saída entre filiais (CNPJ próprio) → CDNE
+		{"5102", true, "CDNE"},   // qualquer CFOP p/ mesma empresa → CDNE
 	}
 	for _, tc := range tests {
-		got := centrosFiscaisPorCFOP(tc.cfop)
+		got := centrosFiscais(tc.cfop, tc.mesmaEmpresa)
 		if len(got) != 2 || got[0] != tc.first {
-			t.Errorf("centrosFiscaisPorCFOP(%q) = %v, want [%s ...] com fallback", tc.cfop, got, tc.first)
+			t.Errorf("centrosFiscais(%q, %v) = %v, want [%s ...] com fallback", tc.cfop, tc.mesmaEmpresa, got, tc.first)
 		}
 		if got[0] == got[1] {
-			t.Errorf("centrosFiscaisPorCFOP(%q): fallback igual ao primeiro (%v)", tc.cfop, got)
+			t.Errorf("centrosFiscais(%q, %v): fallback igual ao primeiro (%v)", tc.cfop, tc.mesmaEmpresa, got)
+		}
+	}
+}
+
+func TestMesmaEmpresa(t *testing.T) {
+	tests := []struct {
+		emit, dest string
+		want       bool
+	}{
+		{"10230480001960", "10230480001536", true},  // filiais Ferreira Costa
+		{"10230480001960", "05208211000138", false}, // cliente PJ
+		{"10230480001960", "", false},               // consumidor (CPF/sem dest)
+		{"", "10230480001536", false},
+	}
+	for _, tc := range tests {
+		if got := mesmaEmpresa(tc.emit, tc.dest); got != tc.want {
+			t.Errorf("mesmaEmpresa(%q, %q) = %v, want %v", tc.emit, tc.dest, got, tc.want)
 		}
 	}
 }

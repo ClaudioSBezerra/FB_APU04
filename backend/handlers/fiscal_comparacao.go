@@ -240,19 +240,16 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
 				WHERE i.nfe_id = n.id AND i.cst_icms IN ('20','70'))`
 		}
-		// Transferências (CFOPs de transferência nos itens — mesma lista de
-		// cfopsTransferencia): "excluir" tira da análise (geram muita sujeira
-		// de regras), "somente" isola para testá-las. Ausente = incluir.
-		const cfopsTransfSQL = `('5151','5152','5155','5156','5408','5409','6151','6152','6155','6156','6408','6409')`
-		switch r.URL.Query().Get("transferencias") {
+		// Notas CNPJ PRÓPRIO (destinatário com a mesma raiz de CNPJ do
+		// emitente): transferências E outras saídas entre filiais (ex: CFOP
+		// 5949) — geram muita sujeira de regras (decisão 2026-07-07, NF
+		// 504931). "excluir" ignora (padrão da tela), "somente" isola.
+		cnpjProprioCond := `(COALESCE(n.dest_cnpj,'') <> '' AND LEFT(n.dest_cnpj,8) = LEFT(COALESCE(n.emit_cnpj,''),8))`
+		switch r.URL.Query().Get("cnpj_proprio") {
 		case "excluir":
-			where += ` AND NOT EXISTS (
-				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
-				WHERE i.nfe_id = n.id AND i.cfop IN ` + cfopsTransfSQL + `)`
+			where += ` AND NOT ` + cnpjProprioCond
 		case "somente":
-			where += ` AND EXISTS (
-				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
-				WHERE i.nfe_id = n.id AND i.cfop IN ` + cfopsTransfSQL + `)`
+			where += ` AND ` + cnpjProprioCond
 		}
 
 		// Paginação: page 1-based; page_size 0 = todas (sem LIMIT).
