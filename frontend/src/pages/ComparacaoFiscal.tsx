@@ -399,7 +399,9 @@ export default function ComparacaoFiscal() {
   const queryClient = useQueryClient();
 
   const [selectedNfe, setSelectedNfe] = useState<NfeSearchResult | null>(null);
-  const [incluirIbsCbsBase, setIncluirIbsCbsBase] = useState(false);
+  // Já vem MARCADO (2026-07-07): o pacote novo embute IBS/CBS na base em toda
+  // chamada, então executar sem a simulação compara laranja com banana
+  const [incluirIbsCbsBase, setIncluirIbsCbsBase] = useState(true);
   const [showOnlyDivergent, setShowOnlyDivergent] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ComparacaoRow | null>(null);
   const [downloadingCSV, setDownloadingCSV] = useState(false);

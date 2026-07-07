@@ -124,12 +124,16 @@ export function NfeSearchList({
   const [comDifal, setComDifal] = useState(false);
   const [comFcp, setComFcp] = useState(false);
   const [comBaseReduzida, setComBaseReduzida] = useState(false);
+  // Transferências geram muita "sujeira" de regras — padrão é EXCLUIR da
+  // análise; "somente" isola para testá-las
+  const [transferencias, setTransferencias] = useState<'excluir' | 'incluir' | 'somente'>('excluir');
   // Paginação: 0 = todas
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
   const emptyApplied = {
     dataInicio: '', dataFim: '', q: '', ufOrigem: '', ufDestino: '', cliente: '', emitente: '',
-    comIcms: false, comSt: false, comDifal: false, comFcp: false, comBaseReduzida: false, pageSize: 50,
+    comIcms: false, comSt: false, comDifal: false, comFcp: false, comBaseReduzida: false,
+    transferencias: 'excluir' as 'excluir' | 'incluir' | 'somente', pageSize: 50,
   };
   const [applied, setApplied] = useState(emptyApplied);
   const [searched, setSearched] = useState(false);
@@ -153,6 +157,7 @@ export function NfeSearchList({
       if (applied.comDifal) params.set('com_difal', '1');
       if (applied.comFcp) params.set('com_fcp', '1');
       if (applied.comBaseReduzida) params.set('com_base_reduzida', '1');
+      if (applied.transferencias !== 'incluir') params.set('transferencias', applied.transferencias);
       params.set('page', String(page));
       params.set('page_size', String(applied.pageSize));
       const res = await fetch(`/api/fiscal/comparacao/search?${params}`, { headers: authHeaders });
@@ -175,7 +180,7 @@ export function NfeSearchList({
     setApplied({
       dataInicio, dataFim, q: q.trim(), ufOrigem, ufDestino,
       cliente: cliente.trim(), emitente: emitente.trim(),
-      comIcms, comSt, comDifal, comFcp, comBaseReduzida, pageSize,
+      comIcms, comSt, comDifal, comFcp, comBaseReduzida, transferencias, pageSize,
     });
   };
 
@@ -367,6 +372,18 @@ export function NfeSearchList({
             <option value={200}>200</option>
             <option value={500}>500</option>
             <option value={0}>Todas</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground" title="Transferências (CFOP 5151/5152/5155/5156/5408/5409 e 6xxx) geram muitas regras específicas — excluir deixa a análise mais limpa">Transferências</label>
+          <select
+            value={transferencias}
+            onChange={e => setTransferencias(e.target.value as 'excluir' | 'incluir' | 'somente')}
+            className="h-8 w-28 text-xs rounded-md border bg-background px-2"
+          >
+            <option value="excluir">Excluir</option>
+            <option value="incluir">Incluir</option>
+            <option value="somente">Somente</option>
           </select>
         </div>
         <Button size="sm" onClick={handleSearch} disabled={isLoading} className="h-8">

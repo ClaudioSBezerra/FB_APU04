@@ -1,8 +1,8 @@
 // fiscal_comparacao.go — superfície backend da tela "Comparação Fiscal"
 // (Fase 12, TPF-06/TPF-07). Dois handlers admin-gated e company-scoped:
 //
-//   GET /api/fiscal/comparacao/search?q=...   → FiscalComparacaoSearchHandler
-//   GET /api/fiscal/comparacao?nfe_id=...     → FiscalComparacaoReadHandler
+//	GET /api/fiscal/comparacao/search?q=...   → FiscalComparacaoSearchHandler
+//	GET /api/fiscal/comparacao?nfe_id=...     → FiscalComparacaoReadHandler
 //
 // Nenhuma lógica fiscal nova: reaproveita fiscal_execution_items (migration
 // 147, Fase 11) e nfe_saidas_itens já existentes. Padrão de auth/IDOR/query
@@ -63,12 +63,12 @@ type NfeSearchResult struct {
 // porque o LEFT JOIN pode não ter linha correspondente (item nunca executado).
 type ComparacaoRow struct {
 	// Identificação (esperado)
-	ID     string  `json:"id"`
-	NItem  int     `json:"n_item"`
-	CProd  string  `json:"c_prod"`
-	XProd  string  `json:"x_prod"`
-	NCM    string  `json:"ncm"`
-	CFOP   string  `json:"cfop"`
+	ID    string `json:"id"`
+	NItem int    `json:"n_item"`
+	CProd string `json:"c_prod"`
+	XProd string `json:"x_prod"`
+	NCM   string `json:"ncm"`
+	CFOP  string `json:"cfop"`
 
 	// Esperado (nfe_saidas_itens)
 	// CST/valores comerciais do item — usados para derivar a "base reduzida
@@ -79,18 +79,18 @@ type ComparacaoRow struct {
 	VDesc   float64 `json:"v_desc"`
 	VOutro  float64 `json:"v_outro"`
 
-	VBcIcms    float64 `json:"v_bc_icms"`
-	VIcms      float64 `json:"v_icms"`
-	VBcSt      float64 `json:"v_bc_st"`
-	VSt        float64 `json:"v_st"`
-	VBcPis     float64 `json:"v_bc_pis"`
-	VPis       float64 `json:"v_pis"`
-	PPis       float64 `json:"p_pis"` // alíquota — ajusta o esperado no modo inclusão IBS/CBS
-	VBcCofins  float64 `json:"v_bc_cofins"`
-	VCofins    float64 `json:"v_cofins"`
-	PCofins    float64 `json:"p_cofins"`
-	VIbs       float64 `json:"v_ibs"`
-	VCbs       float64 `json:"v_cbs"`
+	VBcIcms   float64 `json:"v_bc_icms"`
+	VIcms     float64 `json:"v_icms"`
+	VBcSt     float64 `json:"v_bc_st"`
+	VSt       float64 `json:"v_st"`
+	VBcPis    float64 `json:"v_bc_pis"`
+	VPis      float64 `json:"v_pis"`
+	PPis      float64 `json:"p_pis"` // alíquota — ajusta o esperado no modo inclusão IBS/CBS
+	VBcCofins float64 `json:"v_bc_cofins"`
+	VCofins   float64 `json:"v_cofins"`
+	PCofins   float64 `json:"p_cofins"`
+	VIbs      float64 `json:"v_ibs"`
+	VCbs      float64 `json:"v_cbs"`
 
 	// Calculado (fiscal_execution_items) — sempre presentes como coluna,
 	// mas com valor NULL quando o item nunca foi executado (LEFT JOIN).
@@ -239,6 +239,20 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 			where += ` AND EXISTS (
 				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
 				WHERE i.nfe_id = n.id AND i.cst_icms IN ('20','70'))`
+		}
+		// Transferências (CFOPs de transferência nos itens — mesma lista de
+		// cfopsTransferencia): "excluir" tira da análise (geram muita sujeira
+		// de regras), "somente" isola para testá-las. Ausente = incluir.
+		const cfopsTransfSQL = `('5151','5152','5155','5156','5408','5409','6151','6152','6155','6156','6408','6409')`
+		switch r.URL.Query().Get("transferencias") {
+		case "excluir":
+			where += ` AND NOT EXISTS (
+				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
+				WHERE i.nfe_id = n.id AND i.cfop IN ` + cfopsTransfSQL + `)`
+		case "somente":
+			where += ` AND EXISTS (
+				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
+				WHERE i.nfe_id = n.id AND i.cfop IN ` + cfopsTransfSQL + `)`
 		}
 
 		// Paginação: page 1-based; page_size 0 = todas (sem LIMIT).
