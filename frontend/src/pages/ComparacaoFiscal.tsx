@@ -406,7 +406,7 @@ function SimulacaoItem({ sim }: { sim: Simulacao }) {
         Preço {fmtBRL(sim.preco_original)} + IBS/CBS {fmtBRL(sim.acrescimo_ibs_cbs)} = {fmtBRL(sim.preco_simulado)} (fator {sim.fator.toLocaleString('pt-BR', { minimumFractionDigits: 4 })})
       </p>
       <p className="text-[10px] text-muted-foreground mb-1">
-        Preço Líquido (venda − desc + frete + desp − ICMS − ST − PIS − COFINS − ISS): <span className="font-semibold text-foreground">{fmtBRL(sim.preco_liquido)}</span>
+        Preço Líquido (venda − desc + frete + desp − ICMS − PIS − COFINS − ISS; ST é por fora, não se abate): <span className="font-semibold text-foreground">{fmtBRL(sim.preco_liquido)}</span>
         {' '}· Base IBS/CBS do pacote: <span className={`font-semibold ${Math.abs((sim.preco_liquido ?? 0) - (sim.base_ibs_cbs_pacote ?? 0)) > 0.01 ? 'text-red-700' : 'text-foreground'}`}>{fmtBRL(sim.base_ibs_cbs_pacote)}</span>
       </p>
       <table className="w-full text-[11px]">
@@ -934,7 +934,7 @@ export default function ComparacaoFiscal() {
             {/* Preço Líquido — base legal do IBS/CBS na transição */}
             <div className="flex flex-wrap gap-x-6 gap-y-1 mb-3 text-[11px] border rounded-md bg-sky-50/50 border-sky-200 px-3 py-2">
               <div>
-                <span className="text-muted-foreground">Preço Líquido (venda − descontos + frete + despesas − ICMS − ICMS-ST − PIS − COFINS − ISS): </span>
+                <span className="text-muted-foreground" title="ICMS-ST não se abate: é cobrado por fora (soma ao total da NF, não compõe o valor dos produtos)">Preço Líquido (venda − descontos + frete + despesas − ICMS − PIS − COFINS − ISS): </span>
                 <span className="font-semibold">{fmtBRL(simSummary.precoLiquidoTotal)}</span>
                 <span className="text-muted-foreground"> ← base do IBS/CBS</span>
               </div>
