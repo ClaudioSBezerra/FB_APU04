@@ -105,6 +105,12 @@ type fiscalSimulacao struct {
 	AcrescimoIbsCbs float64 `json:"acrescimo_ibs_cbs"` // IBS+CBS da 1ª chamada
 	PrecoOriginal   float64 `json:"preco_original"`
 	PrecoSimulado   float64 `json:"preco_simulado"`
+	// Preço Líquido = venda − ICMS − ICMS-ST − PIS − COFINS − ISS (valores
+	// declarados no XML; ISS = 0 em NF-e de mercadoria). É a base legal do
+	// IBS/CBS na transição — comparável com BaseIbsCbsPacote (o que o pacote
+	// de fato usou como base na 1ª chamada).
+	PrecoLiquido     float64 `json:"preco_liquido"`
+	BaseIbsCbsPacote float64 `json:"base_ibs_cbs_pacote"`
 
 	// Original (1ª chamada, sem inclusão)
 	BaseIcmsOriginal float64 `json:"base_icms_original"`
@@ -142,6 +148,8 @@ func runSimulacaoIbsCbs(ctx context.Context, oracleDB *sql.DB, in services.Fisca
 	// — nesses dois o original vem da 1ª chamada do pacote.
 	sim := fiscalSimulacao{
 		PrecoOriginal:    it.VProd,
+		PrecoLiquido:     round2(it.VProd - it.VIcmsXML - it.VStXML - it.VPisXML - it.VCofinsXML),
+		BaseIbsCbsPacote: r1.BaseCalculoIbsCbs,
 		BaseIcmsOriginal: it.VBcIcmsXML,
 		IcmsOriginal:     it.VIcmsXML,
 		StOriginal:       it.VStXML,
@@ -222,6 +230,8 @@ type fiscalItemInput struct {
 	VBcIcmsXML float64
 	VIcmsXML   float64
 	VStXML     float64
+	VPisXML    float64
+	VCofinsXML float64
 }
 
 type fiscalExecutionSummary struct {
@@ -370,7 +380,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 
 		itemRows, err := db.Query(`
 			SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_frete,0), COALESCE(v_ipi,0),
-			       COALESCE(v_bc_icms,0), COALESCE(v_icms,0), COALESCE(v_st,0)
+			       COALESCE(v_bc_icms,0), COALESCE(v_icms,0), COALESCE(v_st,0), COALESCE(v_pis,0), COALESCE(v_cofins,0)
 			FROM pacotefiscal_nfe_saidas_itens
 			WHERE nfe_id = $1 AND company_id = $2
 			ORDER BY n_item ASC`, req.NfeID, companyID)
@@ -383,7 +393,7 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 		for itemRows.Next() {
 			var it fiscalItemInput
 			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VFrete, &it.VIPI,
-				&it.VBcIcmsXML, &it.VIcmsXML, &it.VStXML); scanErr != nil {
+				&it.VBcIcmsXML, &it.VIcmsXML, &it.VStXML, &it.VPisXML, &it.VCofinsXML); scanErr != nil {
 				log.Printf("FiscalExecutionRunHandler: erro ao escanear item (nfe_id=%s): %v", req.NfeID, scanErr)
 				continue
 			}
@@ -539,22 +549,22 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 	// hardcodar 0 aqui descartaria silenciosamente essa despesa da base de
 	// cálculo.
 	in := services.FiscalInput{
-		PCnpjEmpresa:                 nfe.EmitCNPJ,
-		PUFOrigem:                    nfe.EmitUF,
-		PUFDestino:                   nfe.DestUF,
-		PTipoContribuinte:            tipoContribuinte(nfe.DestIndIE, it.CFOP, nfe.Modelo),
-		PTipoCentroFiscal:            defaultTipoCentroFiscal,
-		PTipoOperacao:                tipoOperacaoPorCFOP(it.CFOP),
-		PEntradaSaida:                "S", // módulo cobre apenas NF-e de saída
+		PCnpjEmpresa:      nfe.EmitCNPJ,
+		PUFOrigem:         nfe.EmitUF,
+		PUFDestino:        nfe.DestUF,
+		PTipoContribuinte: tipoContribuinte(nfe.DestIndIE, it.CFOP, nfe.Modelo),
+		PTipoCentroFiscal: defaultTipoCentroFiscal,
+		PTipoOperacao:     tipoOperacaoPorCFOP(it.CFOP),
+		PEntradaSaida:     "S", // módulo cobre apenas NF-e de saída
 		// Sem o dígito verificador, como em PROD/PRODB — o pacote valida o
 		// produto nas mesmas tabelas do lookup; com o código cheio do XML o
 		// Oracle rejeita com ORA-20000 "Código produto informado não existe
 		// no SFC" (confirmado em execução real, 2026-07-06).
-		PProduto:                     stripCheckDigit(it.CProd),
-		PCodigoGrupoFiscal:           grupoFiscal,
-		PCnpjExcecao:                 "",
-		PIndicadorServico:            defaultIndicadorServico,
-		PPrecoTotal:                  it.VProd,
+		PProduto:           stripCheckDigit(it.CProd),
+		PCodigoGrupoFiscal: grupoFiscal,
+		PCnpjExcecao:       "",
+		PIndicadorServico:  defaultIndicadorServico,
+		PPrecoTotal:        it.VProd,
 		// Despesas acessórias = frete destacado no item (<prod><vFrete>) +
 		// outras despesas (<prod><vOutro>) — ambos compõem a base de cálculo
 		// (regra do negócio 2026-07-06: frete do XML entra em pDespesas).

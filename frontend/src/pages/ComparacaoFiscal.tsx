@@ -124,6 +124,10 @@ interface Simulacao {
   acrescimo_ibs_cbs: number;
   preco_original: number;
   preco_simulado: number;
+  // Preço Líquido = venda − ICMS − ICMS-ST − PIS − COFINS − ISS (XML);
+  // base legal do IBS/CBS — comparável com a base que o pacote usou
+  preco_liquido: number;
+  base_ibs_cbs_pacote: number;
   base_icms_original: number;
   icms_original: number;
   st_original: number;
@@ -401,6 +405,10 @@ function SimulacaoItem({ sim }: { sim: Simulacao }) {
       <p className="text-[10px] text-muted-foreground mb-1">
         Preço {fmtBRL(sim.preco_original)} + IBS/CBS {fmtBRL(sim.acrescimo_ibs_cbs)} = {fmtBRL(sim.preco_simulado)} (fator {sim.fator.toLocaleString('pt-BR', { minimumFractionDigits: 4 })})
       </p>
+      <p className="text-[10px] text-muted-foreground mb-1">
+        Preço Líquido (venda − ICMS − ST − PIS − COFINS − ISS): <span className="font-semibold text-foreground">{fmtBRL(sim.preco_liquido)}</span>
+        {' '}· Base IBS/CBS do pacote: <span className={`font-semibold ${Math.abs((sim.preco_liquido ?? 0) - (sim.base_ibs_cbs_pacote ?? 0)) > 0.01 ? 'text-red-700' : 'text-foreground'}`}>{fmtBRL(sim.base_ibs_cbs_pacote)}</span>
+      </p>
       <table className="w-full text-[11px]">
         <thead>
           <tr className="text-muted-foreground border-b">
@@ -615,8 +623,12 @@ export default function ComparacaoFiscal() {
     const simulado = { ...zero };
     const pacote = { ...zero };
     let acrescimoTotal = 0;
+    let precoLiquidoTotal = 0;
+    let baseIbsCbsPacoteTotal = 0;
     comSim.forEach(r => {
       const s = r.simulacao!;
+      precoLiquidoTotal += s.preco_liquido ?? 0;
+      baseIbsCbsPacoteTotal += s.base_ibs_cbs_pacote ?? 0;
       original.icms += s.icms_original;
       original.icms_st += s.st_original;
       original.fcp += s.fcp_original;
@@ -631,7 +643,12 @@ export default function ComparacaoFiscal() {
       pacote.difal += s.difal_pacote;
       acrescimoTotal += s.acrescimo_ibs_cbs;
     });
-    return { original, simulado, pacote, acrescimoTotal, itens: comSim.length, comErro };
+    return {
+      original, simulado, pacote, acrescimoTotal,
+      precoLiquidoTotal: Math.round(precoLiquidoTotal * 100) / 100,
+      baseIbsCbsPacoteTotal: Math.round(baseIbsCbsPacoteTotal * 100) / 100,
+      itens: comSim.length, comErro,
+    };
   }, [rows]);
 
   const summary = useMemo(() => {
@@ -914,6 +931,26 @@ export default function ComparacaoFiscal() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Preço Líquido — base legal do IBS/CBS na transição */}
+            <div className="flex flex-wrap gap-x-6 gap-y-1 mb-3 text-[11px] border rounded-md bg-sky-50/50 border-sky-200 px-3 py-2">
+              <div>
+                <span className="text-muted-foreground">Preço Líquido (venda − ICMS − ICMS-ST − PIS − COFINS − ISS): </span>
+                <span className="font-semibold">{fmtBRL(simSummary.precoLiquidoTotal)}</span>
+                <span className="text-muted-foreground"> ← base do IBS/CBS</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Base IBS/CBS usada pelo pacote: </span>
+                <span className={`font-semibold ${Math.abs(simSummary.precoLiquidoTotal - simSummary.baseIbsCbsPacoteTotal) > 0.01 ? 'text-red-700' : ''}`}>
+                  {fmtBRL(simSummary.baseIbsCbsPacoteTotal)}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Diferença: </span>
+                <span className={`font-semibold ${Math.abs(simSummary.precoLiquidoTotal - simSummary.baseIbsCbsPacoteTotal) > 0.01 ? 'text-red-700' : 'text-muted-foreground'}`}>
+                  {fmtBRL(Math.round((simSummary.precoLiquidoTotal - simSummary.baseIbsCbsPacoteTotal) * 100) / 100)}
+                </span>
+              </div>
+            </div>
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
