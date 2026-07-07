@@ -229,41 +229,43 @@ func runSimulacaoIbsCbs(it fiscalItemInput, r1 *services.FiscalResult, trace *fi
 		sim.Fator = math.Round((it.VProd+acrescimo)/it.VProd*10000) / 10000
 	}
 
-	// 3. Nova base = base XML + acréscimo integral; novo ICMS recalculado
-	//    pela alíquota do item (p_icms do XML; fallback: alíquota do pacote).
-	//    Item SEM base de ICMS (CST 60/ST retido, isento — vBC=0 no XML) não
-	//    tem onde incluir o acréscimo: base e ICMS simulados ficam 0 (o
-	//    pacote também devolve base 0 nesses casos).
+	// 3. Ordem do negócio (Claudio, 2026-07-07): o acréscimo IBS/CBS entra na
+	//    base NORMAL (bruto do item) e SÓ DEPOIS aplicam-se redução de base e
+	//    MVA. Como redução e MVA são multiplicativos, isso equivale a escalar
+	//    a base final do XML pelo fator (bruto + acréscimo) ÷ bruto — sem
+	//    precisar reprocessar pRedBC/pMVAST. Item SEM base de ICMS (CST 60/
+	//    ST retido, isento — vBC=0) permanece 0, como o pacote.
 	aliqIcms := it.PIcmsXML
 	if aliqIcms <= 0 {
 		aliqIcms = r1.AliquotaImposto
 	}
 	sim.AliquotaIcms = aliqIcms
+	bruto := it.VProd - it.VDesc + it.VFrete + it.VOutro
+	fatorBase := 1.0
+	if bruto > 0 {
+		fatorBase = (bruto + acrescimo) / bruto
+	}
 	novaBase := 0.0
 	if sim.BaseIcmsOriginal > 0 {
-		novaBase = sim.BaseIcmsOriginal + acrescimo
+		novaBase = sim.BaseIcmsOriginal * fatorBase
 		sim.BaseIcmsSimulada = round2(novaBase)
 		sim.IcmsSimulado = round2(novaBase * aliqIcms / 100)
 	}
 
-	// ST: base aditiva; valor proporcional à variação da base (MVA não muda)
+	// ST: mesma ordem — (bruto+acréscimo) com redução/MVA multiplicativos ⇒
+	// base e valor do XML escalados pelo fator
 	if sim.BaseStOriginal > 0 {
-		novaBaseSt := sim.BaseStOriginal + acrescimo
-		sim.BaseStSimulada = round2(novaBaseSt)
-		sim.StSimulado = round2(sim.StOriginal * novaBaseSt / sim.BaseStOriginal)
+		sim.BaseStSimulada = round2(sim.BaseStOriginal * fatorBase)
+		sim.StSimulado = round2(sim.StOriginal * fatorBase)
 	}
 	// FCP: recalculado pela alíquota sobre a nova base (ou proporcional)
-	if r1.AliquotaFundoPobreza > 0 {
+	if r1.AliquotaFundoPobreza > 0 && novaBase > 0 {
 		sim.FcpSimulado = round2(novaBase * r1.AliquotaFundoPobreza / 100)
-	} else if sim.BaseIcmsOriginal > 0 {
-		sim.FcpSimulado = round2(sim.FcpOriginal * novaBase / sim.BaseIcmsOriginal)
+	} else if sim.FcpOriginal > 0 {
+		sim.FcpSimulado = round2(sim.FcpOriginal * fatorBase)
 	}
 	// DIFAL: proporcional à variação da base
-	if sim.BaseIcmsOriginal > 0 {
-		sim.DifalSimulado = round2(sim.DifalOriginal * novaBase / sim.BaseIcmsOriginal)
-	} else {
-		sim.DifalSimulado = sim.DifalOriginal
-	}
+	sim.DifalSimulado = round2(sim.DifalOriginal * fatorBase)
 
 	trace.add(it.ID, produtoLabel, "simulacao", fmt.Sprintf(
 		"líquido %.2f | IBS %.4f + CBS %.4f = acréscimo %.4f | nova base %.2f × %.2f%% = ICMS sim %.2f × pacote %.2f (base pacote %.2f, original %.2f)",
