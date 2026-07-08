@@ -63,3 +63,7 @@ backend/cov_metrics.out
 # Python bytecode
 erp-bridge-simulador/__pycache__/
 __pycache__/
+
+# Documentos de trabalho (Word/Excel) não versionados
+docs/*.docx
+docs/*.xlsx
