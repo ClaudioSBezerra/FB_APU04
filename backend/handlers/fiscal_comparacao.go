@@ -139,6 +139,28 @@ type ComparacaoRow struct {
 	Simulacao json.RawMessage `json:"simulacao"`
 }
 
+// sqlItemDivergente — expressão booleana de divergência POR ITEM (aliases
+// fei = fiscal_execution_items, i = pacotefiscal_nfe_saidas_itens), com a
+// MESMA régua da tela: modo simulação IBS/CBS (esperado ajustado, tolerância
+// de 1 centavo) ou modo normal (XML cru, tolerância zero). Fonte única usada
+// pelo LATERAL de status do grid e pelo filtro "Resultado".
+const sqlItemDivergente = `(fei.status = 'ok' AND (
+	CASE WHEN fei.simulacao IS NOT NULL AND fei.simulacao->>'erro' IS NULL THEN
+	     abs(COALESCE((fei.simulacao->>'icms_simulado')::numeric,0) - COALESCE(fei.valor_icms,0)) > 0.011
+	  OR abs(COALESCE((fei.simulacao->>'st_simulado')::numeric,0) - COALESCE(fei.valor_substituicao,0)) > 0.011
+	  OR abs((COALESCE(i.v_pis,0) - (COALESCE(fei.valor_icms,0)-COALESCE(i.v_icms,0))*COALESCE(i.p_pis,0)/100.0) - COALESCE(fei.valor_pis,0)) > 0.011
+	  OR abs((COALESCE(i.v_cofins,0) - (COALESCE(fei.valor_icms,0)-COALESCE(i.v_icms,0))*COALESCE(i.p_cofins,0)/100.0) - COALESCE(fei.valor_cofins,0)) > 0.011
+	  OR abs(COALESCE(i.v_ibs,0) - (COALESCE(fei.valor_ibs_uf,0)+COALESCE(fei.valor_ibs_mun,0))) > 0.011
+	  OR abs(COALESCE(i.v_cbs,0) - COALESCE(fei.valor_cbs,0)) > 0.011
+	ELSE
+	     abs(COALESCE(i.v_icms,0) - COALESCE(fei.valor_icms,0)) > 0
+	  OR abs(COALESCE(i.v_st,0) - COALESCE(fei.valor_substituicao,0)) > 0
+	  OR abs(COALESCE(i.v_pis,0) - COALESCE(fei.valor_pis,0)) > 0
+	  OR abs(COALESCE(i.v_cofins,0) - COALESCE(fei.valor_cofins,0)) > 0
+	  OR abs(COALESCE(i.v_ibs,0) - (COALESCE(fei.valor_ibs_uf,0)+COALESCE(fei.valor_ibs_mun,0))) > 0
+	  OR abs(COALESCE(i.v_cbs,0) - COALESCE(fei.valor_cbs,0)) > 0
+	END))`
+
 // NfeSearchResponse é o envelope paginado da busca: total de notas que batem
 // nos filtros (para os controles de página) + a página solicitada.
 type NfeSearchResponse struct {
@@ -262,6 +284,36 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 				))`
 		}
 
+		// RESULTADO da execução (filtro pós-processamento, 2026-07-08): isola
+		// as notas por veredito com a MESMA régua das colunas do grid.
+		switch r.URL.Query().Get("resultado") {
+		case "divergentes":
+			where += ` AND EXISTS (
+				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
+				JOIN fiscal_execution_items fei ON fei.nfe_item_id = i.id
+				WHERE i.nfe_id = n.id AND ` + sqlItemDivergente + `)`
+		case "com_erro":
+			where += ` AND EXISTS (
+				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
+				JOIN fiscal_execution_items fei ON fei.nfe_item_id = i.id
+				WHERE i.nfe_id = n.id AND fei.status <> 'ok')`
+		case "ok":
+			// Totalmente executada, sem item problemático e sem divergência
+			where += ` AND NOT EXISTS (
+				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
+				LEFT JOIN fiscal_execution_items fei ON fei.nfe_item_id = i.id
+				WHERE i.nfe_id = n.id AND (fei.id IS NULL OR fei.status <> 'ok' OR ` + sqlItemDivergente + `))
+				AND EXISTS (
+				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
+				JOIN fiscal_execution_items fei ON fei.nfe_item_id = i.id
+				WHERE i.nfe_id = n.id)`
+		case "nao_executadas":
+			where += ` AND NOT EXISTS (
+				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
+				JOIN fiscal_execution_items fei ON fei.nfe_item_id = i.id
+				WHERE i.nfe_id = n.id)`
+		}
+
 		// Paginação: page 1-based; page_size 0 = todas (sem LIMIT).
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		if page < 1 {
@@ -308,25 +360,7 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 				SELECT COUNT(*) AS total_itens,
 				       COUNT(fei.id) AS exec_itens,
 				       COUNT(*) FILTER (WHERE fei.id IS NOT NULL AND fei.status <> 'ok') AS itens_problema,
-				       BOOL_OR(
-				           fei.status = 'ok' AND (
-				               CASE WHEN fei.simulacao IS NOT NULL AND fei.simulacao->>'erro' IS NULL THEN
-				                    abs(COALESCE((fei.simulacao->>'icms_simulado')::numeric,0) - COALESCE(fei.valor_icms,0)) > 0.011
-				                 OR abs(COALESCE((fei.simulacao->>'st_simulado')::numeric,0) - COALESCE(fei.valor_substituicao,0)) > 0.011
-				                 OR abs((COALESCE(i.v_pis,0) - (COALESCE(fei.valor_icms,0)-COALESCE(i.v_icms,0))*COALESCE(i.p_pis,0)/100.0) - COALESCE(fei.valor_pis,0)) > 0.011
-				                 OR abs((COALESCE(i.v_cofins,0) - (COALESCE(fei.valor_icms,0)-COALESCE(i.v_icms,0))*COALESCE(i.p_cofins,0)/100.0) - COALESCE(fei.valor_cofins,0)) > 0.011
-				                 OR abs(COALESCE(i.v_ibs,0) - (COALESCE(fei.valor_ibs_uf,0)+COALESCE(fei.valor_ibs_mun,0))) > 0.011
-				                 OR abs(COALESCE(i.v_cbs,0) - COALESCE(fei.valor_cbs,0)) > 0.011
-				               ELSE
-				                    abs(COALESCE(i.v_icms,0) - COALESCE(fei.valor_icms,0)) > 0
-				                 OR abs(COALESCE(i.v_st,0) - COALESCE(fei.valor_substituicao,0)) > 0
-				                 OR abs(COALESCE(i.v_pis,0) - COALESCE(fei.valor_pis,0)) > 0
-				                 OR abs(COALESCE(i.v_cofins,0) - COALESCE(fei.valor_cofins,0)) > 0
-				                 OR abs(COALESCE(i.v_ibs,0) - (COALESCE(fei.valor_ibs_uf,0)+COALESCE(fei.valor_ibs_mun,0))) > 0
-				                 OR abs(COALESCE(i.v_cbs,0) - COALESCE(fei.valor_cbs,0)) > 0
-				               END
-				           )
-				       ) AS divergente
+				       BOOL_OR(`+sqlItemDivergente+`) AS divergente
 				FROM pacotefiscal_nfe_saidas_itens i
 				LEFT JOIN fiscal_execution_items fei ON fei.nfe_item_id = i.id
 				WHERE i.nfe_id = n.id

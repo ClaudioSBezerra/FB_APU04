@@ -116,13 +116,16 @@ export function NfeSearchList({
   // Somente vendas (padrão): o pacote fiscal domina operações de VENDA —
   // remessas/devoluções/bonificações/transferências etc. geram "falso erro"
   const [somenteVendas, setSomenteVendas] = useState(true);
+  // Resultado da execução (filtro pós-processamento): isola divergentes/erros
+  type Resultado = '' | 'divergentes' | 'com_erro' | 'ok' | 'nao_executadas';
+  const [resultado, setResultado] = useState<Resultado>('');
   // Paginação: 0 = todas
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
   const emptyApplied = {
     dataInicio: '', dataFim: '', q: '', ufOrigem: '', ufDestino: '', cliente: '', emitente: '',
     comIcms: false, comSt: false, comDifal: false, comFcp: false, comBaseReduzida: false,
-    somenteVendas: true, pageSize: 50,
+    somenteVendas: true, resultado: '' as Resultado, pageSize: 50,
   };
   const [applied, setApplied] = useState(emptyApplied);
   const [searched, setSearched] = useState(false);
@@ -145,6 +148,7 @@ export function NfeSearchList({
       if (applied.comFcp) params.set('com_fcp', '1');
       if (applied.comBaseReduzida) params.set('com_base_reduzida', '1');
       if (applied.somenteVendas) params.set('somente_vendas', '1');
+      if (applied.resultado) params.set('resultado', applied.resultado);
       params.set('page', String(page));
       params.set('page_size', String(applied.pageSize));
       const res = await fetch(`/api/fiscal/comparacao/search?${params}`);
@@ -167,7 +171,7 @@ export function NfeSearchList({
     setApplied({
       dataInicio, dataFim, q: q.trim(), ufOrigem, ufDestino,
       cliente: cliente.trim(), emitente: emitente.trim(),
-      comIcms, comSt, comDifal, comFcp, comBaseReduzida, somenteVendas, pageSize,
+      comIcms, comSt, comDifal, comFcp, comBaseReduzida, somenteVendas, resultado, pageSize,
     });
   };
 
@@ -373,6 +377,20 @@ export function NfeSearchList({
           >
             <option value="vendas">Somente vendas</option>
             <option value="todas">Todas</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground" title="Filtra pelo VEREDITO da execução — mesmo critério das colunas Executado/Divergência. Use após processar um lote para isolar o que precisa de atenção">Resultado</label>
+          <select
+            value={resultado}
+            onChange={e => setResultado(e.target.value as Resultado)}
+            className="h-8 w-40 text-xs rounded-md border bg-background px-2"
+          >
+            <option value="">Todos</option>
+            <option value="divergentes">Somente divergentes</option>
+            <option value="com_erro">Com erro / sem grupo</option>
+            <option value="ok">OK sem divergência</option>
+            <option value="nao_executadas">Não executadas</option>
           </select>
         </div>
         <Button size="sm" onClick={handleSearch} disabled={isLoading} className="h-8">
