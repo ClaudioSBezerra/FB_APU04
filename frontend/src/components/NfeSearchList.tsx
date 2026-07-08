@@ -11,7 +11,6 @@
 // cada nota, então 3 notas simultâneas é um teto conservador no navegador).
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { type ComparacaoRow, avaliarDivergenciaNota } from '@/lib/fiscalComparacao';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -25,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Search, Loader2, Send, Eye } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
 export interface NfeSearchResult {
@@ -53,6 +53,25 @@ export interface NfeSearchResult {
   v_icms_deson: number;   // <vICMSDeson> (ICMS desonerado/reduzido)
   v_fcp_st: number;       // <vFCPST> (FCP retido por ST)
   v_fcp_uf_dest: number;  // <vFCPUFDest> (FCP do DIFAL — o pacote o embute no DIFAL)
+  // Status agregado da execução (calculado no servidor)
+  total_itens: number;
+  exec_itens: number;
+  itens_problema: number; // executados com status != ok
+  divergente: boolean;
+}
+
+// Status do lote server-side (espelha fiscalLoteStatus do backend)
+interface LoteStatus {
+  ativo: boolean;
+  total: number;
+  processed: number;
+  notas_ok: number;
+  notas_parciais: number;
+  notas_erro: number;
+  incluir_ibs_cbs: boolean;
+  done: boolean;
+  iniciado_em: string;
+  terminado_em?: string;
 }
 
 // Envelope paginado da busca (espelha NfeSearchResponse do backend)
@@ -61,41 +80,6 @@ interface NfeSearchResponse {
   page: number;
   page_size: number; // 0 = todas
   rows: NfeSearchResult[];
-}
-
-interface ExecuteSummary {
-  total: number;
-  ok: number;
-  sem_grupo_fiscal: number;
-  error: number;
-}
-
-type ExecStatus = 'idle' | 'running' | 'ok' | 'partial' | 'failed';
-
-// Teto de concorrência no navegador para a execução em lote de várias notas.
-// O backend usa um pool Oracle COMPARTILHADO de 15 conexões por empresa
-// (cacheado — sem handshake por nota), então 10 notas simultâneas fluem sem
-// estourar sessões no Oracle de produção.
-const CONCURRENCY = 10;
-
-function ExecStatusBadge({ status }: { status: ExecStatus }) {
-  if (status === 'running') {
-    return (
-      <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-1">
-        <Loader2 className="h-2.5 w-2.5 animate-spin" /> Executando
-      </Badge>
-    );
-  }
-  if (status === 'ok') {
-    return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">OK</Badge>;
-  }
-  if (status === 'partial') {
-    return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">Parcial</Badge>;
-  }
-  if (status === 'failed') {
-    return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-50 text-red-700 border-red-200">Falhou</Badge>;
-  }
-  return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-gray-50 text-muted-foreground">—</Badge>;
 }
 
 export function NfeSearchList({
@@ -143,8 +127,6 @@ export function NfeSearchList({
   const [applied, setApplied] = useState(emptyApplied);
   const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [execStatus, setExecStatus] = useState<Record<string, ExecStatus>>({});
-  const [batchRunning, setBatchRunning] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery<NfeSearchResponse>({
     queryKey: ['nfe-saidas-search', applied, page],
@@ -209,85 +191,88 @@ export function NfeSearchList({
     });
   };
 
-  // Avaliação por nota: Executado (existe resultado do pacote) + Divergência
-  // (SIM/NÃO, mesma régua do detalhe — avaliarDivergenciaNota da lib).
-  type AvalNota = { executado: boolean; divergente: boolean | null };
-  const [aval, setAval] = useState<Record<string, AvalNota>>({});
-  const avalEmAndamento = useRef<Set<string>>(new Set());
+  // ── Lote SERVER-SIDE (2026-07-08) ──────────────────────────────────────────
+  // O lote roda como job no servidor (sobrevive a logout/refresh). A tela só
+  // dispara e acompanha por polling; ao logar de novo, o status do job da
+  // empresa é retomado automaticamente. As colunas Executado/Divergência vêm
+  // prontas do servidor na própria busca (qualquer volume).
+  const [lote, setLote] = useState<LoteStatus | null>(null);
+  const pollRef = useRef<number | null>(null);
 
-  const avaliarNota = async (nfe: NfeSearchResult) => {
-    if (avalEmAndamento.current.has(nfe.id)) return;
-    avalEmAndamento.current.add(nfe.id);
-    try {
-      const res = await fetch(`/api/fiscal/comparacao?nfe_id=${encodeURIComponent(nfe.id)}`);
-      if (!res.ok) return;
-      const compRows: ComparacaoRow[] = await res.json();
-      const executado = compRows.length > 0 && compRows.some(r => r.status !== 'not_executed');
-      setAval(prev => ({
-        ...prev,
-        [nfe.id]: { executado, divergente: executado ? avaliarDivergenciaNota(nfe, compRows) : null },
-      }));
-    } catch {
-      // silencioso — célula fica em "—"
-    } finally {
-      avalEmAndamento.current.delete(nfe.id);
+  const pararPolling = () => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
     }
   };
 
-  // Avalia automaticamente as notas do resultado (páginas de até 100 — acima
-  // disso só sob demanda, para não disparar centenas de requests).
-  useEffect(() => {
-    if (rows.length === 0 || rows.length > 100) return;
-    const pendentes = rows.filter(r => aval[r.id] === undefined);
-    if (pendentes.length === 0) return;
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < pendentes.length) {
-        const nfe = pendentes[cursor++];
-        await avaliarNota(nfe);
+  const consultarLote = async (): Promise<LoteStatus | null> => {
+    try {
+      const res = await fetch('/api/fiscal/execute-lote/status');
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  };
+
+  const iniciarPolling = () => {
+    pararPolling();
+    let ticks = 0;
+    pollRef.current = window.setInterval(async () => {
+      const st = await consultarLote();
+      if (!st) return;
+      setLote(st);
+      ticks++;
+      // Atualiza o grid (colunas do servidor) a cada ~10s durante o lote
+      if (st.done || ticks % 5 === 0) refetch();
+      if (st.done) {
+        pararPolling();
+        toast.success(`Lote concluído: ${st.notas_ok} OK, ${st.notas_parciais} parciais, ${st.notas_erro} com erro.`);
       }
-    };
-    Promise.all(Array.from({ length: Math.min(4, pendentes.length) }, worker));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
-
-  const executeOne = async (id: string) => {
-    setExecStatus(prev => ({ ...prev, [id]: 'running' }));
-    try {
-      const res = await fetch('/api/fiscal/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nfe_id: id, incluir_ibs_cbs_base: incluirIbsCbs }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const summary: ExecuteSummary = await res.json();
-      setExecStatus(prev => ({
-        ...prev,
-        [id]: (summary.error > 0 || summary.sem_grupo_fiscal > 0) ? 'partial' : 'ok',
-      }));
-    } catch {
-      setExecStatus(prev => ({ ...prev, [id]: 'failed' }));
-    }
-    // Reavalia o veredito de divergência com o resultado fresco
-    const nfe = rows.find(r => r.id === id);
-    if (nfe) await avaliarNota(nfe);
+    }, 2000);
   };
+
+  // Retomada: ao montar a tela (login/refresh), verifica se há lote em
+  // andamento para a empresa e religa a barra de progresso.
+  useEffect(() => {
+    let cancelado = false;
+    consultarLote().then(st => {
+      if (cancelado || !st) return;
+      setLote(st);
+      if (!st.done) iniciarPolling();
+    });
+    return () => { cancelado = true; pararPolling(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const executeSelected = async () => {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
-    setBatchRunning(true);
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < ids.length) {
-        const id = ids[cursor++];
-        await executeOne(id);
+    try {
+      const res = await fetch('/api/fiscal/execute-lote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nfe_ids: ids, incluir_ibs_cbs_base: incluirIbsCbs }),
+      });
+      const st: LoteStatus = await res.json();
+      if (res.status === 409) {
+        toast.error('Já existe um lote em andamento para esta empresa — acompanhe a barra de progresso.');
+        setLote(st);
+        iniciarPolling();
+        return;
       }
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ids.length) }, worker));
-    setBatchRunning(false);
-    // Nota já executada continua com seus itens carregados no detalhe — força
-    // reload se o usuário estiver olhando o detalhe de uma nota recém-executada.
+      if (!res.ok) {
+        toast.error('Falha ao iniciar o lote.');
+        return;
+      }
+      setLote(st);
+      setSelected(new Set());
+      iniciarPolling();
+      toast.success(`Lote de ${ids.length} nota(s) iniciado no servidor — pode fechar a tela, ele continua.`);
+    } catch {
+      toast.error('Falha ao iniciar o lote.');
+    }
   };
 
   return (
@@ -406,10 +391,10 @@ export function NfeSearchList({
             <Button
               size="sm"
               onClick={executeSelected}
-              disabled={!someSelected || batchRunning}
+              disabled={!someSelected || (lote !== null && !lote.done)}
               className="h-8"
             >
-              {batchRunning
+              {lote !== null && !lote.done
                 ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                 : <Send className="h-3.5 w-3.5 mr-1.5" />}
               Executar Selecionadas ({selected.size})
@@ -437,6 +422,26 @@ export function NfeSearchList({
           </label>
         </div>
       </div>
+
+      {/* Lote server-side em andamento/concluído — sobrevive a logout/refresh */}
+      {lote && (
+        <div className={`rounded-md border px-3 py-2 text-xs ${lote.done ? 'bg-emerald-50 border-emerald-200' : 'bg-sky-50 border-sky-200'}`}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-medium">
+              {lote.done
+                ? `Lote concluído: ${lote.processed.toLocaleString('pt-BR')} nota(s) — ${lote.notas_ok} OK, ${lote.notas_parciais} parciais, ${lote.notas_erro} com erro`
+                : `Lote em andamento no servidor: ${lote.processed.toLocaleString('pt-BR')} de ${lote.total.toLocaleString('pt-BR')} nota(s) — continua mesmo se você sair da tela`}
+            </span>
+            {!lote.done && <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600" />}
+          </div>
+          <div className="h-2 w-full rounded bg-white border overflow-hidden">
+            <div
+              className={`h-full ${lote.done ? 'bg-emerald-500' : 'bg-sky-500'}`}
+              style={{ width: `${lote.total > 0 ? Math.round(lote.processed / lote.total * 100) : 0}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {!searched ? (
         <p className="text-sm text-muted-foreground text-center py-6">
@@ -492,7 +497,8 @@ export function NfeSearchList({
             </TableHeader>
             <TableBody>
               {rows.map(row => {
-                const status = execStatus[row.id] ?? 'idle';
+                const executado = row.exec_itens > 0;
+                const completo = executado && row.exec_itens >= row.total_itens;
                 return (
                   <TableRow key={row.id} className={row.id === activeId ? 'bg-primary/5' : ''}>
                     <TableCell className="py-1 px-2">
@@ -511,30 +517,24 @@ export function NfeSearchList({
                       {row.chave_nfe.slice(0, 8)}...{row.chave_nfe.slice(-6)}
                     </TableCell>
                     <TableCell className="py-1 px-2">
-                      {status !== 'idle' ? (
-                        <ExecStatusBadge status={status} />
-                      ) : aval[row.id]?.executado ? (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">OK</Badge>
-                      ) : aval[row.id] ? (
+                      {!executado ? (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-gray-50 text-gray-400 border-dashed">Nunca</Badge>
+                      ) : row.itens_problema > 0 ? (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200" title={`${row.itens_problema} item(ns) com erro/sem grupo fiscal`}>Parcial</Badge>
+                      ) : completo ? (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">OK</Badge>
                       ) : (
-                        <span className="text-[11px] text-muted-foreground">—</span>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">{row.exec_itens}/{row.total_itens}</Badge>
                       )}
                     </TableCell>
                     <TableCell className="py-1 px-2">
-                      {(() => {
-                        const a = aval[row.id];
-                        if (status === 'running' || a === undefined) {
-                          return <span className="text-[11px] text-muted-foreground">—</span>;
-                        }
-                        if (a.divergente === true) {
-                          return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-50 text-red-700 border-red-200">SIM</Badge>;
-                        }
-                        if (a.divergente === false) {
-                          return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">NÃO</Badge>;
-                        }
-                        return <span className="text-[11px] text-muted-foreground">—</span>;
-                      })()}
+                      {!executado ? (
+                        <span className="text-[11px] text-muted-foreground">—</span>
+                      ) : row.divergente ? (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-50 text-red-700 border-red-200">SIM</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">NÃO</Badge>
+                      )}
                     </TableCell>
                     <TableCell className="py-1 px-2">
                       <Button

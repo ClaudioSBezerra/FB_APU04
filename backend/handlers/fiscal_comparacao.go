@@ -56,6 +56,12 @@ type NfeSearchResult struct {
 	VFcp        float64 `json:"v_fcp"`          // <vFCP>
 	VIcmsUfDest float64 `json:"v_icms_uf_dest"` // <vICMSUFDest> (DIFAL)
 	VIcmsDeson  float64 `json:"v_icms_deson"`   // <vICMSDeson> (ICMS desonerado/reduzido)
+	// Status agregado da execução (calculado no servidor — colunas
+	// Executado/Divergência do grid em qualquer volume)
+	TotalItens    int  `json:"total_itens"`
+	ExecItens     int  `json:"exec_itens"`
+	ItensProblema int  `json:"itens_problema"` // executados com status != ok
+	Divergente    bool `json:"divergente"`     // algum item ok fora da régua
 }
 
 // ComparacaoRow representa um item da comparação esperado (nfe_saidas_itens)
@@ -280,6 +286,13 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 			limitClause = fmt.Sprintf(" LIMIT %d OFFSET %d", pageSize, (page-1)*pageSize)
 		}
 
+		// st (LATERAL): status agregado da execução por nota, calculado no
+		// servidor — o grid mostra Executado/Divergência para QUALQUER volume
+		// (2026-07-08: com 8.000 notas o usuário ficava às cegas; a avaliação
+		// no cliente só cobria páginas ≤100). Divergência item a item com a
+		// régua da tela (modo simulação: esperado ajustado + tolerância 1
+		// centavo; sem simulação: XML cru). Divergências nota-level
+		// (DIFAL/FCP/reduzido) continuam só no detalhe.
 		query := fmt.Sprintf(`
 			SELECT n.id, n.chave_nfe, COALESCE(n.numero_nfe,''), COALESCE(n.serie,''),
 			       COALESCE(n.dest_xnome,''), TO_CHAR(n.data_emissao,'DD/MM/YYYY'),
@@ -287,8 +300,37 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 			       COALESCE(n.v_cofins,0), COALESCE(n.v_ibs,0), COALESCE(n.v_cbs,0),
 			       COALESCE(n.v_prod,0), COALESCE(n.v_desc,0), COALESCE(n.v_frete,0), COALESCE(n.v_nf,0),
 			       COALESCE(n.v_fcp,0), COALESCE(n.v_icms_uf_dest,0), COALESCE(n.v_icms_deson,0),
-			       COALESCE(n.v_fcp_st,0), COALESCE(n.v_fcp_uf_dest,0)
+			       COALESCE(n.v_fcp_st,0), COALESCE(n.v_fcp_uf_dest,0),
+			       COALESCE(st.total_itens,0), COALESCE(st.exec_itens,0),
+			       COALESCE(st.itens_problema,0), COALESCE(st.divergente,false)
 			FROM pacotefiscal_nfe_saidas n
+			LEFT JOIN LATERAL (
+				SELECT COUNT(*) AS total_itens,
+				       COUNT(fei.id) AS exec_itens,
+				       COUNT(*) FILTER (WHERE fei.id IS NOT NULL AND fei.status <> 'ok') AS itens_problema,
+				       BOOL_OR(
+				           fei.status = 'ok' AND (
+				               CASE WHEN fei.simulacao IS NOT NULL AND fei.simulacao->>'erro' IS NULL THEN
+				                    abs(COALESCE((fei.simulacao->>'icms_simulado')::numeric,0) - COALESCE(fei.valor_icms,0)) > 0.011
+				                 OR abs(COALESCE((fei.simulacao->>'st_simulado')::numeric,0) - COALESCE(fei.valor_substituicao,0)) > 0.011
+				                 OR abs((COALESCE(i.v_pis,0) - (COALESCE(fei.valor_icms,0)-COALESCE(i.v_icms,0))*COALESCE(i.p_pis,0)/100.0) - COALESCE(fei.valor_pis,0)) > 0.011
+				                 OR abs((COALESCE(i.v_cofins,0) - (COALESCE(fei.valor_icms,0)-COALESCE(i.v_icms,0))*COALESCE(i.p_cofins,0)/100.0) - COALESCE(fei.valor_cofins,0)) > 0.011
+				                 OR abs(COALESCE(i.v_ibs,0) - (COALESCE(fei.valor_ibs_uf,0)+COALESCE(fei.valor_ibs_mun,0))) > 0.011
+				                 OR abs(COALESCE(i.v_cbs,0) - COALESCE(fei.valor_cbs,0)) > 0.011
+				               ELSE
+				                    abs(COALESCE(i.v_icms,0) - COALESCE(fei.valor_icms,0)) > 0
+				                 OR abs(COALESCE(i.v_st,0) - COALESCE(fei.valor_substituicao,0)) > 0
+				                 OR abs(COALESCE(i.v_pis,0) - COALESCE(fei.valor_pis,0)) > 0
+				                 OR abs(COALESCE(i.v_cofins,0) - COALESCE(fei.valor_cofins,0)) > 0
+				                 OR abs(COALESCE(i.v_ibs,0) - (COALESCE(fei.valor_ibs_uf,0)+COALESCE(fei.valor_ibs_mun,0))) > 0
+				                 OR abs(COALESCE(i.v_cbs,0) - COALESCE(fei.valor_cbs,0)) > 0
+				               END
+				           )
+				       ) AS divergente
+				FROM pacotefiscal_nfe_saidas_itens i
+				LEFT JOIN fiscal_execution_items fei ON fei.nfe_item_id = i.id
+				WHERE i.nfe_id = n.id
+			) st ON true
 			%s
 			ORDER BY n.data_emissao DESC, n.numero_nfe DESC
 			%s`, where, limitClause)
@@ -309,7 +351,8 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 				&row.VIcms, &row.VSt, &row.VPis, &row.VCofins, &row.VIbs, &row.VCbs,
 				&row.VProd, &row.VDesc, &row.VFrete, &row.VNf,
 				&row.VFcp, &row.VIcmsUfDest, &row.VIcmsDeson,
-				&row.VFcpSt, &row.VFcpUfDest); err != nil {
+				&row.VFcpSt, &row.VFcpUfDest,
+				&row.TotalItens, &row.ExecItens, &row.ItensProblema, &row.Divergente); err != nil {
 				log.Printf("[FiscalComparacaoSearch] scan error: %v", err)
 				continue
 			}

@@ -546,6 +546,8 @@ func main() {
 	http.HandleFunc("/api/fiscal/comparacao/csv", withAuth(handlers.FiscalComparacaoCSVHandler, ""))
 	http.HandleFunc("/api/fiscal/comparacao", withAuth(handlers.FiscalComparacaoReadHandler, ""))
 	http.HandleFunc("/api/fiscal/diagnostico", withAuth(handlers.FiscalDiagnosticoHandler, ""))
+	http.HandleFunc("/api/fiscal/execute-lote", withAuth(handlers.FiscalExecuteLoteHandler, ""))
+	http.HandleFunc("/api/fiscal/execute-lote/status", withAuth(handlers.FiscalExecuteLoteStatusHandler, ""))
 
 	// Importação de XML isolada do módulo Teste Pacote Fiscal (2026-07):
 	// grava em pacotefiscal_nfe_saidas/_itens — tabelas exclusivas deste

@@ -432,110 +432,128 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Guard IDOR (T-11-14): a nota só é carregada se pertencer à company_id
-		// resolvida via JWT — nunca confiar em company_id vindo do corpo/cliente.
-		var emitCNPJ, emitUF, emitCMun, destCNPJ, destUF, destCMun, destIndIE string
-		var modelo int
-		var dataEmissao time.Time
-		err = db.QueryRow(`
-			SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(emit_c_mun,''), COALESCE(dest_cnpj,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), COALESCE(dest_ind_ie,''), modelo, data_emissao
-			FROM pacotefiscal_nfe_saidas
-			WHERE id = $1 AND company_id = $2`, req.NfeID, companyID,
-		).Scan(&emitCNPJ, &emitUF, &emitCMun, &destCNPJ, &destUF, &destCMun, &destIndIE, &modelo, &dataEmissao)
-		if err == sql.ErrNoRows {
-			jsonErr(w, http.StatusNotFound, "Nota não encontrada")
-			return
-		}
-		if err != nil {
-			log.Printf("FiscalExecutionRunHandler: erro ao carregar pacotefiscal_nfe_saidas (nfe_id=%s): %v", req.NfeID, err)
-			jsonErr(w, http.StatusInternalServerError, "Erro ao carregar nota")
-			return
-		}
-
-		// Consumidor não identificado (NFC-e sem <dest> no XML): o pacote exige
-		// UF de destino (ORA-20000 "E necessario informar a UF de Destino") —
-		// venda presencial assume UF e município do EMITENTE (regra do negócio
-		// 2026-07-06).
-		if strings.TrimSpace(destUF) == "" {
-			destUF = emitUF
-			if strings.TrimSpace(destCMun) == "" {
-				destCMun = emitCMun
+		summary, execErr := executarNotaPacote(db, companyID, req.NfeID, req.IncluirIbsCbsBase)
+		if execErr != nil {
+			switch execErr {
+			case errNotaNaoEncontrada:
+				jsonErr(w, http.StatusNotFound, "Nota não encontrada")
+			case errOracleIndisponivel:
+				jsonErr(w, http.StatusBadGateway, "Falha ao conectar ao Oracle. Verifique as credenciais ERP configuradas.")
+			default:
+				jsonErr(w, http.StatusInternalServerError, "Erro ao executar a nota")
 			}
-		}
-
-		nfeCtx := fiscalNotaContext{
-			EmitCNPJ:     emitCNPJ,
-			EmitUF:       emitUF,
-			DestUF:       destUF,
-			DestCMun:     destCMun,
-			DestIndIE:    destIndIE,
-			Modelo:       modelo,
-			MesmaEmpresa: mesmaEmpresa(emitCNPJ, destCNPJ),
-			DataEmissao:  dataEmissao,
-		}
-		nfeCtx.CodEmpresa, nfeCtx.CodEmpresaErr = resolveCodEmpresa(emitCNPJ, emitUF)
-
-		itemRows, err := db.Query(`
-			SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_frete,0), COALESCE(v_ipi,0),
-			       COALESCE(v_bc_icms,0), COALESCE(v_icms,0), COALESCE(p_icms,0), COALESCE(v_bc_st,0), COALESCE(v_st,0), COALESCE(v_pis,0), COALESCE(v_cofins,0)
-			FROM pacotefiscal_nfe_saidas_itens
-			WHERE nfe_id = $1 AND company_id = $2
-			ORDER BY n_item ASC`, req.NfeID, companyID)
-		if err != nil {
-			log.Printf("FiscalExecutionRunHandler: erro ao carregar pacotefiscal_nfe_saidas_itens (nfe_id=%s): %v", req.NfeID, err)
-			jsonErr(w, http.StatusInternalServerError, "Erro ao carregar itens da nota")
 			return
 		}
-		var itens []fiscalItemInput
-		for itemRows.Next() {
-			var it fiscalItemInput
-			if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VFrete, &it.VIPI,
-				&it.VBcIcmsXML, &it.VIcmsXML, &it.PIcmsXML, &it.VBcStXML, &it.VStXML, &it.VPisXML, &it.VCofinsXML); scanErr != nil {
-				log.Printf("FiscalExecutionRunHandler: erro ao escanear item (nfe_id=%s): %v", req.NfeID, scanErr)
-				continue
-			}
-			itens = append(itens, it)
-		}
-		if scanErr := itemRows.Err(); scanErr != nil {
-			log.Printf("FiscalExecutionRunHandler: erro ao iterar itens (nfe_id=%s): %v", req.NfeID, scanErr)
-			itemRows.Close()
-			jsonErr(w, http.StatusInternalServerError, "Erro ao carregar itens da nota")
-			return
-		}
-		itemRows.Close()
-
-		if len(itens) == 0 {
-			json.NewEncoder(w).Encode(fiscalExecutionSummary{})
-			return
-		}
-
-		trace := &fiscalDebugTrace{}
-		trace.add("", "", "conexao", fmt.Sprintf("Conectando ao Oracle (company_id=%s, filial cod_empresa=%d)...", companyID, nfeCtx.CodEmpresa))
-
-		// Conexão Oracle dedicada a este lote (Plan 11-01) — SetMaxOpenConns(5)
-		// já casado com o cap do semáforo usado em processFiscalBatch.
-		oracleConn, err := openFiscalOracleConn(db, companyID)
-		if err != nil {
-			log.Printf("FiscalExecutionRunHandler: openFiscalOracleConn falhou (company_id=%s): %v", companyID, err)
-			trace.add("", "", "conexao", "Falha ao conectar ao Oracle — verifique as credenciais ERP configuradas.")
-			jsonErr(w, http.StatusBadGateway, "Falha ao conectar ao Oracle. Verifique as credenciais ERP configuradas.")
-			return
-		}
-		// NÃO fechar: pool compartilhado/cacheado por empresa (2026-07-08) —
-		// fechar aqui mataria as execuções concorrentes das outras notas.
-		trace.add("", "", "conexao", "Conexão Oracle estabelecida (FCCORP/PRODB).")
-
-		// Backstop apenas — o timeout real é por item (15s), não do lote inteiro.
-		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
-		defer cancel()
-
-		if req.IncluirIbsCbsBase {
-			trace.add("", "", "simulacao", "Modo simulação ATIVO: IBS/CBS na base do ICMS (2ª chamada por item com preço acrescido).")
-		}
-		summary := processFiscalBatch(ctx, oracleConn, db, companyID, nfeCtx, itens, trace, req.IncluirIbsCbsBase)
-		summary.Debug = trace.entries
 		json.NewEncoder(w).Encode(summary)
 	}
+}
+
+var (
+	errNotaNaoEncontrada  = errors.New("nota não encontrada")
+	errOracleIndisponivel = errors.New("oracle indisponível")
+)
+
+// executarNotaPacote roda o pipeline completo (header → itens → Oracle →
+// pacote → persistência) para UMA nota, company-scoped (guard IDOR T-11-14).
+// Reutilizado pelo handler síncrono (Executar esta nota, com debug na
+// resposta) e pelo job de lote server-side (2026-07-08 — o lote no navegador
+// morria em logout/refresh). Usa context.Background(): a execução não é
+// cancelada se o cliente desconectar.
+func executarNotaPacote(db *sql.DB, companyID, nfeID string, incluirIbsCbs bool) (fiscalExecutionSummary, error) {
+	var summary fiscalExecutionSummary
+
+	var emitCNPJ, emitUF, emitCMun, destCNPJ, destUF, destCMun, destIndIE string
+	var modelo int
+	var dataEmissao time.Time
+	err := db.QueryRow(`
+		SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(emit_c_mun,''), COALESCE(dest_cnpj,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), COALESCE(dest_ind_ie,''), modelo, data_emissao
+		FROM pacotefiscal_nfe_saidas
+		WHERE id = $1 AND company_id = $2`, nfeID, companyID,
+	).Scan(&emitCNPJ, &emitUF, &emitCMun, &destCNPJ, &destUF, &destCMun, &destIndIE, &modelo, &dataEmissao)
+	if err == sql.ErrNoRows {
+		return summary, errNotaNaoEncontrada
+	}
+	if err != nil {
+		log.Printf("executarNotaPacote: erro ao carregar pacotefiscal_nfe_saidas (nfe_id=%s): %v", nfeID, err)
+		return summary, err
+	}
+
+	// Consumidor não identificado (NFC-e sem <dest> no XML): o pacote exige
+	// UF de destino (ORA-20000 "E necessario informar a UF de Destino") —
+	// venda presencial assume UF e município do EMITENTE (regra do negócio
+	// 2026-07-06).
+	if strings.TrimSpace(destUF) == "" {
+		destUF = emitUF
+		if strings.TrimSpace(destCMun) == "" {
+			destCMun = emitCMun
+		}
+	}
+
+	nfeCtx := fiscalNotaContext{
+		EmitCNPJ:     emitCNPJ,
+		EmitUF:       emitUF,
+		DestUF:       destUF,
+		DestCMun:     destCMun,
+		DestIndIE:    destIndIE,
+		Modelo:       modelo,
+		MesmaEmpresa: mesmaEmpresa(emitCNPJ, destCNPJ),
+		DataEmissao:  dataEmissao,
+	}
+	nfeCtx.CodEmpresa, nfeCtx.CodEmpresaErr = resolveCodEmpresa(emitCNPJ, emitUF)
+
+	itemRows, err := db.Query(`
+		SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_frete,0), COALESCE(v_ipi,0),
+		       COALESCE(v_bc_icms,0), COALESCE(v_icms,0), COALESCE(p_icms,0), COALESCE(v_bc_st,0), COALESCE(v_st,0), COALESCE(v_pis,0), COALESCE(v_cofins,0)
+		FROM pacotefiscal_nfe_saidas_itens
+		WHERE nfe_id = $1 AND company_id = $2
+		ORDER BY n_item ASC`, nfeID, companyID)
+	if err != nil {
+		log.Printf("executarNotaPacote: erro ao carregar itens (nfe_id=%s): %v", nfeID, err)
+		return summary, err
+	}
+	var itens []fiscalItemInput
+	for itemRows.Next() {
+		var it fiscalItemInput
+		if scanErr := itemRows.Scan(&it.ID, &it.CProd, &it.XProd, &it.CFOP, &it.VProd, &it.VDesc, &it.VOutro, &it.VFrete, &it.VIPI,
+			&it.VBcIcmsXML, &it.VIcmsXML, &it.PIcmsXML, &it.VBcStXML, &it.VStXML, &it.VPisXML, &it.VCofinsXML); scanErr != nil {
+			log.Printf("executarNotaPacote: erro ao escanear item (nfe_id=%s): %v", nfeID, scanErr)
+			continue
+		}
+		itens = append(itens, it)
+	}
+	if scanErr := itemRows.Err(); scanErr != nil {
+		itemRows.Close()
+		log.Printf("executarNotaPacote: erro ao iterar itens (nfe_id=%s): %v", nfeID, scanErr)
+		return summary, scanErr
+	}
+	itemRows.Close()
+
+	if len(itens) == 0 {
+		return summary, nil
+	}
+
+	trace := &fiscalDebugTrace{}
+	trace.add("", "", "conexao", fmt.Sprintf("Conectando ao Oracle (company_id=%s, filial cod_empresa=%d)...", companyID, nfeCtx.CodEmpresa))
+
+	oracleConn, err := openFiscalOracleConn(db, companyID)
+	if err != nil {
+		log.Printf("executarNotaPacote: openFiscalOracleConn falhou (company_id=%s): %v", companyID, err)
+		return summary, errOracleIndisponivel
+	}
+	// NÃO fechar: pool compartilhado/cacheado por empresa (2026-07-08).
+	trace.add("", "", "conexao", "Conexão Oracle estabelecida (FCCORP/PRODB).")
+
+	// Backstop apenas — o timeout real é por item (15s). Background: a nota
+	// termina mesmo se o navegador desconectar no meio.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	if incluirIbsCbs {
+		trace.add("", "", "simulacao", "Modo simulação ATIVO: IBS/CBS na base do ICMS (2ª chamada por item com preço acrescido).")
+	}
+	summary = processFiscalBatch(ctx, oracleConn, db, companyID, nfeCtx, itens, trace, incluirIbsCbs)
+	summary.Debug = trace.entries
+	return summary, nil
 }
 
 // ---------------------------------------------------------------------------
