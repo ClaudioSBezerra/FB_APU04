@@ -348,7 +348,9 @@ func IcmsFronteiraInaplicUpdateHandler(db *sql.DB) http.HandlerFunc {
 
 // ---------------------------------------------------------------------------
 // DELETE — DELETE /api/icms-fronteira/inaplicabilidade?uf=PE  (limpa a UF)
-//          DELETE /api/icms-fronteira/inaplicabilidade/{id}   (uma regra)
+//
+//	DELETE /api/icms-fronteira/inaplicabilidade/{id}   (uma regra)
+//
 // ---------------------------------------------------------------------------
 func IcmsFronteiraInaplicDeleteHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

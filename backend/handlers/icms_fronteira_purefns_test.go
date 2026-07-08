@@ -85,9 +85,9 @@ func TestSplitNCMs(t *testing.T) {
 		{"8544", []string{"8544"}},
 		{"3815.12.10, 3815.12.90", []string{"38151210", "38151290"}},
 		{"8544\n7605\n7614", []string{"8544", "7605", "7614"}},
-		{"1234;1234", []string{"1234"}},               // dedup
-		{"1234 / etc. / ou", []string{"1234"}},        // descarta lixo não-numérico
-		{"  84-71  ", []string{"8471"}},               // remove pontuação/espaço
+		{"1234;1234", []string{"1234"}},        // dedup
+		{"1234 / etc. / ou", []string{"1234"}}, // descarta lixo não-numérico
+		{"  84-71  ", []string{"8471"}},        // remove pontuação/espaço
 	}
 	for _, c := range cases {
 		got := splitNCMs(c.in)

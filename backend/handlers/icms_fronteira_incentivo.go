@@ -28,40 +28,40 @@ import (
 // ---------------------------------------------------------------------------
 
 type FronteiraIncentivoRow struct {
-	ChaveNFe         string  `json:"chave_nfe"`
-	DataEmissao      string  `json:"data_emissao"`
-	NumeroNFe        string  `json:"numero_nfe"`
-	FornCNPJ         string  `json:"forn_cnpj"`
-	FornNome         string  `json:"forn_nome"`
-	FornUF           string  `json:"forn_uf"`
-	CFOP             string  `json:"cfop"`
-	VProd            float64 `json:"v_prod"`
-	VIPI             float64 `json:"v_ipi"`
-	VIcms            float64 `json:"v_icms"`
-	AliqInter        float64 `json:"aliq_inter"`
-	AliqInterna      float64 `json:"aliq_interna"`
-	Regime           string  `json:"regime"`            // ANTECIPACAO ou ST (DIFAL excluído)
-	Bloco            string  `json:"bloco"`             // mes_atual | mes_anterior | nao_sped
-	CnpjFilial       string  `json:"cnpj_filial"`       // CNPJ recebedor (chave de junção)
-	Programa         string  `json:"programa"`          // PRODEPE | PROIND
-	NumAto           string  `json:"num_ato"`
-	VigenciaInicio   string  `json:"vigencia_inicio"`
-	VigenciaFim      string  `json:"vigencia_fim"`
-	IcmsSeriaDevido  float64 `json:"icms_seria_devido"` // = quanto foi dispensado
+	ChaveNFe        string  `json:"chave_nfe"`
+	DataEmissao     string  `json:"data_emissao"`
+	NumeroNFe       string  `json:"numero_nfe"`
+	FornCNPJ        string  `json:"forn_cnpj"`
+	FornNome        string  `json:"forn_nome"`
+	FornUF          string  `json:"forn_uf"`
+	CFOP            string  `json:"cfop"`
+	VProd           float64 `json:"v_prod"`
+	VIPI            float64 `json:"v_ipi"`
+	VIcms           float64 `json:"v_icms"`
+	AliqInter       float64 `json:"aliq_inter"`
+	AliqInterna     float64 `json:"aliq_interna"`
+	Regime          string  `json:"regime"`      // ANTECIPACAO ou ST (DIFAL excluído)
+	Bloco           string  `json:"bloco"`       // mes_atual | mes_anterior | nao_sped
+	CnpjFilial      string  `json:"cnpj_filial"` // CNPJ recebedor (chave de junção)
+	Programa        string  `json:"programa"`    // PRODEPE | PROIND
+	NumAto          string  `json:"num_ato"`
+	VigenciaInicio  string  `json:"vigencia_inicio"`
+	VigenciaFim     string  `json:"vigencia_fim"`
+	IcmsSeriaDevido float64 `json:"icms_seria_devido"` // = quanto foi dispensado
 }
 
 type FronteiraIncentivoResponse struct {
-	Rows               []FronteiraIncentivoRow `json:"rows"`
-	Count              int                     `json:"count"`
-	TotalDispensado    float64                 `json:"total_dispensado"`
-	TotalMesAtual      float64                 `json:"total_mes_atual"`
-	TotalMesAnterior   float64                 `json:"total_mes_anterior"`
-	TotalNaoSped       float64                 `json:"total_nao_sped"`
-	CountMesAtual      int                     `json:"count_mes_atual"`
-	CountMesAnterior   int                     `json:"count_mes_anterior"`
-	CountNaoSped       int                     `json:"count_nao_sped"`
-	PorPrograma        map[string]float64      `json:"por_programa"`        // soma dispensada por programa
-	PorFilial          map[string]float64      `json:"por_filial"`          // soma dispensada por CNPJ
+	Rows             []FronteiraIncentivoRow `json:"rows"`
+	Count            int                     `json:"count"`
+	TotalDispensado  float64                 `json:"total_dispensado"`
+	TotalMesAtual    float64                 `json:"total_mes_atual"`
+	TotalMesAnterior float64                 `json:"total_mes_anterior"`
+	TotalNaoSped     float64                 `json:"total_nao_sped"`
+	CountMesAtual    int                     `json:"count_mes_atual"`
+	CountMesAnterior int                     `json:"count_mes_anterior"`
+	CountNaoSped     int                     `json:"count_nao_sped"`
+	PorPrograma      map[string]float64      `json:"por_programa"` // soma dispensada por programa
+	PorFilial        map[string]float64      `json:"por_filial"`   // soma dispensada por CNPJ
 }
 
 // ---------------------------------------------------------------------------

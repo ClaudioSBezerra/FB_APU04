@@ -24,36 +24,36 @@ import (
 
 // batchDoc representa um documento fiscal já agregado vindo do bridge Python.
 type batchDoc struct {
-	Direct           string  `json:"direct"`            // "1" = entrada, "2" = saída
-	Chave            string  `json:"chave"`             // 44 dígitos
-	Modelo           string  `json:"modelo"`            // "55","57","65",...
-	Serie            string  `json:"serie"`
-	Numero           string  `json:"numero"`
-	DataEmissao      string  `json:"data_emissao"`      // "YYYY-MM-DD"
-	DataAutorizacao  string  `json:"data_autorizacao"`  // "YYYY-MM-DD"
-	MesAno           string  `json:"mes_ano"`           // "MM/YYYY"
-	EmitCNPJ         string  `json:"emit_cnpj"`
-	DestCNPJ         string  `json:"dest_cnpj"`
-	Cancelado        string  `json:"cancelado"`         // "S" = cancelada, demais = normal
-	NomeParceiro     string  `json:"nome_parceiro"`     // forn.razsoc (DIRECT=1) ou clie.razsoc (DIRECT=2)
-	CFOP             string  `json:"cfop"`              // código CFOP 4 dígitos (ex: "1102")
-	TipoCFOP         string  `json:"tipo_cfop"`         // C=Consumo,R=Revenda,A=Ativo Imobilizado,T=Transferência,O=Outros,S=Serviços
-	VTotal           float64 `json:"v_total"`
-	VBcIbsCbs        float64 `json:"v_bc_ibs_cbs"`
-	VIbsUf           float64 `json:"v_ibs_uf"`
-	VIbsMun          float64 `json:"v_ibs_mun"`
-	VIbs             float64 `json:"v_ibs"`
-	VCbs             float64 `json:"v_cbs"`
-	BaseIcms         float64 `json:"base_icms"`
-	Icms             float64 `json:"icms"`
-	IcmsSt           float64 `json:"icms_st"`
-	Ipi              float64 `json:"ipi"`
-	BasePis          float64 `json:"base_pis"`
-	Pis              float64 `json:"pis"`
-	BaseCofins       float64 `json:"base_cofins"`
-	Cofins           float64 `json:"cofins"`
-	BasePartilha     float64 `json:"base_partilha"`
-	IcmsPartilha     float64 `json:"icms_partilha"`
+	Direct          string  `json:"direct"` // "1" = entrada, "2" = saída
+	Chave           string  `json:"chave"`  // 44 dígitos
+	Modelo          string  `json:"modelo"` // "55","57","65",...
+	Serie           string  `json:"serie"`
+	Numero          string  `json:"numero"`
+	DataEmissao     string  `json:"data_emissao"`     // "YYYY-MM-DD"
+	DataAutorizacao string  `json:"data_autorizacao"` // "YYYY-MM-DD"
+	MesAno          string  `json:"mes_ano"`          // "MM/YYYY"
+	EmitCNPJ        string  `json:"emit_cnpj"`
+	DestCNPJ        string  `json:"dest_cnpj"`
+	Cancelado       string  `json:"cancelado"`     // "S" = cancelada, demais = normal
+	NomeParceiro    string  `json:"nome_parceiro"` // forn.razsoc (DIRECT=1) ou clie.razsoc (DIRECT=2)
+	CFOP            string  `json:"cfop"`          // código CFOP 4 dígitos (ex: "1102")
+	TipoCFOP        string  `json:"tipo_cfop"`     // C=Consumo,R=Revenda,A=Ativo Imobilizado,T=Transferência,O=Outros,S=Serviços
+	VTotal          float64 `json:"v_total"`
+	VBcIbsCbs       float64 `json:"v_bc_ibs_cbs"`
+	VIbsUf          float64 `json:"v_ibs_uf"`
+	VIbsMun         float64 `json:"v_ibs_mun"`
+	VIbs            float64 `json:"v_ibs"`
+	VCbs            float64 `json:"v_cbs"`
+	BaseIcms        float64 `json:"base_icms"`
+	Icms            float64 `json:"icms"`
+	IcmsSt          float64 `json:"icms_st"`
+	Ipi             float64 `json:"ipi"`
+	BasePis         float64 `json:"base_pis"`
+	Pis             float64 `json:"pis"`
+	BaseCofins      float64 `json:"base_cofins"`
+	Cofins          float64 `json:"cofins"`
+	BasePartilha    float64 `json:"base_partilha"`
+	IcmsPartilha    float64 `json:"icms_partilha"`
 }
 
 type batchRequest struct {
@@ -199,7 +199,9 @@ func ERPBridgeBatchImportHandler(db *sql.DB) http.HandlerFunc {
 func batchInsertNFeSaida(db *sql.DB, companyID string, doc batchDoc, modelo string) (bool, error) {
 	modInt, _ := strconv.Atoi(modelo)
 	cancelado := doc.Cancelado
-	if cancelado != "S" { cancelado = "N" }
+	if cancelado != "S" {
+		cancelado = "N"
+	}
 	tipoCFOP := strings.TrimSpace(doc.TipoCFOP)
 	cfopCode := strings.TrimSpace(doc.CFOP)
 	res, err := db.Exec(`
@@ -278,7 +280,9 @@ func batchInsertNFeSaida(db *sql.DB, companyID string, doc batchDoc, modelo stri
 func batchInsertNFeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo string) (bool, error) {
 	modInt, _ := strconv.Atoi(modelo)
 	cancelado := doc.Cancelado
-	if cancelado != "S" { cancelado = "N" }
+	if cancelado != "S" {
+		cancelado = "N"
+	}
 	// tipo_cfop: usa valor explícito do payload; se vazio, faz lookup na tabela cfop via SQL
 	tipoCFOP := strings.TrimSpace(doc.TipoCFOP)
 	cfopCode := strings.TrimSpace(doc.CFOP)
@@ -358,7 +362,9 @@ func batchInsertNFeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo st
 func batchInsertCTeEntrada(db *sql.DB, companyID string, doc batchDoc, modelo string) (bool, error) {
 	modInt, _ := strconv.Atoi(modelo)
 	cancelado := doc.Cancelado
-	if cancelado != "S" { cancelado = "N" }
+	if cancelado != "S" {
+		cancelado = "N"
+	}
 	res, err := db.Exec(`
 		INSERT INTO cte_entradas (
 			company_id, chave_cte, modelo, serie, numero_cte,

@@ -495,10 +495,10 @@ func TestToNullDecimal(t *testing.T) {
 
 func TestParseDhEmi(t *testing.T) {
 	cases := []struct {
-		name        string
-		input       string
-		wantErr     bool
-		wantMesAno  string
+		name       string
+		input      string
+		wantErr    bool
+		wantMesAno string
 	}{
 		{"ISO8601 with timezone", "2026-02-26T12:00:00-03:00", false, "02/2026"},
 		{"date only", "2026-01-15", false, "01/2026"},

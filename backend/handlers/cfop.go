@@ -36,7 +36,7 @@ func ListCFOPsHandler(db *sql.DB) http.HandlerFunc {
 			}
 			cfops = append(cfops, c)
 		}
-		
+
 		if cfops == nil {
 			cfops = []CFOP{}
 		}
@@ -48,7 +48,7 @@ func ListCFOPsHandler(db *sql.DB) http.HandlerFunc {
 func ImportCFOPsHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -70,7 +70,7 @@ func ImportCFOPsHandler(db *sql.DB) http.HandlerFunc {
 		// For ',' we validate strictly: first col must be 4 digits only
 		delimiters := []rune{';', ',', '\t'}
 		var reader *csv.Reader
-		
+
 		for _, delim := range delimiters {
 			if seeker, ok := file.(io.Seeker); ok {
 				seeker.Seek(0, 0)
@@ -78,7 +78,7 @@ func ImportCFOPsHandler(db *sql.DB) http.HandlerFunc {
 			r := csv.NewReader(file)
 			r.Comma = delim
 			r.LazyQuotes = true
-			
+
 			// Try reading the first line
 			line, err := r.Read()
 			// Validation: Must have at least 3 columns AND first column (CFOP) must be short (<= 5 chars)
@@ -139,11 +139,11 @@ func ImportCFOPsHandler(db *sql.DB) http.HandlerFunc {
 				http.Error(w, "Error reading CSV (check format): "+err.Error(), http.StatusBadRequest)
 				return
 			}
-			
+
 			if len(record) < 3 {
-				continue 
+				continue
 			}
-			
+
 			// Skip header
 			if strings.EqualFold(record[0], "CFOP") {
 				continue
@@ -152,7 +152,7 @@ func ImportCFOPsHandler(db *sql.DB) http.HandlerFunc {
 			cfop := strings.TrimSpace(record[0])
 			// Remove BOM (Byte Order Mark) if present - common in Windows files
 			cfop = strings.TrimPrefix(cfop, "\ufeff")
-			
+
 			descricao := strings.TrimSpace(record[1])
 			tipo := strings.TrimSpace(record[2])
 
@@ -177,7 +177,7 @@ func ImportCFOPsHandler(db *sql.DB) http.HandlerFunc {
 				return
 			}
 		}
-		
+
 		if err := tx.Commit(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

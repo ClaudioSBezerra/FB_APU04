@@ -29,12 +29,12 @@ type SugerirIAReq struct {
 }
 
 type SugerirIAResp struct {
-	ChaveNFe         string                   `json:"chave_nfe"`
-	RegimeSugerido   string                   `json:"regime_sugerido"`
-	Confianca        string                   `json:"confianca"` // alta|media|baixa
-	Justificativa    string                   `json:"justificativa"`
-	ContextoUsado    map[string]interface{}   `json:"contexto_usado"`
-	RegistroHist     []map[string]interface{} `json:"historico_fornecedor"`
+	ChaveNFe       string                   `json:"chave_nfe"`
+	RegimeSugerido string                   `json:"regime_sugerido"`
+	Confianca      string                   `json:"confianca"` // alta|media|baixa
+	Justificativa  string                   `json:"justificativa"`
+	ContextoUsado  map[string]interface{}   `json:"contexto_usado"`
+	RegistroHist   []map[string]interface{} `json:"historico_fornecedor"`
 }
 
 const sugerirIASystemPrompt = `Classifique a NF em UM regime: ANTECIPACAO | ST | DIFAL | NAO_FRONTEIRA.
@@ -141,14 +141,14 @@ func IcmsFronteiraSugerirIAHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		contexto := map[string]interface{}{
-			"cfop_saida":   cfopSaida,
-			"ncm":          ncm,
-			"x_prod":       xProd,
-			"forn_uf":      fornUF,
-			"dest_uf":      destUF,
-			"forn_cnpj":    fornCNPJ,
-			"forn_nome":    fornNome,
-			"v_prod":       vProd,
+			"cfop_saida":                 cfopSaida,
+			"ncm":                        ncm,
+			"x_prod":                     xProd,
+			"forn_uf":                    fornUF,
+			"dest_uf":                    destUF,
+			"forn_cnpj":                  fornCNPJ,
+			"forn_nome":                  fornNome,
+			"v_prod":                     vProd,
 			"historico_fornecedor_count": len(hist),
 		}
 

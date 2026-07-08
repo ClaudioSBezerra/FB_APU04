@@ -28,24 +28,24 @@ var (
 
 // ApuracaoResumo holds aggregated fiscal data for AI prompt generation.
 type ApuracaoResumo struct {
-	CompanyName string  `json:"company_name"`
-	CNPJ        string  `json:"cnpj"`
-	Periodo     string  `json:"periodo"`
+	CompanyName string `json:"company_name"`
+	CNPJ        string `json:"cnpj"`
+	Periodo     string `json:"periodo"`
 	// Current period
-	FaturamentoBruto  float64 `json:"faturamento_bruto"`
-	TotalEntradas     float64 `json:"total_entradas"`
-	TotalSaidas       float64 `json:"total_saidas"`
-	IcmsEntrada       float64 `json:"icms_entrada"`
-	IcmsSaida         float64 `json:"icms_saida"`
-	IcmsAPagar        float64 `json:"icms_a_pagar"`
-	IbsProjetado      float64 `json:"ibs_projetado"`
-	CbsProjetado      float64 `json:"cbs_projetado"`
-	TotalNFes         int     `json:"total_nfes"`
+	FaturamentoBruto float64 `json:"faturamento_bruto"`
+	TotalEntradas    float64 `json:"total_entradas"`
+	TotalSaidas      float64 `json:"total_saidas"`
+	IcmsEntrada      float64 `json:"icms_entrada"`
+	IcmsSaida        float64 `json:"icms_saida"`
+	IcmsAPagar       float64 `json:"icms_a_pagar"`
+	IbsProjetado     float64 `json:"ibs_projetado"`
+	CbsProjetado     float64 `json:"cbs_projetado"`
+	TotalNFes        int     `json:"total_nfes"`
 	// Previous period (for comparison)
-	PeriodoAnterior       string  `json:"periodo_anterior"`
-	FaturamentoAnterior   float64 `json:"faturamento_anterior"`
-	IcmsAPagarAnterior    float64 `json:"icms_a_pagar_anterior"`
-	TotalNFesAnterior     int     `json:"total_nfes_anterior"`
+	PeriodoAnterior     string  `json:"periodo_anterior"`
+	FaturamentoAnterior float64 `json:"faturamento_anterior"`
+	IcmsAPagarAnterior  float64 `json:"icms_a_pagar_anterior"`
+	TotalNFesAnterior   int     `json:"total_nfes_anterior"`
 	// Breakdown by operation type
 	Operacoes []OperacaoResumo `json:"operacoes"`
 	// Import jobs info
@@ -525,8 +525,12 @@ func GetExecutiveSummaryHandler(db *sql.DB) http.HandlerFunc {
 				// Busca créditos em risco (NF-e sem IBS/CBS + Simples Nacional)
 				var ibsRate, cbsRate float64
 				db.QueryRow(`SELECT perc_ibs_uf + perc_ibs_mun, perc_cbs FROM tabela_aliquotas WHERE ano = 2033 LIMIT 1`).Scan(&ibsRate, &cbsRate)
-				if ibsRate == 0 { ibsRate = 17.7 }
-				if cbsRate == 0 { cbsRate = 8.8 }
+				if ibsRate == 0 {
+					ibsRate = 17.7
+				}
+				if cbsRate == 0 {
+					cbsRate = 8.8
+				}
 				totalRate := (ibsRate + cbsRate) / 100.0
 
 				var nfeValorSemCredito float64
@@ -865,21 +869,26 @@ func GetAvailablePeriodsHandler(db *sql.DB) http.HandlerFunc {
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"periods": periods,
-			"latest":  func() string { if len(periods) > 0 { return periods[0] }; return "" }(),
+			"latest": func() string {
+				if len(periods) > 0 {
+					return periods[0]
+				}
+				return ""
+			}(),
 		})
 	}
 }
 
 // SavedAIReport represents a saved AI-generated report from database
 type SavedAIReport struct {
-	ID                   string    `json:"id"`
-	CompanyID            string    `json:"company_id"`
-	JobID                *string   `json:"job_id,omitempty"`
-	Periodo              string    `json:"periodo"`
-	Titulo               string    `json:"titulo"`
-	Resumo               string    `json:"resumo"`
+	ID                    string    `json:"id"`
+	CompanyID             string    `json:"company_id"`
+	JobID                 *string   `json:"job_id,omitempty"`
+	Periodo               string    `json:"periodo"`
+	Titulo                string    `json:"titulo"`
+	Resumo                string    `json:"resumo"`
 	GeradoAutomaticamente bool      `json:"gerado_automaticamente"`
-	CreatedAt            time.Time `json:"created_at"`
+	CreatedAt             time.Time `json:"created_at"`
 }
 
 // ListSavedAIReportsHandler returns all saved AI reports for a company

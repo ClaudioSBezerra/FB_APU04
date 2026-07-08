@@ -39,39 +39,39 @@ const fasaST_BA = "F1_ST_BA"
 
 // FiscalCalcRow — linha de retorno (calcular + listar usam o mesmo formato)
 type FiscalCalcRow struct {
-	ID                  string  `json:"id"`
-	ChaveNFe            string  `json:"chave_nfe"`
-	NumeroNFe           string  `json:"numero_nfe"`
-	DataEmissao         string  `json:"data_emissao"`
-	NItem               int     `json:"n_item"`
-	CFOP                string  `json:"cfop"`
-	NCM                 string  `json:"ncm"`
-	CSTICMS             string  `json:"cst_icms"`
-	DestUF              string  `json:"dest_uf"`
-	FornUF              string  `json:"forn_uf"`
-	VItem               float64 `json:"v_item"`
-	VIPI                float64 `json:"v_ipi"`
-	VFreteProporcional  float64 `json:"v_frete_proporcional"`
-	VFreteCTeRateado    float64 `json:"v_frete_cte_rateado"`
-	VOutrasDesp         float64 `json:"v_outras_desp"`
-	VIcmsItem           float64 `json:"v_icms_item"`
-	NCMPrefixoAplicado  string  `json:"ncm_prefixo_aplicado"`
-	MVAAplicada         float64 `json:"mva_aplicada"`
-	MVATipo             string  `json:"mva_tipo"`
-	AliqInter           float64 `json:"aliq_inter"`
-	AliqInterna         float64 `json:"aliq_interna"`
-	BaseST              float64 `json:"base_st"`
-	IcmsSTEstimado      float64 `json:"icms_st_estimado"`
+	ID                 string  `json:"id"`
+	ChaveNFe           string  `json:"chave_nfe"`
+	NumeroNFe          string  `json:"numero_nfe"`
+	DataEmissao        string  `json:"data_emissao"`
+	NItem              int     `json:"n_item"`
+	CFOP               string  `json:"cfop"`
+	NCM                string  `json:"ncm"`
+	CSTICMS            string  `json:"cst_icms"`
+	DestUF             string  `json:"dest_uf"`
+	FornUF             string  `json:"forn_uf"`
+	VItem              float64 `json:"v_item"`
+	VIPI               float64 `json:"v_ipi"`
+	VFreteProporcional float64 `json:"v_frete_proporcional"`
+	VFreteCTeRateado   float64 `json:"v_frete_cte_rateado"`
+	VOutrasDesp        float64 `json:"v_outras_desp"`
+	VIcmsItem          float64 `json:"v_icms_item"`
+	NCMPrefixoAplicado string  `json:"ncm_prefixo_aplicado"`
+	MVAAplicada        float64 `json:"mva_aplicada"`
+	MVATipo            string  `json:"mva_tipo"`
+	AliqInter          float64 `json:"aliq_inter"`
+	AliqInterna        float64 `json:"aliq_interna"`
+	BaseST             float64 `json:"base_st"`
+	IcmsSTEstimado     float64 `json:"icms_st_estimado"`
 }
 
 type FiscalCalcResponse struct {
-	Rows           []FiscalCalcRow `json:"rows"`
-	Count          int             `json:"count"`
-	TotalBaseST    float64         `json:"total_base_st"`
-	TotalIcmsST    float64         `json:"total_icms_st"`
-	Periodo        string          `json:"periodo"`
-	Fase           string          `json:"fase"`
-	Mensagem       string          `json:"mensagem,omitempty"`
+	Rows        []FiscalCalcRow `json:"rows"`
+	Count       int             `json:"count"`
+	TotalBaseST float64         `json:"total_base_st"`
+	TotalIcmsST float64         `json:"total_icms_st"`
+	Periodo     string          `json:"periodo"`
+	Fase        string          `json:"fase"`
+	Mensagem    string          `json:"mensagem,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

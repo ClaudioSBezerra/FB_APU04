@@ -20,10 +20,10 @@ import (
 // ---------------------------------------------------------------------------
 
 type SegmentoUF struct {
-	Codigo   int    `json:"codigo"`
-	UF       string `json:"uf"`
+	Codigo    int    `json:"codigo"`
+	UF        string `json:"uf"`
 	Descricao string `json:"descricao"`
-	Ativo    bool   `json:"ativo"` // true se a empresa tem esse segmento cadastrado
+	Ativo     bool   `json:"ativo"` // true se a empresa tem esse segmento cadastrado
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ func IcmsFronteiraCompanySegmentosHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		var body struct {
-			UF     string `json:"uf"`
+			UF      string `json:"uf"`
 			Codigos []int  `json:"codigos"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

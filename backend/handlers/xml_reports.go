@@ -91,21 +91,21 @@ func MercadoriasXMLReportHandler(db *sql.DB) http.HandlerFunc {
 		defer rows.Close()
 
 		type xmlOpRow struct {
-			FilialCNPJ        string  `json:"filial_cnpj"`
-			FilialNome        string  `json:"filial_nome"`
-			MesAno            string  `json:"mes_ano"`
-			Valor             float64 `json:"valor"`
-			ICMS              float64 `json:"icms"`
-			VlIPI             float64 `json:"vl_ipi"`
-			VlPIS             float64 `json:"vl_pis"`
-			VlCOFINS          float64 `json:"vl_cofins"`
-			VlICMSProjetado   float64 `json:"vl_icms_projetado"`
-			VlIBSProjetado    float64 `json:"vl_ibs_projetado"`
-			VlCBSProjetado    float64 `json:"vl_cbs_projetado"`
-			Tipo              string  `json:"tipo"`
-			TipoCFOP          string  `json:"tipo_cfop"`
-			Origem            string  `json:"origem"`
-			TipoOperacao      string  `json:"tipo_operacao"`
+			FilialCNPJ      string  `json:"filial_cnpj"`
+			FilialNome      string  `json:"filial_nome"`
+			MesAno          string  `json:"mes_ano"`
+			Valor           float64 `json:"valor"`
+			ICMS            float64 `json:"icms"`
+			VlIPI           float64 `json:"vl_ipi"`
+			VlPIS           float64 `json:"vl_pis"`
+			VlCOFINS        float64 `json:"vl_cofins"`
+			VlICMSProjetado float64 `json:"vl_icms_projetado"`
+			VlIBSProjetado  float64 `json:"vl_ibs_projetado"`
+			VlCBSProjetado  float64 `json:"vl_cbs_projetado"`
+			Tipo            string  `json:"tipo"`
+			TipoCFOP        string  `json:"tipo_cfop"`
+			Origem          string  `json:"origem"`
+			TipoOperacao    string  `json:"tipo_operacao"`
 		}
 
 		var list []xmlOpRow

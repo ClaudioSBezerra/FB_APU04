@@ -57,12 +57,12 @@ type pfInfProt struct {
 }
 
 type pfInfNFe struct {
-	ID    string    `xml:"Id,attr"`
-	Ide   pfIde     `xml:"ide"`
-	Emit  pfEmit    `xml:"emit"`
-	Dest  pfDest    `xml:"dest"`
-	Det   []pfDet   `xml:"det"`
-	Total pfTotal   `xml:"total"`
+	ID    string  `xml:"Id,attr"`
+	Ide   pfIde   `xml:"ide"`
+	Emit  pfEmit  `xml:"emit"`
+	Dest  pfDest  `xml:"dest"`
+	Det   []pfDet `xml:"det"`
+	Total pfTotal `xml:"total"`
 }
 
 type pfIde struct {
@@ -262,15 +262,15 @@ type pfDetCOFINS struct {
 
 // pfDetIBSCBS — melhor esforço (ver comentário do pacote acima).
 type pfDetIBSCBS struct {
-	CST        string        `xml:"CST"`
-	CClassTrib string        `xml:"cClassTrib"`
-	GIBSCBS    pfDetGIBSCBS  `xml:"gIBSCBS"`
+	CST        string       `xml:"CST"`
+	CClassTrib string       `xml:"cClassTrib"`
+	GIBSCBS    pfDetGIBSCBS `xml:"gIBSCBS"`
 }
 
 type pfDetGIBSCBS struct {
-	VBC  string     `xml:"vBC"`
-	GIBS pfDetGIBS  `xml:"gIBSUF"`
-	GCBS pfDetGCBS  `xml:"gCBS"`
+	VBC  string    `xml:"vBC"`
+	GIBS pfDetGIBS `xml:"gIBSUF"`
+	GCBS pfDetGCBS `xml:"gCBS"`
 }
 
 type pfDetGIBS struct {
@@ -697,40 +697,40 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 			return pfOutcomeErro
 		}
 
-			inf := proc.NFe.InfNFe
+		inf := proc.NFe.InfNFe
 
-			mod := strings.TrimSpace(inf.Ide.Mod)
-			if mod != "55" && mod != "65" {
-				return pfOutcomeIgnorado
-			}
-			if strings.TrimSpace(inf.Ide.TpNF) != "1" {
-				return pfOutcomeIgnorado
-			}
+		mod := strings.TrimSpace(inf.Ide.Mod)
+		if mod != "55" && mod != "65" {
+			return pfOutcomeIgnorado
+		}
+		if strings.TrimSpace(inf.Ide.TpNF) != "1" {
+			return pfOutcomeIgnorado
+		}
 
-			chave := pfExtractChave(proc)
-			if len(chave) != 44 {
-				addErro(xf.Name, "Chave de acesso inválida ou ausente")
-				return pfOutcomeErro
-			}
+		chave := pfExtractChave(proc)
+		if len(chave) != 44 {
+			addErro(xf.Name, "Chave de acesso inválida ou ausente")
+			return pfOutcomeErro
+		}
 
-			dataEmissao, mesAno, err := pfParseDhEmi(inf.Ide.DhEmi)
-			if err != nil {
-				addErro(xf.Name, err.Error())
-				return pfOutcomeErro
-			}
+		dataEmissao, mesAno, err := pfParseDhEmi(inf.Ide.DhEmi)
+		if err != nil {
+			addErro(xf.Name, err.Error())
+			return pfOutcomeErro
+		}
 
-			modInt, _ := strconv.Atoi(mod)
-			ic := inf.Total.ICMSTot
-			ib := inf.Total.IBSCBSTot
+		modInt, _ := strconv.Atoi(mod)
+		ic := inf.Total.ICMSTot
+		ib := inf.Total.IBSCBSTot
 
-			tx, err := db.Begin()
-			if err != nil {
-				addErro(xf.Name, "Erro ao iniciar transação: "+err.Error())
-				return pfOutcomeErro
-			}
+		tx, err := db.Begin()
+		if err != nil {
+			addErro(xf.Name, "Erro ao iniciar transação: "+err.Error())
+			return pfOutcomeErro
+		}
 
-			var nfeID string
-			errIns := tx.QueryRow(`
+		var nfeID string
+		errIns := tx.QueryRow(`
 				INSERT INTO pacotefiscal_nfe_saidas (
 					company_id, chave_nfe, modelo, serie, numero_nfe,
 					data_emissao, mes_ano, nat_op, tp_nf, ind_final, ind_pres, fin_nfe,
@@ -793,38 +793,38 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 					v_cred_pres_cbs = EXCLUDED.v_cred_pres_cbs,
 					updated_at = now()
 				RETURNING id`,
-				companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
-				dataEmissao, mesAno, inf.Ide.NatOp, inf.Ide.TpNF, toNullSmallInt(inf.Ide.IndFinal), inf.Ide.IndPres, inf.Ide.FinNFe,
-				nullIfEmpty(inf.Emit.CNPJ), nullIfEmpty(inf.Emit.CPF), inf.Emit.XNome, inf.Emit.XFant, inf.Emit.IE, inf.Emit.IEST, inf.Emit.CRT, inf.Emit.EnderEmit.Fone,
-				inf.Emit.EnderEmit.XLgr, inf.Emit.EnderEmit.Nro, inf.Emit.EnderEmit.XCpl, inf.Emit.EnderEmit.XBairro,
-				inf.Emit.EnderEmit.CMun, inf.Emit.EnderEmit.XMun, inf.Emit.EnderEmit.UF, inf.Emit.EnderEmit.CEP, inf.Emit.EnderEmit.CPais, inf.Emit.EnderEmit.XPais,
-				nullIfEmpty(inf.Dest.CNPJ), nullIfEmpty(inf.Dest.CPF), inf.Dest.XNome, inf.Dest.IE, inf.Dest.IndIEDest, inf.Dest.Email, inf.Dest.EnderDest.Fone,
-				inf.Dest.EnderDest.XLgr, inf.Dest.EnderDest.Nro, inf.Dest.EnderDest.XCpl, inf.Dest.EnderDest.XBairro,
-				inf.Dest.EnderDest.CMun, inf.Dest.EnderDest.XMun, inf.Dest.EnderDest.UF, inf.Dest.EnderDest.CEP, inf.Dest.EnderDest.CPais, inf.Dest.EnderDest.XPais,
-				toDecimal(ic.VBC), toDecimal(ic.VICMS), toDecimal(ic.VICMSDeson), toDecimal(ic.VFCP), toDecimal(ic.VBCST), toDecimal(ic.VST), toDecimal(ic.VFcpST), toDecimal(ic.VFcpSTRet),
-				toDecimal(ic.VProd), toDecimal(ic.VFrete), toDecimal(ic.VSeg), toDecimal(ic.VDesc), toDecimal(ic.VII), toDecimal(ic.VIPI), toDecimal(ic.VIPIDevol), toDecimal(ic.VPIS), toDecimal(ic.VCOFINS), toDecimal(ic.VOutro), toDecimal(ic.VNF),
-				toDecimal(ic.VICMSUFDest), toDecimal(ic.VFCPUFDest),
-				toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.GIBSuf.VIBSuf), toNullDecimal(ib.GIBS.GIBSMun.VIBSMun), toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GIBS.VCredPres), toNullDecimal(ib.GCBS.VCBS), toNullDecimal(ib.GCBS.VCredPres),
-			).Scan(&nfeID)
+			companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
+			dataEmissao, mesAno, inf.Ide.NatOp, inf.Ide.TpNF, toNullSmallInt(inf.Ide.IndFinal), inf.Ide.IndPres, inf.Ide.FinNFe,
+			nullIfEmpty(inf.Emit.CNPJ), nullIfEmpty(inf.Emit.CPF), inf.Emit.XNome, inf.Emit.XFant, inf.Emit.IE, inf.Emit.IEST, inf.Emit.CRT, inf.Emit.EnderEmit.Fone,
+			inf.Emit.EnderEmit.XLgr, inf.Emit.EnderEmit.Nro, inf.Emit.EnderEmit.XCpl, inf.Emit.EnderEmit.XBairro,
+			inf.Emit.EnderEmit.CMun, inf.Emit.EnderEmit.XMun, inf.Emit.EnderEmit.UF, inf.Emit.EnderEmit.CEP, inf.Emit.EnderEmit.CPais, inf.Emit.EnderEmit.XPais,
+			nullIfEmpty(inf.Dest.CNPJ), nullIfEmpty(inf.Dest.CPF), inf.Dest.XNome, inf.Dest.IE, inf.Dest.IndIEDest, inf.Dest.Email, inf.Dest.EnderDest.Fone,
+			inf.Dest.EnderDest.XLgr, inf.Dest.EnderDest.Nro, inf.Dest.EnderDest.XCpl, inf.Dest.EnderDest.XBairro,
+			inf.Dest.EnderDest.CMun, inf.Dest.EnderDest.XMun, inf.Dest.EnderDest.UF, inf.Dest.EnderDest.CEP, inf.Dest.EnderDest.CPais, inf.Dest.EnderDest.XPais,
+			toDecimal(ic.VBC), toDecimal(ic.VICMS), toDecimal(ic.VICMSDeson), toDecimal(ic.VFCP), toDecimal(ic.VBCST), toDecimal(ic.VST), toDecimal(ic.VFcpST), toDecimal(ic.VFcpSTRet),
+			toDecimal(ic.VProd), toDecimal(ic.VFrete), toDecimal(ic.VSeg), toDecimal(ic.VDesc), toDecimal(ic.VII), toDecimal(ic.VIPI), toDecimal(ic.VIPIDevol), toDecimal(ic.VPIS), toDecimal(ic.VCOFINS), toDecimal(ic.VOutro), toDecimal(ic.VNF),
+			toDecimal(ic.VICMSUFDest), toDecimal(ic.VFCPUFDest),
+			toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.GIBSuf.VIBSuf), toNullDecimal(ib.GIBS.GIBSMun.VIBSMun), toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GIBS.VCredPres), toNullDecimal(ib.GCBS.VCBS), toNullDecimal(ib.GCBS.VCredPres),
+		).Scan(&nfeID)
 
-			if errIns != nil {
-				tx.Rollback()
-				addErro(xf.Name, "Erro ao gravar cabeçalho: "+errIns.Error())
-				return pfOutcomeErro
-			}
+		if errIns != nil {
+			tx.Rollback()
+			addErro(xf.Name, "Erro ao gravar cabeçalho: "+errIns.Error())
+			return pfOutcomeErro
+		}
 
-			if errItens := insertPFNFeItens(tx, nfeID, companyID, inf.Det); errItens != nil {
-				tx.Rollback()
-				addErro(xf.Name, "Erro ao gravar itens: "+errItens.Error())
-				return pfOutcomeErro
-			}
+		if errItens := insertPFNFeItens(tx, nfeID, companyID, inf.Det); errItens != nil {
+			tx.Rollback()
+			addErro(xf.Name, "Erro ao gravar itens: "+errItens.Error())
+			return pfOutcomeErro
+		}
 
-			if err := tx.Commit(); err != nil {
-				addErro(xf.Name, "Erro ao confirmar transação: "+err.Error())
-				return pfOutcomeErro
-			}
+		if err := tx.Commit(); err != nil {
+			addErro(xf.Name, "Erro ao confirmar transação: "+err.Error())
+			return pfOutcomeErro
+		}
 
-			return pfOutcomeImportado
+		return pfOutcomeImportado
 	}
 }
 

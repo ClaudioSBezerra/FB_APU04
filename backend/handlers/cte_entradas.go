@@ -51,15 +51,15 @@ type infCte struct {
 }
 
 type ideCTe struct {
-	Mod   string    `xml:"mod"`    // sempre "57"
-	Serie string    `xml:"serie"`
-	NCT   string    `xml:"nCT"`   // número do CT-e
-	DhEmi string    `xml:"dhEmi"` // ISO8601 → data_emissao + mes_ano
-	NatOp string    `xml:"natOp"`
-	CFOP  string    `xml:"CFOP"`
-	Modal string    `xml:"modal"` // 01=Rodoviário 02=Aéreo 03=Aquaviário 04=Ferroviário
-	Toma3 toma3CTe  `xml:"toma3"` // padrão (0=Remetente,1=Expedidor,2=Recebedor,3=Destinatário)
-	Toma4 toma4CTe  `xml:"toma4"` // outros — CNPJ explícito
+	Mod   string   `xml:"mod"` // sempre "57"
+	Serie string   `xml:"serie"`
+	NCT   string   `xml:"nCT"`   // número do CT-e
+	DhEmi string   `xml:"dhEmi"` // ISO8601 → data_emissao + mes_ano
+	NatOp string   `xml:"natOp"`
+	CFOP  string   `xml:"CFOP"`
+	Modal string   `xml:"modal"` // 01=Rodoviário 02=Aéreo 03=Aquaviário 04=Ferroviário
+	Toma3 toma3CTe `xml:"toma3"` // padrão (0=Remetente,1=Expedidor,2=Recebedor,3=Destinatário)
+	Toma4 toma4CTe `xml:"toma4"` // outros — CNPJ explícito
 }
 
 type toma3CTe struct {
@@ -93,13 +93,13 @@ type enderCTe struct {
 
 type vPrestCTe struct {
 	VTPrest string `xml:"vTPrest"` // total da prestação
-	VRec    string `xml:"vRec"`   // valor a receber
+	VRec    string `xml:"vRec"`    // valor a receber
 }
 
 // impCTe: <imp> contém <ICMS> (com múltiplas variantes) e <IBSCBSTot>
 type impCTe struct {
 	ICMS      icmsCTeWrapper `xml:"ICMS"`
-	IBSCBSTot ibsCbsTotCTe  `xml:"IBSCBSTot"`
+	IBSCBSTot ibsCbsTotCTe   `xml:"IBSCBSTot"`
 }
 
 // icmsCTeWrapper captura qualquer variante de ICMS do CT-e como campos nomeados.
@@ -120,9 +120,9 @@ type icmsCTeBase struct {
 
 // ibsCbsTotCTe: estrutura análoga à NF-e (mesmas tags XML)
 type ibsCbsTotCTe struct {
-	VBCIBSCBS string   `xml:"vBCIBSCBS"`
-	GIBS       gIBSCTe `xml:"gIBS"`
-	GCBS       gCBSCTe `xml:"gCBS"`
+	VBCIBSCBS string  `xml:"vBCIBSCBS"`
+	GIBS      gIBSCTe `xml:"gIBS"`
+	GCBS      gCBSCTe `xml:"gCBS"`
 }
 
 type gIBSCTe struct {
@@ -243,16 +243,16 @@ type cteUploadResult struct {
 }
 
 type cteRow struct {
-	ID          string   `json:"id"`
-	ChaveCTe    string   `json:"chave_cte"`
-	Modelo      int      `json:"modelo"`
-	Serie       string   `json:"serie"`
-	NumeroCTe   string   `json:"numero_cte"`
-	DataEmissao string   `json:"data_emissao"`
-	MesAno      string   `json:"mes_ano"`
-	NatOp       string   `json:"nat_op"`
-	CFOP        string   `json:"cfop"`
-	Modal       string   `json:"modal"`
+	ID          string `json:"id"`
+	ChaveCTe    string `json:"chave_cte"`
+	Modelo      int    `json:"modelo"`
+	Serie       string `json:"serie"`
+	NumeroCTe   string `json:"numero_cte"`
+	DataEmissao string `json:"data_emissao"`
+	MesAno      string `json:"mes_ano"`
+	NatOp       string `json:"nat_op"`
+	CFOP        string `json:"cfop"`
+	Modal       string `json:"modal"`
 	// Emitente (transportadora)
 	EmitCNPJ string `json:"emit_cnpj"`
 	EmitNome string `json:"emit_nome"`
@@ -266,11 +266,11 @@ type cteRow struct {
 	DestNome    string `json:"dest_nome"`
 	DestUF      string `json:"dest_uf"`
 	// Valores
-	VPrest   float64  `json:"v_prest"`
-	VRec     float64  `json:"v_rec"`
-	VCarga   float64  `json:"v_carga"`
-	VBcICMS  float64  `json:"v_bc_icms"`
-	VICMS    float64  `json:"v_icms"`
+	VPrest  float64 `json:"v_prest"`
+	VRec    float64 `json:"v_rec"`
+	VCarga  float64 `json:"v_carga"`
+	VBcICMS float64 `json:"v_bc_icms"`
+	VICMS   float64 `json:"v_icms"`
 	// IBS/CBS nullable — transportadoras sem as tags ficam com null
 	VBcIbsCbs *float64 `json:"v_bc_ibs_cbs"`
 	VIBS      *float64 `json:"v_ibs"`
@@ -504,7 +504,7 @@ func CteEntradasListHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		q := r.URL.Query()
-		mesAno   := q.Get("mes_ano")
+		mesAno := q.Get("mes_ano")
 		emitCNPJ := q.Get("emit_cnpj")
 
 		query := `

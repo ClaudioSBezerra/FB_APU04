@@ -20,21 +20,21 @@ type credPerdAliquota struct {
 }
 
 type credPerdFornecedor struct {
-	FornCNPJ   string  `json:"forn_cnpj"`
-	FornNome   string  `json:"forn_nome"`
-	QtdNotas   int     `json:"qtd_notas"`
-	ValorTotal float64 `json:"valor_total"`
-	IBSEstimado float64 `json:"ibs_estimado"`
-	CBSEstimado float64 `json:"cbs_estimado"`
+	FornCNPJ      string  `json:"forn_cnpj"`
+	FornNome      string  `json:"forn_nome"`
+	QtdNotas      int     `json:"qtd_notas"`
+	ValorTotal    float64 `json:"valor_total"`
+	IBSEstimado   float64 `json:"ibs_estimado"`
+	CBSEstimado   float64 `json:"cbs_estimado"`
 	TotalEstimado float64 `json:"total_estimado"`
 }
 
 type credPerdSimplesForn struct {
-	FornCNPJ   string  `json:"forn_cnpj"`
-	FornNome   string  `json:"forn_nome"`
-	ValorTotal float64 `json:"valor_total"`
-	IBSPerdido float64 `json:"ibs_perdido"`
-	CBSPerdido float64 `json:"cbs_perdido"`
+	FornCNPJ     string  `json:"forn_cnpj"`
+	FornNome     string  `json:"forn_nome"`
+	ValorTotal   float64 `json:"valor_total"`
+	IBSPerdido   float64 `json:"ibs_perdido"`
+	CBSPerdido   float64 `json:"cbs_perdido"`
 	TotalPerdido float64 `json:"total_perdido"`
 }
 

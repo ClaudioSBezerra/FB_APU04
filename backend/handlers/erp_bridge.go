@@ -17,37 +17,37 @@ import (
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ERPBridgeConfig struct {
-	CompanyID          string     `json:"company_id"`
-	Ativo              bool       `json:"ativo"`
-	Horario            string     `json:"horario"` // HH:MM
-	DiasRetroativos    int        `json:"dias_retroativos"`
-	UltimoRunEm        *time.Time `json:"ultimo_run_em"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-	ResetTracker       bool       `json:"reset_tracker"`
-	ErpType            string     `json:"erp_type"`
-	FBTaxEmail         string     `json:"fbtax_email"`
-	FBTaxPasswordSet   bool       `json:"fbtax_password_set"`
-	OracleDsn          string     `json:"oracle_dsn"`
-	OracleUsuario      string     `json:"oracle_usuario"`
-	OracleSenhaSet     bool       `json:"oracle_senha_set"`
-	APIKey             string     `json:"api_key"`
-	DaemonLastSeen     *time.Time `json:"daemon_last_seen"`
-	DaemonOnline       bool       `json:"daemon_online"`
+	CompanyID        string     `json:"company_id"`
+	Ativo            bool       `json:"ativo"`
+	Horario          string     `json:"horario"` // HH:MM
+	DiasRetroativos  int        `json:"dias_retroativos"`
+	UltimoRunEm      *time.Time `json:"ultimo_run_em"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	ResetTracker     bool       `json:"reset_tracker"`
+	ErpType          string     `json:"erp_type"`
+	FBTaxEmail       string     `json:"fbtax_email"`
+	FBTaxPasswordSet bool       `json:"fbtax_password_set"`
+	OracleDsn        string     `json:"oracle_dsn"`
+	OracleUsuario    string     `json:"oracle_usuario"`
+	OracleSenhaSet   bool       `json:"oracle_senha_set"`
+	APIKey           string     `json:"api_key"`
+	DaemonLastSeen   *time.Time `json:"daemon_last_seen"`
+	DaemonOnline     bool       `json:"daemon_online"`
 }
 
 type ERPBridgeRun struct {
-	ID             string           `json:"id"`
-	CompanyID      string           `json:"company_id"`
-	IniciadoEm     time.Time        `json:"iniciado_em"`
-	FinalizadoEm   *time.Time       `json:"finalizado_em"`
-	Status         string           `json:"status"`
-	DataIni        *string          `json:"data_ini"`
-	DataFim        *string          `json:"data_fim"`
-	TotalEnviados  int              `json:"total_enviados"`
-	TotalIgnorados int              `json:"total_ignorados"`
-	TotalErros     int              `json:"total_erros"`
-	ErroMsg        *string          `json:"erro_msg"`
-	Origem         string           `json:"origem"`
+	ID             string             `json:"id"`
+	CompanyID      string             `json:"company_id"`
+	IniciadoEm     time.Time          `json:"iniciado_em"`
+	FinalizadoEm   *time.Time         `json:"finalizado_em"`
+	Status         string             `json:"status"`
+	DataIni        *string            `json:"data_ini"`
+	DataFim        *string            `json:"data_fim"`
+	TotalEnviados  int                `json:"total_enviados"`
+	TotalIgnorados int                `json:"total_ignorados"`
+	TotalErros     int                `json:"total_erros"`
+	ErroMsg        *string            `json:"erro_msg"`
+	Origem         string             `json:"origem"`
 	Items          []ERPBridgeRunItem `json:"items,omitempty"`
 }
 

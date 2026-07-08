@@ -20,8 +20,8 @@ import (
 // decretos — e captura a descrição imediatamente antes do "- NCM <ncm>" (até 80
 // chars antes do hífen, sem cruzar vírgula/ponto-e-vírgula/quebra de linha).
 var (
-	ncmDottedRe   = regexp.MustCompile(`(\d{4})\.(\d{2})\.(\d{2})`)
-	descNcmRe     = regexp.MustCompile(`(?i)([^;,:\n]{1,80}?)\s*[-–]\s*NCM\s*(\d{4})\.(\d{2})\.(\d{2})`)
+	ncmDottedRe = regexp.MustCompile(`(\d{4})\.(\d{2})\.(\d{2})`)
+	descNcmRe   = regexp.MustCompile(`(?i)([^;,:\n]{1,80}?)\s*[-–]\s*NCM\s*(\d{4})\.(\d{2})\.(\d{2})`)
 )
 
 // extractNcmsFromText extrai NCMs (com descrição quando achável) de texto livre
@@ -66,9 +66,10 @@ func extractNcmsFromText(text string) []struct{ NCM, Descricao string } {
 // instalado no Dockerfile (apk add poppler-utils).
 //
 // Flags:
-//   -layout: preserva quebras de linha próximas ao layout visual (ajuda regex)
-//   -enc UTF-8: garante saída em UTF-8 (decretos têm acentos)
-//   - -: lê stdin, escreve stdout
+//
+//	-layout: preserva quebras de linha próximas ao layout visual (ajuda regex)
+//	-enc UTF-8: garante saída em UTF-8 (decretos têm acentos)
+//	- -: lê stdin, escreve stdout
 func extractTextFromPDF(data []byte) (string, error) {
 	cmd := exec.Command("pdftotext", "-layout", "-enc", "UTF-8", "-", "-")
 	cmd.Stdin = bytes.NewReader(data)
@@ -100,7 +101,7 @@ type ProdepeEnquadramento struct {
 	ID                  string  `json:"id"`
 	CNPJ                string  `json:"cnpj"`
 	InscricaoEstadual   string  `json:"inscricao_estadual"`
-	Programa            string  `json:"programa"`           // PRODEPE | PROIND
+	Programa            string  `json:"programa"` // PRODEPE | PROIND
 	NumAto              string  `json:"num_ato"`
 	Enquadramento       string  `json:"enquadramento"`
 	CreditoPresumidoPct float64 `json:"credito_presumido_pct"`
@@ -519,7 +520,7 @@ func IcmsFronteiraProdepeNcmsImportarHandler(db *sql.DB) http.HandlerFunc {
 		type importResult struct {
 			Imported int      `json:"imported"`
 			Skipped  int      `json:"skipped"`
-			Mode     string   `json:"mode"`            // csv | xlsx | pdf | text
+			Mode     string   `json:"mode"` // csv | xlsx | pdf | text
 			Errors   []string `json:"errors"`
 		}
 

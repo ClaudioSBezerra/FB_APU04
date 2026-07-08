@@ -924,4 +924,3 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(res)
 	}
 }
-

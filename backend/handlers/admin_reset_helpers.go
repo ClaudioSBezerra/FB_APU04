@@ -50,17 +50,17 @@ var CompanyGroups = map[string][]CompanyDeleteOp{
 		{Table: "import_jobs", ResultKey: "import_jobs"},
 	},
 	"xml": {
-		{Table: "nfe_entradas",       WhereExtra: "AND source = 'xml_upload'", ResultKey: "nfe_entradas[xml]"},
-		{Table: "nfe_saidas",         WhereExtra: "AND source = 'xml_upload'", ResultKey: "nfe_saidas[xml]"},
-		{Table: "cte_entradas",       WhereExtra: "AND source = 'xml_upload'", ResultKey: "cte_entradas[xml]"},
+		{Table: "nfe_entradas", WhereExtra: "AND source = 'xml_upload'", ResultKey: "nfe_entradas[xml]"},
+		{Table: "nfe_saidas", WhereExtra: "AND source = 'xml_upload'", ResultKey: "nfe_saidas[xml]"},
+		{Table: "cte_entradas", WhereExtra: "AND source = 'xml_upload'", ResultKey: "cte_entradas[xml]"},
 		{Table: "xml_upload_batches", ResultKey: "xml_upload_batches"},
 	},
 	"erp_bridge": {
-		{Table: "nfe_entradas",    WhereExtra: "AND source = 'oracle_bridge'", ResultKey: "nfe_entradas[erp_bridge]"},
-		{Table: "nfe_saidas",      WhereExtra: "AND source = 'oracle_bridge'", ResultKey: "nfe_saidas[erp_bridge]"},
-		{Table: "cte_entradas",    WhereExtra: "AND source = 'oracle_bridge'", ResultKey: "cte_entradas[erp_bridge]"},
+		{Table: "nfe_entradas", WhereExtra: "AND source = 'oracle_bridge'", ResultKey: "nfe_entradas[erp_bridge]"},
+		{Table: "nfe_saidas", WhereExtra: "AND source = 'oracle_bridge'", ResultKey: "nfe_saidas[erp_bridge]"},
+		{Table: "cte_entradas", WhereExtra: "AND source = 'oracle_bridge'", ResultKey: "cte_entradas[erp_bridge]"},
 		{Table: "erp_bridge_runs", ResultKey: "erp_bridge_runs"},
-		{Table: "parceiros",       ResultKey: "parceiros"},
+		{Table: "parceiros", ResultKey: "parceiros"},
 	},
 	"config": {
 		{Table: "filial_apelidos", ResultKey: "filial_apelidos"},
@@ -73,15 +73,15 @@ var CompanyGroups = map[string][]CompanyDeleteOp{
 	//   • company_segmentos: por empresa
 	//   • segmentos_uf: catálogo global, sem company_id (GlobalDelete)
 	"fronteira": {
-		{Table: "icms_fronteira_regras_ncm",          ResultKey: "icms_fronteira_regras_ncm", GlobalDelete: true},
-		{Table: "segmentos_uf",                        ResultKey: "segmentos_uf", GlobalDelete: true},
-		{Table: "company_segmentos",                   ResultKey: "company_segmentos"},
-		{Table: "icms_fronteira_extrato_sefaz",        ResultKey: "icms_fronteira_extrato_sefaz"},
-		{Table: "icms_fronteira_contestacoes",         ResultKey: "icms_fronteira_contestacoes"},
+		{Table: "icms_fronteira_regras_ncm", ResultKey: "icms_fronteira_regras_ncm", GlobalDelete: true},
+		{Table: "segmentos_uf", ResultKey: "segmentos_uf", GlobalDelete: true},
+		{Table: "company_segmentos", ResultKey: "company_segmentos"},
+		{Table: "icms_fronteira_extrato_sefaz", ResultKey: "icms_fronteira_extrato_sefaz"},
+		{Table: "icms_fronteira_contestacoes", ResultKey: "icms_fronteira_contestacoes"},
 		{Table: "icms_fronteira_classificacao_manual", ResultKey: "icms_fronteira_classificacao_manual"},
-		{Table: "legislacao_fronteira",                ResultKey: "legislacao_fronteira"},
+		{Table: "legislacao_fronteira", ResultKey: "legislacao_fronteira"},
 		// PRODEPE/regime especial por CNPJ; prodepe_ncms sai por FK ON DELETE CASCADE.
-		{Table: "prodepe_enquadramentos",              ResultKey: "prodepe_enquadramentos"},
+		{Table: "prodepe_enquadramentos", ResultKey: "prodepe_enquadramentos"},
 	},
 }
 

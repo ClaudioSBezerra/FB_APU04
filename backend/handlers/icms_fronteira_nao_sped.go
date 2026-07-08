@@ -22,9 +22,9 @@ type FronteiraXmlNaoSpedRow struct {
 	FornNome      string  `json:"forn_nome"`
 	FornUF        string  `json:"forn_uf"`
 	CfopSaida     string  `json:"cfop_saida"`
-	CfopOriginal  string  `json:"cfop_original"`  // CFOP original do XML (antes do override)
-	CfopOverride  string  `json:"cfop_override"`  // CFOP sobrescrito pelo usuário (vazio se automático)
-	NfStatus      string  `json:"nf_status"`      // ATIVO | CANCELADO (deleção lógica)
+	CfopOriginal  string  `json:"cfop_original"` // CFOP original do XML (antes do override)
+	CfopOverride  string  `json:"cfop_override"` // CFOP sobrescrito pelo usuário (vazio se automático)
+	NfStatus      string  `json:"nf_status"`     // ATIVO | CANCELADO (deleção lógica)
 	NCM           string  `json:"ncm"`
 	VProd         float64 `json:"v_prod"`
 	VIPI          float64 `json:"v_ipi"` // IPI do XML (<vIPI> do header)

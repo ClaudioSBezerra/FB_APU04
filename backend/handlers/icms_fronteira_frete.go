@@ -13,16 +13,16 @@ import (
 
 // FreteLink representa um CT-e vinculado a uma NF-e no cálculo de fronteira.
 type FreteLink struct {
-	ChaveNFe    string  // chave da NF-e de mercadoria correspondente
-	ChaveCTe    string  // chave do CT-e (pode ser vazia se só tiver dados do SPED)
-	NumeroCTe   string  // número do CT-e
-	EmitNome    string  // transportadora
-	EmitCNPJ    string
-	VPrest      float64 // valor da prestação (frete)
-	VIcmsCTe    float64 // ICMS pago pela transportadora
+	ChaveNFe      string // chave da NF-e de mercadoria correspondente
+	ChaveCTe      string // chave do CT-e (pode ser vazia se só tiver dados do SPED)
+	NumeroCTe     string // número do CT-e
+	EmitNome      string // transportadora
+	EmitCNPJ      string
+	VPrest        float64 // valor da prestação (frete)
+	VIcmsCTe      float64 // ICMS pago pela transportadora
 	IcmsFronteira float64 // ICMS fronteira calculado sobre o frete
-	Fonte       string  // "D162", "XML-CTE", "D100-DOC"
-	Toma        string  // tomador: "3" Destinatário, "0"/"1"/"2" outros, "" desconhecido
+	Fonte         string  // "D162", "XML-CTE", "D100-DOC"
+	Toma          string  // tomador: "3" Destinatário, "0"/"1"/"2" outros, "" desconhecido
 }
 
 // calcICMSFrete calcula o ICMS fronteira devido sobre o frete,
@@ -54,8 +54,8 @@ func fetchFreteLinks(
 ) map[string][]FreteLink {
 
 	result := make(map[string][]FreteLink)
-	seen := make(map[string]bool)        // evita duplicar mesma chave_nfe+chave_cte
-	seenCTe := make(map[string]bool)     // Layer 3 only: cada CT-e é atribuído a no máximo 1 NF-e
+	seen := make(map[string]bool)    // evita duplicar mesma chave_nfe+chave_cte
+	seenCTe := make(map[string]bool) // Layer 3 only: cada CT-e é atribuído a no máximo 1 NF-e
 
 	// ── Camada 1: SPED D162 → D100 ──────────────────────────────────────────
 	// D162 vincula diretamente chv_nfe (NF) ao D100 (CT-e) via SPED.
@@ -170,15 +170,15 @@ func fetchFreteLinks(
 	// (ex: um CT-e de courier batendo dezenas de NF-es do mesmo fornecedor).
 	// Reativar quando houver critério de seleção mais preciso.
 	if false {
-	pendentes := []string{}
-	for chave := range nfParams {
-		if _, found := result[chave]; !found {
-			pendentes = append(pendentes, chave)
+		pendentes := []string{}
+		for chave := range nfParams {
+			if _, found := result[chave]; !found {
+				pendentes = append(pendentes, chave)
+			}
 		}
-	}
 
-	if len(pendentes) > 0 {
-		const qCteRem = `
+		if len(pendentes) > 0 {
+			const qCteRem = `
 			SELECT
 				c100.chv_nfe,
 				ce.chave_cte,
@@ -201,32 +201,32 @@ func fetchFreteLinks(
 			  AND c100.cod_sit NOT IN ('02','03','04','05')
 			  AND COALESCE(p.cnpj, '') != ''
 		`
-		rows3, err := db.Query(qCteRem, companyID, periodo, pendentes)
-		if err != nil {
-			log.Printf("fetchFreteLinks CTE-REM query error: %v", err)
-		} else {
-			defer rows3.Close()
-			for rows3.Next() {
-				var fl FreteLink
-				if err := rows3.Scan(&fl.ChaveNFe, &fl.ChaveCTe, &fl.NumeroCTe,
-					&fl.EmitNome, &fl.EmitCNPJ, &fl.VPrest, &fl.VIcmsCTe); err != nil {
-					continue
+			rows3, err := db.Query(qCteRem, companyID, periodo, pendentes)
+			if err != nil {
+				log.Printf("fetchFreteLinks CTE-REM query error: %v", err)
+			} else {
+				defer rows3.Close()
+				for rows3.Next() {
+					var fl FreteLink
+					if err := rows3.Scan(&fl.ChaveNFe, &fl.ChaveCTe, &fl.NumeroCTe,
+						&fl.EmitNome, &fl.EmitCNPJ, &fl.VPrest, &fl.VIcmsCTe); err != nil {
+						continue
+					}
+					fl.Fonte = "CTE-REM"
+					key := fl.ChaveNFe + "|" + fl.ChaveCTe
+					if seen[key] || seenCTe[fl.ChaveCTe] {
+						continue
+					}
+					seen[key] = true
+					seenCTe[fl.ChaveCTe] = true
+					if p, ok := nfParams[fl.ChaveNFe]; ok {
+						fl.IcmsFronteira = calcICMSFrete(fl.VPrest, p.Regime, p.AliqInter, p.AliqInterna, fl.VIcmsCTe)
+					}
+					result[fl.ChaveNFe] = append(result[fl.ChaveNFe], fl)
 				}
-				fl.Fonte = "CTE-REM"
-				key := fl.ChaveNFe + "|" + fl.ChaveCTe
-				if seen[key] || seenCTe[fl.ChaveCTe] {
-					continue
-				}
-				seen[key] = true
-				seenCTe[fl.ChaveCTe] = true
-				if p, ok := nfParams[fl.ChaveNFe]; ok {
-					fl.IcmsFronteira = calcICMSFrete(fl.VPrest, p.Regime, p.AliqInter, p.AliqInterna, fl.VIcmsCTe)
-				}
-				result[fl.ChaveNFe] = append(result[fl.ChaveNFe], fl)
+				rows3.Close()
 			}
-			rows3.Close()
 		}
-	}
 	} // fim if false — Layer 3 desativada
 
 	return result

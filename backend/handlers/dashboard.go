@@ -98,8 +98,8 @@ func GetDashboardProjectionHandler(db *sql.DB) http.HandlerFunc {
 		defer rowsBase.Close()
 
 		var (
-			valSaida, icmsSaida             float64
-			valEntrada, icmsEntrada         float64
+			valSaida, icmsSaida                   float64
+			valEntrada, icmsEntrada               float64
 			valSaidaTaxable, icmsSaidaTaxable     float64
 			valEntradaTaxable, icmsEntradaTaxable float64
 		)
@@ -140,18 +140,18 @@ func GetDashboardProjectionHandler(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var ano int
 			var reducIcms, ibsUf, ibsMun, cbs float64
-			
+
 			if err := rows.Scan(&ano, &reducIcms, &ibsUf, &ibsMun, &cbs); err != nil {
 				continue
 			}
 
 			// Calculation Logic (Net = Debit - Credit)
-			
+
 			// ICMS Projected (Debit & Credit) - Applies to ALL operations
 			icmsProjDebit := icmsSaida * (1.0 - (reducIcms / 100.0))
 			icmsProjCredit := icmsEntrada * (1.0 - (reducIcms / 100.0))
 			icmsNet := icmsProjDebit - icmsProjCredit
-			
+
 			// Base for IBS/CBS (Debit & Credit) - Applies only to Taxable (Non-T/O) operations
 			// Base = ValorTaxable - ICMS Projected (on Taxable portion)
 			icmsProjDebitTaxable := icmsSaidaTaxable * (1.0 - (reducIcms / 100.0))
@@ -159,15 +159,15 @@ func GetDashboardProjectionHandler(db *sql.DB) http.HandlerFunc {
 
 			baseDebit := valSaidaTaxable - icmsProjDebitTaxable
 			baseCredit := valEntradaTaxable - icmsProjCreditTaxable
-			
+
 			// IBS/CBS Rates
 			ibsRate := (ibsUf + ibsMun) / 100.0
 			cbsRate := cbs / 100.0
-			
+
 			// IBS/CBS Projected
 			ibsNet := (baseDebit * ibsRate) - (baseCredit * ibsRate)
 			cbsNet := (baseDebit * cbsRate) - (baseCredit * cbsRate)
-			
+
 			// Total Saldo a Pagar
 			saldo := icmsNet + ibsNet + cbsNet
 

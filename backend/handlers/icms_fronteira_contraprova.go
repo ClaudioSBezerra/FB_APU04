@@ -24,13 +24,13 @@ import (
 // ---------------------------------------------------------------------------
 
 type ContraprovaRow struct {
-	CFOP       string  `json:"cfop"`
-	SPEDQtd    int     `json:"sped_qtd"`
-	MVQtd      int     `json:"mv_qtd"`
-	DiffQtd    int     `json:"diff_qtd"`
-	SPEDValor  float64 `json:"sped_valor"`
-	MVValor    float64 `json:"mv_valor"`
-	DiffValor  float64 `json:"diff_valor"`
+	CFOP      string  `json:"cfop"`
+	SPEDQtd   int     `json:"sped_qtd"`
+	MVQtd     int     `json:"mv_qtd"`
+	DiffQtd   int     `json:"diff_qtd"`
+	SPEDValor float64 `json:"sped_valor"`
+	MVValor   float64 `json:"mv_valor"`
+	DiffValor float64 `json:"diff_valor"`
 }
 
 type ContraprovaResp struct {
@@ -138,7 +138,10 @@ func runContraprova(db *sql.DB, companyID, uf, periodo string) ([]ContraprovaRow
 		ORDER BY c170.cfop
 	`, cfopIN, ufFilter, periodFilter)
 
-	type kv struct{ qtd int; valor float64 }
+	type kv struct {
+		qtd   int
+		valor float64
+	}
 	spedMap := map[string]kv{}
 	rows1, err := db.Query(spedQ, args...)
 	if err != nil {

@@ -60,24 +60,24 @@ type Modulo13Response struct {
 // ---------------------------------------------------------------------------
 
 type Modulo12Row struct {
-	NCM            string  `json:"ncm"`
-	XProd          string  `json:"x_prod"`
-	CSTICMS        string  `json:"cst_icms"`
-	CSTPath        string  `json:"cst_path"`
-	PrecoAtual     float64 `json:"preco_atual"`
-	IcmsAtual      float64 `json:"icms_atual"`
-	IBSProjetado   float64 `json:"ibs_projetado"`
-	CBSProjetado   float64 `json:"cbs_projetado"`
-	PrecoSugerido  float64 `json:"preco_sugerido"`  // preco_atual + (ibs + cbs − icms_atual)
-	VariacaoPct    float64 `json:"variacao_pct"`
+	NCM           string  `json:"ncm"`
+	XProd         string  `json:"x_prod"`
+	CSTICMS       string  `json:"cst_icms"`
+	CSTPath       string  `json:"cst_path"`
+	PrecoAtual    float64 `json:"preco_atual"`
+	IcmsAtual     float64 `json:"icms_atual"`
+	IBSProjetado  float64 `json:"ibs_projetado"`
+	CBSProjetado  float64 `json:"cbs_projetado"`
+	PrecoSugerido float64 `json:"preco_sugerido"` // preco_atual + (ibs + cbs − icms_atual)
+	VariacaoPct   float64 `json:"variacao_pct"`
 }
 
 type Modulo12Response struct {
 	Rows            []Modulo12Row `json:"rows"`
 	AliqIBSPct      float64       `json:"aliq_ibs_pct"`
 	AliqCBSPct      float64       `json:"aliq_cbs_pct"`
-	Ano             int           `json:"ano"`               // ano-base usado nas projeções
-	AnosDisponiveis []int         `json:"anos_disponiveis"`  // anos da tabela_aliquotas
+	Ano             int           `json:"ano"`              // ano-base usado nas projeções
+	AnosDisponiveis []int         `json:"anos_disponiveis"` // anos da tabela_aliquotas
 }
 
 // ---------------------------------------------------------------------------
@@ -90,15 +90,15 @@ type SensibilidadeRow struct {
 }
 
 type Modulo14Response struct {
-	FloatTributario  float64            `json:"float_tributario"`
-	CustoCDI         float64            `json:"custo_cdi"`
-	TotalSaidas      float64            `json:"total_saidas"`
-	AliqTotal        float64            `json:"aliq_total"`
-	TaxaCDIAnualPct  float64            `json:"taxa_cdi_anual_pct"`
-	PrazoMedioDias   int                `json:"prazo_medio_dias"`
-	CDIColunas       []float64          `json:"cdi_colunas"`
-	DSOLinhas        []int              `json:"dso_linhas"`
-	Sensibilidade    []SensibilidadeRow `json:"sensibilidade"`
+	FloatTributario float64            `json:"float_tributario"`
+	CustoCDI        float64            `json:"custo_cdi"`
+	TotalSaidas     float64            `json:"total_saidas"`
+	AliqTotal       float64            `json:"aliq_total"`
+	TaxaCDIAnualPct float64            `json:"taxa_cdi_anual_pct"`
+	PrazoMedioDias  int                `json:"prazo_medio_dias"`
+	CDIColunas      []float64          `json:"cdi_colunas"`
+	DSOLinhas       []int              `json:"dso_linhas"`
+	Sensibilidade   []SensibilidadeRow `json:"sensibilidade"`
 }
 
 // ---------------------------------------------------------------------------

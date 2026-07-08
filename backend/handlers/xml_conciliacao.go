@@ -27,12 +27,12 @@ import (
 
 // conciliacaoRow representa uma NF-e com divergência entre valores Bridge e XML.
 type conciliacaoRow struct {
-	ChaveNfe    string  `json:"chave_nfe"`
-	FornCNPJ    string  `json:"forn_cnpj"`
-	FornNome    string  `json:"forn_nome"`
-	MesAno      string  `json:"mes_ano"`
-	DataEmissao string  `json:"data_emissao"`
-	CFOP        string  `json:"cfop"`
+	ChaveNfe    string `json:"chave_nfe"`
+	FornCNPJ    string `json:"forn_cnpj"`
+	FornNome    string `json:"forn_nome"`
+	MesAno      string `json:"mes_ano"`
+	DataEmissao string `json:"data_emissao"`
+	CFOP        string `json:"cfop"`
 	// Valores XML (SEFAZ autêntico)
 	XmlPis    float64 `json:"xml_pis"`
 	XmlCofins float64 `json:"xml_cofins"`

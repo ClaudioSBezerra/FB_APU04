@@ -242,4 +242,3 @@ func TestPutReformaParametrosHandler_NoClaims(t *testing.T) {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
 }
-

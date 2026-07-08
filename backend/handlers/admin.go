@@ -528,7 +528,6 @@ func refreshMVsAfterReset(db *sql.DB) {
 	}
 }
 
-
 // CreateUserRequest struct
 type CreateUserRequest struct {
 	FullName      string `json:"full_name"`
@@ -536,8 +535,8 @@ type CreateUserRequest struct {
 	Password      string `json:"password"`
 	Role          string `json:"role"`
 	EnvironmentID string `json:"environment_id"` // Optional: link to existing environment
-	GroupID       string `json:"group_id"`        // Optional: link to existing group
-	CompanyID     string `json:"company_id"`      // Optional: link to existing company
+	GroupID       string `json:"group_id"`       // Optional: link to existing group
+	CompanyID     string `json:"company_id"`     // Optional: link to existing company
 }
 
 // CreateUserHandler creates a new user directly (Admin only)
@@ -780,7 +779,7 @@ func PromoteUserHandler(db *sql.DB) http.HandlerFunc {
 type ReassignUserRequest struct {
 	UserID        string `json:"user_id"`
 	EnvironmentID string `json:"environment_id"`
-	GroupID       string `json:"group_id"`  // Optional
+	GroupID       string `json:"group_id"`   // Optional
 	CompanyID     string `json:"company_id"` // Optional
 }
 

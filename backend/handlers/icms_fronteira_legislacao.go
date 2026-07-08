@@ -48,21 +48,21 @@ type LegislacaoListItem struct {
 }
 
 type LegislacaoRegra struct {
-	NCM            string  `json:"ncm"`
-	Regime         string  `json:"regime"`
-	MvaOriginal    *float64 `json:"mva_original,omitempty"`
-	Mva4pct        *float64 `json:"mva_4pct,omitempty"`
-	Mva7pct        *float64 `json:"mva_7pct,omitempty"`
-	Mva12pct       *float64 `json:"mva_12pct,omitempty"`
-	AliquotaInt    *float64 `json:"aliquota_interna,omitempty"`
-	Descricao      string  `json:"descricao,omitempty"`
-	Justificativa  string  `json:"justificativa,omitempty"`
-	Confirmado     bool    `json:"confirmado"`
+	NCM           string   `json:"ncm"`
+	Regime        string   `json:"regime"`
+	MvaOriginal   *float64 `json:"mva_original,omitempty"`
+	Mva4pct       *float64 `json:"mva_4pct,omitempty"`
+	Mva7pct       *float64 `json:"mva_7pct,omitempty"`
+	Mva12pct      *float64 `json:"mva_12pct,omitempty"`
+	AliquotaInt   *float64 `json:"aliquota_interna,omitempty"`
+	Descricao     string   `json:"descricao,omitempty"`
+	Justificativa string   `json:"justificativa,omitempty"`
+	Confirmado    bool     `json:"confirmado"`
 }
 
 type LegislacaoInterpretacao struct {
-	Resumo string             `json:"resumo"`
-	Regras []LegislacaoRegra  `json:"regras"`
+	Resumo string            `json:"resumo"`
+	Regras []LegislacaoRegra `json:"regras"`
 }
 
 type LegislacaoDetalhe struct {
@@ -188,11 +188,11 @@ var (
 	rePctMVA    = regexp.MustCompile(`\d{1,3}(?:,\d{1,2})?\s*%`)
 	reAliqLabel = regexp.MustCompile(`(?i)\(\s*al[ií]q[^)]*\)`) // "(Alíq. 7%)" — rótulo, não MVA
 	// par "valor% (Alíq N%)" ou "valor% (N%)" — captura (MVA ajustada, alíq interestadual)
-	reMVAajPar = regexp.MustCompile(`(?i)(\d{1,3}(?:,\d{1,2})?)\s*%\s*\(\s*(?:al[ií]q\.?\s*)?(\d{1,2})\s*%?\s*\)`)
-	reRuidoPag  = regexp.MustCompile(`(?i)legisweb|^https?://|^\d{2}/\d{2}/\d{4},\s*\d{2}:\d{2}`)
+	reMVAajPar     = regexp.MustCompile(`(?i)(\d{1,3}(?:,\d{1,2})?)\s*%\s*\(\s*(?:al[ií]q\.?\s*)?(\d{1,2})\s*%?\s*\)`)
+	reRuidoPag     = regexp.MustCompile(`(?i)legisweb|^https?://|^\d{2}/\d{2}/\d{4},\s*\d{2}:\d{2}`)
 	reAnexoRef     = regexp.MustCompile(`(?i)ver\s+o?\s*anexo|anexo\s+[ivxlcdm]+\s+do\s+conv`)
 	reAnexoCitacao = regexp.MustCompile(`(?i)anexo\s+[ivxlcdm]+\s+do\s+conv\.?\s*icms\s*n?º?\s*\d+/\d+`)
-	reEspacosMul = regexp.MustCompile(`\s{2,}`)
+	reEspacosMul   = regexp.MustCompile(`\s{2,}`)
 )
 
 // extractPDFTable reconstrói a tabela do decreto por coluna X. Retorna o texto
@@ -1104,7 +1104,8 @@ func IcmsFronteiraLegislacaoListHandler(db *sql.DB) http.HandlerFunc {
 }
 
 // IcmsFronteiraLegislacaoDetailHandler — GET /api/icms-fronteira/legislacao?id=...
-//   (também PUT para atualizar interpretacao e DELETE para descartar)
+//
+//	(também PUT para atualizar interpretacao e DELETE para descartar)
 func IcmsFronteiraLegislacaoDetailHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

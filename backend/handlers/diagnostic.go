@@ -23,12 +23,12 @@ type DiagnosticResponse struct {
 }
 
 type CompanyData struct {
-	CompanyID     string `json:"company_id"`
-	CompanyName   string `json:"company_name"`
-	NfeEntradas   int    `json:"nfe_entradas"`
-	NfeSaidas     int    `json:"nfe_saidas"`
-	RegC100       int    `json:"reg_c100"`
-	CteEntradas   int    `json:"cte_entradas"`
+	CompanyID   string `json:"company_id"`
+	CompanyName string `json:"company_name"`
+	NfeEntradas int    `json:"nfe_entradas"`
+	NfeSaidas   int    `json:"nfe_saidas"`
+	RegC100     int    `json:"reg_c100"`
+	CteEntradas int    `json:"cte_entradas"`
 }
 
 // DiagnosticDataHandler — GET /api/admin/diagnostic

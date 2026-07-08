@@ -26,10 +26,10 @@ Estruture em markdown, EXATAMENTE estas seções (use ## para títulos e **negri
 Regras: não invente números além dos fornecidos; se um valor for zero, diga que não houve movimento naquele regime; seja direto (máx. ~250 palavras).`
 
 type kpiRegime struct {
-	Regime      string  `json:"regime"`
-	QtdNotas    int     `json:"qtd_notas"`
-	VProdTotal  float64 `json:"v_prod_total"`
-	IcmsDevido  float64 `json:"icms_devido_est"`
+	Regime     string  `json:"regime"`
+	QtdNotas   int     `json:"qtd_notas"`
+	VProdTotal float64 `json:"v_prod_total"`
+	IcmsDevido float64 `json:"icms_devido_est"`
 }
 
 type kpiFornecedor struct {

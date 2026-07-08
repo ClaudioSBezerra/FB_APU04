@@ -20,15 +20,15 @@ import (
 // ---------------------------------------------------------------------------
 
 type ExtratoSefazRow struct {
-	ID            string  `json:"id"`
-	Periodo       string  `json:"periodo"`
-	RegistroNota  string  `json:"registro_nota"`
-	CNPJEmitente  string  `json:"cnpj_emitente"`
-	NomeEmitente  string  `json:"nome_emitente"`
-	UFEmitente    string  `json:"uf_emitente"`
-	NumeroNF      string  `json:"numero_nf"`
-	ChaveNFe      string  `json:"chave_nfe"`
-	ICMSDevido    float64 `json:"icms_devido"`
+	ID           string  `json:"id"`
+	Periodo      string  `json:"periodo"`
+	RegistroNota string  `json:"registro_nota"`
+	CNPJEmitente string  `json:"cnpj_emitente"`
+	NomeEmitente string  `json:"nome_emitente"`
+	UFEmitente   string  `json:"uf_emitente"`
+	NumeroNF     string  `json:"numero_nf"`
+	ChaveNFe     string  `json:"chave_nfe"`
+	ICMSDevido   float64 `json:"icms_devido"`
 }
 
 type ExtratoSefazResponse struct {

@@ -49,8 +49,8 @@ type nfeEntradaRow struct {
 	DestNome    string `json:"dest_nome"`
 	DestUF      string `json:"dest_uf"`
 	DestCMun    string `json:"dest_c_mun"`
-	TipoCFOP   string  `json:"tipo_cfop"`
-	CFOP       string  `json:"cfop"`
+	TipoCFOP    string `json:"tipo_cfop"`
+	CFOP        string `json:"cfop"`
 	// ICMSTot
 	VBC        float64 `json:"v_bc"`
 	VICMS      float64 `json:"v_icms"`

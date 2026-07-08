@@ -17,49 +17,49 @@ import (
 
 // RFBRequest represents a request to the RFB API
 type RFBRequest struct {
-	ID           string      `json:"id"`
-	CompanyID    string      `json:"company_id"`
-	CNPJBase     string      `json:"cnpj_base"`
-	Tiquete      string      `json:"tiquete,omitempty"`
-	Status       string      `json:"status"`
-	Ambiente     string      `json:"ambiente"`
-	ErrorCode    *string     `json:"error_code,omitempty"`
-	ErrorMessage *string     `json:"error_message,omitempty"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
-	HasRawJSON   bool        `json:"has_raw_json"`
-	Resumo       *RFBResumo  `json:"resumo,omitempty"`
+	ID           string     `json:"id"`
+	CompanyID    string     `json:"company_id"`
+	CNPJBase     string     `json:"cnpj_base"`
+	Tiquete      string     `json:"tiquete,omitempty"`
+	Status       string     `json:"status"`
+	Ambiente     string     `json:"ambiente"`
+	ErrorCode    *string    `json:"error_code,omitempty"`
+	ErrorMessage *string    `json:"error_message,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	HasRawJSON   bool       `json:"has_raw_json"`
+	Resumo       *RFBResumo `json:"resumo,omitempty"`
 }
 
 // RFBResumo represents the summary of a CBS assessment
 type RFBResumo struct {
-	ID               string  `json:"id"`
-	RequestID        string  `json:"request_id"`
-	DataApuracao     string  `json:"data_apuracao"`
-	TotalDebitos     int     `json:"total_debitos"`
-	ValorCBSTotal    float64 `json:"valor_cbs_total"`
-	ValorCBSExtinto  float64 `json:"valor_cbs_extinto"`
+	ID                 string  `json:"id"`
+	RequestID          string  `json:"request_id"`
+	DataApuracao       string  `json:"data_apuracao"`
+	TotalDebitos       int     `json:"total_debitos"`
+	ValorCBSTotal      float64 `json:"valor_cbs_total"`
+	ValorCBSExtinto    float64 `json:"valor_cbs_extinto"`
 	ValorCBSNaoExtinto float64 `json:"valor_cbs_nao_extinto"`
-	TotalCorrente    int     `json:"total_corrente"`
-	TotalAjuste      int     `json:"total_ajuste"`
-	TotalExtemporaneo int    `json:"total_extemporaneo"`
+	TotalCorrente      int     `json:"total_corrente"`
+	TotalAjuste        int     `json:"total_ajuste"`
+	TotalExtemporaneo  int     `json:"total_extemporaneo"`
 }
 
 // RFBDebitoRow represents a normalized debit row for the frontend
 type RFBDebitoRow struct {
-	ID               string   `json:"id"`
-	TipoApuracao     string   `json:"tipo_apuracao"`
-	ModeloDfe        string   `json:"modelo_dfe"`
-	NumeroDfe        string   `json:"numero_dfe"`
-	ChaveDfe         string   `json:"chave_dfe"`
-	DataDfeEmissao   *string  `json:"data_dfe_emissao"`
-	DataApuracao     string   `json:"data_apuracao"`
-	NiEmitente       string   `json:"ni_emitente"`
-	NiAdquirente     string   `json:"ni_adquirente"`
-	ValorCBSTotal    float64  `json:"valor_cbs_total"`
-	ValorCBSExtinto  float64  `json:"valor_cbs_extinto"`
+	ID                 string  `json:"id"`
+	TipoApuracao       string  `json:"tipo_apuracao"`
+	ModeloDfe          string  `json:"modelo_dfe"`
+	NumeroDfe          string  `json:"numero_dfe"`
+	ChaveDfe           string  `json:"chave_dfe"`
+	DataDfeEmissao     *string `json:"data_dfe_emissao"`
+	DataApuracao       string  `json:"data_apuracao"`
+	NiEmitente         string  `json:"ni_emitente"`
+	NiAdquirente       string  `json:"ni_adquirente"`
+	ValorCBSTotal      float64 `json:"valor_cbs_total"`
+	ValorCBSExtinto    float64 `json:"valor_cbs_extinto"`
 	ValorCBSNaoExtinto float64 `json:"valor_cbs_nao_extinto"`
-	SituacaoDebito   string   `json:"situacao_debito"`
+	SituacaoDebito     string  `json:"situacao_debito"`
 }
 
 // SolicitarApuracaoHandler triggers a new CBS assessment request to the RFB API

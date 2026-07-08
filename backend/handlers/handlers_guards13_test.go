@@ -159,8 +159,8 @@ func TestResolveUserEmail_InvalidUUID(t *testing.T) {
 
 func TestBuildFallbackInsight_IcmsPriority(t *testing.T) {
 	r := &ApuracaoResumo{
-		Periodo:    "01/2026",
-		IcmsAPagar: 5000.0,
+		Periodo:     "01/2026",
+		IcmsAPagar:  5000.0,
 		IcmsEntrada: 2000.0,
 	}
 	insight := buildFallbackInsight(r)

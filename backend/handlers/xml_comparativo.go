@@ -24,12 +24,12 @@ import (
 // ── Structs de resposta ───────────────────────────────────────────────────────
 
 type comparativoResumoRow struct {
-	MesAno      string  `json:"mes_ano"`
-	QtdEFD      int     `json:"qtd_efd"`
-	QtdXML      int     `json:"qtd_xml"`
-	TotalEFD    float64 `json:"total_efd"`
-	TotalXML    float64 `json:"total_xml"`
-	Diferenca   float64 `json:"diferenca"`
+	MesAno       string  `json:"mes_ano"`
+	QtdEFD       int     `json:"qtd_efd"`
+	QtdXML       int     `json:"qtd_xml"`
+	TotalEFD     float64 `json:"total_efd"`
+	TotalXML     float64 `json:"total_xml"`
+	Diferenca    float64 `json:"diferenca"`
 	PctCobertura float64 `json:"pct_cobertura"`
 }
 
@@ -44,8 +44,8 @@ type lacunaRow struct {
 }
 
 type lacunaMensalRow struct {
-	MesAno    string  `json:"mes_ano"`
-	QtdFalta  int     `json:"qtd_falta"`
+	MesAno     string  `json:"mes_ano"`
+	QtdFalta   int     `json:"qtd_falta"`
 	ValorFalta float64 `json:"valor_falta"`
 }
 

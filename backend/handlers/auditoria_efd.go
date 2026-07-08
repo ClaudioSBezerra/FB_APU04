@@ -43,7 +43,7 @@ type E116Linha struct {
 // DareGuia — dados extraídos de uma guia DARE (PDF).
 type DareGuia struct {
 	Arquivo        string
-	CodReceita     string  // ex.: 108, 4014, 4146
+	CodReceita     string // ex.: 108, 4014, 4146
 	Descricao      string
 	ValorOriginal  float64
 	Referencia     string // texto bruto ("300-Mensal - 05/2026")
@@ -64,10 +64,10 @@ type AuditoriaEFD struct {
 }
 
 var (
-	reRefDare  = regexp.MustCompile(`(\d{3})\s*-\s*\w+\s*-\s*(\d{2}/\d{4})`) // "300-Mensal - 05/2026"
-	reData     = regexp.MustCompile(`\b(\d{2}/\d{2}/\d{4})\b`)
-	reReceita  = regexp.MustCompile(`(?m)^\s*(\d{2,4})\s*-\s*(.+?)\s*$`)
-	reMilhar   = regexp.MustCompile(`^\d{1,3}(\.\d{3})*,\d{2}$`)
+	reRefDare = regexp.MustCompile(`(\d{3})\s*-\s*\w+\s*-\s*(\d{2}/\d{4})`) // "300-Mensal - 05/2026"
+	reData    = regexp.MustCompile(`\b(\d{2}/\d{2}/\d{4})\b`)
+	reReceita = regexp.MustCompile(`(?m)^\s*(\d{2,4})\s*-\s*(.+?)\s*$`)
+	reMilhar  = regexp.MustCompile(`^\d{1,3}(\.\d{3})*,\d{2}$`)
 )
 
 // parseValorBR converte "5.805.606,05" (ou "1755,6") em float.

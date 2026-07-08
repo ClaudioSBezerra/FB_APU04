@@ -14,11 +14,11 @@ import (
 // ---------------------------------------------------------------------------
 
 type FronteiraMensalRow struct {
-	Periodo       string  `json:"periodo"`
-	Regime        string  `json:"regime"`
-	QtdNotas      int     `json:"qtd_notas"`
-	VProdTotal    float64 `json:"v_prod_total"`
-	IcmsDevido    float64 `json:"icms_devido"`
+	Periodo    string  `json:"periodo"`
+	Regime     string  `json:"regime"`
+	QtdNotas   int     `json:"qtd_notas"`
+	VProdTotal float64 `json:"v_prod_total"`
+	IcmsDevido float64 `json:"icms_devido"`
 }
 
 type FronteiraMensalResponse struct {

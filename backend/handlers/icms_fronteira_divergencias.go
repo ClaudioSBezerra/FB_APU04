@@ -44,14 +44,16 @@ type DivergenciasResponse struct {
 // Append a LIMIT clause for interactive use; use as-is for exports.
 //
 // $1 = company_id
-// $2 = periodo MM/YYYY ('' = sem filtro; quando vazio mostra tudo de ambos os lados)
+// $2 = periodo MM/YYYY (” = sem filtro; quando vazio mostra tudo de ambos os lados)
 //
 // Statuses:
-//   COBRADO_A_MAIS  — SEFAZ cobrou mais do que calculamos
-//   COBRADO_A_MENOS — SEFAZ cobrou menos do que calculamos
-//   SEM_NOTA        — extrato sem NF correspondente no sistema
-//   NAO_COBRADO     — NF no sistema sem lançamento no extrato
-//   OK              — diferença < R$ 0,05 (tolerância de arredondamento)
+//
+//	COBRADO_A_MAIS  — SEFAZ cobrou mais do que calculamos
+//	COBRADO_A_MENOS — SEFAZ cobrou menos do que calculamos
+//	SEM_NOTA        — extrato sem NF correspondente no sistema
+//	NAO_COBRADO     — NF no sistema sem lançamento no extrato
+//	OK              — diferença < R$ 0,05 (tolerância de arredondamento)
+//
 // Fonte: SPED (reg_c190) classifica pelo CFOP de entrada; detalhe item via XML
 // por chave. Lado "calculado" da divergência usa as mesmas regras G1-G5.
 const divergenciasQueryBody = `

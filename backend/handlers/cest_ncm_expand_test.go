@@ -19,13 +19,13 @@ func TestSegmentoDoAnexo(t *testing.T) {
 		ref  string
 		want string
 	}{
-		{"Anexo II do Conv. ICMS 52/2017", "01"},  // autopeças (linear: 2-1)
-		{"Anexo VI do Conv. ICMS 52/2017", "05"},  // combustíveis
-		{"Anexo XXV do Conv. ICMS 52/17", "24"},   // último linear
-		{"Anexo XXVI do Conv. ICMS 52/17", "28"},  // override: porta a porta
-		{"anexo ii", "01"},                        // case-insensitive
-		{"Anexo I", ""},                           // regras gerais, não é segmento
-		{"sem anexo aqui", ""},                    // não reconhece
+		{"Anexo II do Conv. ICMS 52/2017", "01"}, // autopeças (linear: 2-1)
+		{"Anexo VI do Conv. ICMS 52/2017", "05"}, // combustíveis
+		{"Anexo XXV do Conv. ICMS 52/17", "24"},  // último linear
+		{"Anexo XXVI do Conv. ICMS 52/17", "28"}, // override: porta a porta
+		{"anexo ii", "01"},                       // case-insensitive
+		{"Anexo I", ""},                          // regras gerais, não é segmento
+		{"sem anexo aqui", ""},                   // não reconhece
 	}
 	for _, c := range cases {
 		if got := segmentoDoAnexo(c.ref); got != c.want {

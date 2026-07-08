@@ -185,10 +185,10 @@ func TestParseMVAajPairs(t *testing.T) {
 
 func TestBackCalcAliqInterna(t *testing.T) {
 	cases := []struct {
-		nome   string
-		orig   float64
-		pairs  map[int]float64
-		want   float64
+		nome  string
+		orig  float64
+		pairs map[int]float64
+		want  float64
 	}{
 		// refrigerantes: orig 114%, aj 156,80/148,78/135,40 → interna 20%
 		{"refrigerantes", 114, map[int]float64{4: 156.80, 7: 148.78, 12: 135.40}, 20},
@@ -233,10 +233,10 @@ func TestSplitLinhasEmChunks(t *testing.T) {
 
 func TestSplitTextoEmChunks(t *testing.T) {
 	cases := []struct {
-		nome    string
-		texto   string
-		limit   int
-		want    int
+		nome  string
+		texto string
+		limit int
+		want  int
 	}{
 		{"vazio", "", 100, 1},
 		{"menor que limit", "abc\ndef", 100, 1},

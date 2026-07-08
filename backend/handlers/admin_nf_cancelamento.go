@@ -12,13 +12,15 @@ import (
 // AdminNFCancelamentoHandler — cancela/reativa NFs por chave_nfe (deleção lógica).
 //
 // POST /api/admin/nf/cancelamento
-//   Body: { "chave_nfe": "...", "status": "CANCELADO" | "ATIVO" }
-//   Atualiza nfe_entradas.status e reg_c100.status para a chave informada.
-//   A NF continua visível nos relatórios/tela mas NÃO é somada nos totais.
+//
+//	Body: { "chave_nfe": "...", "status": "CANCELADO" | "ATIVO" }
+//	Atualiza nfe_entradas.status e reg_c100.status para a chave informada.
+//	A NF continua visível nos relatórios/tela mas NÃO é somada nos totais.
 //
 // GET /api/admin/nf/cancelamentos?forn=...&num_nota=...&periodo=MM/YYYY
-//   Busca NFs do company_id com filtros opcionais. Retorna até 200 registros.
-//   Fonte = XML (nfe_entradas) — filtra por company_id, parâmetros opcionais.
+//
+//	Busca NFs do company_id com filtros opcionais. Retorna até 200 registros.
+//	Fonte = XML (nfe_entradas) — filtra por company_id, parâmetros opcionais.
 func AdminNFCancelamentoHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

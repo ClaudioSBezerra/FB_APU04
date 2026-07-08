@@ -33,7 +33,7 @@ type ReconNota struct {
 	FornNome      string  `json:"forn_nome"`
 	FornUF        string  `json:"forn_uf"`
 	CFOP          string  `json:"cfop"`
-	CFOPEntrada   string  `json:"cfop_entrada"`   // bloco 3: CFOP entrada derivado
+	CFOPEntrada   string  `json:"cfop_entrada"` // bloco 3: CFOP entrada derivado
 	Regime        string  `json:"regime"`
 	ClassStatus   string  `json:"class_status,omitempty"` // auto | manual | excluded (só bloco 3)
 	VOpr          float64 `json:"v_opr"`
@@ -59,8 +59,9 @@ type ReconciliacaoResponse struct {
 
 // Bloco 1 (normal) e Bloco 2 (emitida mês anterior) saem do SPED.
 // O discriminador é a comparação dt_doc (emissão) × período de análise.
-//   bloco = 'normal'               quando mês/ano de dt_doc == período
-//   bloco = 'emitida_mes_anterior' quando dt_e_s no período mas dt_doc anterior
+//
+//	bloco = 'normal'               quando mês/ano de dt_doc == período
+//	bloco = 'emitida_mes_anterior' quando dt_e_s no período mas dt_doc anterior
 const reconSpedQuery = `
 WITH sped AS (
     SELECT

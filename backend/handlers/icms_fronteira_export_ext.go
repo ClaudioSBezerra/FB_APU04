@@ -52,8 +52,8 @@ func xlsxBoldStyle(f *excelize.File) int {
 // colLetter returns the Excel column letter(s) for a 0-based index.
 func colLetter(i int) string {
 	letters := []string{
-		"A","B","C","D","E","F","G","H","I","J","K","L","M",
-		"N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
+		"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+		"N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
 	}
 	if i < 26 {
 		return letters[i]
