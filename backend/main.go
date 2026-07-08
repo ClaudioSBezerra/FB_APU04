@@ -542,10 +542,12 @@ func main() {
 	// Tela "Comparação Fiscal" (Fase 12, TPF-06/07): busca NF-e, leitura
 	// esperado x calculado item a item, e exportação CSV. Todas admin-gated
 	// e company-scoped (T-12-01/T-12-02) — rotas mais específicas primeiro.
+	http.HandleFunc("/api/fiscal/filiais", withAuth(handlers.FiscalFiliaisHandler, ""))
 	http.HandleFunc("/api/fiscal/comparacao/search", withAuth(handlers.FiscalComparacaoSearchHandler, ""))
 	http.HandleFunc("/api/fiscal/comparacao/csv", withAuth(handlers.FiscalComparacaoCSVHandler, ""))
 	http.HandleFunc("/api/fiscal/comparacao", withAuth(handlers.FiscalComparacaoReadHandler, ""))
 	http.HandleFunc("/api/fiscal/diagnostico", withAuth(handlers.FiscalDiagnosticoHandler, ""))
+	http.HandleFunc("/api/fiscal/diagnostico/pdf", withAuth(handlers.FiscalDiagnosticoPDFHandler, ""))
 	http.HandleFunc("/api/fiscal/execute-lote", withAuth(handlers.FiscalExecuteLoteHandler, ""))
 	http.HandleFunc("/api/fiscal/execute-lote/status", withAuth(handlers.FiscalExecuteLoteStatusHandler, ""))
 
@@ -1012,40 +1014,58 @@ func main() {
 	// ── ICMS Fronteira — Fretes (CT-e vinculados às NFs) ────────────────────
 	http.HandleFunc("/api/icms-fronteira/fretes", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraFretesHandler(database), "")(w, r)
 	})
 
 	// ── ICMS Fronteira — Motor de Cálculo Fiscal Fase 1 (ST BA) ─────────────
 	http.HandleFunc("/api/icms-fronteira/motor-fiscal/calcular", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.MotorFiscalCalcularHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/motor-fiscal/resultados", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.MotorFiscalResultadosHandler(database), "")(w, r)
 	})
 
 	// ── ICMS Fronteira — Planilha (item-level) ───────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/itens", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraItensHandler(database), "")(w, r)
 	})
 
 	// ── ICMS Fronteira — Apuração Mensal (Bloco D) ───────────────────────────
 	http.HandleFunc("/api/icms-fronteira/mensal", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraMensalHandler(database), "")(w, r)
 	})
 
 	// Block C — NFs em XML não encontradas em nenhum SPED (nao_sped)
 	http.HandleFunc("/api/icms-fronteira/nao-sped/cfop-override", func(w http.ResponseWriter, r *http.Request) {
 		db := getDB()
-		if db == nil { jsonServiceUnavailable(w); return }
+		if db == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.NaoSpedCfopOverrideHandler(db), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/nao-sped", func(w http.ResponseWriter, r *http.Request) {
@@ -1060,33 +1080,48 @@ func main() {
 	// Reconciliação SPED × XML — notas sobrando/faltando (mês de análise por emissão)
 	http.HandleFunc("/api/icms-fronteira/reconciliacao", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraReconciliacaoHandler(database), "")(w, r)
 	})
 
 	// Classificação manual da reconciliação (validar/sobrescrever/excluir nota do bloco "Faltando")
 	http.HandleFunc("/api/icms-fronteira/reconciliacao/classificacao", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraClassificacaoHandler(database), "")(w, r)
 	})
 
 	// Sugestão IA de classificação para a reconciliação (Etapa 3)
 	http.HandleFunc("/api/icms-fronteira/reconciliacao/sugerir-ia", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraSugerirIAHandler(database), "")(w, r)
 	})
 
 	// Legislação tributária com IA (Etapa 5)
 	http.HandleFunc("/api/icms-fronteira/legislacao/upload", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraLegislacaoUploadHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/legislacao", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		// GET lista (sem id) vs detalhe/PUT/DELETE (com id)
 		if r.URL.Query().Get("id") == "" && r.Method == http.MethodGet {
 			handlers.AuthMiddleware(handlers.IcmsFronteiraLegislacaoListHandler(database), "")(w, r)
@@ -1096,54 +1131,81 @@ func main() {
 	})
 	http.HandleFunc("/api/icms-fronteira/legislacao/aplicar", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraLegislacaoAplicarHandler(database), "")(w, r)
 	})
 
 	// ── ICMS Fronteira — Divergências (calculado × SEFAZ) ────────────────────
 	http.HandleFunc("/api/icms-fronteira/divergencias/exportar/csv", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraExportDivCSVHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/divergencias/exportar/xlsx", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraExportDivXLSXHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/divergencias", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraDivergenciasHandler(database), "")(w, r)
 	})
 
 	// ── ICMS Fronteira — Export Planilha Itens ───────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/itens/exportar/csv", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraExportItensCSVHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/itens/exportar/xlsx", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraExportItensXLSXHandler(database), "")(w, r)
 	})
 
 	// ── ICMS Fronteira — Regras NCM ──────────────────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/regras/importar", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraRegrasImportarHandler(database), "")(w, r)
 	})
 	// Base de Conhecimento CEST→NCM (GET consulta por segmento/cest; POST reprocessa)
 	http.HandleFunc("/api/cest-ncm/kb", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.CestNcmKBHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/regras/", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		switch r.Method {
 		case http.MethodDelete:
 			handlers.AuthMiddleware(handlers.IcmsFronteiraRegraDeleteHandler(database), "")(w, r)
@@ -1155,7 +1217,10 @@ func main() {
 	})
 	http.HandleFunc("/api/icms-fronteira/regras", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		switch r.Method {
 		case "GET":
 			handlers.AuthMiddleware(handlers.IcmsFronteiraRegrasListHandler(database), "")(w, r)
@@ -1169,17 +1234,26 @@ func main() {
 	// ── ICMS Fronteira — Export ───────────────────────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/exportar/csv", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraExportCSVHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/exportar/xlsx", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraExportXLSXHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/exportar/pdf", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraExportHTMLHandler(database), "")(w, r)
 	})
 
@@ -1191,12 +1265,18 @@ func main() {
 	// ── ICMS Fronteira — Inaplicabilidade (Fase 1: cadastro + aprovação) ─────────
 	http.HandleFunc("/api/icms-fronteira/inaplicabilidade/importar", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraInaplicImportHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/inaplicabilidade/", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		switch r.Method {
 		case "PUT":
 			handlers.AuthMiddleware(handlers.IcmsFronteiraInaplicUpdateHandler(database), "")(w, r)
@@ -1208,7 +1288,10 @@ func main() {
 	})
 	http.HandleFunc("/api/icms-fronteira/inaplicabilidade", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		switch r.Method {
 		case "GET":
 			handlers.AuthMiddleware(handlers.IcmsFronteiraInaplicListHandler(database), "")(w, r)
@@ -1222,12 +1305,18 @@ func main() {
 	// ── ICMS Fronteira — Extrato SEFAZ ───────────────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/extrato/importar", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraExtratoImportarHandler(database), "")(w, r)
 	})
 	http.HandleFunc("/api/icms-fronteira/extrato", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		switch r.Method {
 		case "GET":
 			handlers.AuthMiddleware(handlers.IcmsFronteiraExtratoListHandler(database), "")(w, r)
@@ -1241,7 +1330,10 @@ func main() {
 	// ── ICMS Fronteira — Contestações ────────────────────────────────────────
 	http.HandleFunc("/api/icms-fronteira/contestacoes/", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		switch r.Method {
 		case "PUT":
 			handlers.AuthMiddleware(handlers.IcmsFronteiraContestacaoUpdateHandler(database), "")(w, r)
@@ -1253,7 +1345,10 @@ func main() {
 	})
 	http.HandleFunc("/api/icms-fronteira/contestacoes", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
-		if database == nil { jsonServiceUnavailable(w); return }
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
 		switch r.Method {
 		case "GET":
 			handlers.AuthMiddleware(handlers.IcmsFronteiraContestacaoListHandler(database), "")(w, r)
@@ -1291,7 +1386,7 @@ func main() {
 		http.HandleFunc("/api/rfb/apuracao/reprocess", withAuth(handlers.ReprocessHandler, ""))
 		http.HandleFunc("/api/rfb/apuracao/clear-errors", withAuth(handlers.ClearErrorsHandler, ""))
 		http.HandleFunc("/api/rfb/apuracao/status", withAuth(handlers.StatusApuracaoHandler, ""))
-		http.HandleFunc("/api/rfb/apuracao/abort",       withAuth(handlers.AbortRequestHandler, ""))
+		http.HandleFunc("/api/rfb/apuracao/abort", withAuth(handlers.AbortRequestHandler, ""))
 		http.HandleFunc("/api/rfb/apuracao/resolicitar", withAuth(handlers.RessolicitarHandler, ""))
 		http.HandleFunc("/api/rfb/apuracao/", withAuth(handlers.DetalheApuracaoHandler, ""))
 
@@ -1328,11 +1423,11 @@ func main() {
 	http.HandleFunc("/api/xml/cobertura", withAuth(handlers.CoberturaHandler, ""))
 
 	// Comparativo EFD ICMS vs XMLs Importados — mais específico primeiro
-	http.HandleFunc("/api/xml/comparativo/lacunas/mensal",  withAuth(handlers.LacunasMensalHandler, ""))
-	http.HandleFunc("/api/xml/comparativo/lacunas/export",  withAuth(handlers.LacunasExportHandler, ""))
-	http.HandleFunc("/api/xml/comparativo/lacunas",         withAuth(handlers.LacunasHandler, ""))
-	http.HandleFunc("/api/xml/comparativo/resumo",          withAuth(handlers.ResumoComparativoHandler, ""))
-	http.HandleFunc("/api/xml/comparativo/modelos",         withAuth(handlers.ModelosEFDHandler, ""))
+	http.HandleFunc("/api/xml/comparativo/lacunas/mensal", withAuth(handlers.LacunasMensalHandler, ""))
+	http.HandleFunc("/api/xml/comparativo/lacunas/export", withAuth(handlers.LacunasExportHandler, ""))
+	http.HandleFunc("/api/xml/comparativo/lacunas", withAuth(handlers.LacunasHandler, ""))
+	http.HandleFunc("/api/xml/comparativo/resumo", withAuth(handlers.ResumoComparativoHandler, ""))
+	http.HandleFunc("/api/xml/comparativo/modelos", withAuth(handlers.ModelosEFDHandler, ""))
 
 	// Notas Importadas — NF-e e CT-e (sempre disponível)
 	http.HandleFunc("/api/nfe-saidas/upload", withAuth(handlers.NfeSaidasUploadHandler, ""))
@@ -1429,10 +1524,10 @@ func main() {
 
 	// Use custom server with timeouts (Inspired by production best practices)
 	server := &http.Server{
-		Addr:    ":" + port,
+		Addr: ":" + port,
 		// OBS-01: MetricsMiddleware por FORA do SecurityMiddleware para medir
 		// inclusive requisições bloqueadas por CORS (detecção de ataques — T-05-01-01)
-		Handler: handlers.MetricsMiddleware(handlers.SecurityMiddleware(http.DefaultServeMux, handlers.GetAllowedOrigins())),
+		Handler:      handlers.MetricsMiddleware(handlers.SecurityMiddleware(http.DefaultServeMux, handlers.GetAllowedOrigins())),
 		ReadTimeout:  300 * time.Second, // 5 minutes for Uploads
 		WriteTimeout: 300 * time.Second, // 5 minutes for Long Responses
 		IdleTimeout:  60 * time.Second,

@@ -13,8 +13,9 @@ import { Input } from '@/components/ui/input';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { FileSpreadsheet, Loader2, Search } from 'lucide-react';
+import { FileSpreadsheet, FileText, Loader2, Search } from 'lucide-react';
 import { exportToExcel } from '@/lib/exportToExcel';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface DiagCfopRow {
   cfop: string; notas: number; itens: number; v_prod: number;
@@ -24,6 +25,7 @@ interface DiagCfopRow {
 }
 interface DiagDistRow { chave: string; itens: number; v_prod: number }
 interface DiagErroRow { mensagem: string; itens: number }
+interface DiagFilialRow { cnpj: string; nome: string; uf: string; notas: number }
 
 interface Diagnostico {
   periodo_inicio: string; periodo_fim: string;
@@ -38,6 +40,7 @@ interface Diagnostico {
   por_centro_fiscal: DiagDistRow[];
   por_contribuinte: DiagDistRow[];
   erros: DiagErroRow[];
+  filiais: DiagFilialRow[];
 }
 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -97,9 +100,13 @@ function DistTable({ title, rows, chaveLabel }: { title: string; rows: DiagDistR
 }
 
 export default function DiagnosticoPacoteFiscal() {
+  const { token, companyId } = useAuth();
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
-  const [applied, setApplied] = useState({ dataInicio: '', dataFim: '' });
+  // Filial = CNPJ do emitente; UF Origem = UF do emitente (2026-07-08)
+  const [filial, setFilial] = useState('');
+  const [ufOrigem, setUfOrigem] = useState('');
+  const [applied, setApplied] = useState({ dataInicio: '', dataFim: '', filial: '', ufOrigem: '' });
 
   const { data: diag, isLoading, isError, refetch } = useQuery<Diagnostico>({
     queryKey: ['fiscal-diagnostico', applied],
@@ -107,11 +114,26 @@ export default function DiagnosticoPacoteFiscal() {
       const params = new URLSearchParams();
       if (applied.dataInicio) params.set('data_inicio', applied.dataInicio);
       if (applied.dataFim) params.set('data_fim', applied.dataFim);
+      if (applied.filial) params.set('filial', applied.filial);
+      if (applied.ufOrigem) params.set('uf_origem', applied.ufOrigem);
       const res = await fetch(`/api/fiscal/diagnostico?${params}`);
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       return res.json();
     },
   });
+
+  // PDF: window.open não envia headers — token via ?token= (AuthMiddleware
+  // aceita) e empresa via ?company_id= (mesmo padrão dos PDFs do Fronteira)
+  const handleExportPDF = () => {
+    const params = new URLSearchParams();
+    if (applied.dataInicio) params.set('data_inicio', applied.dataInicio);
+    if (applied.dataFim) params.set('data_fim', applied.dataFim);
+    if (applied.filial) params.set('filial', applied.filial);
+    if (applied.ufOrigem) params.set('uf_origem', applied.ufOrigem);
+    if (token) params.set('token', token);
+    if (companyId) params.set('company_id', companyId);
+    window.open(`/api/fiscal/diagnostico/pdf?${params}`, '_blank');
+  };
 
   const handleExport = () => {
     if (!diag) return;
@@ -161,11 +183,40 @@ export default function DiagnosticoPacoteFiscal() {
           <label className="text-[11px] text-muted-foreground">Até</label>
           <Input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} className="h-8 w-36 text-xs" />
         </div>
-        <Button size="sm" className="h-8" onClick={() => setApplied({ dataInicio, dataFim })} disabled={isLoading}>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground" title="CNPJ emitente das notas já executadas — use para diagnosticar filial a filial">Filial</label>
+          <select
+            value={filial}
+            onChange={e => setFilial(e.target.value)}
+            className="h-8 w-56 text-xs rounded-md border bg-background px-2"
+          >
+            <option value="">Todas</option>
+            {(diag?.filiais ?? []).map(f => (
+              <option key={f.cnpj} value={f.cnpj}>
+                {f.nome ? `${f.nome} — ` : ''}{f.cnpj} ({f.uf}) · {f.notas}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground">UF Origem</label>
+          <Input
+            type="text"
+            placeholder="PE"
+            value={ufOrigem}
+            onChange={e => setUfOrigem(e.target.value.toUpperCase().slice(0, 2))}
+            className="h-8 w-16 text-xs uppercase"
+            maxLength={2}
+          />
+        </div>
+        <Button size="sm" className="h-8" onClick={() => setApplied({ dataInicio, dataFim, filial, ufOrigem })} disabled={isLoading}>
           {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5 mr-1.5" />}
           Aplicar
         </Button>
-        <Button size="sm" variant="outline" className="h-8 ml-auto" onClick={handleExport} disabled={!diag}>
+        <Button size="sm" variant="outline" className="h-8 ml-auto" onClick={handleExportPDF} disabled={!diag}>
+          <FileText className="w-4 h-4 mr-1" /> Exportar PDF
+        </Button>
+        <Button size="sm" variant="outline" className="h-8" onClick={handleExport} disabled={!diag}>
           <FileSpreadsheet className="w-4 h-4 mr-1" /> Exportar Excel
         </Button>
       </div>

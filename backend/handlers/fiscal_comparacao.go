@@ -176,6 +176,66 @@ type NfeSearchResponse struct {
 // (com_icms/com_st/com_difal/com_fcp/com_base_reduzida=1) e paginação (page_size=0
 // traz todas). Resposta paginada com total.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// GET /api/fiscal/filiais
+// Lista as FILIAIS (CNPJs emitentes) presentes nas notas importadas da
+// empresa, com nome e UF — alimenta o seletor de Filial da busca e do
+// Diagnóstico (pedido 2026-07-08: "vamos testar outras filiais").
+// ---------------------------------------------------------------------------
+func FiscalFiliaisHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Método não permitido")
+			return
+		}
+
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa")
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT COALESCE(emit_cnpj,''),
+			       COALESCE(NULLIF(emit_xfant,''), emit_xnome, ''),
+			       COALESCE(emit_uf,''),
+			       COUNT(*)
+			FROM pacotefiscal_nfe_saidas
+			WHERE company_id = $1 AND COALESCE(emit_cnpj,'') <> ''
+			GROUP BY 1, 2, 3
+			ORDER BY 2, 1`, companyID)
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao listar filiais")
+			return
+		}
+		defer rows.Close()
+
+		type filialRow struct {
+			CNPJ  string `json:"cnpj"`
+			Nome  string `json:"nome"`
+			UF    string `json:"uf"`
+			Notas int    `json:"notas"`
+		}
+		out := []filialRow{}
+		for rows.Next() {
+			var f filialRow
+			if rows.Scan(&f.CNPJ, &f.Nome, &f.UF, &f.Notas) == nil {
+				out = append(out, f)
+			}
+		}
+		json.NewEncoder(w).Encode(out)
+	}
+}
+
 func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -205,6 +265,7 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 		ufDestino := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf_destino")))
 		cliente := strings.TrimSpace(r.URL.Query().Get("cliente"))
 		emitente := strings.TrimSpace(r.URL.Query().Get("emitente"))
+		filial := strings.TrimSpace(r.URL.Query().Get("filial")) // CNPJ do emitente
 
 		// Sem nenhum filtro, roda mesmo assim e lista as notas mais recentes
 		// da empresa (mesmo padrão de "Nota a Nota" em Painel XMLs) — não exige
@@ -246,6 +307,11 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 		if emitente != "" {
 			where += fmt.Sprintf(" AND n.emit_xnome ILIKE '%%'||$%d||'%%'", idx)
 			args = append(args, emitente)
+			idx++
+		}
+		if filial != "" {
+			where += fmt.Sprintf(" AND n.emit_cnpj = $%d", idx)
+			args = append(args, filial)
 			idx++
 		}
 

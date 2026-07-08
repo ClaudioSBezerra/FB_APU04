@@ -46,28 +46,36 @@ type diagErroRow struct {
 	Itens    int    `json:"itens"`
 }
 
+type diagFilialRow struct {
+	CNPJ  string `json:"cnpj"`
+	Nome  string `json:"nome"`
+	UF    string `json:"uf"`
+	Notas int    `json:"notas"`
+}
+
 type fiscalDiagnostico struct {
-	PeriodoInicio   string        `json:"periodo_inicio"`
-	PeriodoFim      string        `json:"periodo_fim"`
-	NotasExecutadas int           `json:"notas_executadas"`
-	ItensExecutados int           `json:"itens_executados"`
-	ItensOK         int           `json:"itens_ok"`
-	ItensSemGrupo   int           `json:"itens_sem_grupo"`
-	ItensErro       int           `json:"itens_erro"`
-	ComSimulacao    int           `json:"com_simulacao"`
-	VProdTotal      float64       `json:"v_prod_total"`
-	DivIcms         int           `json:"div_icms"`
-	DivSt           int           `json:"div_st"`
-	DivPis          int           `json:"div_pis"`
-	DivCofins       int           `json:"div_cofins"`
-	DivIbs          int           `json:"div_ibs"`
-	DivCbs          int           `json:"div_cbs"`
-	PorCfop         []diagCfopRow `json:"por_cfop"`
-	PorCstIcms      []diagDistRow `json:"por_cst_icms"`
-	PorCstPis       []diagDistRow `json:"por_cst_pis"`
-	PorCentroFiscal []diagDistRow `json:"por_centro_fiscal"`
-	PorContribuinte []diagDistRow `json:"por_contribuinte"`
-	Erros           []diagErroRow `json:"erros"`
+	PeriodoInicio   string          `json:"periodo_inicio"`
+	PeriodoFim      string          `json:"periodo_fim"`
+	NotasExecutadas int             `json:"notas_executadas"`
+	ItensExecutados int             `json:"itens_executados"`
+	ItensOK         int             `json:"itens_ok"`
+	ItensSemGrupo   int             `json:"itens_sem_grupo"`
+	ItensErro       int             `json:"itens_erro"`
+	ComSimulacao    int             `json:"com_simulacao"`
+	VProdTotal      float64         `json:"v_prod_total"`
+	DivIcms         int             `json:"div_icms"`
+	DivSt           int             `json:"div_st"`
+	DivPis          int             `json:"div_pis"`
+	DivCofins       int             `json:"div_cofins"`
+	DivIbs          int             `json:"div_ibs"`
+	DivCbs          int             `json:"div_cbs"`
+	PorCfop         []diagCfopRow   `json:"por_cfop"`
+	PorCstIcms      []diagDistRow   `json:"por_cst_icms"`
+	PorCstPis       []diagDistRow   `json:"por_cst_pis"`
+	PorCentroFiscal []diagDistRow   `json:"por_centro_fiscal"`
+	PorContribuinte []diagDistRow   `json:"por_contribuinte"`
+	Erros           []diagErroRow   `json:"erros"`
+	Filiais         []diagFilialRow `json:"filiais"`
 }
 
 // diagDivExprs — flags de divergência por tributo, com a régua da tela:
@@ -129,24 +137,46 @@ func FiscalDiagnosticoHandler(db *sql.DB) http.HandlerFunc {
 
 		dataInicio := strings.TrimSpace(r.URL.Query().Get("data_inicio"))
 		dataFim := strings.TrimSpace(r.URL.Query().Get("data_fim"))
+		filial := strings.TrimSpace(r.URL.Query().Get("filial"))
+		ufOrigem := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf_origem")))
 
+		diag, err := montarFiscalDiagnostico(db, companyID, dataInicio, dataFim, filial, ufOrigem)
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao montar diagnóstico")
+			return
+		}
+
+		if encErr := json.NewEncoder(w).Encode(diag); encErr != nil {
+			log.Printf("[FiscalDiagnostico] encode: %v", encErr)
+		}
+	}
+}
+
+// montarFiscalDiagnostico agrega o sumário — reutilizado pelo handler JSON
+// (tela) e pelo handler PDF (HTML imprimível).
+func montarFiscalDiagnostico(db *sql.DB, companyID, dataInicio, dataFim, filial, ufOrigem string) (*fiscalDiagnostico, error) {
+	{
 		// Base comum: itens já executados (existem em fiscal_execution_items),
-		// escopados por empresa e período opcional.
+		// escopados por empresa, período, FILIAL (CNPJ do emitente) e UF de
+		// origem opcionais (filtros pedidos em 2026-07-08).
 		baseFrom := `
 			FROM fiscal_execution_items fei
 			JOIN pacotefiscal_nfe_saidas_itens i ON i.id = fei.nfe_item_id
 			JOIN pacotefiscal_nfe_saidas n ON n.id = i.nfe_id
 			WHERE n.company_id = $1
 			  AND ($2::text = '' OR n.data_emissao >= $2::date)
-			  AND ($3::text = '' OR n.data_emissao <= $3::date)`
+			  AND ($3::text = '' OR n.data_emissao <= $3::date)
+			  AND ($4::text = '' OR n.emit_cnpj = $4)
+			  AND ($5::text = '' OR n.emit_uf = $5)`
 
 		diag := fiscalDiagnostico{
 			PorCfop: []diagCfopRow{}, PorCstIcms: []diagDistRow{}, PorCstPis: []diagDistRow{},
 			PorCentroFiscal: []diagDistRow{}, PorContribuinte: []diagDistRow{}, Erros: []diagErroRow{},
+			Filiais: []diagFilialRow{},
 		}
 
 		// 1. Cabeçalho + totais + divergências
-		err = db.QueryRow(`
+		err := db.QueryRow(`
 			WITH base AS (SELECT n.id AS nfe_id, n.data_emissao, i.v_prod, fei.status, fei.simulacao, `+diagDivExprs+` `+baseFrom+`)
 			SELECT COALESCE(MIN(data_emissao)::text,''), COALESCE(MAX(data_emissao)::text,''),
 			       COUNT(DISTINCT nfe_id), COUNT(*),
@@ -158,14 +188,13 @@ func FiscalDiagnosticoHandler(db *sql.DB) http.HandlerFunc {
 			       COUNT(*) FILTER (WHERE div_icms), COUNT(*) FILTER (WHERE div_st),
 			       COUNT(*) FILTER (WHERE div_pis), COUNT(*) FILTER (WHERE div_cofins),
 			       COUNT(*) FILTER (WHERE div_ibs), COUNT(*) FILTER (WHERE div_cbs)
-			FROM base`, companyID, dataInicio, dataFim,
+			FROM base`, companyID, dataInicio, dataFim, filial, ufOrigem,
 		).Scan(&diag.PeriodoInicio, &diag.PeriodoFim, &diag.NotasExecutadas, &diag.ItensExecutados,
 			&diag.ItensOK, &diag.ItensSemGrupo, &diag.ItensErro, &diag.ComSimulacao, &diag.VProdTotal,
 			&diag.DivIcms, &diag.DivSt, &diag.DivPis, &diag.DivCofins, &diag.DivIbs, &diag.DivCbs)
 		if err != nil {
 			log.Printf("[FiscalDiagnostico] header query: %v", err)
-			jsonErr(w, http.StatusInternalServerError, "Erro ao montar diagnóstico")
-			return
+			return nil, err
 		}
 
 		// 2. Por CFOP
@@ -178,7 +207,7 @@ func FiscalDiagnosticoHandler(db *sql.DB) http.HandlerFunc {
 			       COUNT(*) FILTER (WHERE div_icms), COUNT(*) FILTER (WHERE div_st),
 			       COUNT(*) FILTER (WHERE div_pis), COUNT(*) FILTER (WHERE div_cofins),
 			       COUNT(*) FILTER (WHERE div_ibs), COUNT(*) FILTER (WHERE div_cbs)
-			FROM base GROUP BY cfop ORDER BY COUNT(*) DESC`, companyID, dataInicio, dataFim)
+			FROM base GROUP BY cfop ORDER BY COUNT(*) DESC`, companyID, dataInicio, dataFim, filial, ufOrigem)
 		if err == nil {
 			for rows.Next() {
 				var c diagCfopRow
@@ -197,7 +226,7 @@ func FiscalDiagnosticoHandler(db *sql.DB) http.HandlerFunc {
 			out := []diagDistRow{}
 			q := `SELECT COALESCE(` + expr + `,''), COUNT(*), COALESCE(SUM(i.v_prod),0) ` + baseFrom +
 				` GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 20`
-			rs, qerr := db.Query(q, companyID, dataInicio, dataFim)
+			rs, qerr := db.Query(q, companyID, dataInicio, dataFim, filial, ufOrigem)
 			if qerr != nil {
 				log.Printf("[FiscalDiagnostico] dist(%s): %v", expr, qerr)
 				return out
@@ -220,7 +249,7 @@ func FiscalDiagnosticoHandler(db *sql.DB) http.HandlerFunc {
 		erows, err := db.Query(`
 			SELECT COALESCE(fei.error_message,''), COUNT(*) `+baseFrom+`
 			  AND fei.status NOT IN ('ok')
-			GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 10`, companyID, dataInicio, dataFim)
+			GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 10`, companyID, dataInicio, dataFim, filial, ufOrigem)
 		if err == nil {
 			for erows.Next() {
 				var e diagErroRow
@@ -233,8 +262,29 @@ func FiscalDiagnosticoHandler(db *sql.DB) http.HandlerFunc {
 			log.Printf("[FiscalDiagnostico] erros query: %v", err)
 		}
 
-		if encErr := json.NewEncoder(w).Encode(diag); encErr != nil {
-			log.Printf("[FiscalDiagnostico] encode: %v", encErr)
+		// 5. Filiais/UFs disponíveis (sem o filtro de filial/uf — popula os
+		// selects da tela com o que existe executado no período)
+		frows, err := db.Query(`
+			SELECT COALESCE(n.emit_cnpj,''), COALESCE(NULLIF(n.emit_xfant,''), n.emit_xnome, ''), COALESCE(n.emit_uf,''), COUNT(DISTINCT n.id)
+			FROM fiscal_execution_items fei
+			JOIN pacotefiscal_nfe_saidas_itens i ON i.id = fei.nfe_item_id
+			JOIN pacotefiscal_nfe_saidas n ON n.id = i.nfe_id
+			WHERE n.company_id = $1
+			  AND ($2::text = '' OR n.data_emissao >= $2::date)
+			  AND ($3::text = '' OR n.data_emissao <= $3::date)
+			GROUP BY 1, 2, 3 ORDER BY 2`, companyID, dataInicio, dataFim)
+		if err == nil {
+			for frows.Next() {
+				var f diagFilialRow
+				if frows.Scan(&f.CNPJ, &f.Nome, &f.UF, &f.Notas) == nil {
+					diag.Filiais = append(diag.Filiais, f)
+				}
+			}
+			frows.Close()
+		} else {
+			log.Printf("[FiscalDiagnostico] filiais query: %v", err)
 		}
+
+		return &diag, nil
 	}
 }

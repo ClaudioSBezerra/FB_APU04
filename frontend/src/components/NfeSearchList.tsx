@@ -74,6 +74,14 @@ interface LoteStatus {
   terminado_em?: string;
 }
 
+// Filial (CNPJ emitente) presente nas notas importadas — GET /api/fiscal/filiais
+export interface FilialInfo {
+  cnpj: string;
+  nome: string;
+  uf: string;
+  notas: number;
+}
+
 // Envelope paginado da busca (espelha NfeSearchResponse do backend)
 interface NfeSearchResponse {
   total: number;
@@ -103,6 +111,8 @@ export function NfeSearchList({
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [q, setQ] = useState('');
+  // Filial = CNPJ do emitente (2026-07-08: "vamos testar outras filiais")
+  const [filial, setFilial] = useState('');
   const [ufOrigem, setUfOrigem] = useState('');
   const [ufDestino, setUfDestino] = useState('');
   const [cliente, setCliente] = useState('');
@@ -123,13 +133,24 @@ export function NfeSearchList({
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
   const emptyApplied = {
-    dataInicio: '', dataFim: '', q: '', ufOrigem: '', ufDestino: '', cliente: '', emitente: '',
+    dataInicio: '', dataFim: '', q: '', filial: '', ufOrigem: '', ufDestino: '', cliente: '', emitente: '',
     comIcms: false, comSt: false, comDifal: false, comFcp: false, comBaseReduzida: false,
     somenteVendas: true, resultado: '' as Resultado, pageSize: 50,
   };
   const [applied, setApplied] = useState(emptyApplied);
   const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Filiais (CNPJs emitentes) presentes nas notas importadas — popula o select
+  const { data: filiais } = useQuery<FilialInfo[]>({
+    queryKey: ['fiscal-filiais', companyId],
+    queryFn: async () => {
+      const res = await fetch('/api/fiscal/filiais');
+      if (!res.ok) throw new Error(res.statusText);
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
   const { data, isLoading, isError, refetch } = useQuery<NfeSearchResponse>({
     queryKey: ['nfe-saidas-search', applied, page],
@@ -138,6 +159,7 @@ export function NfeSearchList({
       if (applied.q) params.set('q', applied.q);
       if (applied.dataInicio) params.set('data_inicio', applied.dataInicio);
       if (applied.dataFim) params.set('data_fim', applied.dataFim);
+      if (applied.filial) params.set('filial', applied.filial);
       if (applied.ufOrigem) params.set('uf_origem', applied.ufOrigem);
       if (applied.ufDestino) params.set('uf_destino', applied.ufDestino);
       if (applied.cliente) params.set('cliente', applied.cliente);
@@ -169,7 +191,7 @@ export function NfeSearchList({
     setSearched(true);
     setPage(1);
     setApplied({
-      dataInicio, dataFim, q: q.trim(), ufOrigem, ufDestino,
+      dataInicio, dataFim, q: q.trim(), filial, ufOrigem, ufDestino,
       cliente: cliente.trim(), emitente: emitente.trim(),
       comIcms, comSt, comDifal, comFcp, comBaseReduzida, somenteVendas, resultado, pageSize,
     });
@@ -307,6 +329,21 @@ export function NfeSearchList({
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
             className="h-8 w-48 text-xs font-mono"
           />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-muted-foreground" title="CNPJ emitente das notas importadas — use para testar o pacote filial a filial">Filial</label>
+          <select
+            value={filial}
+            onChange={e => setFilial(e.target.value)}
+            className="h-8 w-52 text-xs rounded-md border bg-background px-2"
+          >
+            <option value="">Todas</option>
+            {(filiais ?? []).map(f => (
+              <option key={f.cnpj} value={f.cnpj}>
+                {f.nome ? `${f.nome} — ` : ''}{f.cnpj} ({f.uf}) · {f.notas}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-[11px] text-muted-foreground">UF Origem</label>
