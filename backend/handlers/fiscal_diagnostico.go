@@ -53,6 +53,22 @@ type diagFilialRow struct {
 	Notas int    `json:"notas"`
 }
 
+// diagClientes — contagem de CLIENTES DISTINTOS (CNPJ/CPF do destinatário)
+// nas notas executadas, por categoria (pedido 2026-07-08). "Contribuinte" usa
+// o pTipoContribuinte efetivamente passado ao pacote (um mesmo cliente pode
+// contar nos dois se tiver notas com derivações diferentes); DIFAL/FCP/ST
+// vêm dos totais do cabeçalho do XML; redução = item CST 20/70.
+type diagClientes struct {
+	Identificados    int `json:"identificados"`
+	SemIdentificacao int `json:"sem_identificacao"` // notas sem CNPJ/CPF (NFC-e)
+	Contribuintes    int `json:"contribuintes"`
+	NaoContribuintes int `json:"nao_contribuintes"`
+	ComDifal         int `json:"com_difal"`
+	ComFcp           int `json:"com_fcp"`
+	ComSt            int `json:"com_st"`
+	ComReducao       int `json:"com_reducao"`
+}
+
 type fiscalDiagnostico struct {
 	PeriodoInicio   string          `json:"periodo_inicio"`
 	PeriodoFim      string          `json:"periodo_fim"`
@@ -76,6 +92,7 @@ type fiscalDiagnostico struct {
 	PorContribuinte []diagDistRow   `json:"por_contribuinte"`
 	Erros           []diagErroRow   `json:"erros"`
 	Filiais         []diagFilialRow `json:"filiais"`
+	Clientes        diagClientes    `json:"clientes"`
 }
 
 // diagDivExprs — flags de divergência por tributo, com a régua da tela:
@@ -262,7 +279,37 @@ func montarFiscalDiagnostico(db *sql.DB, companyID, dataInicio, dataFim, filial,
 			log.Printf("[FiscalDiagnostico] erros query: %v", err)
 		}
 
-		// 5. Filiais/UFs disponíveis (sem o filtro de filial/uf — popula os
+		// 5. Clientes distintos por categoria (CNPJ/CPF do destinatário).
+		// Contribuinte/não contribuinte usa o pTipoContribuinte passado ao
+		// pacote; DIFAL/FCP/ST são os totais do cabeçalho; redução = CST 20/70.
+		cerr := db.QueryRow(`
+			WITH base AS (
+				SELECT COALESCE(NULLIF(n.dest_cnpj,''), NULLIF(n.dest_cpf,''), '') AS cliente,
+				       n.id AS nfe_id,
+				       fei.input_params->>'PTipoContribuinte' AS contrib,
+				       COALESCE(n.v_icms_uf_dest,0) AS difal,
+				       COALESCE(n.v_fcp,0)+COALESCE(n.v_fcp_st,0)+COALESCE(n.v_fcp_uf_dest,0) AS fcp,
+				       COALESCE(n.v_st,0) AS st,
+				       (i.cst_icms IN ('20','70')) AS reduzida `+baseFrom+`
+			)
+			SELECT COUNT(DISTINCT cliente) FILTER (WHERE cliente <> ''),
+			       COUNT(DISTINCT nfe_id) FILTER (WHERE cliente = ''),
+			       COUNT(DISTINCT cliente) FILTER (WHERE cliente <> '' AND contrib = 'S'),
+			       COUNT(DISTINCT cliente) FILTER (WHERE cliente <> '' AND contrib = 'N'),
+			       COUNT(DISTINCT cliente) FILTER (WHERE cliente <> '' AND difal > 0),
+			       COUNT(DISTINCT cliente) FILTER (WHERE cliente <> '' AND fcp > 0),
+			       COUNT(DISTINCT cliente) FILTER (WHERE cliente <> '' AND st > 0),
+			       COUNT(DISTINCT cliente) FILTER (WHERE cliente <> '' AND reduzida)
+			FROM base`, companyID, dataInicio, dataFim, filial, ufOrigem,
+		).Scan(&diag.Clientes.Identificados, &diag.Clientes.SemIdentificacao,
+			&diag.Clientes.Contribuintes, &diag.Clientes.NaoContribuintes,
+			&diag.Clientes.ComDifal, &diag.Clientes.ComFcp,
+			&diag.Clientes.ComSt, &diag.Clientes.ComReducao)
+		if cerr != nil {
+			log.Printf("[FiscalDiagnostico] clientes query: %v", cerr)
+		}
+
+		// 6. Filiais/UFs disponíveis (sem o filtro de filial/uf — popula os
 		// selects da tela com o que existe executado no período)
 		frows, err := db.Query(`
 			SELECT COALESCE(n.emit_cnpj,''), COALESCE(NULLIF(n.emit_xfant,''), n.emit_xnome, ''), COALESCE(n.emit_uf,''), COUNT(DISTINCT n.id)

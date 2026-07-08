@@ -26,6 +26,12 @@ interface DiagCfopRow {
 interface DiagDistRow { chave: string; itens: number; v_prod: number }
 interface DiagErroRow { mensagem: string; itens: number }
 interface DiagFilialRow { cnpj: string; nome: string; uf: string; notas: number }
+// Clientes distintos (CNPJ/CPF do destinatário) por categoria
+interface DiagClientes {
+  identificados: number; sem_identificacao: number;
+  contribuintes: number; nao_contribuintes: number;
+  com_difal: number; com_fcp: number; com_st: number; com_reducao: number;
+}
 
 interface Diagnostico {
   periodo_inicio: string; periodo_fim: string;
@@ -41,6 +47,7 @@ interface Diagnostico {
   por_contribuinte: DiagDistRow[];
   erros: DiagErroRow[];
   filiais: DiagFilialRow[];
+  clientes: DiagClientes;
 }
 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -147,6 +154,14 @@ export default function DiagnosticoPacoteFiscal() {
       { Secao: 'RESUMO', Chave: 'Com simulação IBS/CBS', Valor: diag.com_simulacao },
       { Secao: 'RESUMO', Chave: 'Valor produtos', Valor: diag.v_prod_total },
       ...DIV_LABELS.map(d => ({ Secao: 'DIVERGENCIAS', Chave: d.label, Valor: diag[d.key] as number })),
+      { Secao: 'CLIENTES', Chave: 'Identificados', Valor: diag.clientes.identificados },
+      { Secao: 'CLIENTES', Chave: 'Contribuintes', Valor: diag.clientes.contribuintes },
+      { Secao: 'CLIENTES', Chave: 'Não contribuintes', Valor: diag.clientes.nao_contribuintes },
+      { Secao: 'CLIENTES', Chave: 'Com DIFAL', Valor: diag.clientes.com_difal },
+      { Secao: 'CLIENTES', Chave: 'Com FCP', Valor: diag.clientes.com_fcp },
+      { Secao: 'CLIENTES', Chave: 'Com ST', Valor: diag.clientes.com_st },
+      { Secao: 'CLIENTES', Chave: 'Com base reduzida', Valor: diag.clientes.com_reducao },
+      { Secao: 'CLIENTES', Chave: 'Notas sem destinatário', Valor: diag.clientes.sem_identificacao },
       ...diag.por_cfop.map(c => ({
         Secao: 'POR CFOP', Chave: c.cfop, Notas: c.notas, Itens: c.itens, 'Valor Produtos': c.v_prod,
         OK: c.ok, 'Sem Grupo': c.sem_grupo_fiscal, Erro: c.error,
@@ -244,6 +259,34 @@ export default function DiagnosticoPacoteFiscal() {
             <StatCard title="Sem grupo / Erro" value={`${fmtN(diag.itens_sem_grupo)} / ${fmtN(diag.itens_erro)}`} />
             <StatCard title="Valor produtos" value={fmtBRL(diag.v_prod_total)} />
           </div>
+
+          {/* Clientes por categoria */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold" title="Contribuinte/não contribuinte = pTipoContribuinte passado ao pacote (indIEDest > CFOP 6107/6108 > modelo); DIFAL/FCP/ST = totais do cabeçalho do XML; base reduzida = itens CST 20/70. Um cliente pode contar em mais de uma categoria">
+                Clientes (destinatários distintos por CNPJ/CPF)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                {[
+                  { label: 'Identificados', value: diag.clientes.identificados },
+                  { label: 'Contribuintes', value: diag.clientes.contribuintes },
+                  { label: 'Não contribuintes', value: diag.clientes.nao_contribuintes },
+                  { label: 'Com DIFAL', value: diag.clientes.com_difal },
+                  { label: 'Com FCP', value: diag.clientes.com_fcp },
+                  { label: 'Com ST', value: diag.clientes.com_st },
+                  { label: 'Com base reduzida', value: diag.clientes.com_reducao },
+                  { label: 'Notas sem destinatário', value: diag.clientes.sem_identificacao },
+                ].map(c => (
+                  <div key={c.label} className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground uppercase">{c.label}</p>
+                    <p className="text-lg font-semibold">{fmtN(c.value)}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Divergências por tributo */}
           <div className="flex items-center gap-2 flex-wrap">

@@ -132,6 +132,19 @@ th { background: #f1f5f9; } td:first-child, th:first-child { text-align: left; }
 		card("Valor produtos", fmtBRLPdf(diag.VProdTotal))
 		b.WriteString(`</div>`)
 
+		// Clientes por categoria
+		b.WriteString(`<h2>Clientes (destinatários distintos por CNPJ/CPF)</h2><div class="cards">`)
+		card("Identificados", fmt.Sprintf("%d", diag.Clientes.Identificados))
+		card("Contribuintes", fmt.Sprintf("%d", diag.Clientes.Contribuintes))
+		card("Não contribuintes", fmt.Sprintf("%d", diag.Clientes.NaoContribuintes))
+		card("Com DIFAL", fmt.Sprintf("%d", diag.Clientes.ComDifal))
+		card("Com FCP", fmt.Sprintf("%d", diag.Clientes.ComFcp))
+		card("Com ST", fmt.Sprintf("%d", diag.Clientes.ComSt))
+		card("Com base reduzida", fmt.Sprintf("%d", diag.Clientes.ComReducao))
+		card("Notas sem destinatário", fmt.Sprintf("%d", diag.Clientes.SemIdentificacao))
+		b.WriteString(`</div>`)
+		b.WriteString(`<div class="meta">Contribuinte/não contribuinte = pTipoContribuinte efetivamente passado ao pacote (indIEDest &gt; CFOP 6107/6108 &gt; modelo); DIFAL/FCP/ST = totais do cabeçalho do XML; base reduzida = itens CST 20/70. Um cliente pode contar em mais de uma categoria.</div>`)
+
 		// Divergências por tributo
 		b.WriteString(`<h2>Itens divergentes por tributo</h2><div class="chips">`)
 		divs := []struct {
