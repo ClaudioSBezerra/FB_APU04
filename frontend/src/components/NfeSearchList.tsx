@@ -109,7 +109,9 @@ export function NfeSearchList({
   onIncluirIbsCbsChange?: (v: boolean) => void;
 }) {
   const { token, companyId } = useAuth();
-  const authHeaders = { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId || '' };
+  // Sem Authorization/X-Company-ID explícitos: o interceptor global do
+  // AuthContext injeta o token SEMPRE FRESCO (tokenRef) — headers fixos aqui
+  // congelavam o token da renderização e lotes longos morriam com 401.
 
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -160,7 +162,7 @@ export function NfeSearchList({
       if (applied.somenteVendas) params.set('somente_vendas', '1');
       params.set('page', String(page));
       params.set('page_size', String(applied.pageSize));
-      const res = await fetch(`/api/fiscal/comparacao/search?${params}`, { headers: authHeaders });
+      const res = await fetch(`/api/fiscal/comparacao/search?${params}`);
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
@@ -214,7 +216,7 @@ export function NfeSearchList({
     if (avalEmAndamento.current.has(nfe.id)) return;
     avalEmAndamento.current.add(nfe.id);
     try {
-      const res = await fetch(`/api/fiscal/comparacao?nfe_id=${encodeURIComponent(nfe.id)}`, { headers: authHeaders });
+      const res = await fetch(`/api/fiscal/comparacao?nfe_id=${encodeURIComponent(nfe.id)}`);
       if (!res.ok) return;
       const compRows: ComparacaoRow[] = await res.json();
       const executado = compRows.length > 0 && compRows.some(r => r.status !== 'not_executed');
@@ -251,7 +253,7 @@ export function NfeSearchList({
     try {
       const res = await fetch('/api/fiscal/execute', {
         method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nfe_id: id, incluir_ibs_cbs_base: incluirIbsCbs }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -437,7 +439,7 @@ export function NfeSearchList({
         <p className="text-sm text-muted-foreground text-center py-6">
           Clique em "Buscar" para listar as notas mais recentes, ou aplique um filtro primeiro.
         </p>
-      ) : isError ? (
+      ) : isError && rows.length === 0 ? (
         <p className="text-sm text-destructive text-center py-6">
           Erro ao buscar NF-e. <button className="underline" onClick={() => refetch()}>Tentar novamente</button>
         </p>
@@ -447,6 +449,12 @@ export function NfeSearchList({
         <p className="text-sm text-muted-foreground text-center py-6">Nenhuma nota encontrada para os filtros informados.</p>
       ) : (
         <>
+        {isError && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+            A última atualização da busca falhou (transitório) — exibindo o resultado anterior.{' '}
+            <button className="underline" onClick={() => refetch()}>Atualizar</button>
+          </p>
+        )}
         <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
           <span>
             {total.toLocaleString('pt-BR')} nota(s) encontrada(s)

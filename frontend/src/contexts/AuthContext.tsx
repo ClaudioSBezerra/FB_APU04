@@ -229,6 +229,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       .finally(() => window.location.reload());
   };
 
+  // Renovação PROATIVA do access token (validade 30 min): a cada 20 min
+  // troca o refresh cookie por um token novo. Sem isso, operações longas
+  // (ex: execução em lote de milhares de notas no Pacote Fiscal) morriam
+  // com 401 no meio — o refresh só acontecia no load da página.
+  useEffect(() => {
+    if (!user) return;
+    const id = setInterval(() => {
+      fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' })
+        .then(res => (res.ok ? res.json() : null))
+        .then(data => {
+          if (data?.token) {
+            setToken(data.token);
+            tokenRef.current = data.token;
+          }
+        })
+        .catch(() => {}); // transitório — tenta de novo no próximo ciclo
+    }, 20 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [user]);
+
   // Admin e sessões antigas (sem lista de módulos) enxergam tudo;
   // demais usuários só os módulos das suas personas
   const hasModule = (moduleId: string) => {

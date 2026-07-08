@@ -410,7 +410,9 @@ export default function ComparacaoFiscal() {
   // resultados, sem scroll automático parece que o clique "não fez nada".
   const detailRef = useRef<HTMLDivElement>(null);
 
-  const authHeaders = { Authorization: `Bearer ${token}`, 'X-Company-ID': companyId || '' };
+  // Sem Authorization/X-Company-ID explícitos: o interceptor global do
+  // AuthContext injeta o token SEMPRE FRESCO (tokenRef) — headers fixos aqui
+  // congelavam o token da renderização e lotes longos morriam com 401.
   const nfeId = selectedNfe?.id ?? null;
 
   const {
@@ -422,7 +424,6 @@ export default function ComparacaoFiscal() {
     queryKey: ['fiscal-comparacao', nfeId],
     queryFn: async () => {
       const res = await fetch(`/api/fiscal/comparacao?nfe_id=${encodeURIComponent(nfeId as string)}`, {
-        headers: authHeaders,
       });
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       return res.json();
@@ -434,7 +435,7 @@ export default function ComparacaoFiscal() {
     mutationFn: async (id: string) => {
       const res = await fetch('/api/fiscal/execute', {
         method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nfe_id: id, incluir_ibs_cbs_base: incluirIbsCbsBase }),
       });
       if (!res.ok) throw new Error((await res.text()) || 'Erro ao executar');
@@ -557,7 +558,6 @@ export default function ComparacaoFiscal() {
     setDownloadingCSV(true);
     try {
       const res = await fetch(`/api/fiscal/comparacao/csv?nfe_id=${encodeURIComponent(nfeId)}`, {
-        headers: authHeaders,
       });
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       const blob = await res.blob();
