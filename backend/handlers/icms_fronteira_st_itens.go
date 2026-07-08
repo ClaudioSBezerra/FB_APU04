@@ -55,12 +55,12 @@ type STItemRow struct {
 	VOperacao  float64 `json:"v_operacao"` // v_prod + v_ipi + v_outro
 
 	// Regra / segmento
-	TemRegra     bool    `json:"tem_regra"`
-	MVAOriginal  float64 `json:"mva_original"`
-	MVAAjustado  float64 `json:"mva_ajustado"` // MVA efetivo calculado
-	AliqInter    float64 `json:"aliq_inter"`   // alíquota interestadual do item
-	AliqInterna  float64 `json:"aliq_interna"` // regra.aliquota_interna (default 20.5)
-	SegmentoOK   bool    `json:"segmento_ok"`
+	TemRegra    bool    `json:"tem_regra"`
+	MVAOriginal float64 `json:"mva_original"`
+	MVAAjustado float64 `json:"mva_ajustado"` // MVA efetivo calculado
+	AliqInter   float64 `json:"aliq_inter"`   // alíquota interestadual do item
+	AliqInterna float64 `json:"aliq_interna"` // regra.aliquota_interna (default 20.5)
+	SegmentoOK  bool    `json:"segmento_ok"`
 
 	// Cálculo
 	IcmsDebitado  float64 `json:"icms_debitado"`  // ICMS próprio (vl_icms / v_icms)
@@ -87,6 +87,22 @@ type STItensResponse struct {
 // Placeholders: $1 company_id (uuid), $2 periodo "MM/YYYY", $3 uf.
 const stItensQuery = `
 WITH
+-- Itens do XML agregados por (nota, NCM) — pareamento com o SPED por NCM,
+-- nunca por posição (n_item = num_item): o ERP não preserva a ordem dos
+-- itens do XML na escrituração (caso real NF 170022, 2026-07-07). Quando
+-- mais de um item do SPED divide o mesmo NCM na nota, os valores do XML
+-- são rateados pró-rata pelo vl_item.
+xml_ncm AS (
+    SELECT
+        nii.nfe_id,
+        LEFT(regexp_replace(COALESCE(nii.ncm,''),'[^0-9]','','g'),8) AS ncm_8,
+        SUM(COALESCE(nii.v_prod,0)) AS v_prod,
+        SUM(COALESCE(nii.v_icms,0)) AS v_icms,
+        SUM(COALESCE(nii.v_st,0))   AS v_st
+    FROM nfe_entradas_itens nii
+    GROUP BY nii.nfe_id,
+             LEFT(regexp_replace(COALESCE(nii.ncm,''),'[^0-9]','','g'),8)
+),
 sped_itens AS (
     SELECT
         c100.chv_nfe                                        AS chave_nfe,
@@ -115,18 +131,25 @@ sped_itens AS (
         COALESCE(ci.vl_ipi, 0)                              AS v_ipi,
         0::numeric                                          AS v_outro,
         -- Alíq. interestadual: o C170 do SPED frequentemente não traz aliq_icms
-        -- por item → cai pro XML (v_icms/v_prod), senão 12.
+        -- por item → cai pro XML (razão v_icms/v_prod do NCM), senão 12.
         COALESCE(NULLIF(ci.aliq_icms,0),
                  CASE WHEN COALESCE(xi.v_prod,0) > 0 AND COALESCE(xi.v_icms,0) > 0
                       THEN ROUND((xi.v_icms / xi.v_prod * 100.0)::numeric, 2) END,
                  12.0)                                      AS aliq_inter,
         -- ICMS próprio destacado (a abater do ST): o reg_c170 do SPED em geral NÃO
-        -- traz vl_icms por item (fica consolidado no C190) → prioriza o XML por item
-        -- (xi.v_icms), cai pro SPED, senão 0. Sem este fallback o ICMS debitado
-        -- zerava e a ST a pagar saía A MAIOR (relatado por Gilson — Rolimec BA).
-        COALESCE(NULLIF(xi.v_icms,0), NULLIF(ci.vl_icms,0), 0) AS icms_debitado,
-        -- ST retido: prioriza o XML por item (v_st), cai pro SPED, senão 0.
-        COALESCE(NULLIF(xi.v_st,0), ci.vl_icms_st, 0)       AS icms_retido,
+        -- traz vl_icms por item (fica consolidado no C190) → prioriza o XML pareado
+        -- por NCM (rateado pró-rata pelo vl_item quando o NCM tem 2+ itens), cai pro
+        -- SPED, senão 0. Sem este fallback o ICMS debitado zerava e a ST a pagar
+        -- saía A MAIOR (relatado por Gilson — Rolimec BA).
+        COALESCE(
+            NULLIF(ROUND((xi.v_icms * COALESCE(ci.vl_item, 0)
+                / NULLIF(SUM(COALESCE(ci.vl_item,0)) OVER (PARTITION BY ci.c100_id, p.cod_ncm), 0))::numeric, 2), 0),
+            NULLIF(ci.vl_icms,0), 0)                        AS icms_debitado,
+        -- ST retido: XML pareado por NCM (rateio pró-rata), cai pro SPED, senão 0.
+        COALESCE(
+            NULLIF(ROUND((xi.v_st * COALESCE(ci.vl_item, 0)
+                / NULLIF(SUM(COALESCE(ci.vl_item,0)) OVER (PARTITION BY ci.c100_id, p.cod_ncm), 0))::numeric, 2), 0),
+            ci.vl_icms_st, 0)                               AS icms_retido,
         COALESCE(j.uf, 'PE')                                AS uf_filial,
         -- tem_xml: a NOTA do SPED possui XML importado nesta empresa? Usado para
         -- o Bloco D (SPED sem XML / "Faltante"). Nível NOTA (ne.id), não item.
@@ -139,7 +162,8 @@ sped_itens AS (
         ON part.job_id = c100.job_id AND part.cod_part = c100.cod_part
     LEFT JOIN municipios_ibge m_part ON m_part.codigo_ibge = part.cod_mun
     LEFT JOIN nfe_entradas ne ON ne.company_id = j.company_id AND ne.chave_nfe = c100.chv_nfe
-    LEFT JOIN nfe_entradas_itens xi ON xi.nfe_id = ne.id AND xi.n_item = ci.num_item
+    LEFT JOIN xml_ncm xi ON xi.nfe_id = ne.id
+        AND xi.ncm_8 = LEFT(regexp_replace(COALESCE(p.cod_ncm,''),'[^0-9]','','g'),8)
     WHERE j.company_id = $1
       AND ci.cfop IN ('2403','2409','2651','2652')
       AND c100.cod_sit NOT IN ('02','03','04','05')
