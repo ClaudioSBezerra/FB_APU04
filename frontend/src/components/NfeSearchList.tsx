@@ -124,17 +124,16 @@ export function NfeSearchList({
   const [comDifal, setComDifal] = useState(false);
   const [comFcp, setComFcp] = useState(false);
   const [comBaseReduzida, setComBaseReduzida] = useState(false);
-  // Notas CNPJ próprio (destinatário = mesma raiz de CNPJ do emitente:
-  // transferências e outras saídas entre filiais, ex 5949) geram muita
-  // "sujeira" de regras — padrão é IGNORAR; "somente" isola para testá-las
-  const [cnpjProprio, setCnpjProprio] = useState<'excluir' | 'incluir' | 'somente'>('excluir');
+  // Somente vendas (padrão): o pacote fiscal domina operações de VENDA —
+  // remessas/devoluções/bonificações/transferências etc. geram "falso erro"
+  const [somenteVendas, setSomenteVendas] = useState(true);
   // Paginação: 0 = todas
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
   const emptyApplied = {
     dataInicio: '', dataFim: '', q: '', ufOrigem: '', ufDestino: '', cliente: '', emitente: '',
     comIcms: false, comSt: false, comDifal: false, comFcp: false, comBaseReduzida: false,
-    cnpjProprio: 'excluir' as 'excluir' | 'incluir' | 'somente', pageSize: 50,
+    somenteVendas: true, pageSize: 50,
   };
   const [applied, setApplied] = useState(emptyApplied);
   const [searched, setSearched] = useState(false);
@@ -158,7 +157,7 @@ export function NfeSearchList({
       if (applied.comDifal) params.set('com_difal', '1');
       if (applied.comFcp) params.set('com_fcp', '1');
       if (applied.comBaseReduzida) params.set('com_base_reduzida', '1');
-      if (applied.cnpjProprio !== 'incluir') params.set('cnpj_proprio', applied.cnpjProprio);
+      if (applied.somenteVendas) params.set('somente_vendas', '1');
       params.set('page', String(page));
       params.set('page_size', String(applied.pageSize));
       const res = await fetch(`/api/fiscal/comparacao/search?${params}`, { headers: authHeaders });
@@ -181,7 +180,7 @@ export function NfeSearchList({
     setApplied({
       dataInicio, dataFim, q: q.trim(), ufOrigem, ufDestino,
       cliente: cliente.trim(), emitente: emitente.trim(),
-      comIcms, comSt, comDifal, comFcp, comBaseReduzida, cnpjProprio, pageSize,
+      comIcms, comSt, comDifal, comFcp, comBaseReduzida, somenteVendas, pageSize,
     });
   };
 
@@ -376,15 +375,14 @@ export function NfeSearchList({
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-muted-foreground" title="Notas cujo destinatário tem a mesma raiz de CNPJ do emitente: transferências e outras saídas entre filiais (ex: CFOP 5949) — geram muitas regras específicas; ignorar deixa a análise mais limpa">Notas CNPJ próprio</label>
+          <label className="text-[11px] text-muted-foreground" title="O pacote fiscal domina operações de VENDA (CFOP 5.1xx/6.1xx exceto transferências + vendas ST). Remessas, devoluções, bonificações, consertos e transferências geram 'falso erro' — nota com qualquer item fora de venda fica de fora quando 'Somente vendas' está ativo">Operações</label>
           <select
-            value={cnpjProprio}
-            onChange={e => setCnpjProprio(e.target.value as 'excluir' | 'incluir' | 'somente')}
-            className="h-8 w-32 text-xs rounded-md border bg-background px-2"
+            value={somenteVendas ? 'vendas' : 'todas'}
+            onChange={e => setSomenteVendas(e.target.value === 'vendas')}
+            className="h-8 w-36 text-xs rounded-md border bg-background px-2"
           >
-            <option value="excluir">Ignorar</option>
-            <option value="incluir">Incluir</option>
-            <option value="somente">Somente</option>
+            <option value="vendas">Somente vendas</option>
+            <option value="todas">Todas</option>
           </select>
         </div>
         <Button size="sm" onClick={handleSearch} disabled={isLoading} className="h-8">

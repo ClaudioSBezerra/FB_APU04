@@ -240,16 +240,20 @@ func FiscalComparacaoSearchHandler(db *sql.DB) http.HandlerFunc {
 				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
 				WHERE i.nfe_id = n.id AND i.cst_icms IN ('20','70'))`
 		}
-		// Notas CNPJ PRÓPRIO (destinatário com a mesma raiz de CNPJ do
-		// emitente): transferências E outras saídas entre filiais (ex: CFOP
-		// 5949) — geram muita sujeira de regras (decisão 2026-07-07, NF
-		// 504931). "excluir" ignora (padrão da tela), "somente" isola.
-		cnpjProprioCond := `(COALESCE(n.dest_cnpj,'') <> '' AND LEFT(n.dest_cnpj,8) = LEFT(COALESCE(n.emit_cnpj,''),8))`
-		switch r.URL.Query().Get("cnpj_proprio") {
-		case "excluir":
-			where += ` AND NOT ` + cnpjProprioCond
-		case "somente":
-			where += ` AND ` + cnpjProprioCond
+		// SOMENTE VENDAS (padrão da tela, decisão 2026-07-08): o pacote fiscal
+		// domina operações de VENDA — remessas, devoluções, bonificações,
+		// consertos, transferências etc. geram "falso erro". A nota só entra
+		// quando TODOS os itens têm CFOP de venda (nota mista fica de fora):
+		// grupos 5.1xx/6.1xx exceto 5.15x/6.15x (transferências) + vendas ST
+		// (5401/5402/5403/5405 e 6401-6404).
+		if r.URL.Query().Get("somente_vendas") == "1" {
+			where += ` AND NOT EXISTS (
+				SELECT 1 FROM pacotefiscal_nfe_saidas_itens i
+				WHERE i.nfe_id = n.id AND NOT (
+					(i.cfop LIKE '51%' AND i.cfop NOT LIKE '515%')
+					OR (i.cfop LIKE '61%' AND i.cfop NOT LIKE '615%')
+					OR i.cfop IN ('5401','5402','5403','5405','6401','6402','6403','6404')
+				))`
 		}
 
 		// Paginação: page 1-based; page_size 0 = todas (sem LIMIT).
