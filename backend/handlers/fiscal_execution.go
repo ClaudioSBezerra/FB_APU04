@@ -656,11 +656,13 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		PCodigoGrupoFiscal: grupoFiscal,
 		PCnpjExcecao:       "",
 		PIndicadorServico:  defaultIndicadorServico,
-		PPrecoTotal:        it.VProd,
-		// Despesas acessórias = frete destacado no item (<prod><vFrete>) +
-		// outras despesas (<prod><vOutro>) — ambos compõem a base de cálculo
-		// (regra do negócio 2026-07-06: frete do XML entra em pDespesas).
-		PDespesas:                    it.VOutro + it.VFrete,
+		// Orientação da TI do pacote (2026-07-08, caso NF 2657150): frete e
+		// outras despesas vão EMBUTIDOS no pPrecoTotal, com pDespesas=0 — o
+		// pacote resolve internamente. Passar frete em pDespesas fazia a base
+		// do IBS/CBS sair sem o frete (pDespesas entrava no PIS/COFINS mas
+		// não no IBS/CBS).
+		PPrecoTotal:                  it.VProd + it.VFrete + it.VOutro,
+		PDespesas:                    0,
 		PDesconto:                    it.VDesc,
 		PIPI:                         it.VIPI,
 		PAliquotaSimplesNacional:     0,
@@ -681,7 +683,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 	centros := centrosFiscais(it.CFOP, nfe.MesmaEmpresa)
 	for i, centro := range centros {
 		in.PTipoCentroFiscal = centro
-		trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto com: %s [pDespesas = frete %.2f + outras %.2f]", in.FormatParams(), it.VFrete, it.VOutro))
+		trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto com: %s [pPrecoTotal = produto %.2f + frete %.2f + outras %.2f]", in.FormatParams(), it.VProd, it.VFrete, it.VOutro))
 		result, callErr = services.CallFiscalPackage(ctx, oracleDB, in)
 		if callErr == nil {
 			break
