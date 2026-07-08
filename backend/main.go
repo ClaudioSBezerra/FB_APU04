@@ -545,6 +545,7 @@ func main() {
 	http.HandleFunc("/api/fiscal/filiais", withAuth(handlers.FiscalFiliaisHandler, ""))
 	http.HandleFunc("/api/fiscal/comparacao/search", withAuth(handlers.FiscalComparacaoSearchHandler, ""))
 	http.HandleFunc("/api/fiscal/comparacao/csv", withAuth(handlers.FiscalComparacaoCSVHandler, ""))
+	http.HandleFunc("/api/fiscal/comparacao/xml", withAuth(handlers.FiscalComparacaoXMLHandler, ""))
 	http.HandleFunc("/api/fiscal/comparacao", withAuth(handlers.FiscalComparacaoReadHandler, ""))
 	http.HandleFunc("/api/fiscal/diagnostico", withAuth(handlers.FiscalDiagnosticoHandler, ""))
 	http.HandleFunc("/api/fiscal/diagnostico/pdf", withAuth(handlers.FiscalDiagnosticoPDFHandler, ""))

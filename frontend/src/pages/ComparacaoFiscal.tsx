@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { NfeSearchList, type NfeSearchResult } from '@/components/NfeSearchList';
+import { XmlViewerDialog, type XmlDivergentItem } from '@/components/XmlViewerDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -52,6 +53,7 @@ import {
   CheckCircle,
   Download,
   FileSpreadsheet,
+  FileCode,
   Loader2,
   Send,
 } from 'lucide-react';
@@ -405,6 +407,7 @@ export default function ComparacaoFiscal() {
   const [showOnlyDivergent, setShowOnlyDivergent] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ComparacaoRow | null>(null);
   const [downloadingCSV, setDownloadingCSV] = useState(false);
+  const [xmlOpen, setXmlOpen] = useState(false);
   // Ao clicar no "olho" numa nota da lista, a seção de detalhe abaixo é
   // preenchida — mas como ela pode aparecer bem abaixo de uma lista longa de
   // resultados, sem scroll automático parece que o clique "não fez nada".
@@ -525,6 +528,14 @@ export default function ComparacaoFiscal() {
   const displayRows = useMemo(
     () => (showOnlyDivergent ? rows.filter(r => getRowBadge(r).badge === 'divergente') : rows),
     [rows, showOnlyDivergent],
+  );
+
+  // Itens divergentes para destacar no visualizador de XML
+  const divergentItems = useMemo<XmlDivergentItem[]>(
+    () => rows
+      .filter(r => getRowBadge(r).badge === 'divergente')
+      .map(r => ({ nItem: r.n_item, cProd: r.c_prod, xProd: r.x_prod })),
+    [rows],
   );
 
   const handleExportExcel = () => {
@@ -654,7 +665,33 @@ export default function ComparacaoFiscal() {
               : <Send className="h-4 w-4 mr-1.5" />}
             Executar esta nota
           </Button>
+          <Button
+            onClick={() => setXmlOpen(true)}
+            disabled={!nfeId}
+            size="sm"
+            variant={summary.divergentes > 0 ? 'default' : 'outline'}
+            title="Abrir o XML original desta nota para conferir divergências"
+          >
+            <FileCode className="h-4 w-4 mr-1.5" />
+            Ver XML
+            {summary.divergentes > 0 && (
+              <span className="ml-1.5 rounded-full bg-white/25 px-1.5 text-[10px] leading-4">
+                {summary.divergentes}
+              </span>
+            )}
+          </Button>
         </div>
+      )}
+
+      {selectedNfe && (
+        <XmlViewerDialog
+          nfeId={selectedNfe.id}
+          chave={selectedNfe.chave_nfe}
+          numero={`${selectedNfe.numero_nfe}${selectedNfe.serie ? `/${selectedNfe.serie}` : ''}`}
+          divergentItems={divergentItems}
+          open={xmlOpen}
+          onClose={() => setXmlOpen(false)}
+        />
       )}
 
       {executar.data && executar.data.debug && executar.data.debug.length > 0 && (

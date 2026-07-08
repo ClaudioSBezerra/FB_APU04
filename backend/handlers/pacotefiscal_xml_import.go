@@ -744,6 +744,7 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 					v_prod, v_frete, v_seg, v_desc, v_ii, v_ipi, v_ipi_devol, v_pis, v_cofins, v_outro, v_nf,
 					v_icms_uf_dest, v_fcp_uf_dest,
 					v_bc_ibs_cbs, v_ibs_uf, v_ibs_mun, v_ibs, v_cred_pres_ibs, v_cbs, v_cred_pres_cbs,
+					xml_content,
 					source
 				) VALUES (
 					$1,$2,$3,$4,$5,
@@ -758,6 +759,7 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 					$56,$57,$58,$59,$60,$61,$62,$63,$64,$65,$66,
 					$67,$68,
 					$69,$70,$71,$72,$73,$74,$75,
+					$76,
 					'xml_upload'
 				)
 				ON CONFLICT ON CONSTRAINT uq_pacotefiscal_nfe_saidas_company_chave DO UPDATE SET
@@ -791,6 +793,7 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 					v_ibs_mun = EXCLUDED.v_ibs_mun, v_ibs = EXCLUDED.v_ibs,
 					v_cred_pres_ibs = EXCLUDED.v_cred_pres_ibs, v_cbs = EXCLUDED.v_cbs,
 					v_cred_pres_cbs = EXCLUDED.v_cred_pres_cbs,
+					xml_content = EXCLUDED.xml_content,
 					updated_at = now()
 				RETURNING id`,
 			companyID, chave, modInt, inf.Ide.Serie, inf.Ide.NNF,
@@ -805,6 +808,7 @@ func importOnePFXML(db *sql.DB, companyID string, xf namedXML, addErro func(arqu
 			toDecimal(ic.VProd), toDecimal(ic.VFrete), toDecimal(ic.VSeg), toDecimal(ic.VDesc), toDecimal(ic.VII), toDecimal(ic.VIPI), toDecimal(ic.VIPIDevol), toDecimal(ic.VPIS), toDecimal(ic.VCOFINS), toDecimal(ic.VOutro), toDecimal(ic.VNF),
 			toDecimal(ic.VICMSUFDest), toDecimal(ic.VFCPUFDest),
 			toNullDecimal(ib.VBCIBSCBS), toNullDecimal(ib.GIBS.GIBSuf.VIBSuf), toNullDecimal(ib.GIBS.GIBSMun.VIBSMun), toNullDecimal(ib.GIBS.VIBS), toNullDecimal(ib.GIBS.VCredPres), toNullDecimal(ib.GCBS.VCBS), toNullDecimal(ib.GCBS.VCredPres),
+			string(xf.Data),
 		).Scan(&nfeID)
 
 		if errIns != nil {
