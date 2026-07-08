@@ -49,6 +49,7 @@ const Reforma24B2bB2c = lazy(() => import('./pages/Reforma24B2bB2c'))
 const IcmsFronteira = lazy(() => import('./pages/IcmsFronteira'))
 const ComparacaoFiscal = lazy(() => import('./pages/ComparacaoFiscal'))
 const ImportarXMLPacoteFiscal = lazy(() => import('./pages/ImportarXMLPacoteFiscal'))
+const DiagnosticoPacoteFiscal = lazy(() => import('./pages/DiagnosticoPacoteFiscal'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
@@ -228,6 +229,7 @@ function AppLayout() {
               {/* Comparação liberada por persona (ModuleGate); importação segue admin-only */}
               <Route path="/pacote-fiscal/importar"            element={<AdminRoute><ImportarXMLPacoteFiscal /></AdminRoute>} />
               <Route path="/pacote-fiscal/comparacao"          element={<ComparacaoFiscal />} />
+              <Route path="/pacote-fiscal/diagnostico"         element={<DiagnosticoPacoteFiscal />} />
               <Route path="/mercadorias/xml"                   element={<MercadoriasXML />} />
               <Route path="/mercadorias"                       element={<Mercadorias />} />
               <Route path="/operacoes/simples"                 element={<OperacoesSimplesNacional />} />
