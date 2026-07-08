@@ -521,7 +521,8 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusBadGateway, "Falha ao conectar ao Oracle. Verifique as credenciais ERP configuradas.")
 			return
 		}
-		defer oracleConn.Close()
+		// NÃO fechar: pool compartilhado/cacheado por empresa (2026-07-08) —
+		// fechar aqui mataria as execuções concorrentes das outras notas.
 		trace.add("", "", "conexao", "Conexão Oracle estabelecida (FCCORP/PRODB).")
 
 		// Backstop apenas — o timeout real é por item (15s), não do lote inteiro.

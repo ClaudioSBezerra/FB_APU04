@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -23,8 +24,25 @@ import (
 // erp_bridge_config (oracle_dsn/oracle_usuario/oracle_senha) via
 // DecryptFieldWithFallback — nenhum esquema de cripto novo.
 
-// openFiscalOracleConn abre uma conexão Oracle dedicada para companyID,
-// lendo e descriptografando as credenciais de erp_bridge_config.
+// ── Cache de pools Oracle por empresa (2026-07-08) ───────────────────────────
+// Antes cada execução de nota abria (e fechava) um pool próprio: ~1,1s de
+// handshake Oracle POR NOTA — num lote de 8.000, mais de 2h só conectando.
+// O pool agora é criado uma vez por empresa e reutilizado entre execuções;
+// se as credenciais mudarem (connStr diferente) ou o ping falhar, recria.
+// NUNCA chame Close() no *sql.DB retornado — o pool é compartilhado.
+
+type fiscalOracleCached struct {
+	conn    *sql.DB
+	connStr string
+}
+
+var (
+	fiscalOracleCache   = map[string]*fiscalOracleCached{} // companyID → pool
+	fiscalOracleCacheMu sync.Mutex
+)
+
+// openFiscalOracleConn devolve o pool Oracle da empresa (cacheado), lendo e
+// descriptografando as credenciais de erp_bridge_config.
 // NUNCA retorna o erro cru de sql.Open ao chamador — mensagens genéricas
 // aqui, detalhe completo apenas em log.Printf server-side (T-11-01).
 func openFiscalOracleConn(db *sql.DB, companyID string) (*sql.DB, error) {
@@ -60,12 +78,37 @@ func openFiscalOracleConn(db *sql.DB, companyID string) (*sql.DB, error) {
 		connStr = fmt.Sprintf("oracle://%s@%s", url.UserPassword(usuarioPlain, senhaPlain).String(), dsnPlain)
 	}
 
+	fiscalOracleCacheMu.Lock()
+	defer fiscalOracleCacheMu.Unlock()
+
+	// Pool cacheado com as mesmas credenciais → valida com ping barato e reusa
+	if cached, ok := fiscalOracleCache[companyID]; ok && cached.connStr == connStr {
+		pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		pingErr := cached.conn.PingContext(pingCtx)
+		cancel()
+		if pingErr == nil {
+			return cached.conn, nil
+		}
+		log.Printf("openFiscalOracleConn: pool cacheado falhou no ping (company_id=%s), recriando: %v", companyID, pingErr)
+		cached.conn.Close()
+		delete(fiscalOracleCache, companyID)
+	} else if ok {
+		// Credenciais mudaram → descarta o pool antigo
+		cached.conn.Close()
+		delete(fiscalOracleCache, companyID)
+	}
+
 	conn, err := sql.Open("oracle", connStr)
 	if err != nil {
 		log.Printf("openFiscalOracleConn: falha ao inicializar conexão Oracle para company_id=%s: %v", companyID, err)
 		return nil, fmt.Errorf("falha ao inicializar conexão Oracle")
 	}
-	conn.SetMaxOpenConns(5) // deve casar com o cap do semáforo usado nas fases futuras (Pitfall 4)
+	// 15 conexões compartilhadas: comporta ~10 notas em paralelo × itens
+	// concorrentes com folga, sem estourar sessões no Oracle de produção.
+	conn.SetMaxOpenConns(15)
+	conn.SetMaxIdleConns(5)
+	conn.SetConnMaxLifetime(30 * time.Minute)
+	conn.SetConnMaxIdleTime(10 * time.Minute)
 
 	// sql.Open é lazy (não conecta nem valida o DSN) — sem este ping, um DSN
 	// malformado ou Oracle inacessível só estouraria na primeira query, com o
@@ -77,6 +120,8 @@ func openFiscalOracleConn(db *sql.DB, companyID string) (*sql.DB, error) {
 		log.Printf("openFiscalOracleConn: ping Oracle falhou para company_id=%s: %v", companyID, err)
 		return nil, fmt.Errorf("Oracle inacessível ou credenciais inválidas")
 	}
+
+	fiscalOracleCache[companyID] = &fiscalOracleCached{conn: conn, connStr: connStr}
 	return conn, nil
 }
 
@@ -117,7 +162,7 @@ func FiscalOraclePingHandler(db *sql.DB) http.HandlerFunc {
 			})
 			return
 		}
-		defer oracleConn.Close()
+		// NÃO fechar: pool compartilhado/cacheado por empresa
 
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()

@@ -73,7 +73,10 @@ interface ExecuteSummary {
 type ExecStatus = 'idle' | 'running' | 'ok' | 'partial' | 'failed';
 
 // Teto de concorrência no navegador para a execução em lote de várias notas.
-const CONCURRENCY = 3;
+// O backend usa um pool Oracle COMPARTILHADO de 15 conexões por empresa
+// (cacheado — sem handshake por nota), então 10 notas simultâneas fluem sem
+// estourar sessões no Oracle de produção.
+const CONCURRENCY = 10;
 
 function ExecStatusBadge({ status }: { status: ExecStatus }) {
   if (status === 'running') {
