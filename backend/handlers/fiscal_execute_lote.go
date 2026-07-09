@@ -100,6 +100,9 @@ func FiscalExecuteLoteHandler(db *sql.DB) http.HandlerFunc {
 		var req struct {
 			NfeIDs            []string `json:"nfe_ids"`
 			IncluirIbsCbsBase bool     `json:"incluir_ibs_cbs_base"`
+			// COD_EMPRESA (filial na PRODB) p/ o lookup do grupo fiscal; 0 =
+			// derivar do CNPJ (campo da tela, 2026-07-08)
+			CodEmpresa int `json:"cod_empresa"`
 		}
 		if decErr := json.NewDecoder(r.Body).Decode(&req); decErr != nil || len(req.NfeIDs) == 0 {
 			jsonErr(w, http.StatusBadRequest, "nfe_ids é obrigatório")
@@ -127,14 +130,14 @@ func FiscalExecuteLoteHandler(db *sql.DB) http.HandlerFunc {
 		}
 		fiscalLoteJobs.Store(companyID, job)
 
-		go runFiscalLote(db, companyID, req.NfeIDs, req.IncluirIbsCbsBase, job)
+		go runFiscalLote(db, companyID, req.NfeIDs, req.IncluirIbsCbsBase, req.CodEmpresa, job)
 
 		w.WriteHeader(http.StatusAccepted)
 		json.NewEncoder(w).Encode(job.snapshot())
 	}
 }
 
-func runFiscalLote(db *sql.DB, companyID string, nfeIDs []string, incluirIbsCbs bool, job *fiscalLoteJob) {
+func runFiscalLote(db *sql.DB, companyID string, nfeIDs []string, incluirIbsCbs bool, codEmpresa int, job *fiscalLoteJob) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Printf("[FiscalLote] panic recuperado (company=%s): %v", companyID, rec)
@@ -165,7 +168,7 @@ func runFiscalLote(db *sql.DB, companyID string, nfeIDs []string, incluirIbsCbs 
 				}
 			}()
 
-			summary, execErr := executarNotaPacote(db, companyID, nfeID, incluirIbsCbs)
+			summary, execErr := executarNotaPacote(db, companyID, nfeID, incluirIbsCbs, codEmpresa)
 			job.mu.Lock()
 			job.Processed++
 			switch {

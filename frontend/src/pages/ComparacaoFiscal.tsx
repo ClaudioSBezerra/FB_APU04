@@ -408,6 +408,9 @@ export default function ComparacaoFiscal() {
   const [selectedItem, setSelectedItem] = useState<ComparacaoRow | null>(null);
   const [downloadingCSV, setDownloadingCSV] = useState(false);
   const [xmlOpen, setXmlOpen] = useState(false);
+  // COD_EMPRESA (filial na PRODB) p/ o lookup do grupo fiscal — vazio = derivar
+  // do CNPJ. String p/ o input; vira número no POST.
+  const [codEmpresa, setCodEmpresa] = useState('');
   // Ao clicar no "olho" numa nota da lista, a seção de detalhe abaixo é
   // preenchida — mas como ela pode aparecer bem abaixo de uma lista longa de
   // resultados, sem scroll automático parece que o clique "não fez nada".
@@ -439,7 +442,7 @@ export default function ComparacaoFiscal() {
       const res = await fetch('/api/fiscal/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nfe_id: id, incluir_ibs_cbs_base: incluirIbsCbsBase }),
+        body: JSON.stringify({ nfe_id: id, incluir_ibs_cbs_base: incluirIbsCbsBase, cod_empresa: Number(codEmpresa) || 0 }),
       });
       if (!res.ok) throw new Error((await res.text()) || 'Erro ao executar');
       return res.json() as Promise<ExecuteSummary>;
@@ -651,6 +654,8 @@ export default function ComparacaoFiscal() {
         activeId={nfeId}
         incluirIbsCbs={incluirIbsCbsBase}
         onIncluirIbsCbsChange={setIncluirIbsCbsBase}
+        codEmpresa={codEmpresa}
+        onCodEmpresaChange={setCodEmpresa}
       />
 
       {selectedNfe && (

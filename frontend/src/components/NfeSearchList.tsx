@@ -95,6 +95,8 @@ export function NfeSearchList({
   activeId,
   incluirIbsCbs = false,
   onIncluirIbsCbsChange,
+  codEmpresa = '',
+  onCodEmpresaChange,
 }: {
   onViewDetail: (nfe: NfeSearchResult) => void;
   activeId?: string | null;
@@ -102,6 +104,10 @@ export function NfeSearchList({
   // (ComparacaoFiscal) para valer também no botão "Executar esta nota"
   incluirIbsCbs?: boolean;
   onIncluirIbsCbsChange?: (v: boolean) => void;
+  // COD_EMPRESA (filial na PRODB) p/ o lookup do grupo fiscal — string p/ o
+  // input controlado; vira número (0 = derivar do CNPJ) no POST
+  codEmpresa?: string;
+  onCodEmpresaChange?: (v: string) => void;
 }) {
   const { token, companyId } = useAuth();
   // Sem Authorization/X-Company-ID explícitos: o interceptor global do
@@ -279,7 +285,7 @@ export function NfeSearchList({
       const res = await fetch('/api/fiscal/execute-lote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nfe_ids: ids, incluir_ibs_cbs_base: incluirIbsCbs }),
+        body: JSON.stringify({ nfe_ids: ids, incluir_ibs_cbs_base: incluirIbsCbs, cod_empresa: Number(codEmpresa) || 0 }),
       });
       const st: LoteStatus = await res.json();
       if (res.status === 409) {
@@ -436,6 +442,17 @@ export function NfeSearchList({
         </Button>
         {rows.length > 0 && (
           <div className="flex items-end gap-3 ml-auto">
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] text-muted-foreground" title="COD_EMPRESA da filial na PRODB — define qual empresa é usada na busca do GRUPO_FISCAL (que carrega a regra no pacote). Deixe vazio para derivar do CNPJ. A raiz do CNPJ é a mesma em todas as filiais FC, então informe o código da filial que está testando.">COD_EMPRESA (filial)</label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                placeholder="deriva do CNPJ"
+                value={codEmpresa}
+                onChange={e => onCodEmpresaChange?.(e.target.value)}
+                className="h-8 w-32 text-xs"
+              />
+            </div>
             <label className="flex items-center gap-1.5 text-xs cursor-pointer whitespace-nowrap pb-1.5" title="Se SIM, a tela compara a inclusão de IBS/CBS na base: Original (XML) × Cálculo Simulado (interno: nova base = base + IBS + CBS calculados sobre o preço líquido) × Cálculo do Pacote (que já embute a inclusão na chamada)">
               <Checkbox
                 checked={incluirIbsCbs}

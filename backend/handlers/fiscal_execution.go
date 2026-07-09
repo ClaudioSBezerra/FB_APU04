@@ -462,13 +462,16 @@ func FiscalExecutionRunHandler(db *sql.DB) http.HandlerFunc {
 			// Simulação IBS/CBS na base do ICMS: 2ª chamada por item com
 			// pPrecoTotal = original + IBS + CBS (fase BOA, 2026-07)
 			IncluirIbsCbsBase bool `json:"incluir_ibs_cbs_base"`
+			// COD_EMPRESA (filial na PRODB) p/ o lookup do grupo fiscal; 0 =
+			// derivar do CNPJ (campo da tela, 2026-07-08)
+			CodEmpresa int `json:"cod_empresa"`
 		}
 		if decErr := json.NewDecoder(r.Body).Decode(&req); decErr != nil || strings.TrimSpace(req.NfeID) == "" {
 			jsonErr(w, http.StatusBadRequest, "nfe_id é obrigatório")
 			return
 		}
 
-		summary, execErr := executarNotaPacote(db, companyID, req.NfeID, req.IncluirIbsCbsBase)
+		summary, execErr := executarNotaPacote(db, companyID, req.NfeID, req.IncluirIbsCbsBase, req.CodEmpresa)
 		if execErr != nil {
 			switch execErr {
 			case errNotaNaoEncontrada:
@@ -495,7 +498,11 @@ var (
 // resposta) e pelo job de lote server-side (2026-07-08 — o lote no navegador
 // morria em logout/refresh). Usa context.Background(): a execução não é
 // cancelada se o cliente desconectar.
-func executarNotaPacote(db *sql.DB, companyID, nfeID string, incluirIbsCbs bool) (fiscalExecutionSummary, error) {
+// codEmpresaOverride: quando > 0, define explicitamente qual filial da PRODB
+// usar no lookup do grupo fiscal (campo COD_EMPRESA da tela, 2026-07-08) —
+// vence a derivação por CNPJ, que colapsa todas as filiais de mesma raiz num
+// só código. 0 = manter a derivação automática.
+func executarNotaPacote(db *sql.DB, companyID, nfeID string, incluirIbsCbs bool, codEmpresaOverride int) (fiscalExecutionSummary, error) {
 	var summary fiscalExecutionSummary
 
 	var emitCNPJ, emitUF, emitCMun, destCNPJ, destUF, destCMun, destIndIE string
@@ -536,6 +543,13 @@ func executarNotaPacote(db *sql.DB, companyID, nfeID string, incluirIbsCbs bool)
 		DataEmissao:  dataEmissao,
 	}
 	nfeCtx.CodEmpresa, nfeCtx.CodEmpresaErr = resolveCodEmpresa(emitCNPJ, emitUF)
+	// Override manual pela tela: qual empresa/filial usar na busca do grupo
+	// fiscal em PRODB.cod_empresa. É o cod_empresa que carrega a regra certa
+	// no pacote (a raiz do CNPJ é a mesma para todas as filiais FC).
+	if codEmpresaOverride > 0 {
+		nfeCtx.CodEmpresa = codEmpresaOverride
+		nfeCtx.CodEmpresaErr = nil
+	}
 
 	itemRows, err := db.Query(`
 		SELECT id, COALESCE(c_prod,''), x_prod, COALESCE(cfop,''), COALESCE(v_prod,0), COALESCE(v_desc,0), COALESCE(v_outro,0), COALESCE(v_frete,0), COALESCE(v_ipi,0),
