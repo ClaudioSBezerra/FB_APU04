@@ -766,12 +766,14 @@ export default function ComparacaoFiscal() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow>
-                    <TableCell className="py-1 px-2 text-[11px] font-medium whitespace-nowrap">
-                      {notaSummary.temSimulacao ? 'Esperado (ajustado p/ inclusão IBS/CBS)' : 'Esperado (total NF)'}
+                  <TableRow className={notaSummary.temSimulacao ? 'bg-red-50/60' : ''}>
+                    <TableCell className={`py-1 px-2 text-[11px] font-medium whitespace-nowrap ${notaSummary.temSimulacao ? 'text-red-700' : ''}`}>
+                      {notaSummary.temSimulacao
+                        ? 'Esperado (ajustado p/ inclusão IBS/CBS — já com o acréscimo)'
+                        : 'Esperado (total NF)'}
                     </TableCell>
                     {(Object.keys(RESUMO_LABELS) as ResumoKey[]).map(key => (
-                      <TableCell key={key} className="py-1 px-2 text-right text-[11px] font-semibold">
+                      <TableCell key={key} className={`py-1 px-2 text-right text-[11px] font-semibold ${notaSummary.temSimulacao ? 'text-red-700' : ''}`}>
                         {fmtBRL(notaSummary.esperado[key])}
                       </TableCell>
                     ))}
