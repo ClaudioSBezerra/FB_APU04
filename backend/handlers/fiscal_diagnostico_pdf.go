@@ -9,6 +9,7 @@ package handlers
 
 import (
 	"database/sql"
+	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"html"
@@ -18,6 +19,13 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// fcLogoFallback é a logo "FC" do sistema (mesmo asset do AppRail:
+// frontend/public/favicon-fc.png), embutida no binário para usar no cabeçalho
+// do PDF quando a empresa não tem logo própria cadastrada (companies.logo_data).
+//
+//go:embed assets/favicon-fc.png
+var fcLogoFallback []byte
 
 func fmtBRLPdf(v float64) string {
 	s := fmt.Sprintf("%.2f", v)
@@ -71,10 +79,16 @@ func FiscalDiagnosticoPDFHandler(db *sql.DB) http.HandlerFunc {
 		var companyName string
 		_ = db.QueryRow(`SELECT COALESCE(NULLIF(trade_name,''), name, '') FROM companies WHERE id = $1`, companyID).Scan(&companyName)
 
-		// Logo da empresa (mesmo helper dos demais relatórios): embutida como
-		// data URI base64 — o CSP dos PDFs não permite host externo.
+		// Logo do cabeçalho: 1º a logo própria da empresa (companies.logo_data,
+		// mesmo helper dos demais relatórios); se não houver, cai no asset "FC"
+		// do sistema (mesmo do AppRail). Embutida como data URI base64 — o CSP
+		// dos PDFs não permite host externo.
+		logoData, logoMime := loadEmpresaLogo(db, companyID, "")
+		if len(logoData) == 0 && len(fcLogoFallback) > 0 {
+			logoData, logoMime = fcLogoFallback, "image/png"
+		}
 		logoTag := ""
-		if logoData, logoMime := loadEmpresaLogo(db, companyID, ""); len(logoData) > 0 {
+		if len(logoData) > 0 {
 			if logoMime == "" {
 				logoMime = "image/png"
 			}
