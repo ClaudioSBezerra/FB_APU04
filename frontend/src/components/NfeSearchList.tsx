@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Search, Loader2, Send, Eye } from 'lucide-react';
+import { Search, Loader2, Send, Eye, Database } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -146,6 +146,18 @@ export function NfeSearchList({
   const [applied, setApplied] = useState(emptyApplied);
   const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Conexão Oracle (host:porta/serviço, sem credenciais) de onde o pacote lê —
+  // exibida em destaque para o usuário saber a origem dos dados
+  const { data: oracleInfo } = useQuery<{ target: string }>({
+    queryKey: ['fiscal-oracle-info', companyId],
+    queryFn: async () => {
+      const res = await fetch('/api/fiscal/oracle-info');
+      if (!res.ok) throw new Error(res.statusText);
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
   // Filiais (CNPJs emitentes) presentes nas notas importadas — popula o select
   const { data: filiais } = useQuery<FilialInfo[]>({
@@ -452,6 +464,15 @@ export function NfeSearchList({
                 onChange={e => onCodEmpresaChange?.(e.target.value)}
                 className="h-8 w-32 text-xs"
               />
+              {oracleInfo?.target && (
+                <span
+                  className="mt-0.5 inline-flex items-center gap-1 rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 text-[10px] font-mono font-semibold"
+                  title="Conexão Oracle (host:porta/serviço) de onde o pacote fiscal está lendo os dados desta empresa"
+                >
+                  <Database className="h-3 w-3" />
+                  {oracleInfo.target}
+                </span>
+              )}
             </div>
             <label className="flex items-center gap-1.5 text-xs cursor-pointer whitespace-nowrap pb-1.5" title="Se SIM, a tela compara a inclusão de IBS/CBS na base: Original (XML) × Cálculo Simulado (interno: nova base = base + IBS + CBS calculados sobre o preço líquido) × Cálculo do Pacote (que já embute a inclusão na chamada)">
               <Checkbox

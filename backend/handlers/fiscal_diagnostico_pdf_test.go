@@ -85,3 +85,18 @@ func TestFiscalFiliaisHandler_NoAuth(t *testing.T) {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
 }
+
+func TestSanitizeOracleTarget(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"oracle://user:pass@10.136.1.211:1521/fcjpateste", "10.136.1.211:1521/fcjpateste"},
+		{"10.136.1.211:1521/fcjpateste", "10.136.1.211:1521/fcjpateste"},
+		{"user/senha@10.136.1.211:1521/fcjpateste", "10.136.1.211:1521/fcjpateste"},
+		{"  10.136.1.211:1521/fcjpateste  ", "10.136.1.211:1521/fcjpateste"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := sanitizeOracleTarget(c.in); got != c.want {
+			t.Errorf("sanitizeOracleTarget(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

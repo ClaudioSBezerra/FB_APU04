@@ -125,6 +125,62 @@ func openFiscalOracleConn(db *sql.DB, companyID string) (*sql.DB, error) {
 	return conn, nil
 }
 
+// sanitizeOracleTarget extrai só o alvo host:porta/serviço do DSN, SEM
+// usuário/senha — para exibir na tela de onde a leitura está sendo feita.
+func sanitizeOracleTarget(dsnPlain string) string {
+	dsnPlain = strings.TrimSpace(dsnPlain)
+	if dsnPlain == "" {
+		return ""
+	}
+	if strings.HasPrefix(dsnPlain, "oracle://") {
+		if u, err := url.Parse(dsnPlain); err == nil {
+			return u.Host + u.Path // host:porta + /serviço (User fica de fora)
+		}
+	}
+	// Formato "host:porta/serviço" (sem credenciais) — devolve como está, mas
+	// se vier "user/pass@host..." por engano, corta antes do '@'.
+	if at := strings.LastIndex(dsnPlain, "@"); at >= 0 {
+		return dsnPlain[at+1:]
+	}
+	return dsnPlain
+}
+
+// ── GET /api/fiscal/oracle-info ──────────────────────────────────────────────
+// Devolve o alvo Oracle (host:porta/serviço, SEM credenciais) configurado para
+// a empresa, para a tela mostrar de onde o pacote fiscal está lendo.
+func FiscalOracleInfoHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Método não permitido")
+			return
+		}
+
+		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
+		if !ok {
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		userID, _ := claims["user_id"].(string)
+
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, "Erro ao obter empresa")
+			return
+		}
+
+		var oracleDsn sql.NullString
+		qerr := db.QueryRow(`SELECT oracle_dsn FROM erp_bridge_config WHERE company_id = $1`, companyID).Scan(&oracleDsn)
+		if qerr != nil || !oracleDsn.Valid {
+			json.NewEncoder(w).Encode(map[string]string{"target": ""})
+			return
+		}
+		target := sanitizeOracleTarget(DecryptFieldWithFallback(oracleDsn.String))
+		json.NewEncoder(w).Encode(map[string]string{"target": target})
+	}
+}
+
 // ── POST /api/fiscal/oracle-ping ─────────────────────────────────────────────
 // Smoke test admin de alcançabilidade Oracle. Prova, cedo e barato, que o
 // Oracle prod/PRODB é alcançável a partir do ambiente de execução real —
