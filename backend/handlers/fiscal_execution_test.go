@@ -4,26 +4,34 @@ import "testing"
 
 func TestTipoContribuinte(t *testing.T) {
 	tests := []struct {
-		indIE  string
-		cfop   string
-		modelo int
-		want   string
+		indIE          string
+		indFinal       string
+		cfop           string
+		modelo         int
+		ufOrig, ufDest string
+		want           string
 	}{
-		{"1", "6102", 55, "S"},   // contribuinte ICMS
-		{"2", "6102", 55, "S"},   // contribuinte isento de IE
-		{"9", "6102", 55, "N"},   // NF-e para NÃO contribuinte (PJ/PF) → caso DIFAL
-		{"9", "5102", 65, "N"},   // NFC-e não contribuinte
-		{" 9 ", "6102", 55, "N"}, // com espaços
-		{"1", "6108", 55, "S"},   // indIEDest tem precedência sobre o CFOP
-		{"", "6108", 55, "N"},    // sem indIEDest, CFOP 6108 → não contribuinte
-		{"", "6107", 55, "N"},    // sem indIEDest, CFOP 6107 → não contribuinte
-		{"", "6102", 55, "S"},    // sem indIEDest, CFOP comum → fallback modelo (NF-e)
-		{"", "5102", 65, "N"},    // sem indIEDest → fallback por modelo (NFC-e)
-		{"", "", 0, "N"},         // desconhecido → default conservador
+		{"1", "0", "6102", 55, "PB", "SP", "S"},   // contribuinte p/ revenda (interestadual)
+		{"2", "0", "6102", 55, "PB", "SP", "S"},   // contribuinte isento de IE
+		{"9", "1", "6102", 55, "PB", "SP", "N"},   // NÃO contribuinte (PJ/PF) → caso DIFAL
+		{"9", "1", "5102", 65, "PB", "PB", "N"},   // NFC-e não contribuinte
+		{" 9 ", "1", "6102", 55, "PB", "SP", "N"}, // com espaços
+		{"1", "0", "6108", 55, "PB", "SP", "S"},   // indIEDest tem precedência sobre o CFOP
+		{"", "0", "6108", 55, "PB", "SP", "N"},    // sem indIEDest, CFOP 6108 → não contribuinte
+		{"", "0", "6107", 55, "PB", "SP", "N"},    // sem indIEDest, CFOP 6107 → não contribuinte
+		{"", "0", "6102", 55, "PB", "SP", "S"},    // sem indIEDest, CFOP comum → fallback modelo (NF-e)
+		{"", "0", "5102", 65, "PB", "PB", "N"},    // sem indIEDest → fallback por modelo (NFC-e)
+		{"", "", "", 0, "", "", "N"},              // desconhecido → default conservador
+		// indFinal=1 em operação INTERNA: contribuinte comprando como consumidor
+		// final → "N" (adicional/FECOP). Caso NF 572900 (CASA DO ESCAPAMENTO).
+		{"1", "1", "5102", 55, "PB", "PB", "N"}, // contribuinte + consumidor final + mesma UF → N
+		{"2", "1", "5102", 55, "PB", "PB", "N"}, // isento IE + consumidor final interno → N
+		{"1", "1", "6102", 55, "PB", "SP", "S"}, // consumidor final INTERESTADUAL → NÃO vira N (DIFAL) → S
+		{"1", "0", "5102", 55, "PB", "PB", "S"}, // contribuinte revenda mesma UF (indFinal=0) → S
 	}
 	for _, tc := range tests {
-		if got := tipoContribuinte(tc.indIE, tc.cfop, tc.modelo); got != tc.want {
-			t.Errorf("tipoContribuinte(%q, %q, %d) = %q, want %q", tc.indIE, tc.cfop, tc.modelo, got, tc.want)
+		if got := tipoContribuinte(tc.indIE, tc.indFinal, tc.cfop, tc.modelo, tc.ufOrig, tc.ufDest); got != tc.want {
+			t.Errorf("tipoContribuinte(%q, %q, %q, %d, %q, %q) = %q, want %q", tc.indIE, tc.indFinal, tc.cfop, tc.modelo, tc.ufOrig, tc.ufDest, got, tc.want)
 		}
 	}
 }

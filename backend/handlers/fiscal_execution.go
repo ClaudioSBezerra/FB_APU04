@@ -23,6 +23,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -100,22 +101,41 @@ func mesmaEmpresa(emitCNPJ, destCNPJ string) bool {
 	return len(e) >= 8 && len(d) >= 8 && e[:8] == d[:8]
 }
 
-// tipoContribuinte deriva pTipoContribuinte (regra refinada em 2026-07-06
-// após NF-e 55 para PJ não contribuinte não calcular DIFAL). Precedência:
+// nullIntToString devolve o inteiro como string ("" se NULL) — usado p/ o
+// <indFinal> (SMALLINT nullable) chegar como texto em tipoContribuinte.
+func nullIntToString(n sql.NullInt64) string {
+	if !n.Valid {
+		return ""
+	}
+	return strconv.FormatInt(n.Int64, 10)
+}
+
+// tipoContribuinte deriva o pTipoContribuinte da chamada do pacote.
 //
-//  1. <dest><indIEDest> do XML — fonte da verdade sobre o destinatário:
-//     1 = contribuinte ICMS            → "S"
-//     2 = contribuinte isento de IE    → "S"
-//     9 = NÃO contribuinte (PF ou PJ)  → "N"  ← caso do DIFAL EC 87/2015
-//  2. CFOP do item 6107/6108 (venda interestadual destinada a NÃO
-//     contribuinte) → "N" quando o indIEDest não veio no XML
-//  3. Fallback por modelo: 55 → "S", 65 → "N"
-func tipoContribuinte(destIndIE string, cfop string, modelo int) string {
+// Precedência (validada com o Claudio; indFinal adicionado em 2026-07-08):
+//  1. indIEDest=9 → "N" (não contribuinte, sempre).
+//  2. CONSUMIDOR FINAL em operação INTERNA (indFinal=1 e mesma UF) → "N",
+//     MESMO sendo contribuinte com IE (indIEDest 1/2). É o caso da NF 572900
+//     (CASA DO ESCAPAMENTO, contribuinte, comprando LED como consumidor final):
+//     o ERP emitiu a 22% — o adicional/FECOP entra na venda a consumidor final,
+//     e o pacote só reproduz isso com "N". Restrito a operação interna: venda
+//     interestadual a consumidor final é DIFAL (tratada pelos CFOP 6107/6108).
+//  3. indIEDest=1/2 → "S" (contribuinte comprando para revenda). Mantém a
+//     precedência do indIEDest sobre o CFOP (indIEDest vence conflito).
+//  4. CFOP 6107/6108 → "N" (interestadual a não contribuinte).
+//  5. fallback por modelo: 55 (NF-e) → "S", 65 (NFC-e) → "N".
+func tipoContribuinte(destIndIE, indFinal, cfop string, modelo int, ufOrigem, ufDestino string) string {
+	if strings.TrimSpace(destIndIE) == "9" {
+		return "N"
+	}
+	o := strings.ToUpper(strings.TrimSpace(ufOrigem))
+	d := strings.ToUpper(strings.TrimSpace(ufDestino))
+	if strings.TrimSpace(indFinal) == "1" && o != "" && o == d {
+		return "N"
+	}
 	switch strings.TrimSpace(destIndIE) {
 	case "1", "2":
 		return "S"
-	case "9":
-		return "N"
 	}
 	switch strings.TrimSpace(cfop) {
 	case "6107", "6108":
@@ -338,6 +358,7 @@ type fiscalNotaContext struct {
 	DestUF        string
 	DestCMun      string
 	DestIndIE     string // <indIEDest>: 1/2 = contribuinte, 9 = não contribuinte
+	IndFinal      string // <indFinal>: 1 = consumidor final (venda interna → adicional/FECOP)
 	Modelo        int    // 55 = NF-e, 65 = NFC-e — fallback do pTipoContribuinte
 	MesmaEmpresa  bool   // destinatário com a mesma raiz de CNPJ (transferência/5949 entre filiais)
 	DataEmissao   time.Time
@@ -506,13 +527,14 @@ func executarNotaPacote(db *sql.DB, companyID, nfeID string, incluirIbsCbs bool,
 	var summary fiscalExecutionSummary
 
 	var emitCNPJ, emitUF, emitCMun, destCNPJ, destUF, destCMun, destIndIE string
+	var indFinal sql.NullInt64
 	var modelo int
 	var dataEmissao time.Time
 	err := db.QueryRow(`
-		SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(emit_c_mun,''), COALESCE(dest_cnpj,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), COALESCE(dest_ind_ie,''), modelo, data_emissao
+		SELECT COALESCE(emit_cnpj,''), COALESCE(emit_uf,''), COALESCE(emit_c_mun,''), COALESCE(dest_cnpj,''), COALESCE(dest_uf,''), COALESCE(dest_c_mun,''), COALESCE(dest_ind_ie,''), ind_final, modelo, data_emissao
 		FROM pacotefiscal_nfe_saidas
 		WHERE id = $1 AND company_id = $2`, nfeID, companyID,
-	).Scan(&emitCNPJ, &emitUF, &emitCMun, &destCNPJ, &destUF, &destCMun, &destIndIE, &modelo, &dataEmissao)
+	).Scan(&emitCNPJ, &emitUF, &emitCMun, &destCNPJ, &destUF, &destCMun, &destIndIE, &indFinal, &modelo, &dataEmissao)
 	if err == sql.ErrNoRows {
 		return summary, errNotaNaoEncontrada
 	}
@@ -538,6 +560,7 @@ func executarNotaPacote(db *sql.DB, companyID, nfeID string, incluirIbsCbs bool,
 		DestUF:       destUF,
 		DestCMun:     destCMun,
 		DestIndIE:    destIndIE,
+		IndFinal:     nullIntToString(indFinal),
 		Modelo:       modelo,
 		MesmaEmpresa: mesmaEmpresa(emitCNPJ, destCNPJ),
 		DataEmissao:  dataEmissao,
@@ -714,7 +737,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		PCnpjEmpresa:      nfe.EmitCNPJ,
 		PUFOrigem:         nfe.EmitUF,
 		PUFDestino:        nfe.DestUF,
-		PTipoContribuinte: tipoContribuinte(nfe.DestIndIE, it.CFOP, nfe.Modelo),
+		PTipoContribuinte: tipoContribuinte(nfe.DestIndIE, nfe.IndFinal, it.CFOP, nfe.Modelo, nfe.EmitUF, nfe.DestUF),
 		PTipoOperacao:     tipoOperacaoPorCFOP(it.CFOP),
 		PEntradaSaida:     "S", // módulo cobre apenas NF-e de saída
 		// Sem o dígito verificador, como em PROD/PRODB — o pacote valida o
