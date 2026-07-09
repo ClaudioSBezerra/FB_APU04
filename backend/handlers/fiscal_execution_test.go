@@ -30,26 +30,30 @@ func TestTipoContribuinte(t *testing.T) {
 
 func TestCentrosFiscais(t *testing.T) {
 	tests := []struct {
-		cfop         string
-		mesmaEmpresa bool
-		first        string
+		cfop           string
+		mesmaEmpresa   bool
+		ufOrig, ufDest string
+		first          string
 	}{
-		{"5152", false, "CDNE"},  // transferência → CDNE primeiro
-		{"6152", false, "CDNE"},  // transferência interestadual
-		{"5408", false, "CDNE"},  // transferência ST
-		{"5102", false, "VRJNE"}, // venda → VRJNE primeiro
-		{"5405", false, "VRJNE"}, // venda ST
-		{"", false, "VRJNE"},     // default venda
-		{"5949", true, "CDNE"},   // outra saída entre filiais (CNPJ próprio) → CDNE
-		{"5102", true, "CDNE"},   // qualquer CFOP p/ mesma empresa → CDNE
+		{"5152", false, "PB", "PB", "CDNE"},  // transferência → CDNE primeiro
+		{"6152", false, "PB", "SP", "CDNE"},  // transferência interestadual
+		{"5408", false, "PB", "PB", "CDNE"},  // transferência ST
+		{"5102", false, "PB", "PB", "VRJNE"}, // venda MESMA UF (PB→PB) → VRJNE
+		{"5405", false, "PB", "PB", "VRJNE"}, // venda ST intraestadual → VRJNE
+		{"6102", false, "PB", "SP", "CDNE"},  // venda INTERESTADUAL (PB→SP) → CDNE
+		{"6108", false, "PB", "RJ", "CDNE"},  // venda interestadual não contrib. → CDNE
+		{"", false, "PB", "PB", "VRJNE"},     // default venda intraestadual
+		{"5102", false, "", "", "VRJNE"},     // UF vazia → assume intraestadual (VRJNE)
+		{"5949", true, "PB", "SP", "CDNE"},   // saída entre filiais (CNPJ próprio) → CDNE
+		{"5102", true, "PB", "PB", "CDNE"},   // qualquer CFOP p/ mesma empresa → CDNE
 	}
 	for _, tc := range tests {
-		got := centrosFiscais(tc.cfop, tc.mesmaEmpresa)
+		got := centrosFiscais(tc.cfop, tc.mesmaEmpresa, tc.ufOrig, tc.ufDest)
 		if len(got) != 2 || got[0] != tc.first {
-			t.Errorf("centrosFiscais(%q, %v) = %v, want [%s ...] com fallback", tc.cfop, tc.mesmaEmpresa, got, tc.first)
+			t.Errorf("centrosFiscais(%q, %v, %q, %q) = %v, want [%s ...] com fallback", tc.cfop, tc.mesmaEmpresa, tc.ufOrig, tc.ufDest, got, tc.first)
 		}
 		if got[0] == got[1] {
-			t.Errorf("centrosFiscais(%q, %v): fallback igual ao primeiro (%v)", tc.cfop, tc.mesmaEmpresa, got)
+			t.Errorf("centrosFiscais(%q, %v, %q, %q): fallback igual ao primeiro (%v)", tc.cfop, tc.mesmaEmpresa, tc.ufOrig, tc.ufDest, got)
 		}
 	}
 }

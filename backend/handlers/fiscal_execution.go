@@ -45,13 +45,29 @@ const (
 	defaultFornecedorSimplesNacional = "N" // CRT do emitente não persistido em nfe_saidas
 )
 
-// centrosFiscais devolve a ordem de tentativa do pTipoCentroFiscal (regra do
-// negócio 2026-07-07): transferência (CFOP da lista OU nota para a PRÓPRIA
-// empresa — mesma raiz de CNPJ, ex: 5949 entre filiais) opera pelo CDNE (mas
-// pode cair no VRJNE); venda opera pelo VRJNE (mas existem vendas pelo CDNE).
-// A execução tenta na ordem e só marca erro se falhar nas duas.
-func centrosFiscais(cfop string, mesmaEmpresa bool) []string {
+// centrosFiscais devolve a ordem de tentativa do pTipoCentroFiscal.
+//
+// Regra do depósito de vendas (Claudio, 2026-07-08) — decide pela UF:
+//   - venda MESMA UF (ex.: PB→PB) → VRJNE (depósito do varejo)
+//   - venda UF DIFERENTE (ex.: PB→BR interestadual) → CDNE (centro de distribuição)
+//
+// Transferência (CFOP da lista OU nota para a PRÓPRIA empresa — mesma raiz de
+// CNPJ, ex: 5949 entre filiais) continua saindo pelo CDNE primeiro.
+//
+// O segundo centro fica como fallback (o VRJNE pode ter venda que na verdade
+// sai pelo CDNE e vice-versa); a execução só marca erro se falhar nos dois —
+// e ORA-04068 (estado do pacote descartado) NÃO conta como falha de regra
+// (ver isTransientOraclePackageErr).
+func centrosFiscais(cfop string, mesmaEmpresa bool, ufOrigem, ufDestino string) []string {
 	if mesmaEmpresa || cfopsTransferencia[strings.TrimSpace(cfop)] {
+		return []string{"CDNE", "VRJNE"}
+	}
+	// Venda: mesma UF sai pelo VRJNE; interestadual sai pelo CDNE. UF vazia
+	// (não deveria acontecer — destUF já é resolvido p/ emitUF) cai no
+	// comportamento de venda intraestadual (VRJNE primeiro).
+	o := strings.ToUpper(strings.TrimSpace(ufOrigem))
+	d := strings.ToUpper(strings.TrimSpace(ufDestino))
+	if o != "" && d != "" && o != d {
 		return []string{"CDNE", "VRJNE"}
 	}
 	return []string{"VRJNE", "CDNE"}
@@ -719,7 +735,7 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 	// falhar nas duas.
 	var result *services.FiscalResult
 	var callErr error
-	centros := centrosFiscais(it.CFOP, nfe.MesmaEmpresa)
+	centros := centrosFiscais(it.CFOP, nfe.MesmaEmpresa, nfe.EmitUF, nfe.DestUF)
 	for i, centro := range centros {
 		in.PTipoCentroFiscal = centro
 		trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto com: %s [pPrecoTotal = produto %.2f + frete %.2f + outras %.2f]", in.FormatParams(), it.VProd, it.VFrete, it.VOutro))
