@@ -313,6 +313,13 @@ export default function DiagnosticoPacoteFiscal() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent bg-muted/30">
+                      <TableHead colSpan={7} className="py-1 px-2" />
+                      <TableHead colSpan={6} className="py-1 px-2 text-[10px] text-center border-l text-red-700 font-semibold uppercase tracking-wide"
+                        title="Nº de itens que divergiram do pacote em cada tributo — não são valores em R$. Vermelho quando > 0.">
+                        Divergências (nº de itens)
+                      </TableHead>
+                    </TableRow>
+                    <TableRow className="hover:bg-transparent bg-muted/30">
                       <TableHead className="py-1 px-2 text-[11px]">CFOP</TableHead>
                       <TableHead className="py-1 px-2 text-[11px] text-right">Notas</TableHead>
                       <TableHead className="py-1 px-2 text-[11px] text-right">Itens</TableHead>
@@ -320,12 +327,12 @@ export default function DiagnosticoPacoteFiscal() {
                       <TableHead className="py-1 px-2 text-[11px] text-right">OK</TableHead>
                       <TableHead className="py-1 px-2 text-[11px] text-right">S/ Grupo</TableHead>
                       <TableHead className="py-1 px-2 text-[11px] text-right">Erro</TableHead>
-                      <TableHead className="py-1 px-2 text-[11px] text-right border-l">ICMS</TableHead>
-                      <TableHead className="py-1 px-2 text-[11px] text-right">ST</TableHead>
-                      <TableHead className="py-1 px-2 text-[11px] text-right">PIS</TableHead>
-                      <TableHead className="py-1 px-2 text-[11px] text-right">COFINS</TableHead>
-                      <TableHead className="py-1 px-2 text-[11px] text-right">IBS</TableHead>
-                      <TableHead className="py-1 px-2 text-[11px] text-right">CBS</TableHead>
+                      <TableHead className="py-1 px-2 text-[11px] text-right border-l" title="Itens divergentes de ICMS">ICMS</TableHead>
+                      <TableHead className="py-1 px-2 text-[11px] text-right" title="Itens divergentes de ICMS-ST">ST</TableHead>
+                      <TableHead className="py-1 px-2 text-[11px] text-right" title="Itens divergentes de PIS">PIS</TableHead>
+                      <TableHead className="py-1 px-2 text-[11px] text-right" title="Itens divergentes de COFINS">COFINS</TableHead>
+                      <TableHead className="py-1 px-2 text-[11px] text-right" title="Itens divergentes de IBS">IBS</TableHead>
+                      <TableHead className="py-1 px-2 text-[11px] text-right" title="Itens divergentes de CBS">CBS</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
