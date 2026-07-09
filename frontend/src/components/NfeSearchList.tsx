@@ -152,11 +152,15 @@ export function NfeSearchList({
   const { data: oracleInfo } = useQuery<{ target: string }>({
     queryKey: ['fiscal-oracle-info', companyId],
     queryFn: async () => {
-      const res = await fetch('/api/fiscal/oracle-info');
+      const res = await fetch('/api/fiscal/oracle-info', { cache: 'no-store' });
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
-    staleTime: 5 * 60 * 1000,
+    // Sem cache longo: se o DSN mudar na config, a tela precisa refletir na
+    // hora — refaz a busca ao montar/focar a tela.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 
   // Filiais (CNPJs emitentes) presentes nas notas importadas — popula o select

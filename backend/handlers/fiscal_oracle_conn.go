@@ -151,6 +151,8 @@ func sanitizeOracleTarget(dsnPlain string) string {
 func FiscalOracleInfoHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		// Nunca cachear: precisa refletir a troca de DSN na config na hora.
+		w.Header().Set("Cache-Control", "no-store")
 
 		if r.Method != http.MethodGet {
 			jsonErr(w, http.StatusMethodNotAllowed, "Método não permitido")
