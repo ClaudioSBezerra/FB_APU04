@@ -57,6 +57,26 @@ func centrosFiscais(cfop string, mesmaEmpresa bool) []string {
 	return []string{"VRJNE", "CDNE"}
 }
 
+// isTransientOraclePackageErr reconhece o cluster de erros que o Oracle dispara
+// UMA vez por sessão logo após o PKG_FISCAL_FCTAX ser recompilado/invalidado:
+// o estado do pacote guardado na sessão é descartado, o primeiro call falha e
+// o PRÓXIMO call na mesma sessão recarrega o pacote e funciona. NÃO é "esse
+// centro fiscal não tem regra" — então não pode disparar o fallback de centro
+// (senão o item é calculado no centro ERRADO por causa de um erro transitório).
+// Ver ORA-04068 (state discarded) + cascata 04061/04065/06508.
+func isTransientOraclePackageErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, code := range []string{"ORA-04068", "ORA-04061", "ORA-04065", "ORA-06508"} {
+		if strings.Contains(msg, code) {
+			return true
+		}
+	}
+	return false
+}
+
 // mesmaEmpresa: destinatário com a mesma raiz de CNPJ (8 dígitos) do emitente
 func mesmaEmpresa(emitCNPJ, destCNPJ string) bool {
 	e := onlyDigits(emitCNPJ)
@@ -704,6 +724,16 @@ func processSingleFiscalItem(ctx context.Context, oracleDB *sql.DB, pgDB *sql.DB
 		in.PTipoCentroFiscal = centro
 		trace.add(it.ID, produtoLabel, "chamando_pacote", fmt.Sprintf("Executando PKG_FISCAL_FCTAX.calcula_imposto_produto com: %s [pPrecoTotal = produto %.2f + frete %.2f + outras %.2f]", in.FormatParams(), it.VProd, it.VFrete, it.VOutro))
 		result, callErr = services.CallFiscalPackage(ctx, oracleDB, in)
+
+		// ORA-04068 e cia: o estado do pacote foi descartado (recompilação do
+		// PKG_FISCAL_FCTAX). É transitório e some no próximo call na MESMA
+		// sessão — retenta o MESMO centro antes de considerar fallback, senão
+		// o item cairia no centro fiscal errado por causa de um erro efêmero.
+		if callErr != nil && isTransientOraclePackageErr(callErr) {
+			trace.add(it.ID, produtoLabel, "retry_pacote", fmt.Sprintf("Estado do pacote descartado no Oracle (%s) — recarregando e retentando pTipoCentroFiscal=%s...", sanitizeOracleErrForDebug(callErr), centro))
+			result, callErr = services.CallFiscalPackage(ctx, oracleDB, in)
+		}
+
 		if callErr == nil {
 			break
 		}
