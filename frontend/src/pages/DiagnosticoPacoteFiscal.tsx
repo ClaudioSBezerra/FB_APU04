@@ -3,7 +3,7 @@
 // notas/itens, status, divergências por tributo (mesma régua da Comparação),
 // distribuição por CFOP, CSTs de ICMS/PIS, parâmetros usados (centro fiscal,
 // tipo contribuinte) e erros mais frequentes. Exportável para Excel.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -129,6 +129,16 @@ export default function DiagnosticoPacoteFiscal() {
     },
   });
 
+  // UFs de origem (emit_uf) presentes nos dados executados — deriva da lista de
+  // filiais (que não sofre o filtro) para popular o seletor com contagem de notas
+  const ufsOrigem = useMemo(() => {
+    const m = new Map<string, number>();
+    (diag?.filiais ?? []).forEach(f => {
+      if (f.uf) m.set(f.uf, (m.get(f.uf) ?? 0) + f.notas);
+    });
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [diag?.filiais]);
+
   // PDF: window.open não envia headers — token via ?token= (AuthMiddleware
   // aceita) e empresa via ?company_id= (mesmo padrão dos PDFs do Fronteira)
   const handleExportPDF = () => {
@@ -214,15 +224,17 @@ export default function DiagnosticoPacoteFiscal() {
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-muted-foreground">UF Origem</label>
-          <Input
-            type="text"
-            placeholder="PE"
+          <label className="text-[11px] text-muted-foreground" title="UF do EMITENTE (origem). Traz as notas cuja origem é a UF selecionada — inclui vendas interestaduais que SAEM dessa UF (CFOP 6xxx). Lista só as UFs de origem presentes nos dados executados.">UF Origem</label>
+          <select
             value={ufOrigem}
-            onChange={e => setUfOrigem(e.target.value.toUpperCase().slice(0, 2))}
-            className="h-8 w-16 text-xs uppercase"
-            maxLength={2}
-          />
+            onChange={e => setUfOrigem(e.target.value)}
+            className="h-8 w-28 text-xs rounded-md border bg-background px-2"
+          >
+            <option value="">Todas</option>
+            {ufsOrigem.map(([uf, n]) => (
+              <option key={uf} value={uf}>{uf} · {fmtN(n)}</option>
+            ))}
+          </select>
         </div>
         <Button size="sm" className="h-8" onClick={() => setApplied({ dataInicio, dataFim, filial, ufOrigem })} disabled={isLoading}>
           {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5 mr-1.5" />}
