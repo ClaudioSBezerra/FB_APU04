@@ -9,6 +9,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"html"
 	"net/http"
@@ -70,6 +71,17 @@ func FiscalDiagnosticoPDFHandler(db *sql.DB) http.HandlerFunc {
 		var companyName string
 		_ = db.QueryRow(`SELECT COALESCE(NULLIF(trade_name,''), name, '') FROM companies WHERE id = $1`, companyID).Scan(&companyName)
 
+		// Logo da empresa (mesmo helper dos demais relatórios): embutida como
+		// data URI base64 — o CSP dos PDFs não permite host externo.
+		logoTag := ""
+		if logoData, logoMime := loadEmpresaLogo(db, companyID, ""); len(logoData) > 0 {
+			if logoMime == "" {
+				logoMime = "image/png"
+			}
+			logoTag = fmt.Sprintf(`<img class="hdr-logo" src="data:%s;base64,%s" alt="logo">`,
+				logoMime, base64.StdEncoding.EncodeToString(logoData))
+		}
+
 		filialLabel := "Todas"
 		if filial != "" {
 			filialLabel = filial
@@ -96,6 +108,9 @@ func FiscalDiagnosticoPDFHandler(db *sql.DB) http.HandlerFunc {
 * { box-sizing: border-box; font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; }
 body { margin: 24px; color: #1e293b; font-size: 12px; }
 h1 { font-size: 18px; margin: 0 0 2px; } h2 { font-size: 13px; margin: 18px 0 6px; border-bottom: 2px solid #cbd5e1; padding-bottom: 3px; }
+.hdr { display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 12px; }
+.hdr-logo { max-height: 56px; max-width: 220px; object-fit: contain; }
+.hdr-txt { min-width: 0; }
 .meta { color: #64748b; font-size: 11px; margin-bottom: 14px; }
 .cards { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
 .card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; min-width: 130px; }
@@ -110,9 +125,11 @@ th { background: #f1f5f9; } td:first-child, th:first-child { text-align: left; }
 @media print { body { margin: 8mm; } .no-print { display: none; } }
 </style></head><body>`)
 
+		b.WriteString(`<div class="hdr">` + logoTag + `<div class="hdr-txt">`)
 		b.WriteString(`<h1>Relatório Diagnóstico — Teste Pacote Fiscal (PKG_FISCAL_FCTAX)</h1>`)
 		b.WriteString(fmt.Sprintf(`<div class="meta">Empresa: <b>%s</b> &nbsp;|&nbsp; Período (emissão): <b>%s</b> &nbsp;|&nbsp; Filial: <b>%s</b> &nbsp;|&nbsp; UF Origem: <b>%s</b> &nbsp;|&nbsp; Gerado em %s</div>`,
 			esc(companyName), esc(periodo), esc(filialLabel), esc(ufLabel), time.Now().Format("02/01/2006 15:04")))
+		b.WriteString(`</div></div>`)
 
 		// Cards
 		pctOK := 0.0
