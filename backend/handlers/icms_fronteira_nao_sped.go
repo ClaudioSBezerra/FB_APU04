@@ -328,7 +328,7 @@ LEFT JOIN uf_beneficios_fiscais ufb
     ON ufb.company_id = $1 AND ufb.uf = m.eff_uf
 LEFT JOIN icms_fronteira_classificacao_manual cm
     ON cm.company_id = $1 AND cm.chave_nfe = m.chave_nfe
-WHERE COALESCE(cm.regime,
+WHERE ($3 = '' OR COALESCE(cm.regime,
     CASE
         WHEN m.cfop_entrada IN ('2551','2556') THEN 'DIFAL'
         WHEN regra.segmento_codigo IS NOT NULL
@@ -341,7 +341,7 @@ WHERE COALESCE(cm.regime,
         THEN 'ST'
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652','2101','2102','2152') THEN 'ANTECIPACAO'
         ELSE 'NAO_FRONTEIRA'
-    END) = $3
+    END) = $3)
   AND COALESCE(cm.status, 'auto') <> 'excluded'
   -- Eixo de UF do módulo: restringe às NFs cujo destinatário (filial) é da UF
   -- selecionada. Consistente com o filtro uf_filial dos Blocos A/B. Vazio = todas.

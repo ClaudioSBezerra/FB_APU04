@@ -581,8 +581,22 @@ ORDER BY regime
 		}
 		defer rows.Close()
 
-		result := []FronteiraResumoRow{}
-		var totalDevido, totalProd float64
+		// Acumula por regime num mapa para poder SOMAR os Blocos A/B (SPED) com o
+		// Bloco C (não-SPED / XML) — decisão do Claudio 2026-07-10: o Resumo passa
+		// a refletir também o que só existe no XML (ex.: 06/2026 sem SPED).
+		acc := map[string]*FronteiraResumoRow{}
+		addRow := func(regime string, qtd int, vProd, vIpi, vSt, icms float64) {
+			r := acc[regime]
+			if r == nil {
+				r = &FronteiraResumoRow{Regime: regime}
+				acc[regime] = r
+			}
+			r.QtdNotas += qtd
+			r.VProdTotal += vProd
+			r.VIpiTotal += vIpi
+			r.VStRetido += vSt
+			r.IcmsDevidoEst += icms
+		}
 
 		for rows.Next() {
 			var row FronteiraResumoRow
@@ -592,9 +606,56 @@ ORDER BY regime
 				log.Printf("IcmsFronteiraResumo scan error: %v", err)
 				continue
 			}
-			totalDevido += row.IcmsDevidoEst
-			totalProd += row.VProdTotal
-			result = append(result, row)
+			addRow(row.Regime, row.QtdNotas, row.VProdTotal, row.VIpiTotal, row.VStRetido, row.IcmsDevidoEst)
+		}
+		rows.Close()
+
+		// Bloco C (não-SPED / XML): reusa a MESMA naoSpedQuery com regime vazio
+		// ($3='') p/ trazer os 3 regimes de uma vez e agrega por regime. NAO_FRONTEIRA
+		// fica de fora (só os regimes de fronteira entram no Resumo).
+		fornC, numC, diC, dfC := naoSpedFiltros(r)
+		ufC := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+		cRows, cErr := db.Query(`
+			SELECT regime, COUNT(DISTINCT chave_nfe) AS qtd, COALESCE(SUM(v_prod),0),
+			       COALESCE(SUM(v_ipi),0), COALESCE(SUM(icms_devido_est),0)
+			FROM (`+naoSpedQuery+`) c
+			WHERE regime IN ('ANTECIPACAO','ST','DIFAL')
+			GROUP BY regime`,
+			companyID, periodo, "", ufC, fornC, numC, diC, dfC)
+		if cErr != nil {
+			log.Printf("IcmsFronteiraResumo bloco C error: %v", cErr)
+		} else {
+			for cRows.Next() {
+				var regime string
+				var qtd int
+				var vProd, vIpi, icms float64
+				if err := cRows.Scan(&regime, &qtd, &vProd, &vIpi, &icms); err != nil {
+					log.Printf("IcmsFronteiraResumo bloco C scan: %v", err)
+					continue
+				}
+				addRow(regime, qtd, vProd, vIpi, 0, icms)
+			}
+			cRows.Close()
+		}
+
+		// Ordena por regime (estável) e soma os totais.
+		regimesOrdenados := []string{"ANTECIPACAO", "DIFAL", "ST"}
+		result := []FronteiraResumoRow{}
+		var totalDevido, totalProd float64
+		seen := map[string]bool{}
+		emit := func(regime string) {
+			if r := acc[regime]; r != nil && !seen[regime] {
+				seen[regime] = true
+				totalDevido += r.IcmsDevidoEst
+				totalProd += r.VProdTotal
+				result = append(result, *r)
+			}
+		}
+		for _, rg := range regimesOrdenados {
+			emit(rg)
+		}
+		for rg := range acc { // qualquer regime fora da lista padrão
+			emit(rg)
 		}
 
 		json.NewEncoder(w).Encode(FronteiraResumoResponse{
