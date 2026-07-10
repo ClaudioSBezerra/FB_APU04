@@ -723,25 +723,58 @@ function ResumoTab({ token }: { token: string | null }) {
     enabled: !!periodo,
   })
 
+  // Barra de período + ações — SEMPRE visível (loading/erro/vazio/dados), para
+  // o seletor nunca "sumir" quando um período volta vazio ou lento (2026-07-10).
+  const periodoBar = (
+    <div className="flex items-center gap-2 justify-between flex-wrap">
+      <div className="flex items-center gap-2">
+        <Label htmlFor="resumo-periodo" className="text-xs whitespace-nowrap">Período:</Label>
+        <Input
+          id="resumo-periodo"
+          type="text"
+          placeholder="MM/AAAA"
+          maxLength={7}
+          className="w-36 text-xs h-8"
+          value={monthInput}
+          onChange={(e) => setMonthInput(e.target.value)}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <ExportButtons regime="todos" token={token} periodo={periodo} />
+        <RecalcularButton />
+      </div>
+    </div>
+  )
+
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-28 w-full" />)}
+      <div className="space-y-6">
+        {periodoBar}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-28 w-full" />)}
+        </div>
       </div>
     )
   }
 
   if (isError) {
     return (
-      <Alert variant="destructive">
-        <AlertDescription>Erro ao carregar resumo ICMS Fronteira.</AlertDescription>
-      </Alert>
+      <div className="space-y-6">
+        {periodoBar}
+        <Alert variant="destructive">
+          <AlertDescription>
+            Erro ao carregar o resumo. Se o período tem volume muito alto, o cálculo pode ter
+            estourado o tempo — informe um mês/ano específico e tente de novo.
+          </AlertDescription>
+        </Alert>
+      </div>
     )
   }
 
   if (!data || data.rows.length === 0) {
     return (
       <div className="space-y-4">
+        {periodoBar}
         <EmptyState />
         <ResumoExecutivoIA token={token} periodo={periodo} uf={uf} />
       </div>
@@ -762,25 +795,7 @@ function ResumoTab({ token }: { token: string | null }) {
 
   return (
     <div className="space-y-6">
-      {/* Actions row */}
-      <div className="flex items-center gap-2 justify-between flex-wrap">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="resumo-periodo" className="text-xs whitespace-nowrap">Período:</Label>
-          <Input
-            id="resumo-periodo"
-            type="text"
-            placeholder="MM/AAAA"
-            maxLength={7}
-            className="w-36 text-xs h-8"
-            value={monthInput}
-            onChange={(e) => setMonthInput(e.target.value)}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <ExportButtons regime="todos" token={token} periodo={periodo} />
-          <RecalcularButton />
-        </div>
-      </div>
+      {periodoBar}
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
