@@ -605,16 +605,30 @@ function ExportButtons({ regime, token, periodo, filtros }: { regime: string; to
 // Recalcular button
 // ---------------------------------------------------------------------------
 function RecalcularButton() {
+  const { token } = useAuth()
   const queryClient = useQueryClient()
   const [loading, setLoading] = useState(false)
 
   async function handleRecalcular() {
     setLoading(true)
-    await queryClient.invalidateQueries({ queryKey: ['icms-fronteira'] })
-    await queryClient.invalidateQueries({ queryKey: ['icms-fronteira/resumo'] })
-    await queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
-    setLoading(false)
-    toast.success('Dados atualizados')
+    try {
+      // Refresca a materialized view no SERVIDOR (base dos Blocos A/B). Sem
+      // isso, o import de SPED não aparecia no Resumo — o botão só limpava o
+      // cache do navegador. Pode levar alguns minutos em bases grandes.
+      const res = await fetch('/api/icms-fronteira/recalcular', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      await queryClient.invalidateQueries({ queryKey: ['icms-fronteira'] })
+      await queryClient.invalidateQueries({ queryKey: ['icms-fronteira/resumo'] })
+      await queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
+      toast.success('Base recalculada e dados atualizados')
+    } catch {
+      toast.error('Falha ao recalcular a base do Fronteira')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

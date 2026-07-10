@@ -803,6 +803,14 @@ func main() {
 		}
 		handlers.AuthMiddleware(handlers.IcmsFronteiraResumoHandler(database), "")(w, r)
 	})
+	http.HandleFunc("/api/icms-fronteira/recalcular", func(w http.ResponseWriter, r *http.Request) {
+		database := getDB()
+		if database == nil {
+			jsonServiceUnavailable(w)
+			return
+		}
+		handlers.AuthMiddleware(handlers.IcmsFronteiraRecalcularHandler(database), "")(w, r)
+	})
 	http.HandleFunc("/api/icms-fronteira/fretes-pendentes", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {
