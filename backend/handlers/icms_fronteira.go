@@ -707,22 +707,33 @@ func fronteiraNotasHandler(db *sql.DB, w http.ResponseWriter, r *http.Request, r
 	// resolvendo o bug onde totais exibidos só refletiam as primeiras 500 notas.
 	// bloco classifica cada nota em "mes_atual" ou "mes_anterior" conforme a data
 	// de EMISSÃO (dt_doc) — paga-se a antecipação no mês de emissão da nota.
+	// LIMIT de 500 POR BLOCO (rn = ROW_NUMBER por bloco), não global: com LIMIT
+	// global e ORDER BY bloco, 'mes_anterior' (A) vem antes de 'mes_atual' (B)
+	// no collate e COMIA as 500 vagas — o Bloco B nunca aparecia (nem linhas nem
+	// totais, já que os windows são capturados das linhas retornadas). Bug FC
+	// 2026-07-10: BA com 1.120 notas no A e 432 mil candidatas no B → B sempre 0.
 	query := fronteiraBaseQuery + `
-SELECT
-    chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
-    cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st, v_frete, v_outro,
-    aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, valor_devido, base_por_dentro, nf_status, regime, bloco,
-    COUNT(*)            OVER () AS total_count,
-    SUM(CASE WHEN nf_status = 'ATIVO' THEN ` + icmsExpr + ` ELSE 0 END) OVER () AS total_full,
-    -- Totais/contagem POR BLOCO via window (conjunto completo) — sem isto o
-    -- Bloco A/B ficavam capados nas 500 linhas exibidas (LIMIT 500) quando o
-    -- regime tinha mais de 500 notas (bug FC 2026-07-10). Exclui CANCELADO.
-    SUM(CASE WHEN nf_status <> 'CANCELADO' THEN ` + icmsExpr + ` ELSE 0 END) OVER (PARTITION BY bloco) AS total_bloco,
-    SUM(CASE WHEN nf_status <> 'CANCELADO' THEN 1 ELSE 0 END) OVER (PARTITION BY bloco) AS count_bloco
-FROM classified
-WHERE regime = $3` + filtroSQL + `
+SELECT chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
+       cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st, v_frete, v_outro,
+       aliq_inter, aliq_interna, icms_devido_est, valor_devido, base_por_dentro, nf_status, regime, bloco,
+       total_count, total_full, total_bloco, count_bloco
+FROM (
+    SELECT
+        chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
+        cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st, v_frete, v_outro,
+        aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, valor_devido, base_por_dentro, nf_status, regime, bloco,
+        COUNT(*)            OVER () AS total_count,
+        SUM(CASE WHEN nf_status = 'ATIVO' THEN ` + icmsExpr + ` ELSE 0 END) OVER () AS total_full,
+        -- Totais/contagem POR BLOCO via window (conjunto completo, sem LIMIT).
+        -- Exclui CANCELADO.
+        SUM(CASE WHEN nf_status <> 'CANCELADO' THEN ` + icmsExpr + ` ELSE 0 END) OVER (PARTITION BY bloco) AS total_bloco,
+        SUM(CASE WHEN nf_status <> 'CANCELADO' THEN 1 ELSE 0 END) OVER (PARTITION BY bloco) AS count_bloco,
+        ROW_NUMBER() OVER (PARTITION BY bloco ORDER BY data_emissao DESC, chave_nfe) AS rn
+    FROM classified
+    WHERE regime = $3` + filtroSQL + `
+) t
+WHERE rn <= 500
 ORDER BY bloco, data_emissao DESC, chave_nfe
-LIMIT 500
 `
 	args := append([]interface{}{companyID, periodo, regime}, filtroArgs...)
 	rows, err := db.Query(query, args...)

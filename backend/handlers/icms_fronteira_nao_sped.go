@@ -56,103 +56,34 @@ type FronteiraXmlNaoSpedResponse struct {
 // ---------------------------------------------------------------------------
 
 const naoSpedQuery = `
-WITH emp_uf AS (
-    -- UF efetiva da empresa: fonte confiável para fallback quando dest_uf do XML
-    -- está nulo. Usa o import_jobs mais recente (evita hardcode 'PE' para CE/outros).
-    SELECT COALESCE(MAX(uf) FILTER (WHERE uf IS NOT NULL AND uf <> ''), 'PE') AS uf
-    FROM import_jobs WHERE company_id = $1
-), xml_falt AS (
+WITH mapped AS (
+    -- Lê da MV mv_fronteira_nao_sped (migration 156): a parte pesada — notas
+    -- fora do SPED, itens agrupados por (NF,CFOP,NCM), rateios e eff_uf — é
+    -- pré-computada e refrescada pelo "Recalcular". Aqui só se aplica o que o
+    -- usuário edita em tempo real: o override de CFOP (que reclassifica o
+    -- regime na hora, sem esperar refresh).
     SELECT
-        ne.id, ne.chave_nfe, ne.data_emissao, ne.forn_cnpj, ne.forn_nome,
-        ne.forn_uf, ne.dest_uf, ne.dest_cnpj_cpf, COALESCE(ne.numero_nfe,'') AS numero_nfe,
-        COALESCE(ne.v_prod,0) AS v_prod, COALESCE(ne.v_frete,0) AS v_frete,
-        COALESCE(ne.v_outro,0) AS v_outro,
-        COALESCE(ne.v_ipi,0) AS v_ipi,    -- IPI total do XML (<vIPI> do header)
-        COALESCE(ne.v_icms,0) AS v_icms,   -- ICMS interestadual pago pelo fornecedor (<vICMS>)
-        COALESCE(ne.status, 'ATIVO') AS nf_status
-    FROM nfe_entradas ne
-    WHERE ne.company_id = $1
-      -- Filtra por mes_ano (indexado em idx_nfe_entradas_company_mes) em vez de
-      -- EXTRACT(data_emissao) — o EXTRACT não usa índice e varria TODAS as
-      -- entradas da empresa (2026-07-10, gargalo do Bloco C na FC). $2 é sempre
-      -- 'MM/AAAA'; vazio = todos os meses.
-      AND ($2::text = '' OR ne.mes_ano = $2)
-      AND NOT EXISTS (
-          SELECT 1 FROM reg_c100 c100 JOIN import_jobs j ON j.id = c100.job_id
-          WHERE j.company_id = $1 AND c100.chv_nfe = ne.chave_nfe
-      )
-), items_grouped AS (
-    -- Agrupa por (NF, CFOP, NCM): cada combinação distinta vira linha própria,
-    -- permitindo classificação correta quando uma NF tem itens ST e não-ST
-    -- no mesmo CFOP (ex.: NCM 7318=ST e NCM 38249941=Antecipação).
-    SELECT nii.nfe_id,
-           COALESCE(nii.cfop,'') AS cfop_saida,
-           COALESCE(nii.ncm,'')  AS ncm,
-           SUM(COALESCE(nii.v_prod, 0)) AS item_sum,
-           SUM(COALESCE(nii.v_ipi,  0)) AS item_ipi
-    FROM nfe_entradas_itens nii
-    JOIN xml_falt xf ON xf.id = nii.nfe_id
-    GROUP BY nii.nfe_id, nii.cfop, nii.ncm
-), nf_total AS (
-    SELECT nfe_id, SUM(item_sum) AS total_sum
-    FROM items_grouped
-    GROUP BY nfe_id
-), top AS (
-    SELECT
-        xf.id, xf.chave_nfe, xf.data_emissao, xf.forn_cnpj, xf.forn_nome,
-        xf.forn_uf, xf.dest_uf, xf.dest_cnpj_cpf, xf.numero_nfe,
-        -- CFOP efetivo: usa override do usuário quando presente, senão XML original
-        COALESCE(ov.cfop_saida_override, ig.cfop_saida) AS cfop_saida,
-        ig.cfop_saida                                    AS cfop_xml,
-        COALESCE(ov.cfop_saida_override, '')             AS cfop_override_val,
-        ig.ncm,
-        -- v_prod = soma dos itens deste grupo (NCM+CFOP)
-        ig.item_sum                                                               AS v_prod,
-        -- Frete/outro/ICMS do cabeçalho da NF rateados pela participação deste grupo
-        CASE WHEN nt.total_sum > 0 THEN xf.v_frete * ig.item_sum / nt.total_sum ELSE 0 END AS v_frete,
-        CASE WHEN nt.total_sum > 0 THEN xf.v_outro * ig.item_sum / nt.total_sum ELSE 0 END AS v_outro,
-        -- IPI: soma real dos itens deste grupo no XML (mesmo critério dos Blocos A/B via SPED)
-        ig.item_ipi                                                                          AS v_ipi,
-        CASE WHEN nt.total_sum > 0 THEN xf.v_icms  * ig.item_sum / nt.total_sum ELSE 0 END AS v_icms,
-        -- Fração deste grupo no total da NF (para ratear v_frete_cte / v_icms_cte do CT-e)
-        CASE WHEN nt.total_sum > 0 THEN ig.item_sum / nt.total_sum             ELSE 1 END AS item_ratio,
-        xf.nf_status
-    FROM xml_falt xf
-    JOIN items_grouped ig ON ig.nfe_id = xf.id
-    JOIN nf_total      nt ON nt.nfe_id  = xf.id
+        mv.nfe_id AS id, mv.chave_nfe, mv.data_emissao, mv.forn_cnpj, mv.forn_nome,
+        mv.forn_uf, mv.dest_uf, mv.dest_cnpj_cpf, mv.numero_nfe,
+        COALESCE(ov.cfop_saida_override, mv.cfop_xml) AS cfop_saida,
+        mv.cfop_xml,
+        COALESCE(ov.cfop_saida_override, '')          AS cfop_override_val,
+        mv.ncm, mv.v_prod, mv.v_frete, mv.v_outro, mv.v_ipi, mv.v_icms,
+        mv.item_ratio, mv.nf_status, mv.eff_uf,
+        CASE
+            WHEN LEFT(COALESCE(ov.cfop_saida_override, mv.cfop_xml),1) = '6'
+                THEN '2' || SUBSTRING(COALESCE(ov.cfop_saida_override, mv.cfop_xml) FROM 2)
+            WHEN LEFT(COALESCE(ov.cfop_saida_override, mv.cfop_xml),1) = '5'
+                THEN '1' || SUBSTRING(COALESCE(ov.cfop_saida_override, mv.cfop_xml) FROM 2)
+            ELSE COALESCE(ov.cfop_saida_override, mv.cfop_xml)
+        END AS cfop_entrada
+    FROM mv_fronteira_nao_sped mv
     LEFT JOIN nao_sped_cfop_override ov
            ON ov.company_id = $1::uuid
-          AND ov.chave_nfe  = xf.chave_nfe
-          AND COALESCE(ov.ncm, '') = COALESCE(ig.ncm, '')
-), mapped AS (
-    SELECT *,
-        CASE
-            WHEN LEFT(cfop_saida,1) = '6' THEN '2' || SUBSTRING(cfop_saida FROM 2)
-            WHEN LEFT(cfop_saida,1) = '5' THEN '1' || SUBSTRING(cfop_saida FROM 2)
-            ELSE cfop_saida
-        END AS cfop_entrada,
-        -- eff_uf: resolução em 3 camadas para empresas multi-filial (ex.: ROLIMEC PE+BA+CE):
-        --   1) dest_uf do XML (campo <UF> do destinatário na NF-e) — fonte primária.
-        --   2) UF do estabelecimento pelo CNPJ destino: cruza dest_cnpj_cpf com
-        --      import_jobs.cnpj do mesmo company_id. Correto para filiais — o CNPJ
-        --      do destinatário identifica exatamente qual filial recebeu a mercadoria
-        --      e, portanto, qual UF rege a antecipação/ST.
-        --   3) emp_uf (MAX uf dos import_jobs) — último recurso; retorna a UF
-        --      dominante (ex.: PE quando há PE+BA+CE), mas só alcançado quando o
-        --      XML não traz dest_uf E o CNPJ destino não bate com nenhuma filial.
-        COALESCE(
-            NULLIF(dest_uf, ''),
-            (SELECT j.uf
-             FROM import_jobs j
-             WHERE j.company_id = $1
-               AND j.status = 'completed'
-               AND j.uf IS NOT NULL AND j.uf <> ''
-               AND regexp_replace(COALESCE(j.cnpj,''), '[^0-9]', '', 'g')
-                   = regexp_replace(COALESCE(dest_cnpj_cpf,''), '[^0-9]', '', 'g')
-             LIMIT 1),
-            (SELECT uf FROM emp_uf)
-        ) AS eff_uf
-    FROM top
+          AND ov.chave_nfe  = mv.chave_nfe
+          AND COALESCE(ov.ncm, '') = COALESCE(mv.ncm, '')
+    WHERE mv.company_id = $1
+      AND ($2::text = '' OR mv.mes_ano = $2)
 ), cte_por_nfe AS (
     -- Frete CT-e por NF-e, considerando APENAS quando tomador = destinatário
     -- (mesma regra fiscal aplicada na aba Fretes / Layer 2 do fetchFreteLinks).

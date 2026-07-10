@@ -94,12 +94,15 @@ func IcmsFronteiraRecalcularHandler(db *sql.DB) http.HandlerFunc {
 				}
 			}
 
-			inicio := time.Now()
-			if _, err := conn.ExecContext(ctx, "REFRESH MATERIALIZED VIEW mv_icms_fronteira_linhas"); err != nil {
-				log.Printf("[FronteiraRecalcular] refresh falhou: %v", err)
-				return
+			// Duas MVs: Blocos A/B (SPED) e Bloco C (não-SPED / XML, migration 156).
+			for _, mv := range []string{"mv_icms_fronteira_linhas", "mv_fronteira_nao_sped"} {
+				inicio := time.Now()
+				if _, err := conn.ExecContext(ctx, "REFRESH MATERIALIZED VIEW "+mv); err != nil {
+					log.Printf("[FronteiraRecalcular] refresh %s falhou: %v", mv, err)
+					return
+				}
+				log.Printf("[FronteiraRecalcular] %s refrescada em %.0fs", mv, time.Since(inicio).Seconds())
 			}
-			log.Printf("[FronteiraRecalcular] MV refrescada em %.0fs", time.Since(inicio).Seconds())
 		}()
 
 		w.WriteHeader(http.StatusAccepted)
