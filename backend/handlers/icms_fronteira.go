@@ -707,7 +707,12 @@ SELECT
     cfop, v_prod, v_ipi, v_icms, v_bc_st, v_st, v_frete, v_outro,
     aliq_inter, aliq_interna, ` + icmsExpr + ` AS icms_devido_est, valor_devido, base_por_dentro, nf_status, regime, bloco,
     COUNT(*)            OVER () AS total_count,
-    SUM(CASE WHEN nf_status = 'ATIVO' THEN ` + icmsExpr + ` ELSE 0 END) OVER () AS total_full
+    SUM(CASE WHEN nf_status = 'ATIVO' THEN ` + icmsExpr + ` ELSE 0 END) OVER () AS total_full,
+    -- Totais/contagem POR BLOCO via window (conjunto completo) — sem isto o
+    -- Bloco A/B ficavam capados nas 500 linhas exibidas (LIMIT 500) quando o
+    -- regime tinha mais de 500 notas (bug FC 2026-07-10). Exclui CANCELADO.
+    SUM(CASE WHEN nf_status <> 'CANCELADO' THEN ` + icmsExpr + ` ELSE 0 END) OVER (PARTITION BY bloco) AS total_bloco,
+    SUM(CASE WHEN nf_status <> 'CANCELADO' THEN 1 ELSE 0 END) OVER (PARTITION BY bloco) AS count_bloco
 FROM classified
 WHERE regime = $3` + filtroSQL + `
 ORDER BY bloco, data_emissao DESC, chave_nfe
@@ -731,7 +736,8 @@ LIMIT 500
 	for rows.Next() {
 		var row FronteiraNotaRow
 		var rowTotalCount int
-		var rowTotalFull sql.NullFloat64
+		var rowTotalFull, rowTotalBloco sql.NullFloat64
+		var rowCountBloco int
 		if err := rows.Scan(
 			&row.ChaveNFe, &row.DataEmissao, &row.NumeroNFe,
 			&row.FornCNPJ, &row.FornNome, &row.FornUF,
@@ -739,7 +745,7 @@ LIMIT 500
 			&row.VFrete, &row.VOutro,
 			&row.AliqInter, &row.AliqInterna, &row.IcmsDevidoEst, &row.ValorDevido, &row.BasePorDentro, &row.NfStatus, &row.Regime,
 			&row.Bloco,
-			&rowTotalCount, &rowTotalFull,
+			&rowTotalCount, &rowTotalFull, &rowTotalBloco, &rowCountBloco,
 		); err != nil {
 			log.Printf("IcmsFronteiraNotas[%s] scan error: %v", regime, err)
 			continue
@@ -748,14 +754,15 @@ LIMIT 500
 		if rowTotalFull.Valid {
 			totalFull = rowTotalFull.Float64
 		}
-		if row.NfStatus != "CANCELADO" {
-			if row.Bloco == "mes_atual" {
-				totalMesAtual += row.IcmsDevidoEst
-				countMesAtual++
-			} else {
-				totalMesAnterior += row.IcmsDevidoEst
-				countMesAnterior++
-			}
+		// Totais/contagem por bloco vêm da window (conjunto completo), iguais para
+		// todas as linhas do mesmo bloco — capturamos, não acumulamos (senão
+		// ficariam capados nas 500 linhas exibidas pelo LIMIT).
+		if row.Bloco == "mes_atual" {
+			totalMesAtual = rowTotalBloco.Float64
+			countMesAtual = rowCountBloco
+		} else {
+			totalMesAnterior = rowTotalBloco.Float64
+			countMesAnterior = rowCountBloco
 		}
 		result = append(result, row)
 	}

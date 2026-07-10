@@ -2329,6 +2329,11 @@ function NotasTabBlocos({
   const totalAtual    = spedQuery.data?.total_mes_atual ?? 0
   const totalXml      = xmlQuery.data?.total ?? 0
   const totalGeral    = totalAtual + totalXml // mes_anterior não entra no total (já recolhido)
+  // Contagem REAL por bloco (window function do backend), não o tamanho da
+  // lista exibida — que é capada em 500 pelo LIMIT. Sem isto o badge mostrava
+  // "500 notas" mesmo com milhares (bug FC 2026-07-10).
+  const countAnterior = spedQuery.data?.count_mes_anterior ?? rowsAnterior.length
+  const countAtual    = spedQuery.data?.count_mes_atual ?? rowsAtual.length
 
   return (
     <div className="space-y-4">
@@ -2422,7 +2427,7 @@ function NotasTabBlocos({
               open={openA}
               icon={<Clock className="h-4 w-4 text-amber-500" />}
               label="Bloco A — NFs de meses anteriores no SPED"
-              count={rowsAnterior.length}
+              count={countAnterior}
               total={totalAnterior}
               colorClass="bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100"
               onClick={() => setOpenA(v => !v)}
@@ -2442,7 +2447,14 @@ function NotasTabBlocos({
                 ) : rowsAnterior.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-2 text-center">Nenhuma nota de mês anterior neste SPED.</p>
                 ) : (
-                  <TabelaNotasSped rows={rowsAnterior} showAliq={showAliq} cteLinks={cteLinksAB} regime={regime} />
+                  <>
+                    <TabelaNotasSped rows={rowsAnterior} showAliq={showAliq} cteLinks={cteLinksAB} regime={regime} />
+                    {countAnterior > rowsAnterior.length && (
+                      <p className="text-[11px] text-muted-foreground mt-1 text-center">
+                        Mostrando as primeiras {rowsAnterior.length} de {countAnterior.toLocaleString('pt-BR')} notas — o total e a contagem acima já consideram todas.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -2454,7 +2466,7 @@ function NotasTabBlocos({
               open={openB}
               icon={<CheckCircle2 className="h-4 w-4 text-green-600" />}
               label="Bloco B — NFs do mês presentes no SPED"
-              count={rowsAtual.length}
+              count={countAtual}
               total={totalAtual}
               colorClass="bg-green-50 border-green-200 text-green-900 hover:bg-green-100"
               onClick={() => setOpenB(v => !v)}
@@ -2468,7 +2480,14 @@ function NotasTabBlocos({
                 ) : rowsAtual.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-2 text-center">Nenhuma nota do mês encontrada no SPED.</p>
                 ) : (
-                  <TabelaNotasSped rows={rowsAtual} showAliq={showAliq} cteLinks={cteLinksAB} regime={regime} />
+                  <>
+                    <TabelaNotasSped rows={rowsAtual} showAliq={showAliq} cteLinks={cteLinksAB} regime={regime} />
+                    {countAtual > rowsAtual.length && (
+                      <p className="text-[11px] text-muted-foreground mt-1 text-center">
+                        Mostrando as primeiras {rowsAtual.length} de {countAtual.toLocaleString('pt-BR')} notas — o total e a contagem acima já consideram todas.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}
