@@ -3,7 +3,9 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
+	"sort"
 	"strings"
 
 	"fb_apu04/services"
@@ -73,37 +75,99 @@ func AIResumoExecutivoHandler(db *sql.DB) http.HandlerFunc {
 
 		kpis := kpisResumoFronteira{Periodo: periodo, UF: uf, PorRegime: []kpiRegime{}, TopFornecedores: []kpiFornecedor{}}
 
-		// Por regime
+		// KPIs = Blocos A/B (SPED) + Bloco C (não-SPED/XML, via MV) — a MESMA
+		// soma da tela do Resumo. Antes a IA só via A/B e narrava "ST sem
+		// movimento" quando todo o ST estava no Bloco C (bug FC/BA 2026-07-10).
+		regAcc := map[string]*kpiRegime{}
+		addReg := func(regime string, qtd int, vProd, icms float64) {
+			k := regAcc[regime]
+			if k == nil {
+				k = &kpiRegime{Regime: regime}
+				regAcc[regime] = k
+			}
+			k.QtdNotas += qtd
+			k.VProdTotal += vProd
+			k.IcmsDevido += icms
+		}
+		fornAcc := map[string]float64{}
+
+		// A/B (SPED)
 		qReg := fronteiraBaseQuery + `
 SELECT regime, COUNT(DISTINCT chave_nfe), COALESCE(SUM(v_prod),0), COALESCE(SUM(icms_devido_est),0)
 FROM classified WHERE regime IS NOT NULL` + filtroSQL + `
-GROUP BY regime ORDER BY 4 DESC`
+GROUP BY regime`
 		args := append([]interface{}{companyID, periodo}, filtroArgs...)
 		if rows, e := db.Query(qReg, args...); e == nil {
 			for rows.Next() {
 				var k kpiRegime
 				if rows.Scan(&k.Regime, &k.QtdNotas, &k.VProdTotal, &k.IcmsDevido) == nil {
-					kpis.PorRegime = append(kpis.PorRegime, k)
-					kpis.TotalICMSDevido += k.IcmsDevido
-					kpis.TotalNotas += k.QtdNotas
+					addReg(k.Regime, k.QtdNotas, k.VProdTotal, k.IcmsDevido)
+				}
+			}
+			rows.Close()
+		} else {
+			log.Printf("[AIResumoExecutivo] regime A/B: %v", e)
+		}
+
+		qForn := fronteiraBaseQuery + `
+SELECT COALESCE(NULLIF(forn_nome,''),'(sem nome)'), COALESCE(SUM(icms_devido_est),0) AS icms
+FROM classified WHERE regime IS NOT NULL` + filtroSQL + `
+GROUP BY 1 ORDER BY icms DESC LIMIT 10`
+		if rows, e := db.Query(qForn, args...); e == nil {
+			for rows.Next() {
+				var f kpiFornecedor
+				if rows.Scan(&f.Fornecedor, &f.IcmsDevido) == nil {
+					fornAcc[f.Fornecedor] += f.IcmsDevido
 				}
 			}
 			rows.Close()
 		}
 
-		// Top 5 fornecedores por ICMS devido
-		qForn := fronteiraBaseQuery + `
-SELECT COALESCE(NULLIF(forn_nome,''),'(sem nome)'), COALESCE(SUM(icms_devido_est),0) AS icms
-FROM classified WHERE regime IS NOT NULL` + filtroSQL + `
-GROUP BY 1 ORDER BY icms DESC LIMIT 5`
-		if rows, e := db.Query(qForn, args...); e == nil {
+		// Bloco C (não-SPED / XML) — mesma naoSpedQuery da tela, regime vazio
+		fornC, numC, diC, dfC := naoSpedFiltros(r)
+		if rows, e := db.Query(`
+SELECT regime, COUNT(DISTINCT chave_nfe), COALESCE(SUM(v_prod),0), COALESCE(SUM(icms_devido_est),0)
+FROM (`+naoSpedQuery+`) c
+WHERE regime IN ('ANTECIPACAO','ST','DIFAL')
+GROUP BY regime`, companyID, periodo, "", uf, fornC, numC, diC, dfC); e == nil {
 			for rows.Next() {
-				var f kpiFornecedor
-				if rows.Scan(&f.Fornecedor, &f.IcmsDevido) == nil {
-					kpis.TopFornecedores = append(kpis.TopFornecedores, f)
+				var k kpiRegime
+				if rows.Scan(&k.Regime, &k.QtdNotas, &k.VProdTotal, &k.IcmsDevido) == nil {
+					addReg(k.Regime, k.QtdNotas, k.VProdTotal, k.IcmsDevido)
 				}
 			}
 			rows.Close()
+		} else {
+			log.Printf("[AIResumoExecutivo] regime bloco C: %v", e)
+		}
+
+		if rows, e := db.Query(`
+SELECT COALESCE(NULLIF(forn_nome,''),'(sem nome)'), COALESCE(SUM(icms_devido_est),0) AS icms
+FROM (`+naoSpedQuery+`) c
+WHERE regime IN ('ANTECIPACAO','ST','DIFAL')
+GROUP BY 1 ORDER BY icms DESC LIMIT 10`, companyID, periodo, "", uf, fornC, numC, diC, dfC); e == nil {
+			for rows.Next() {
+				var f kpiFornecedor
+				if rows.Scan(&f.Fornecedor, &f.IcmsDevido) == nil {
+					fornAcc[f.Fornecedor] += f.IcmsDevido
+				}
+			}
+			rows.Close()
+		}
+
+		// Materializa ordenado por ICMS devido (desc)
+		for _, k := range regAcc {
+			kpis.PorRegime = append(kpis.PorRegime, *k)
+			kpis.TotalICMSDevido += k.IcmsDevido
+			kpis.TotalNotas += k.QtdNotas
+		}
+		sort.Slice(kpis.PorRegime, func(i, j int) bool { return kpis.PorRegime[i].IcmsDevido > kpis.PorRegime[j].IcmsDevido })
+		for nome, icms := range fornAcc {
+			kpis.TopFornecedores = append(kpis.TopFornecedores, kpiFornecedor{Fornecedor: nome, IcmsDevido: icms})
+		}
+		sort.Slice(kpis.TopFornecedores, func(i, j int) bool { return kpis.TopFornecedores[i].IcmsDevido > kpis.TopFornecedores[j].IcmsDevido })
+		if len(kpis.TopFornecedores) > 5 {
+			kpis.TopFornecedores = kpis.TopFornecedores[:5]
 		}
 
 		client := services.NewAIClient()
