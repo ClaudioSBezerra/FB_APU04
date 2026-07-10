@@ -612,20 +612,21 @@ function RecalcularButton() {
   async function handleRecalcular() {
     setLoading(true)
     try {
-      // Refresca a materialized view no SERVIDOR (base dos Blocos A/B). Sem
-      // isso, o import de SPED não aparecia no Resumo — o botão só limpava o
-      // cache do navegador. Pode levar alguns minutos em bases grandes.
+      // Dispara o refresh da materialized view no SERVIDOR (base dos Blocos
+      // A/B). Roda em background (leva ~1-2 min) — o endpoint devolve 202 na
+      // hora. Sem isso, o import de SPED não aparecia no Resumo.
       const res = await fetch('/api/icms-fronteira/recalcular', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       })
+      if (res.status === 409) {
+        toast.info('Já há um recálculo em andamento — aguarde ~1-2 min e recarregue.')
+        return
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      await queryClient.invalidateQueries({ queryKey: ['icms-fronteira'] })
-      await queryClient.invalidateQueries({ queryKey: ['icms-fronteira/resumo'] })
-      await queryClient.invalidateQueries({ queryKey: ['icms-fronteira/regras'] })
-      toast.success('Base recalculada e dados atualizados')
+      toast.success('Recálculo iniciado — leva ~1-2 min. Reaplique o período depois para ver os dados atualizados.')
     } catch {
-      toast.error('Falha ao recalcular a base do Fronteira')
+      toast.error('Falha ao iniciar o recálculo da base do Fronteira')
     } finally {
       setLoading(false)
     }
