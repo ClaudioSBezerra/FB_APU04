@@ -721,22 +721,60 @@ function ResumoTab({ token }: { token: string | null }) {
   const uf = useFronteiraUF()
   const inaplic = useFronteiraInaplic()
 
-  const { data, isLoading, isError } = useQuery<FronteiraResumoResponse>({
+  // Resumo em DUAS chamadas (2026-07-10): A/B (SPED via MV) é rápido e carrega
+  // na hora; Bloco C (não-SPED / XML) é pesado na FC (100k+ notas/mês) e vem
+  // numa chamada separada (?parte=c) — os cards A/B aparecem sem esperar o C,
+  // que é somado quando fica pronto.
+  const buildParams = (parte?: string) => {
+    const params = new URLSearchParams()
+    if (periodo) params.set('periodo', periodo)
+    if (uf) params.set('uf', uf)
+    if (inaplic) params.set('inaplic', inaplicParam(inaplic))
+    if (parte) params.set('parte', parte)
+    return params.toString()
+  }
+  const fetchResumo = async (parte?: string) => {
+    const res = await fetch(`/api/icms-fronteira/resumo?${buildParams(parte)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) throw new Error(`Erro ${res.status}`)
+    return res.json() as Promise<FronteiraResumoResponse>
+  }
+  const abQuery = useQuery<FronteiraResumoResponse>({
     queryKey: ['icms-fronteira/resumo', periodo, uf, inaplic],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      if (periodo) params.set('periodo', periodo)
-      if (uf) params.set('uf', uf)
-      if (inaplic) params.set('inaplic', inaplicParam(inaplic))
-      const qs = params.toString()
-      const res = await fetch(`/api/icms-fronteira/resumo${qs ? `?${qs}` : ''}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) throw new Error(`Erro ${res.status}`)
-      return res.json()
-    },
+    queryFn: () => fetchResumo(),
     enabled: !!periodo,
   })
+  const cQuery = useQuery<FronteiraResumoResponse>({
+    queryKey: ['icms-fronteira/resumo-c', periodo, uf, inaplic],
+    queryFn: () => fetchResumo('c'),
+    enabled: !!periodo,
+  })
+
+  const isLoading = abQuery.isLoading
+  const isError = abQuery.isError
+  const cLoading = cQuery.isLoading || cQuery.isFetching
+
+  // Funde A/B + Bloco C por regime (soma). Mostra A/B mesmo com o C pendente.
+  const data: FronteiraResumoResponse | undefined = (() => {
+    if (!abQuery.data && !cQuery.data) return undefined
+    const map = new Map<string, FronteiraResumoRow>()
+    const add = (rows?: FronteiraResumoRow[]) => rows?.forEach(r => {
+      const e = map.get(r.regime) ?? { regime: r.regime, qtd_notas: 0, v_prod_total: 0, v_ipi_total: 0, v_st_retido: 0, icms_devido_est: 0 }
+      e.qtd_notas += r.qtd_notas; e.v_prod_total += r.v_prod_total; e.v_ipi_total += r.v_ipi_total
+      e.v_st_retido += r.v_st_retido; e.icms_devido_est += r.icms_devido_est
+      map.set(r.regime, e)
+    })
+    add(abQuery.data?.rows); add(cQuery.data?.rows)
+    const order = ['ANTECIPACAO', 'DIFAL', 'ST']
+    const rank = (rg: string) => { const i = order.indexOf(rg); return i < 0 ? 99 : i }
+    const rows = [...map.values()].sort((a, b) => rank(a.regime) - rank(b.regime))
+    return {
+      rows,
+      total_devido: rows.reduce((s, r) => s + r.icms_devido_est, 0),
+      total_prod: rows.reduce((s, r) => s + r.v_prod_total, 0),
+    }
+  })()
 
   // Barra de período + ações — SEMPRE visível (loading/erro/vazio/dados), para
   // o seletor nunca "sumir" quando um período volta vazio ou lento (2026-07-10).
@@ -787,6 +825,19 @@ function ResumoTab({ token }: { token: string | null }) {
   }
 
   if (!data || data.rows.length === 0) {
+    // A/B vazio mas Bloco C ainda carregando (ex.: 06/2026 sem SPED, só XML) —
+    // não mostrar o estado vazio/IA cedo demais; esperar o C.
+    if (cLoading) {
+      return (
+        <div className="space-y-4">
+          {periodoBar}
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-10">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Carregando Bloco C (XML não lançado no SPED)… pode levar 1-2 min em meses de volume alto.
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="space-y-4">
         {periodoBar}
@@ -811,6 +862,13 @@ function ResumoTab({ token }: { token: string | null }) {
   return (
     <div className="space-y-6">
       {periodoBar}
+
+      {cLoading && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Somando o Bloco C (XML não lançado no SPED)… os valores abaixo ainda vão aumentar.
+        </div>
+      )}
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -559,31 +559,12 @@ func IcmsFronteiraResumoHandler(db *sql.DB) http.HandlerFunc {
 		}
 		icmsExpr := icmsDevidoExpr(inaplicSQL)
 
-		query := fronteiraBaseQuery + `
-SELECT
-    regime,
-    COUNT(DISTINCT chave_nfe) AS qtd_notas,
-    SUM(v_prod)         AS v_prod_total,
-    SUM(v_ipi)          AS v_ipi_total,
-    SUM(v_st)           AS v_st_retido,
-    SUM(` + icmsExpr + `) AS icms_devido_est
-FROM classified
-WHERE regime IS NOT NULL` + filtroSQL + `
-GROUP BY regime
-ORDER BY regime
-`
-		args := append([]interface{}{companyID, periodo}, filtroArgs...)
-		rows, err := db.Query(query, args...)
-		if err != nil {
-			log.Printf("IcmsFronteiraResumo error: %v", err)
-			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar resumo ICMS Fronteira")
-			return
-		}
-		defer rows.Close()
+		// Resumo dividido em duas chamadas (2026-07-10) para não travar na FC
+		// (100k+ notas/mês no XML): default (ou parte=ab) traz só os Blocos A/B
+		// (SPED via MV — rápido); parte=c traz só o Bloco C (naoSpedQuery pesada),
+		// buscado à parte pelo frontend, que soma os dois.
+		parte := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("parte")))
 
-		// Acumula por regime num mapa para poder SOMAR os Blocos A/B (SPED) com o
-		// Bloco C (não-SPED / XML) — decisão do Claudio 2026-07-10: o Resumo passa
-		// a refletir também o que só existe no XML (ex.: 06/2026 sem SPED).
 		acc := map[string]*FronteiraResumoRow{}
 		addRow := func(regime string, qtd int, vProd, vIpi, vSt, icms float64) {
 			r := acc[regime]
@@ -598,33 +579,58 @@ ORDER BY regime
 			r.IcmsDevidoEst += icms
 		}
 
-		for rows.Next() {
-			var row FronteiraResumoRow
-			if err := rows.Scan(
-				&row.Regime, &row.QtdNotas, &row.VProdTotal, &row.VIpiTotal, &row.VStRetido, &row.IcmsDevidoEst,
-			); err != nil {
-				log.Printf("IcmsFronteiraResumo scan error: %v", err)
-				continue
+		// Blocos A/B (SPED via mv_icms_fronteira_linhas) — rápido.
+		if parte != "c" {
+			query := fronteiraBaseQuery + `
+SELECT
+    regime,
+    COUNT(DISTINCT chave_nfe) AS qtd_notas,
+    SUM(v_prod)         AS v_prod_total,
+    SUM(v_ipi)          AS v_ipi_total,
+    SUM(v_st)           AS v_st_retido,
+    SUM(` + icmsExpr + `) AS icms_devido_est
+FROM classified
+WHERE regime IS NOT NULL` + filtroSQL + `
+GROUP BY regime
+ORDER BY regime
+`
+			args := append([]interface{}{companyID, periodo}, filtroArgs...)
+			rows, err := db.Query(query, args...)
+			if err != nil {
+				log.Printf("IcmsFronteiraResumo error: %v", err)
+				jsonErr(w, http.StatusInternalServerError, "Erro ao consultar resumo ICMS Fronteira")
+				return
 			}
-			addRow(row.Regime, row.QtdNotas, row.VProdTotal, row.VIpiTotal, row.VStRetido, row.IcmsDevidoEst)
+			for rows.Next() {
+				var row FronteiraResumoRow
+				if err := rows.Scan(
+					&row.Regime, &row.QtdNotas, &row.VProdTotal, &row.VIpiTotal, &row.VStRetido, &row.IcmsDevidoEst,
+				); err != nil {
+					log.Printf("IcmsFronteiraResumo scan error: %v", err)
+					continue
+				}
+				addRow(row.Regime, row.QtdNotas, row.VProdTotal, row.VIpiTotal, row.VStRetido, row.IcmsDevidoEst)
+			}
+			rows.Close()
 		}
-		rows.Close()
 
 		// Bloco C (não-SPED / XML): reusa a MESMA naoSpedQuery com regime vazio
-		// ($3='') p/ trazer os 3 regimes de uma vez e agrega por regime. NAO_FRONTEIRA
-		// fica de fora (só os regimes de fronteira entram no Resumo).
-		fornC, numC, diC, dfC := naoSpedFiltros(r)
-		ufC := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
-		cRows, cErr := db.Query(`
-			SELECT regime, COUNT(DISTINCT chave_nfe) AS qtd, COALESCE(SUM(v_prod),0),
-			       COALESCE(SUM(v_ipi),0), COALESCE(SUM(icms_devido_est),0)
-			FROM (`+naoSpedQuery+`) c
-			WHERE regime IN ('ANTECIPACAO','ST','DIFAL')
-			GROUP BY regime`,
-			companyID, periodo, "", ufC, fornC, numC, diC, dfC)
-		if cErr != nil {
-			log.Printf("IcmsFronteiraResumo bloco C error: %v", cErr)
-		} else {
+		// ($3='') p/ trazer os 3 regimes e agrega. Pesada → só quando parte=c.
+		if parte == "c" {
+			fornC, numC, diC, dfC := naoSpedFiltros(r)
+			ufC := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+			cRows, cErr := db.Query(`
+				SELECT regime, COUNT(DISTINCT chave_nfe) AS qtd, COALESCE(SUM(v_prod),0),
+				       COALESCE(SUM(v_ipi),0), COALESCE(SUM(icms_devido_est),0)
+				FROM (`+naoSpedQuery+`) c
+				WHERE regime IN ('ANTECIPACAO','ST','DIFAL')
+				GROUP BY regime`,
+				companyID, periodo, "", ufC, fornC, numC, diC, dfC)
+			if cErr != nil {
+				log.Printf("IcmsFronteiraResumo bloco C error: %v", cErr)
+				jsonErr(w, http.StatusInternalServerError, "Erro ao consultar Bloco C do resumo")
+				return
+			}
 			for cRows.Next() {
 				var regime string
 				var qtd int
