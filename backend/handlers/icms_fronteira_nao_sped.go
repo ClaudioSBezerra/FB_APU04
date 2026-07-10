@@ -72,8 +72,11 @@ WITH emp_uf AS (
         COALESCE(ne.status, 'ATIVO') AS nf_status
     FROM nfe_entradas ne
     WHERE ne.company_id = $1
-      AND EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
-      AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',2)::int
+      -- Filtra por mes_ano (indexado em idx_nfe_entradas_company_mes) em vez de
+      -- EXTRACT(data_emissao) — o EXTRACT não usa índice e varria TODAS as
+      -- entradas da empresa (2026-07-10, gargalo do Bloco C na FC). $2 é sempre
+      -- 'MM/AAAA'; vazio = todos os meses.
+      AND ($2::text = '' OR ne.mes_ano = $2)
       AND NOT EXISTS (
           SELECT 1 FROM reg_c100 c100 JOIN import_jobs j ON j.id = c100.job_id
           WHERE j.company_id = $1 AND c100.chv_nfe = ne.chave_nfe
