@@ -236,8 +236,10 @@ xml_itens AS (
               )
           )
       )
-      AND EXTRACT(MONTH FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',1)::int
-      AND EXTRACT(YEAR  FROM ne.data_emissao)::int = SPLIT_PART($2::text,'/',2)::int
+      -- mes_ano (indexado em idx_nfe_entradas_company_mes) em vez de
+      -- EXTRACT(data_emissao), que não usa índice e varria TODAS as entradas
+      -- da empresa (mesmo gargalo do Bloco C, 2026-07-10). Vazio = todos.
+      AND ($2::text = '' OR ne.mes_ano = $2)
       AND ($3::text = '' OR COALESCE(ne.dest_uf,'PE') = $3)
       AND NOT EXISTS (
           SELECT 1 FROM reg_c100 c100 JOIN import_jobs j ON j.id = c100.job_id
