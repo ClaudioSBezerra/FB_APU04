@@ -154,36 +154,7 @@ func UploadEFDContribuicoesHandler(db *sql.DB) http.HandlerFunc {
 
 		// --- Integrity Check (Storage Verification) — mesma checagem de |9999| final ---
 		expectedLines := r.FormValue("expected_lines")
-		actualLines := "not_found"
-
-		if fi, err := os.Stat(savePath); err == nil {
-			size := fi.Size()
-			tailBuf := make([]byte, 16384)
-			startPos := int64(0)
-			if size > 16384 {
-				startPos = size - 16384
-			}
-
-			if fCheck, err := os.Open(savePath); err == nil {
-				fCheck.ReadAt(tailBuf, startPos)
-				fCheck.Close()
-
-				tailStr := string(tailBuf)
-				lines := strings.Split(tailStr, "\n")
-				for i := len(lines) - 1; i >= 0; i-- {
-					trimmed := strings.TrimSpace(lines[i])
-					if strings.HasPrefix(trimmed, "|9999|") {
-						parts := strings.Split(trimmed, "|")
-						if len(parts) >= 3 && parts[1] == "9999" {
-							if countVal, err := strconv.Atoi(parts[2]); err == nil && countVal > 0 {
-								actualLines = parts[2]
-								break
-							}
-						}
-					}
-				}
-			}
-		}
+		actualLines := detectDeclaredLineCount(savePath, 0)
 
 		// Insert job into database with tipo_arquivo='efd_contribuicoes'
 		var jobID string

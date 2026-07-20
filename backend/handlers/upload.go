@@ -20,6 +20,49 @@ func Atoi(s string) int {
 	return n
 }
 
+// detectDeclaredLineCount lê os últimos 16KB de um arquivo SPED já salvo em
+// disco e procura o registro trailer |9999|N| (linha de contagem total),
+// tolerando lixo/assinatura digital após ele. Retorna "not_found" se o
+// arquivo não existir/não puder ser lido ou não houver trailer válido com
+// contagem > minCount (o SPED Fiscal usa minCount=100 para evitar falsos
+// positivos em arquivos grandes; EFD Contribuições usa 0 pois arquivos de
+// teste/pequenos são legítimos).
+func detectDeclaredLineCount(savePath string, minCount int) string {
+	fi, err := os.Stat(savePath)
+	if err != nil {
+		return "not_found"
+	}
+
+	size := fi.Size()
+	tailBuf := make([]byte, 16384)
+	startPos := int64(0)
+	if size > 16384 {
+		startPos = size - 16384
+	}
+
+	f, err := os.Open(savePath)
+	if err != nil {
+		return "not_found"
+	}
+	defer f.Close()
+	f.ReadAt(tailBuf, startPos)
+
+	lines := strings.Split(string(tailBuf), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(trimmed, "|9999|") {
+			continue
+		}
+		parts := strings.Split(trimmed, "|")
+		if len(parts) >= 3 && parts[1] == "9999" {
+			if countVal, err := strconv.Atoi(parts[2]); err == nil && countVal > minCount {
+				return parts[2]
+			}
+		}
+	}
+	return "not_found"
+}
+
 type UploadResponse struct {
 	JobID         string `json:"job_id"`
 	Message       string `json:"message"`
@@ -172,46 +215,14 @@ func UploadHandler(db *sql.DB) http.HandlerFunc {
 		// Read last 16KB to find |9999| (Handling Digital Signatures)
 		if fi, err := os.Stat(savePath); err == nil {
 			written := fi.Size()
-			tailBuf := make([]byte, 16384) // 16KB buffer
-			startPos := int64(0)
-			if written > 16384 {
-				startPos = written - 16384
-			}
+			actualLines = detectDeclaredLineCount(savePath, 100)
 
-			if fCheck, err := os.Open(savePath); err == nil {
-				fCheck.ReadAt(tailBuf, startPos)
-				fCheck.Close()
+			fmt.Printf("LOG API Integrity: File=%s\n", safeFilename)
+			fmt.Printf("LOG API Frontend: Expected Lines=%s, Expected Size=%s\n", expectedLines, expectedSize)
+			fmt.Printf("LOG API Storage:  Registro Final %s, tamanho recebido final %d\n", actualLines, written)
 
-				tailStr := string(tailBuf)
-
-				// Look for last valid |9999| occurrence
-				// Regex to find |9999|COUNT|
-				// We search from end manually or iterate
-				lines := strings.Split(tailStr, "\n")
-				for i := len(lines) - 1; i >= 0; i-- {
-					// STRICT CHECK: Must START with |9999| (LPAD style) to avoid false positives in descriptions
-					trimmed := strings.TrimSpace(lines[i])
-					if strings.HasPrefix(trimmed, "|9999|") {
-						parts := strings.Split(trimmed, "|")
-						// |9999|COUNT| -> index 0 is empty, 1 is 9999, 2 is COUNT
-						// Check if count > 100 to ensure it's a valid SPED trailer and not a random occurrence
-						if len(parts) >= 3 && parts[1] == "9999" {
-							// Parse count to ensure it's numeric and reasonably large
-							if countVal, err := strconv.Atoi(parts[2]); err == nil && countVal > 100 {
-								actualLines = parts[2]
-								break // Found the trailer, ignore subsequent garbage/signatures
-							}
-						}
-					}
-				}
-
-				fmt.Printf("LOG API Integrity: File=%s\n", safeFilename)
-				fmt.Printf("LOG API Frontend: Expected Lines=%s, Expected Size=%s\n", expectedLines, expectedSize)
-				fmt.Printf("LOG API Storage:  Registro Final %s, tamanho recebido final %d\n", actualLines, written)
-
-				if expectedLines != "unknown" && expectedLines != actualLines {
-					fmt.Printf("LOG API WARNING: Line count mismatch! Frontend says %s, Storage found %s\n", expectedLines, actualLines)
-				}
+			if expectedLines != "unknown" && expectedLines != actualLines {
+				fmt.Printf("LOG API WARNING: Line count mismatch! Frontend says %s, Storage found %s\n", expectedLines, actualLines)
 			}
 		}
 		// ---------------------------------------------
