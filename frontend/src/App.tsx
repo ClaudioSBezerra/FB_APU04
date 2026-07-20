@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/sonner'
 // próprio, tirando ~2 MB do bundle de entrada. Libs pesadas usadas só por
 // algumas páginas (recharts, react-simple-maps, xlsx) saem do entry junto.
 const ImportarEFD = lazy(() => import('./pages/ImportarEFD'))
+const ImportarEFDContribuicoes = lazy(() => import('./pages/ImportarEFDContribuicoes'))
 const AuditoriaEFD = lazy(() => import('./pages/AuditoriaEFD'))
 const Mercadorias = lazy(() => import('./pages/Mercadorias'))
 const MercadoriasXML = lazy(() => import('./pages/MercadoriasXML'))
@@ -111,6 +112,7 @@ const MODULE_HOME: Record<string, string> = {
   fronteira:    '/icms-fronteira',
   auditoria:    '/auditoria-efd',
   pacotefiscal: '/pacote-fiscal/comparacao',
+  efdcontrib:   '/importar-efd-contribuicoes',
 }
 
 // Gate por módulo (personas): envolve todas as rotas do AppLayout. Config fica
@@ -225,6 +227,7 @@ function AppLayout() {
 
               {/* Simulador da Reforma Tributária - SPED */}
               <Route path="/importar-efd"                      element={<ImportarEFD />} />
+              <Route path="/importar-efd-contribuicoes"        element={<ImportarEFDContribuicoes />} />
               <Route path="/auditoria-efd"                     element={<AuditoriaEFD />} />
               {/* Comparação liberada por persona (ModuleGate); importação segue admin-only */}
               <Route path="/pacote-fiscal/importar"            element={<AdminRoute><ImportarXMLPacoteFiscal /></AdminRoute>} />

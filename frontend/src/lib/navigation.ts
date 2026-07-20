@@ -77,6 +77,12 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Relatório Diagnóstico', path: '/pacote-fiscal/diagnostico' },
     ],
   },
+  efdcontrib: {
+    label: 'EFD Contribuições',
+    tabs: [
+      { label: 'Importar EFD Contribuições', path: '/importar-efd-contribuicoes' },
+    ],
+  },
   config: {
     label: 'Configurações',
     tabs: [
@@ -97,6 +103,10 @@ export const modules: Record<string, ModuleConfig> = {
 
 export function getActiveModule(pathname: string): string {
   if (pathname === '/') return 'simulador'
+  // Checagem específica ANTES da genérica '/importar-efd' abaixo — senão
+  // '/importar-efd-contribuicoes'.startsWith('/importar-efd') === true e o
+  // módulo nunca seria alcançado (sempre cairia em 'simulador').
+  if (pathname.startsWith('/importar-efd-contribuicoes')) return 'efdcontrib'
   if (pathname.startsWith('/importar-efd')) return 'simulador'
   if (pathname.startsWith('/mercadorias')) return 'simulador'
   if (pathname.startsWith('/operacoes/')) return 'simulador'

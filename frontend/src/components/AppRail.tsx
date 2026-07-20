@@ -1,4 +1,4 @@
-import { TrendingUp, FolderInput, Settings, LogOut, KeyRound, BarChart3, Scale, MapPin, ShieldCheck, FlaskConical } from 'lucide-react'
+import { TrendingUp, FolderInput, Settings, LogOut, KeyRound, BarChart3, Scale, MapPin, ShieldCheck, FlaskConical, FileSpreadsheet } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import {
@@ -40,6 +40,10 @@ const mainItems = [
   // Liberado por persona desde 2026-07-06 (antes admin-only) — o filtro
   // hasModule() abaixo é quem decide a visibilidade
   { id: 'pacotefiscal', icon: FlaskConical, label: 'Teste Pacote Fiscal', path: '/pacote-fiscal/comparacao' },
+  // Visibilidade por persona via hasModule() abaixo, igual aos demais itens.
+  // Módulos desconhecidos ficam ocultos por padrão até liberação de persona
+  // (fora de escopo desta entrega — ver spec-efd-contribuicoes-enriquecimento.md).
+  { id: 'efdcontrib', icon: FileSpreadsheet, label: 'EFD Contribuições', path: '/importar-efd-contribuicoes' },
 ]
 
 export function AppRail() {

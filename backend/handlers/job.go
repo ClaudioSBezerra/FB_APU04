@@ -131,13 +131,29 @@ func ListJobsHandler(db *sql.DB) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
-		rows, err := db.QueryContext(ctx, `
-			SELECT id, filename, status, message, created_at, updated_at
-			FROM import_jobs
-			WHERE company_id = $1
-			ORDER BY created_at DESC
-			LIMIT 100
-		`, companyID)
+		// Filtro opcional por tipo de arquivo (ex.: ?tipo=efd_contribuicoes) —
+		// permite que telas dedicadas (como Importar EFD Contribuições) listem
+		// só os próprios jobs, sem misturar com o fluxo EFD ICMS/IPI.
+		tipo := r.URL.Query().Get("tipo")
+
+		var rows *sql.Rows
+		if tipo != "" {
+			rows, err = db.QueryContext(ctx, `
+				SELECT id, filename, status, message, created_at, updated_at
+				FROM import_jobs
+				WHERE company_id = $1 AND tipo_arquivo = $2
+				ORDER BY created_at DESC
+				LIMIT 100
+			`, companyID, tipo)
+		} else {
+			rows, err = db.QueryContext(ctx, `
+				SELECT id, filename, status, message, created_at, updated_at
+				FROM import_jobs
+				WHERE company_id = $1
+				ORDER BY created_at DESC
+				LIMIT 100
+			`, companyID)
+		}
 		if err != nil {
 			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
 			return

@@ -1,0 +1,214 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// UploadEFDContribuicoesHandler recebe o upload (chunked ou não) do arquivo
+// oficial de EFD Contribuições. É uma réplica do padrão de UploadHandler
+// (backend/handlers/upload.go) — mesma lógica de chunking/integridade —
+// diferindo apenas em marcar o job criado com tipo_arquivo='efd_contribuicoes',
+// para que o worker (backend/worker/worker.go) despache para o pipeline de
+// enriquecimento de PIS/COFINS em vez do parser EFD ICMS/IPI.
+func UploadEFDContribuicoesHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// CORS Headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// STANDARD STREAMING UPLOAD LOGIC (mesmo padrão de UploadHandler)
+		r.ParseMultipartForm(64 << 20)
+
+		// Get User Context
+		userID := GetUserIDFromContext(r)
+		if userID == "" {
+			http.Error(w, "Unauthorized: User ID not found", http.StatusUnauthorized)
+			return
+		}
+
+		// Determine Target Company
+		companyID, err := GetEffectiveCompanyID(db, userID, r.Header.Get("X-Company-ID"))
+		if err != nil {
+			http.Error(w, "Error getting user company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "Error retrieving the file: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		// Validate extension
+		ext := strings.ToLower(filepath.Ext(header.Filename))
+		if ext != ".txt" {
+			http.Error(w, "Invalid file type. Only .txt is allowed.", http.StatusBadRequest)
+			return
+		}
+
+		// CHUNKED UPLOAD LOGIC
+		isChunked := r.FormValue("is_chunked") == "true"
+		uploadID := r.FormValue("upload_id")
+		chunkIndex := r.FormValue("chunk_index")
+		totalChunks := r.FormValue("total_chunks")
+
+		var safeFilename string
+		var savePath string
+		var written int64
+
+		if isChunked {
+			if uploadID == "" {
+				http.Error(w, "Missing upload_id for chunked upload", http.StatusBadRequest)
+				return
+			}
+			safeFilename = uploadID + "_" + filepath.Base(header.Filename)
+			savePath = filepath.Join("uploads", safeFilename)
+
+			flags := os.O_APPEND | os.O_CREATE | os.O_WRONLY
+			if chunkIndex == "0" {
+				flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+			}
+
+			if err := os.MkdirAll("uploads", 0755); err != nil {
+				http.Error(w, "Failed to create upload directory", http.StatusInternalServerError)
+				return
+			}
+
+			dst, err := os.OpenFile(savePath, flags, 0644)
+			if err != nil {
+				log.Printf("EFD Contribuicoes Chunk Upload Error: %v\n", err)
+				http.Error(w, "Failed to open chunk file", http.StatusInternalServerError)
+				return
+			}
+
+			wBytes, err := io.Copy(dst, file)
+			dst.Close()
+			if err != nil {
+				http.Error(w, "Failed to write chunk", http.StatusInternalServerError)
+				return
+			}
+			written = wBytes
+
+			// If this is NOT the last chunk, return success immediately (don't create job yet)
+			if chunkIndex != fmt.Sprintf("%d", Atoi(totalChunks)-1) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]string{"status": "chunk_received", "chunk": chunkIndex})
+				return
+			}
+
+			log.Printf("EFD Contribuicoes Chunked Upload Complete: %s\n", safeFilename)
+
+		} else {
+			// STANDARD UPLOAD (Legacy / Small files)
+			originalName := filepath.Base(header.Filename)
+			timestamp := time.Now().Format("20060102_150405")
+			safeFilename = fmt.Sprintf("%s_%s", timestamp, originalName)
+			savePath = filepath.Join("uploads", safeFilename)
+
+			if err := os.MkdirAll("uploads", 0755); err != nil {
+				http.Error(w, "Failed to create upload directory", http.StatusInternalServerError)
+				return
+			}
+
+			dst, err := os.Create(savePath)
+			if err != nil {
+				http.Error(w, "Unable to create the file on server", http.StatusInternalServerError)
+				return
+			}
+
+			wBytes, err := io.Copy(dst, file)
+			dst.Close()
+			if err != nil {
+				http.Error(w, "Unable to save the file content", http.StatusInternalServerError)
+				return
+			}
+			written = wBytes
+		}
+
+		log.Printf("EFD Contribuicoes Upload Debug: Header Size: %d, Written: %d\n", header.Size, written)
+		if written != header.Size {
+			log.Printf("WARNING: EFD Contribuicoes upload size mismatch! Header says %d but wrote %d bytes.\n", header.Size, written)
+		}
+
+		// --- Integrity Check (Storage Verification) — mesma checagem de |9999| final ---
+		expectedLines := r.FormValue("expected_lines")
+		actualLines := "not_found"
+
+		if fi, err := os.Stat(savePath); err == nil {
+			size := fi.Size()
+			tailBuf := make([]byte, 16384)
+			startPos := int64(0)
+			if size > 16384 {
+				startPos = size - 16384
+			}
+
+			if fCheck, err := os.Open(savePath); err == nil {
+				fCheck.ReadAt(tailBuf, startPos)
+				fCheck.Close()
+
+				tailStr := string(tailBuf)
+				lines := strings.Split(tailStr, "\n")
+				for i := len(lines) - 1; i >= 0; i-- {
+					trimmed := strings.TrimSpace(lines[i])
+					if strings.HasPrefix(trimmed, "|9999|") {
+						parts := strings.Split(trimmed, "|")
+						if len(parts) >= 3 && parts[1] == "9999" {
+							if countVal, err := strconv.Atoi(parts[2]); err == nil && countVal > 0 {
+								actualLines = parts[2]
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Insert job into database with tipo_arquivo='efd_contribuicoes'
+		var jobID string
+		expLines := 0
+		if expectedLines != "" && expectedLines != "unknown" && expectedLines != "not_found" {
+			expLines, _ = strconv.Atoi(expectedLines)
+		}
+		query := `INSERT INTO import_jobs (filename, status, message, company_id, expected_lines, tipo_arquivo) VALUES ($1, $2, $3, $4, $5, 'efd_contribuicoes') RETURNING id`
+		err = db.QueryRow(query, safeFilename, "pending", "Arquivo EFD Contribuições recebido", companyID, expLines).Scan(&jobID)
+		if err != nil {
+			os.Remove(savePath)
+			log.Printf("Database Error (EFD Contribuicoes): %v\n", err)
+			http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("EFD Contribuicoes Upload Success: Job %s created for file %s\n", jobID, safeFilename)
+
+		response := UploadResponse{
+			JobID:         jobID,
+			Message:       "File uploaded and saved successfully",
+			Filename:      safeFilename,
+			DetectedLines: actualLines,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}
+}

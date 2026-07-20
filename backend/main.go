@@ -469,6 +469,9 @@ func main() {
 	// SPED Upload Handler
 	http.HandleFunc("/api/upload", withAuth(handlers.UploadHandler, ""))
 
+	// EFD Contribuições Upload Handler (enriquecimento de PIS/COFINS por chave de acesso)
+	http.HandleFunc("/api/efd-contribuicoes/upload", withAuth(handlers.UploadEFDContribuicoesHandler, ""))
+
 	// Check Duplicity Handler
 	http.HandleFunc("/api/check-duplicity", withAuth(handlers.CheckDuplicityHandler, ""))
 

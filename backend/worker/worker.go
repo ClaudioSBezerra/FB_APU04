@@ -419,6 +419,19 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 		return "", fmt.Errorf("database connection lost before start: %v", err)
 	}
 
+	// DISPATCH BY JOB TYPE: jobs criados por /api/efd-contribuicoes/upload têm
+	// tipo_arquivo='efd_contribuicoes' e seguem um pipeline totalmente
+	// diferente (enriquecimento de PIS/COFINS via C100, não o parser completo
+	// do EFD ICMS/IPI abaixo). Jobs antigos/sem coluna preenchida (default
+	// 'efd_icms_ipi') continuam no fluxo original, inalterado.
+	var tipoArquivo string
+	if err := db.QueryRow("SELECT COALESCE(tipo_arquivo, 'efd_icms_ipi') FROM import_jobs WHERE id = $1", jobID).Scan(&tipoArquivo); err != nil {
+		return "", fmt.Errorf("failed to read job type: %v", err)
+	}
+	if tipoArquivo == "efd_contribuicoes" {
+		return processEFDContribuicoesFile(db, jobID, filename)
+	}
+
 	// CHECKPOINT: Check if we are resuming a job
 	var lastLineProcessed int
 	err := db.QueryRow("SELECT COALESCE(last_line_processed, 0) FROM import_jobs WHERE id = $1", jobID).Scan(&lastLineProcessed)
@@ -1114,6 +1127,217 @@ func processFile(db *sql.DB, jobID, filename string) (string, error) {
 	fmt.Printf("Worker: C190 IPI summary — registros com IPI>0: %d / %d | total IPI: %.2f\n", countC190IpiNonZero, countC190, totalC190IPI)
 	return fmt.Sprintf("Imported: 0000=%d, 0150=%d, 0200=%d, C100=%d(DB:%d), C170=%d, C190=%d(IPI_nz=%d,IPI_total=%.2f), C500=%d(DB:%d), C600=%d, D100=%d(DB:%d), D162=%d, D500=%d(DB:%d)%s",
 		count0000, count0150, count0200, countC100, dbCountC100, countC170, countC190, countC190IpiNonZero, totalC190IPI, countC500, dbCountC500, countC600, countD100, dbCountD100, countD162, countD500, dbCountD500, debugLog.String()), nil
+}
+
+// c100Fields são os campos extraídos de uma linha C100 do EFD Contribuições
+// relevantes para o enriquecimento de PIS/COFINS.
+type c100Fields struct {
+	IndOper  string
+	ChvNFe   string
+	VlPis    float64
+	VlCofins float64
+}
+
+// parseC100Fields extrai IND_OPER/CHV_NFE/VL_PIS/VL_COFINS de uma linha C100
+// já quebrada por "|" (strings.Split(line, "|")), seguindo o layout oficial
+// documentado no comentário de processEFDContribuicoesFile. Retorna ok=false
+// se `parts` for curto demais para conter os campos necessários (linha de
+// layout inesperado) — o chamador deve pular a linha sem derrubar o job.
+func parseC100Fields(parts []string) (c100Fields, bool) {
+	// Precisamos de índices até VL_COFINS (parts[27]) inclusive.
+	if len(parts) < 28 {
+		return c100Fields{}, false
+	}
+	return c100Fields{
+		IndOper:  strings.TrimSpace(parts[2]),
+		ChvNFe:   strings.TrimSpace(parts[9]),
+		VlPis:    parseDecimal(parts[26]),
+		VlCofins: parseDecimal(parts[27]),
+	}, true
+}
+
+// processEFDContribuicoesFile é o pipeline de enriquecimento de PIS/COFINS a
+// partir do arquivo oficial de EFD Contribuições. Diferente de processFile
+// (parser completo do EFD ICMS/IPI), aqui só o registro C100 (documento,
+// cabeçalho da NF-e) é lido — sem descer a nível de item (C170/C175/etc,
+// fora de escopo desta feature, ver spec-efd-contribuicoes-enriquecimento.md).
+//
+// LAYOUT DO REGISTRO C100 (EFD Contribuições) — CONFIRMADO em 2026-07-20
+// contra um arquivo real de produção (EFD_CONTRIB_092021_V2.txt, ~197 mil
+// registros C100): parts[9] (CHV_NFE) é uma chave de acesso válida de 44
+// dígitos em 99,4% das linhas; parts[26]/parts[27] (VL_PIS/VL_COFINS)
+// concentram-se predominantemente em ~1,65%/7,60% de VL_MERC — exatamente as
+// alíquotas oficiais do regime não-cumulativo de PIS/COFINS. Layout também
+// bate com o leiaute oficial do Guia Prático da EFD-Contribuições:
+//
+//	|C100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|NUM_DOC|CHV_NFE|
+//	DT_DOC|DT_E_S|VL_DOC|IND_PGTO|VL_DESC|VL_ABAT_NT|VL_MERC|IND_FRT|VL_FRT|
+//	VL_SEG|VL_OUT_DA|VL_BC_ICMS|VL_ICMS|VL_BC_ICMS_ST|VL_ICMS_ST|VL_IPI|
+//	VL_PIS|VL_COFINS|VL_PIS_ST|VL_COFINS_ST|
+//
+// Índices em `parts` (parts[0]="" antes do primeiro "|", parts[1]="C100"):
+//
+//	parts[2]=IND_OPER  parts[9]=CHV_NFE  parts[26]=VL_PIS  parts[27]=VL_COFINS
+//
+// Teste unitário com uma linha C100 sintética cobre este layout (ver
+// worker/efd_contribuicoes_test.go).
+func processEFDContribuicoesFile(db *sql.DB, jobID, filename string) (string, error) {
+	if err := db.Ping(); err != nil {
+		return "", fmt.Errorf("database connection lost before start: %v", err)
+	}
+
+	var companyID string
+	if err := db.QueryRow("SELECT COALESCE(company_id::text, '') FROM import_jobs WHERE id = $1", jobID).Scan(&companyID); err != nil {
+		return "", fmt.Errorf("failed to read job company_id: %v", err)
+	}
+	if companyID == "" {
+		return "", fmt.Errorf("job %s has no company_id associated", jobID)
+	}
+
+	// Security: read only from the sandboxed uploads directory (mesma pasta
+	// usada pelo restante do worker).
+	uploadDir := "uploads"
+	path := filepath.Join(uploadDir, filename)
+
+	// PRE-VALIDATION: mesma checagem de integridade (arquivo truncado, sem
+	// |9999| final) usada no fluxo EFD ICMS/IPI.
+	if err := validateFileIntegrity(path); err != nil {
+		fmt.Printf("Worker (EFD Contribuicoes): file integrity check failed: %v\n", err)
+		db.Exec("UPDATE import_jobs SET status='error', message=$1, updated_at=NOW() WHERE id=$2", "File Corrupted/Truncated: "+err.Error(), jobID)
+		return "File Integrity Failed", err
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("file not found: %v", err)
+	}
+	defer file.Close()
+
+	// SPED files são normalmente ISO-8859-1 (Latin1)
+	reader := transform.NewReader(file, charmap.ISO8859_1.NewDecoder())
+	scanner := bufio.NewScanner(reader)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	const CommitEvery = 2000
+	var (
+		lineCount  int
+		countC100  int
+		matched    int
+		notMatched int
+		tx         *sql.Tx
+	)
+
+	beginTx := func() error {
+		var err error
+		tx, err = db.Begin()
+		return err
+	}
+	commitTx := func() error {
+		if tx == nil {
+			return nil
+		}
+		err := tx.Commit()
+		tx = nil
+		return err
+	}
+
+	if err := beginTx(); err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %v", err)
+	}
+
+	fmt.Printf("Worker (EFD Contribuicoes): parsing %s (only C100 records)...\n", filename)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if len(line) < 7 || line[0] != '|' {
+			continue
+		}
+		lineCount++
+
+		parts := strings.Split(line, "|")
+		if len(parts) < 2 || parts[1] != "C100" {
+			continue
+		}
+
+		countC100++
+
+		fields, ok := parseC100Fields(parts)
+		if !ok {
+			fmt.Printf("Worker (EFD Contribuicoes): C100 line %d skipped (unexpected field count: %d)\n", lineCount, len(parts))
+			continue
+		}
+		if fields.ChvNFe == "" {
+			fmt.Printf("Worker (EFD Contribuicoes): C100 line %d skipped (empty CHV_NFE)\n", lineCount)
+			continue
+		}
+
+		var table, tipoNota string
+		switch fields.IndOper {
+		case "0":
+			table = "nfe_entradas"
+			tipoNota = "entrada"
+		case "1":
+			table = "nfe_saidas"
+			tipoNota = "saida"
+		default:
+			fmt.Printf("Worker (EFD Contribuicoes): C100 line %d skipped (unexpected IND_OPER=%q)\n", lineCount, fields.IndOper)
+			continue
+		}
+		chvNFe := fields.ChvNFe
+		vlPis := fields.VlPis
+		vlCofins := fields.VlCofins
+
+		res, err := tx.Exec(
+			fmt.Sprintf("UPDATE %s SET v_pis=$1, v_cofins=$2 WHERE company_id=$3 AND chave_nfe=$4", table),
+			vlPis, vlCofins, companyID, chvNFe,
+		)
+		isMatched := false
+		if err != nil {
+			fmt.Printf("Worker (EFD Contribuicoes): UPDATE %s failed for chave %s: %v\n", table, chvNFe, err)
+		} else if n, _ := res.RowsAffected(); n > 0 {
+			isMatched = true
+		}
+
+		if isMatched {
+			matched++
+		} else {
+			notMatched++
+		}
+
+		if _, err := tx.Exec(
+			`INSERT INTO efd_contribuicoes_matches (job_id, company_id, chave_nfe, tipo_nota, matched, vl_pis, vl_cofins) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			jobID, companyID, chvNFe, tipoNota, isMatched, vlPis, vlCofins,
+		); err != nil {
+			fmt.Printf("Worker (EFD Contribuicoes): failed to record audit row for chave %s: %v\n", chvNFe, err)
+		}
+
+		if countC100%CommitEvery == 0 {
+			if err := commitTx(); err != nil {
+				return "", fmt.Errorf("batch commit failed at C100 #%d: %v", countC100, err)
+			}
+			msg := fmt.Sprintf("Processando C100 #%d (%d casadas, %d não encontradas)...", countC100, matched, notMatched)
+			db.Exec("UPDATE import_jobs SET message=$1, updated_at=NOW() WHERE id=$2", msg, jobID)
+			if err := beginTx(); err != nil {
+				return "", fmt.Errorf("failed to restart transaction at C100 #%d: %v", countC100, err)
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		if tx != nil {
+			tx.Rollback()
+		}
+		return "", fmt.Errorf("error reading file: %v", err)
+	}
+
+	if err := commitTx(); err != nil {
+		return "", fmt.Errorf("final batch commit failed: %v", err)
+	}
+
+	summary := fmt.Sprintf("Importação concluída: %d casadas, %d não encontradas (C100 processados: %d)", matched, notMatched, countC100)
+	fmt.Printf("Worker (EFD Contribuicoes): %s\n", summary)
+	return summary, nil
 }
 
 // purgeJobData remove os dados já gravados de um job (registros do SPED e
