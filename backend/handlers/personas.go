@@ -125,6 +125,7 @@ var validPersonaModules = map[string]bool{
 	"fronteira":    true,
 	"auditoria":    true,
 	"pacotefiscal": true,
+	"efdcontrib":   true,
 }
 
 // UpdatePersonaRequest é o body de POST /api/admin/personas/update?id=X.
@@ -201,6 +202,7 @@ var moduleAPIPrefixes = []struct {
 	{"/api/icms-fronteira/", "fronteira"},
 	{"/api/reforma/", "reforma"},
 	{"/api/auditoria-efd", "auditoria"},
+	{"/api/efd-contribuicoes/", "efdcontrib"},
 	{"/api/fiscal/", "pacotefiscal"},
 	{"/api/pacotefiscal/", "pacotefiscal"},
 	{"/api/xml/painel/", "painel"},
