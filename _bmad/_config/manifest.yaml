@@ -1,48 +1,66 @@
 installation:
-  version: 6.6.0
+  version: 6.10.0
   installDate: 2026-05-05T14:28:07.781Z
-  lastUpdated: 2026-05-05T14:28:07.781Z
+  lastUpdated: 2026-07-14T14:42:39.653Z
 modules:
   - name: core
-    version: 6.6.0
+    version: 6.10.0
     installDate: 2026-05-05T14:28:06.711Z
-    lastUpdated: 2026-05-05T14:28:07.617Z
+    lastUpdated: 2026-07-14T14:42:39.635Z
     source: built-in
     npmPackage: null
     repoUrl: null
   - name: bmm
-    version: 6.6.0
+    version: 6.10.0
     installDate: 2026-05-05T14:28:06.844Z
-    lastUpdated: 2026-05-05T14:28:07.619Z
+    lastUpdated: 2026-07-14T14:42:39.636Z
     source: built-in
     npmPackage: null
     repoUrl: null
-  - name: bmb
-    version: v1.7.0
-    installDate: 2026-05-05T14:28:07.018Z
-    lastUpdated: 2026-05-05T14:28:07.674Z
-    source: external
-    npmPackage: bmad-builder
-    repoUrl: https://github.com/bmad-code-org/bmad-builder
-    channel: stable
-    sha: 86033fc9aeae2ca6d52c7cdb675c1f4bf17fc1c1
-  - name: cis
-    version: v0.2.0
-    installDate: 2026-05-05T14:28:07.102Z
-    lastUpdated: 2026-05-05T14:28:07.728Z
-    source: external
-    npmPackage: bmad-creative-intelligence-suite
-    repoUrl: https://github.com/bmad-code-org/bmad-module-creative-intelligence-suite
-    channel: stable
-    sha: 14a63b893c07173b7a6cfe0fb6a9a72ba51d3cf1
   - name: tea
-    version: v1.15.1
+    version: v1.19.0
     installDate: 2026-05-05T14:28:07.456Z
-    lastUpdated: 2026-05-05T14:28:07.781Z
+    lastUpdated: 2026-07-14T14:42:39.640Z
     source: external
     npmPackage: bmad-method-test-architecture-enterprise
     repoUrl: https://github.com/bmad-code-org/bmad-method-test-architecture-enterprise
     channel: stable
-    sha: 7c94bdc6e3d2c8c3cad09eb0a32a42fade0e9079
+    sha: 8734d51f24071ddbcb3617390b5fcddb4128ef77
+  - name: bmb
+    version: v1.7.0
+    installDate: 2026-05-05T14:28:07.018Z
+    lastUpdated: 2026-07-14T14:42:39.643Z
+    source: external
+    npmPackage: bmad-builder
+    repoUrl: https://github.com/bmad-code-org/bmad-builder
+    channel: pinned
+    sha: 86033fc9aeae2ca6d52c7cdb675c1f4bf17fc1c1
+  - name: cis
+    version: v0.2.1
+    installDate: 2026-05-05T14:28:07.102Z
+    lastUpdated: 2026-07-14T14:42:39.646Z
+    source: external
+    npmPackage: bmad-creative-intelligence-suite
+    repoUrl: https://github.com/bmad-code-org/bmad-module-creative-intelligence-suite
+    channel: stable
+    sha: 07a8dd03d196a762f21c241d985293fe5b0f90e7
+  - name: bmad-loop
+    version: v0.8.1
+    installDate: 2026-07-14T14:42:39.217Z
+    lastUpdated: 2026-07-14T14:42:39.651Z
+    source: external
+    npmPackage: null
+    repoUrl: https://github.com/bmad-code-org/bmad-loop
+    channel: stable
+    sha: 9aefd40268e72edb492d6bc809dff8bf420953e6
+  - name: wds
+    version: v0.4.3
+    installDate: 2026-07-14T14:42:39.482Z
+    lastUpdated: 2026-07-14T14:42:39.653Z
+    source: external
+    npmPackage: bmad-wds
+    repoUrl: https://github.com/bmad-code-org/bmad-method-wds-expansion
+    channel: stable
+    sha: cc16f09fcfab26d35635af1491f36a38a8431c8d
 ides:
   - claude-code
