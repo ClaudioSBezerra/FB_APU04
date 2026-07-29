@@ -2763,7 +2763,8 @@ function FretesTab({ token }: { token: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
-// Motor de Cálculo Fiscal — Fase 1 (Substituição Tributária BA)
+// Motor de Cálculo Fiscal — Fase 1 (Substituição Tributária). Processa
+// qualquer UF presente nos SPEDs da empresa (não é mais fixo em BA).
 // ---------------------------------------------------------------------------
 interface MotorFiscalRow {
   id: string
@@ -7038,13 +7039,13 @@ export default function IcmsFronteira() {
             <CardHeader>
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <Calculator className="h-4 w-4 text-indigo-600" />
-                Motor de Cálculo Fiscal — Fase 1 (Substituição Tributária BA)
+                Motor de Cálculo Fiscal — Fase 1 (Substituição Tributária)
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground mb-4">
-                Processa <strong>itens C170 do SPED</strong> (entradas, CFOP 2403) para empresas
-                com <strong>UF = BA</strong>. NCM via cruzamento <code className="text-[10px] bg-muted px-1 rounded">reg_c170.cod_item → reg_0200.cod_ncm</code>.
+                Processa <strong>itens C170 do SPED</strong> (entradas, CFOP 2403) de <strong>qualquer UF</strong> com
+                SPED importado pela empresa. NCM via cruzamento <code className="text-[10px] bg-muted px-1 rounded">reg_c170.cod_item → reg_0200.cod_ncm</code>.
                 MVA cruzada por NCM × alíquota interestadual × UF em
                 <code className="text-[10px] bg-muted px-1 rounded">icms_fronteira_regras_ncm</code>.
                 Frete (NF + CT-e tomador=destinatário) rateado proporcional ao item.

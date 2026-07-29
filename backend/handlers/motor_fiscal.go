@@ -1,6 +1,13 @@
 package handlers
 
-// motor_fiscal.go — Motor de Cálculo Fiscal, Fase 1: Substituição Tributária BA.
+// motor_fiscal.go — Motor de Cálculo Fiscal, Fase 1: Substituição Tributária.
+//
+// O identificador de fase (fasaST_BA = "F1_ST_BA") é histórico — a fase
+// nasceu restrita à Bahia, mas o pipeline hoje processa QUALQUER UF presente
+// nos SPEDs da empresa (a UF de cada item vem do próprio dado, não é mais um
+// literal fixo). O nome do identificador foi mantido para não invalidar
+// cálculos já persistidos em fiscal_calculations (o DELETE idempotente e o
+// filtro do GET /resultados casam por esse valor exato).
 //
 // Fonte: SPED Fiscal (reg_c170 → reg_c100 → import_jobs).
 //   reg_c170: itens da NF (cod_item, CFOP, valores, ICMS destacado)
@@ -9,11 +16,11 @@ package handlers
 //   import_jobs.uf: UF do destinatário declarado no SPED (reg 0000)
 //
 // Pipeline (POST /api/icms-fronteira/motor-fiscal/calcular):
-//   1. Filtra itens reg_c170 com cfop='2403' onde import_jobs.uf='BA'
-//      e job.mes_ano = periodo informado.
+//   1. Filtra itens reg_c170 com cfop='2403' de todas as UFs da empresa
+//      onde job.mes_ano = periodo informado.
 //   2. Cruza NCM via reg_0200 por (job_id, cod_item).
 //   3. Busca a MVA aplicável (longest-prefix-wins) em
-//      icms_fronteira_regras_ncm filtrando uf_estado='BA'.
+//      icms_fronteira_regras_ncm filtrando uf_estado = UF do próprio item.
 //   4. Rateia frete e outras despesas da NF (reg_c100.vl_doc) proporcional
 //      ao v_item / Σv_item do C100.  (Nota: SPED C100 não detalha v_frete
 //      separado — usamos o XML.nfe_entradas.v_frete quando há chave casada.)
@@ -144,7 +151,7 @@ func MotorFiscalCalcularHandler(db *sql.DB) http.HandlerFunc {
 			           ON p0200.job_id = c170.job_id
 			          AND p0200.cod_item = c170.cod_item
 			    WHERE j.company_id = $1
-			      AND j.uf = 'BA'
+			      AND j.uf IS NOT NULL AND j.uf <> ''
 			      AND c170.cfop = '2403'
 			      AND c100.ind_oper = '0'   -- 0 = entrada
 			      AND j.mes_ano = $2 || '/' || $3
@@ -209,7 +216,7 @@ func MotorFiscalCalcularHandler(db *sql.DB) http.HandlerFunc {
 			               mva_ajustado_12pct, aliquota_interna
 			        FROM icms_fronteira_regras_ncm r
 			        WHERE (r.company_id = $1 OR r.company_id IS NULL)
-			          AND r.uf_estado = 'BA'
+			          AND r.uf_estado = it.dest_uf
 			          AND it.ncm <> ''
 			          AND it.ncm LIKE r.ncm_prefixo || '%'
 			        ORDER BY r.company_id NULLS LAST, length(r.ncm_prefixo) DESC

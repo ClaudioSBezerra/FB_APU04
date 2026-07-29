@@ -1035,7 +1035,9 @@ func main() {
 		handlers.AuthMiddleware(handlers.IcmsFronteiraFretesHandler(database), "")(w, r)
 	})
 
-	// ── ICMS Fronteira — Motor de Cálculo Fiscal Fase 1 (ST BA) ─────────────
+	// ── ICMS Fronteira — Motor de Cálculo Fiscal Fase 1 (ST) ────────────────
+	// Processa qualquer UF presente nos SPEDs da empresa (não é mais fixo em
+	// BA — ver motor_fiscal.go).
 	http.HandleFunc("/api/icms-fronteira/motor-fiscal/calcular", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
 		if database == nil {
