@@ -16,6 +16,17 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+// validBrazilUF são as 27 UFs brasileiras válidas (26 estados + DF). Regras
+// NCM Decreto não são mais restritas a PE/BA/CE — qualquer UF onde a empresa
+// tenha SPED importado (ou que o admin queira cadastrar como legislação
+// global) pode ter regras próprias.
+var validBrazilUF = map[string]bool{
+	"AC": true, "AL": true, "AP": true, "AM": true, "BA": true, "CE": true, "DF": true,
+	"ES": true, "GO": true, "MA": true, "MT": true, "MS": true, "MG": true, "PA": true,
+	"PB": true, "PR": true, "PE": true, "PI": true, "RJ": true, "RN": true, "RS": true,
+	"RO": true, "RR": true, "SC": true, "SP": true, "SE": true, "TO": true,
+}
+
 // validateSegmentoUF garante que o código de segmento existe no catálogo
 // segmentos_uf para a UF informada. Mantém a invariante Regras × Segmento × UF:
 // uma regra NCM só pode apontar para um segmento que exista naquela UF.
@@ -91,9 +102,9 @@ func IcmsFronteiraRegrasListHandler(db *sql.DB) http.HandlerFunc {
 		if ufEstado == "" {
 			ufEstado = "PE"
 		}
-		validUFs := map[string]bool{"PE": true, "BA": true, "CE": true}
-		if !validUFs[ufEstado] {
-			jsonErr(w, http.StatusBadRequest, "uf_estado inválido: deve ser PE, BA ou CE")
+		ufEstado = strings.ToUpper(strings.TrimSpace(ufEstado))
+		if !validBrazilUF[ufEstado] {
+			jsonErr(w, http.StatusBadRequest, "uf_estado inválido: deve ser uma UF brasileira válida")
 			return
 		}
 
@@ -248,9 +259,9 @@ func IcmsFronteiraRegraCreateHandler(db *sql.DB) http.HandlerFunc {
 		if body.UFEstado == "" {
 			body.UFEstado = "PE"
 		}
-		validUFs := map[string]bool{"PE": true, "BA": true, "CE": true}
-		if !validUFs[body.UFEstado] {
-			jsonErr(w, http.StatusBadRequest, "uf_estado inválido: deve ser PE, BA ou CE")
+		body.UFEstado = strings.ToUpper(strings.TrimSpace(body.UFEstado))
+		if !validBrazilUF[body.UFEstado] {
+			jsonErr(w, http.StatusBadRequest, "uf_estado inválido: deve ser uma UF brasileira válida")
 			return
 		}
 
@@ -689,9 +700,9 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 		if ufEstado == "" {
 			ufEstado = "PE"
 		}
-		validUFs := map[string]bool{"PE": true, "BA": true, "CE": true}
-		if !validUFs[ufEstado] {
-			jsonErr(w, http.StatusBadRequest, "uf_estado inválido: deve ser PE, BA ou CE")
+		ufEstado = strings.ToUpper(strings.TrimSpace(ufEstado))
+		if !validBrazilUF[ufEstado] {
+			jsonErr(w, http.StatusBadRequest, "uf_estado inválido: deve ser uma UF brasileira válida")
 			return
 		}
 
@@ -774,7 +785,6 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 		validRegimes := map[string]bool{
 			"ST": true, "ANTECIPACAO": true, "DIFAL": true, "ISENTO": true, "NORMAL": true,
 		}
-		validUF := map[string]bool{"PE": true, "BA": true, "CE": true}
 
 		if len(records) == 0 {
 			json.NewEncoder(w).Encode(importResult{Errors: []string{}})
@@ -872,7 +882,7 @@ func IcmsFronteiraRegrasImportarHandler(db *sql.DB) http.HandlerFunc {
 
 			// UF por linha (formato unificado) sobrepõe o uf_estado do formulário
 			rowUF := strings.ToUpper(get(rec, "uf"))
-			if !validUF[rowUF] {
+			if !validBrazilUF[rowUF] {
 				rowUF = ufEstado
 			}
 

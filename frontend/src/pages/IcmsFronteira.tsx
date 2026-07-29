@@ -4212,7 +4212,28 @@ export function RegrasTab({ token }: { token: string | null }) {
   const [openCreate, setOpenCreate] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importLoading, setImportLoading] = useState(false)
-  const [selectedUF, setSelectedUF] = useState<'PE' | 'BA' | 'CE'>('PE')
+  // UF não é mais uma lista fixa (PE/BA/CE) — vem das UFs onde a empresa tem
+  // SPED importado (mesma fonte do hub de UFs em AdministrativoFronteira).
+  const [selectedUF, setSelectedUF] = useState<string>('PE')
+  const { data: ufHubData } = useQuery<{ ufs: { uf: string; uf_nome: string }[] }>({
+    queryKey: ['uf-hub'],
+    queryFn: async () => {
+      const res = await fetch('/api/uf-hub', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: !!token,
+  })
+  const ufsDisponiveis = ufHubData?.ufs ?? []
+  // Quando a lista de UFs carrega, se a UF selecionada não pertence à empresa
+  // (ex.: default 'PE' antes de carregar), troca para a primeira disponível.
+  useEffect(() => {
+    if (ufsDisponiveis.length === 0) return
+    if (!ufsDisponiveis.some((u) => u.uf === selectedUF)) {
+      setSelectedUF(ufsDisponiveis[0].uf)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ufsDisponiveis])
   // Segmento × UF: ao trocar a UF, a lista de segmentos e a seleção são resetadas.
   const [importSegmento, setImportSegmento] = useState<string>('')
   const [createSegmento, setCreateSegmento] = useState<string>('')
@@ -4436,14 +4457,25 @@ export function RegrasTab({ token }: { token: string | null }) {
 
   return (
     <div className="space-y-4">
-      {/* Seletor de UF */}
-      <Tabs value={selectedUF} onValueChange={(v) => setSelectedUF(v as 'PE' | 'BA' | 'CE')}>
-        <TabsList>
-          <TabsTrigger value="PE">PE — Pernambuco</TabsTrigger>
-          <TabsTrigger value="BA">BA — Bahia</TabsTrigger>
-          <TabsTrigger value="CE">CE — Ceará</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Seletor de UF — dinâmico: só as UFs onde a empresa tem SPED importado */}
+      {ufsDisponiveis.length === 0 ? (
+        <Alert>
+          <AlertDescription className="text-xs">
+            Nenhuma UF com SPED importado ainda. Importe um SPED (Administrativo &gt; UFs) para
+            liberar as Regras NCM Decreto da filial correspondente.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Tabs value={selectedUF} onValueChange={(v) => setSelectedUF(v)}>
+          <TabsList>
+            {ufsDisponiveis.map((u) => (
+              <TabsTrigger key={u.uf} value={u.uf}>
+                {u.uf} — {u.uf_nome || u.uf}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
 
       {/* Import card */}
       <Card>
