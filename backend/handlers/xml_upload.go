@@ -658,20 +658,24 @@ func XMLUploadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Parâmetro competencia: opcional, formato MM/YYYY
+		// Parâmetro competencia: obrigatório, formato MM/YYYY. Sobrescreve o
+		// mes_ano de TODAS as notas do lote (mesmo comportamento de override
+		// que já existia quando informado — só a obrigatoriedade é nova).
 		competencia := strings.TrimSpace(r.FormValue("competencia"))
-		if competencia != "" {
-			parts := strings.Split(competencia, "/")
-			m, e1 := strconv.Atoi(parts[0])
-			var y int
-			var e2 error
-			if len(parts) == 2 {
-				y, e2 = strconv.Atoi(parts[1])
-			}
-			if len(parts) != 2 || len(parts[0]) != 2 || len(parts[1]) != 4 || e1 != nil || e2 != nil || m < 1 || m > 12 || y < 2000 {
-				jsonErr(w, http.StatusBadRequest, "Parâmetro 'competencia' inválido — use MM/YYYY (ex: 03/2026)")
-				return
-			}
+		if competencia == "" {
+			jsonErr(w, http.StatusBadRequest, "Parâmetro 'competencia' obrigatório — use MM/YYYY (ex: 03/2026)")
+			return
+		}
+		parts := strings.Split(competencia, "/")
+		m, e1 := strconv.Atoi(parts[0])
+		var y int
+		var e2 error
+		if len(parts) == 2 {
+			y, e2 = strconv.Atoi(parts[1])
+		}
+		if len(parts) != 2 || len(parts[0]) != 2 || len(parts[1]) != 4 || e1 != nil || e2 != nil || m < 1 || m > 12 || y < 2000 {
+			jsonErr(w, http.StatusBadRequest, "Parâmetro 'competencia' inválido — use MM/YYYY (ex: 03/2026)")
+			return
 		}
 
 		// Coletar todos os arquivos enviados (frontend pode enviar N arquivos com o mesmo campo "file")

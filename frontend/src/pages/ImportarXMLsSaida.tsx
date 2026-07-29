@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Upload, CloudUpload, CheckCircle, XCircle, Loader2, FolderOpen } from 'lucide-react';
+import { isValidCompetencia } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -165,6 +166,10 @@ export default function ImportarXMLsSaida() {
   // ── Upload handler ─────────────────────────────────────────────────────────
   const handleUpload = async (files: File[]) => {
     if (files.length === 0) return;
+    if (!isValidCompetencia(competencia)) {
+      toast.error("Informe o mês de competência (MM/YYYY) antes de importar.");
+      return;
+    }
 
     setUploadState('scanning');
     setUploadResult(null);
@@ -182,9 +187,7 @@ export default function ImportarXMLsSaida() {
     try {
       const formData = new FormData();
       formData.append('tipo', TIPO);
-      if (competencia) {
-        formData.append('competencia', competencia);
-      }
+      formData.append('competencia', competencia);
       files.forEach(f => formData.append('file', f));
 
       const uploadStart = new Date(); // capturado antes do fetch — batches são criados durante o request
@@ -234,6 +237,8 @@ export default function ImportarXMLsSaida() {
     }
   };
 
+  const competenciaValida = isValidCompetencia(competencia);
+
   // ── Dropzone ───────────────────────────────────────────────────────────────
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -248,7 +253,7 @@ export default function ImportarXMLsSaida() {
       toast.error(`${rejected.length} arquivo(s) rejeitado(s). Apenas XML, ZIP, RAR e 7z até 2GB.`);
     },
     onDrop: handleUpload,
-    disabled: uploadState === 'uploading' || uploadState === 'polling',
+    disabled: uploadState === 'uploading' || uploadState === 'polling' || !competenciaValida,
   });
 
   const isProcessing = uploadState === 'scanning' || uploadState === 'uploading' || uploadState === 'polling';
@@ -280,49 +285,40 @@ export default function ImportarXMLsSaida() {
             <div>
               <label className="text-sm font-medium block mb-1">
                 Mês de competência
-                <span className="text-muted-foreground text-xs ml-1">(opcional)</span>
+                <span className="text-red-600 text-xs ml-1">(obrigatório)</span>
               </label>
               <input
                 type="text"
                 placeholder="MM/YYYY"
                 maxLength={7}
+                required
                 value={competencia}
                 onChange={e => setCompetencia(e.target.value)}
                 disabled={isProcessing}
-                className="border rounded-md px-2 py-1.5 text-sm bg-background disabled:opacity-50 disabled:cursor-not-allowed w-28"
+                className={[
+                  'border rounded-md px-2 py-1.5 text-sm bg-background disabled:opacity-50 disabled:cursor-not-allowed w-28',
+                  competencia && !isValidCompetencia(competencia) ? 'border-red-500' : '',
+                ].join(' ')}
               />
             </div>
-            {competencia && (
-              <div className="flex flex-col justify-end pb-0.5">
-                <p className="text-xs text-muted-foreground mb-1">
-                  Substitui a data de emissão do XML como referência do período.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setCompetencia('')}
-                  disabled={isProcessing}
-                  className="text-xs text-muted-foreground hover:text-foreground underline text-left"
-                >
-                  Usar data de emissão
-                </button>
-              </div>
-            )}
-            {!competencia && (
-              <p className="text-xs text-muted-foreground self-end pb-0.5">
-                Informe se as notas são de competência diferente da emissão (ex: notas de dez/2025 recebidas em mar/2026).
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground self-end pb-0.5">
+              {competencia && !isValidCompetencia(competencia)
+                ? <span className="text-red-600">Formato inválido — use MM/YYYY (ex: 03/2026).</span>
+                : 'Mês de referência aplicado a todas as notas deste envio (substitui a data de emissão do XML).'}
+            </p>
           </div>
 
           <div
             {...getRootProps()}
             className={[
               'flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 cursor-pointer transition-colors',
-              isDragActive
-                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                : isProcessing
-                  ? 'border-muted bg-muted/30 cursor-not-allowed text-muted-foreground'
-                  : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/20 text-muted-foreground',
+              !competenciaValida
+                ? 'border-muted bg-muted/30 cursor-not-allowed text-muted-foreground'
+                : isDragActive
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 cursor-pointer'
+                  : isProcessing
+                    ? 'border-muted bg-muted/30 cursor-not-allowed text-muted-foreground'
+                    : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/20 text-muted-foreground cursor-pointer',
             ].join(' ')}
           >
             <input {...getInputProps()} />
@@ -337,8 +333,11 @@ export default function ImportarXMLsSaida() {
               {uploadState === 'scanning'  && <p className="text-sm font-medium">Lendo arquivos...</p>}
               {uploadState === 'uploading' && <p className="text-sm font-medium">Enviando arquivos...</p>}
               {uploadState === 'polling'   && <p className="text-sm font-medium">Processando XMLs...</p>}
-              {!isProcessing && isDragActive && <p className="text-sm font-medium">Solte os arquivos aqui</p>}
-              {!isProcessing && !isDragActive && (
+              {!isProcessing && !competenciaValida && (
+                <p className="text-sm font-medium">Informe o mês de competência acima para liberar o envio</p>
+              )}
+              {!isProcessing && competenciaValida && isDragActive && <p className="text-sm font-medium">Solte os arquivos aqui</p>}
+              {!isProcessing && competenciaValida && !isDragActive && (
                 <>
                   <p className="text-sm font-medium">Arraste XMLs ou compactados (.zip/.rar/.7z) aqui, ou clique</p>
                   <p className="text-xs text-muted-foreground mt-1">Aceita .xml, .zip, .rar, .7z — máximo 2GB</p>
