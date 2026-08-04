@@ -55,7 +55,7 @@ WITH liga AS (
       -- entre filiais do próprio grupo)
       AND LEFT(ce.receb_cnpj_cpf, 8) <> LEFT(COALESCE(ne.dest_cnpj_cpf,''), 8)
       AND ($2::text = '' OR ne.mes_ano = $2)
-      AND ($3::text = '' OR COALESCE(ne.dest_uf,'PE') = $3)
+      AND ($3::text = '' OR ne.dest_uf = $3)
 ), pend AS (
     SELECT l.chave_nfe, l.numero_nfe, l.data_emissao, l.receb_cnpj_cpf,
            MAX(l.receb_nome) AS receb_nome   -- nome mais completo p/ o CNPJ

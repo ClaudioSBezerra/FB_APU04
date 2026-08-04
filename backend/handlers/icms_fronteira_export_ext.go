@@ -72,8 +72,8 @@ var itensCSVHeaders = []string{
 	"Alíq.Inter%", "Alíq.Int%", "BC", "MVA%", "BC-ST", "ICMS Calc.", "ICMS Ret.",
 }
 
-func fetchItensExport(db *sql.DB, companyID, regime, periodo string) ([]FronteiraItemRow, error) {
-	rows, err := db.Query(fronteiraItensQueryBody, companyID, regime, periodo)
+func fetchItensExport(db *sql.DB, companyID, regime, periodo, uf string) ([]FronteiraItemRow, error) {
+	rows, err := db.Query(fronteiraItensQueryBody, companyID, regime, periodo, uf)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,8 @@ func IcmsFronteiraExportItensCSVHandler(db *sql.DB) http.HandlerFunc {
 			regime = "todos"
 		}
 		periodo := r.URL.Query().Get("periodo")
-		rows, err := fetchItensExport(db, companyID, regime, periodo)
+		uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+		rows, err := fetchItensExport(db, companyID, regime, periodo, uf)
 		if err != nil {
 			log.Printf("ExportItensCSV error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")
@@ -183,7 +184,8 @@ func IcmsFronteiraExportItensXLSXHandler(db *sql.DB) http.HandlerFunc {
 			regime = "todos"
 		}
 		periodo := r.URL.Query().Get("periodo")
-		dataRows, err := fetchItensExport(db, companyID, regime, periodo)
+		uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+		dataRows, err := fetchItensExport(db, companyID, regime, periodo, uf)
 		if err != nil {
 			log.Printf("ExportItensXLSX error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")
@@ -264,8 +266,8 @@ var divCSVHeaders = []string{
 	"Data Emissão", "Regime", "ICMS SEFAZ", "ICMS Calculado", "Diferença", "Status",
 }
 
-func fetchDivExport(db *sql.DB, companyID, periodo string) ([]DivergenciaRow, error) {
-	rows, err := db.Query(divergenciasQueryBody, companyID, periodo)
+func fetchDivExport(db *sql.DB, companyID, periodo, uf string) ([]DivergenciaRow, error) {
+	rows, err := db.Query(divergenciasQueryBody, companyID, periodo, uf)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +316,8 @@ func IcmsFronteiraExportDivCSVHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		periodo := r.URL.Query().Get("periodo")
-		rows, err := fetchDivExport(db, companyID, periodo)
+		uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+		rows, err := fetchDivExport(db, companyID, periodo, uf)
 		if err != nil {
 			log.Printf("ExportDivCSV error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")
@@ -344,7 +347,8 @@ func IcmsFronteiraExportDivXLSXHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		periodo := r.URL.Query().Get("periodo")
-		dataRows, err := fetchDivExport(db, companyID, periodo)
+		uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
+		dataRows, err := fetchDivExport(db, companyID, periodo, uf)
 		if err != nil {
 			log.Printf("ExportDivXLSX error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar dados")

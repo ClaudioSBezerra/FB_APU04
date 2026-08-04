@@ -565,12 +565,13 @@ func IcmsFronteiraLegislacaoUploadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		ufEstado := strings.ToUpper(r.URL.Query().Get("uf_estado"))
+		ufEstado := r.URL.Query().Get("uf_estado")
 		if ufEstado == "" {
 			ufEstado = r.FormValue("uf_estado")
 		}
-		if !(ufEstado == "PE" || ufEstado == "BA" || ufEstado == "CE") {
-			jsonErr(w, http.StatusBadRequest, "uf_estado obrigatório: PE | BA | CE")
+		ufEstado = strings.ToUpper(strings.TrimSpace(ufEstado))
+		if !validBrazilUF[ufEstado] {
+			jsonErr(w, http.StatusBadRequest, "uf_estado obrigatório: informe uma UF brasileira válida")
 			return
 		}
 

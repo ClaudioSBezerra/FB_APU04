@@ -129,7 +129,7 @@ LEFT JOIN LATERAL (
     SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct
     FROM icms_fronteira_regras_ncm r
     WHERE (r.company_id = $1 OR r.company_id IS NULL)
-      AND r.uf_estado = COALESCE(ne.dest_uf, 'PE')
+      AND r.uf_estado = ne.dest_uf
       AND top_item.ncm IS NOT NULL
       AND LEFT(top_item.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
     ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC LIMIT 1
@@ -198,7 +198,7 @@ SELECT
               SELECT 1 FROM company_segmentos cs
               WHERE cs.company_id = $1::uuid
                 AND cs.segmento_codigo = regra.segmento_codigo
-                AND cs.uf = COALESCE(m.dest_uf, 'PE')
+                AND cs.uf = m.dest_uf
           )
         THEN 'ST'
         WHEN m.cfop_entrada IN ('2403','2409','2651','2652','2101','2102','2152') THEN 'ANTECIPACAO'
@@ -216,7 +216,7 @@ SELECT
               SELECT 1 FROM company_segmentos cs
               WHERE cs.company_id = $1::uuid
                 AND cs.segmento_codigo = regra.segmento_codigo
-                AND cs.uf = COALESCE(m.dest_uf, 'PE')
+                AND cs.uf = m.dest_uf
           )
         THEN CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
             THEN GREATEST(0, (m.v_prod+m.v_frete+m.v_outro)
@@ -236,7 +236,7 @@ LEFT JOIN LATERAL (
     SELECT r.aliquota_interna, r.mva_original, r.mva_ajustado_12pct, r.segmento_codigo
     FROM icms_fronteira_regras_ncm r
     WHERE (r.company_id = $1 OR r.company_id IS NULL)
-      AND r.uf_estado = COALESCE(m.dest_uf, 'PE')
+      AND r.uf_estado = m.dest_uf
       AND m.ncm IS NOT NULL
       AND LEFT(m.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
     ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC LIMIT 1

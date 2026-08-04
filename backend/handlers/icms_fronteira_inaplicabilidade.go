@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -236,6 +237,9 @@ func importInaplicFile(db *sql.DB, data []byte, filename string) (int, string, e
 	defer f.Close()
 
 	uf := detectInaplicUF(f, filename)
+	if uf == "" {
+		return 0, "", fmt.Errorf("não foi possível identificar a UF do arquivo %q — nomeie a aba ou o arquivo com a UF (ex.: _PA, _PARA, PARÁ)", filename)
+	}
 	sheets := f.GetSheetList()
 	count := 0
 
@@ -380,32 +384,94 @@ func IcmsFronteiraInaplicDeleteHandler(db *sql.DB) http.HandlerFunc {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// brazilUFNamePatterns mapeia cada UF para os padrões (nome do estado, com e
+// sem acento, e sufixo "_XX") procurados no nome do arquivo/abas. Ordem
+// importa: nomes mais específicos primeiro (ex. "MATO GROSSO DO SUL" antes de
+// "MATO GROSSO", que é um prefixo dele).
+var brazilUFNamePatterns = []struct {
+	uf       string
+	patterns []string
+}{
+	{"MS", []string{"MATO GROSSO DO SUL", "_MS"}},
+	{"MT", []string{"MATO GROSSO", "_MT"}},
+	{"AC", []string{"ACRE", "_AC"}},
+	{"AL", []string{"ALAGOAS", "_AL"}},
+	{"AP", []string{"AMAPA", "AMAPÁ", "_AP"}},
+	{"AM", []string{"AMAZONAS", "_AM"}},
+	{"BA", []string{"BAHIA", "_BA"}},
+	{"CE", []string{"CEARA", "CEARÁ", "_CE"}},
+	{"DF", []string{"DISTRITO FEDERAL", "_DF"}},
+	{"ES", []string{"ESPIRITO SANTO", "ESPÍRITO SANTO", "_ES"}},
+	{"GO", []string{"GOIAS", "GOIÁS", "_GO"}},
+	{"MA", []string{"MARANHAO", "MARANHÃO", "_MA"}},
+	{"MG", []string{"MINAS GERAIS", "_MG"}},
+	{"PA", []string{"PARA_", "_PARA", "PARÁ", "_PA"}},
+	{"PB", []string{"PARAIBA", "PARAÍBA", "_PB"}},
+	{"PR", []string{"PARANA", "PARANÁ", "_PR"}},
+	{"PE", []string{"PERNAMBUCO", "ICMS_PE", "_PE"}},
+	{"PI", []string{"PIAUI", "PIAUÍ", "_PI"}},
+	{"RJ", []string{"RIO DE JANEIRO", "_RJ"}},
+	{"RN", []string{"RIO GRANDE DO NORTE", "_RN"}},
+	{"RS", []string{"RIO GRANDE DO SUL", "_RS"}},
+	{"RO", []string{"RONDONIA", "RONDÔNIA", "_RO"}},
+	{"RR", []string{"RORAIMA", "_RR"}},
+	{"SC", []string{"SANTA CATARINA", "_SC"}},
+	{"SP", []string{"SAO PAULO", "SÃO PAULO", "_SP"}},
+	{"SE", []string{"SERGIPE", "_SE"}},
+	{"TO", []string{"TOCANTINS", "_TO"}},
+}
+
+// containsUFToken procura pattern em text. Para padrões de nome completo do
+// estado (ex. "BAHIA"), é um Contains simples. Para o sufixo curto "_XX"
+// (2 letras), exige que o caractere seguinte (se houver) não seja uma letra
+// ASCII — senão "_SE" (Sergipe) bateria dentro de "_SEM_UF", por exemplo.
+func containsUFToken(text, pattern string) bool {
+	if !strings.HasPrefix(pattern, "_") {
+		return strings.Contains(text, pattern)
+	}
+	start := 0
+	for {
+		i := strings.Index(text[start:], pattern)
+		if i < 0 {
+			return false
+		}
+		pos := start + i
+		end := pos + len(pattern)
+		if end >= len(text) || !(text[end] >= 'A' && text[end] <= 'Z') {
+			return true
+		}
+		start = pos + 1
+	}
+}
+
+// detectInaplicUF tenta identificar a UF do arquivo pelo nome das abas e do
+// próprio arquivo e, em último caso, pelo título da primeira aba. Retorna ""
+// quando nenhuma UF é reconhecida — não deve assumir uma UF por padrão
+// (arquivo pensado para uma UF nova, ex. PA, seria gravado silenciosamente
+// sob a UF errada).
 func detectInaplicUF(f *excelize.File, filename string) string {
 	joined := strings.ToUpper(strings.Join(f.GetSheetList(), " ") + " " + filename)
-	switch {
-	case strings.Contains(joined, "BAHIA") || strings.Contains(joined, "_BA"):
-		return "BA"
-	case strings.Contains(joined, "CEARA") || strings.Contains(joined, "CEARÁ") || strings.Contains(joined, "_CE"):
-		return "CE"
-	case strings.Contains(joined, "PERNAMBUCO") || strings.Contains(joined, "_PE") || strings.Contains(joined, "ICMS_PE"):
-		return "PE"
+	for _, entry := range brazilUFNamePatterns {
+		for _, p := range entry.patterns {
+			if containsUFToken(joined, p) {
+				return entry.uf
+			}
+		}
 	}
 	// fallback: olhar título (linha 0) da primeira aba
 	if sheets := f.GetSheetList(); len(sheets) > 0 {
 		if rows, err := f.GetRows(sheets[0]); err == nil && len(rows) > 0 && len(rows[0]) > 0 {
 			t := strings.ToUpper(rows[0][0])
-			if strings.Contains(t, "PERNAMBUCO") {
-				return "PE"
-			}
-			if strings.Contains(t, "BAHIA") {
-				return "BA"
-			}
-			if strings.Contains(t, "CEARÁ") || strings.Contains(t, "CEARA") {
-				return "CE"
+			for _, entry := range brazilUFNamePatterns {
+				for _, p := range entry.patterns {
+					if containsUFToken(t, p) {
+						return entry.uf
+					}
+				}
 			}
 		}
 	}
-	return "PE"
+	return ""
 }
 
 // institutoFromSheet retorna o instituto se a aba é de regras; senão "".

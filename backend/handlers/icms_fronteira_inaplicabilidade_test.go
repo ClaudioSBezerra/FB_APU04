@@ -193,4 +193,20 @@ func TestDetectInaplicUF(t *testing.T) {
 		t.Errorf("detectInaplicUF por filename PE = %q", got)
 	}
 	f.Close()
+
+	// PA (e qualquer outra UF fora do trio original PE/BA/CE) deve ser
+	// reconhecido — antes desta correção, caía num fallback silencioso "PE".
+	fPA := mk("REGRAS_INAPLICABILIDADE")
+	if got := detectInaplicUF(fPA, "Inaplicabilidade_Antecipacao_ICMS_PA_SPED.xlsx"); got != "PA" {
+		t.Errorf("detectInaplicUF por filename PA = %q, quer PA", got)
+	}
+	fPA.Close()
+
+	// Arquivo não reconhecido (nenhuma UF no nome/aba) deve retornar "" — não
+	// mais "PE" por padrão, para não gravar regras sob a UF errada.
+	fUnknown := mk("PLANILHA_SEM_UF")
+	if got := detectInaplicUF(fUnknown, "arquivo_generico.xlsx"); got != "" {
+		t.Errorf("detectInaplicUF sem UF reconhecível = %q, quer \"\" (não deve assumir PE)", got)
+	}
+	fUnknown.Close()
 }

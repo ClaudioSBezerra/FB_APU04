@@ -22,6 +22,7 @@ import (
 type ExtratoSefazRow struct {
 	ID           string  `json:"id"`
 	Periodo      string  `json:"periodo"`
+	UF           string  `json:"uf"`
 	RegistroNota string  `json:"registro_nota"`
 	CNPJEmitente string  `json:"cnpj_emitente"`
 	NomeEmitente string  `json:"nome_emitente"`
@@ -73,6 +74,14 @@ func IcmsFronteiraExtratoImportarHandler(db *sql.DB) http.HandlerFunc {
 		periodo := strings.TrimSpace(r.FormValue("periodo"))
 		if periodo == "" {
 			jsonErr(w, http.StatusBadRequest, "Campo 'periodo' é obrigatório (MM/YYYY)")
+			return
+		}
+
+		// UF de destino cujo extrato SEFAZ está sendo importado — a empresa pode
+		// ter filiais em várias UFs, e cada uma gera seu próprio extrato.
+		ufEstado := strings.ToUpper(strings.TrimSpace(r.FormValue("uf_estado")))
+		if !validBrazilUF[ufEstado] {
+			jsonErr(w, http.StatusBadRequest, "Campo 'uf_estado' obrigatório: informe uma UF brasileira válida")
 			return
 		}
 
@@ -194,10 +203,12 @@ func IcmsFronteiraExtratoImportarHandler(db *sql.DB) http.HandlerFunc {
 			}
 		}()
 
+		// Escopado também por UF: importar o extrato de uma UF não pode apagar o
+		// extrato já importado de outra UF no mesmo período.
 		if _, err = tx.Exec(`
 			DELETE FROM icms_fronteira_extrato_sefaz
-			WHERE company_id = $1::uuid AND periodo = $2
-		`, companyID, periodo); err != nil {
+			WHERE company_id = $1::uuid AND periodo = $2 AND uf = $3
+		`, companyID, periodo, ufEstado); err != nil {
 			log.Printf("IcmsFronteiraExtratoImportar delete error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao limpar extrato anterior")
 			return
@@ -207,11 +218,11 @@ func IcmsFronteiraExtratoImportarHandler(db *sql.DB) http.HandlerFunc {
 		for _, pr := range parsed {
 			_, err2 := tx.Exec(`
 				INSERT INTO icms_fronteira_extrato_sefaz
-					(company_id, periodo, registro_nota, cnpj_emitente, nome_emitente,
+					(company_id, periodo, uf, registro_nota, cnpj_emitente, nome_emitente,
 					 uf_emitente, numero_nf, chave_nfe, icms_devido)
 				VALUES
-					($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
-			`, companyID, periodo, pr.RegistroNota, pr.CNPJEmitente, pr.NomeEmitente,
+					($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			`, companyID, periodo, ufEstado, pr.RegistroNota, pr.CNPJEmitente, pr.NomeEmitente,
 				pr.UFEmitente, pr.NumeroNF, pr.ChaveNFe, pr.ICMSDevido)
 			if err2 != nil {
 				log.Printf("IcmsFronteiraExtratoImportar insert error: %v", err2)
@@ -229,6 +240,7 @@ func IcmsFronteiraExtratoImportarHandler(db *sql.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"imported": imported,
 			"periodo":  periodo,
+			"uf":       ufEstado,
 		})
 	}
 }
@@ -260,41 +272,27 @@ func IcmsFronteiraExtratoListHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		periodo := strings.TrimSpace(r.URL.Query().Get("periodo"))
+		ufFilter := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
 
-		var rows *sql.Rows
-		if periodo != "" {
-			rows, err = db.Query(`
-				SELECT
-					id::text,
-					periodo,
-					COALESCE(registro_nota, ''),
-					COALESCE(cnpj_emitente, ''),
-					COALESCE(nome_emitente, ''),
-					COALESCE(uf_emitente, ''),
-					COALESCE(numero_nf, ''),
-					COALESCE(chave_nfe, ''),
-					COALESCE(icms_devido, 0)
-				FROM icms_fronteira_extrato_sefaz
-				WHERE company_id = $1::uuid AND periodo = $2
-				ORDER BY nome_emitente, numero_nf
-			`, companyID, periodo)
-		} else {
-			rows, err = db.Query(`
-				SELECT
-					id::text,
-					periodo,
-					COALESCE(registro_nota, ''),
-					COALESCE(cnpj_emitente, ''),
-					COALESCE(nome_emitente, ''),
-					COALESCE(uf_emitente, ''),
-					COALESCE(numero_nf, ''),
-					COALESCE(chave_nfe, ''),
-					COALESCE(icms_devido, 0)
-				FROM icms_fronteira_extrato_sefaz
-				WHERE company_id = $1::uuid
-				ORDER BY periodo DESC, nome_emitente, numero_nf
-			`, companyID)
-		}
+		query := `
+			SELECT
+				id::text,
+				periodo,
+				COALESCE(uf, ''),
+				COALESCE(registro_nota, ''),
+				COALESCE(cnpj_emitente, ''),
+				COALESCE(nome_emitente, ''),
+				COALESCE(uf_emitente, ''),
+				COALESCE(numero_nf, ''),
+				COALESCE(chave_nfe, ''),
+				COALESCE(icms_devido, 0)
+			FROM icms_fronteira_extrato_sefaz
+			WHERE company_id = $1::uuid
+			  AND ($2::text = '' OR periodo = $2::text)
+			  AND ($3::text = '' OR uf = $3::text)
+			ORDER BY periodo DESC, nome_emitente, numero_nf
+		`
+		rows, err := db.Query(query, companyID, periodo, ufFilter)
 
 		if err != nil {
 			log.Printf("IcmsFronteiraExtratoList error: %v", err)
@@ -309,7 +307,7 @@ func IcmsFronteiraExtratoListHandler(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var row ExtratoSefazRow
 			if err := rows.Scan(
-				&row.ID, &row.Periodo, &row.RegistroNota, &row.CNPJEmitente,
+				&row.ID, &row.Periodo, &row.UF, &row.RegistroNota, &row.CNPJEmitente,
 				&row.NomeEmitente, &row.UFEmitente, &row.NumeroNF, &row.ChaveNFe,
 				&row.ICMSDevido,
 			); err != nil {
@@ -357,11 +355,15 @@ func IcmsFronteiraExtratoDeleteHandler(db *sql.DB) http.HandlerFunc {
 			jsonErr(w, http.StatusBadRequest, "Parâmetro 'periodo' obrigatório (MM/YYYY)")
 			return
 		}
+		// UF opcional: se ausente (telas antigas), mantém o comportamento anterior
+		// e limpa todas as UFs do período — mas o frontend atual sempre envia.
+		ufFilter := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
 
 		_, err = db.Exec(`
 			DELETE FROM icms_fronteira_extrato_sefaz
 			WHERE company_id = $1::uuid AND periodo = $2
-		`, companyID, periodo)
+			  AND ($3::text = '' OR uf = $3::text)
+		`, companyID, periodo, ufFilter)
 		if err != nil {
 			log.Printf("IcmsFronteiraExtratoDelete error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao excluir extrato")

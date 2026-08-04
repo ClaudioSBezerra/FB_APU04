@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -92,6 +93,7 @@ WITH sped_class AS (
         COALESCE(part.cnpj, ne.forn_cnpj, '')                          AS forn_cnpj,
         COALESCE(part.nome, ne.forn_nome, '')                          AS forn_nome,
         COALESCE(ne.forn_uf, '')                                        AS forn_uf,
+        COALESCE(ne.dest_uf, '')                                        AS dest_uf,
         (fs.cnpj IS NOT NULL)                                           AS forn_simples,
         sc.cfop                                                          AS cfop,
         sc.regime                                                       AS regime,
@@ -125,20 +127,25 @@ WITH sped_class AS (
         COALESCE(regra.reducao_bc_pct, 0)                                AS reducao_bc_pct,
         COALESCE(ne.v_prod, 0)                                          AS v_prod_nf_total,
         COALESCE(ne.v_st, 0)                                            AS v_st_nf_total,
-        COALESCE(ne.forn_uf, '')                                        AS forn_uf_raw
+        COALESCE(ne.forn_uf, '')                                        AS forn_uf_raw,
+        COALESCE(ub.base_por_dentro, false)                             AS base_por_dentro
     FROM sped_class sc
     JOIN nfe_entradas ne ON ne.chave_nfe = sc.chave_nfe
     INNER JOIN nfe_entradas_itens nii ON nii.nfe_id = ne.id
     LEFT JOIN participants part ON part.job_id = sc.job_id AND part.cod_part = sc.cod_part
     LEFT JOIN forn_simples fs ON fs.cnpj = ne.forn_cnpj
+    -- Parâmetro "base por dentro" (gross-up) é configurável por UF de destino
+    -- (aba UFs → Benefícios), não mais fixo por UF do fornecedor.
+    LEFT JOIN uf_beneficios_fiscais ub ON ub.company_id = $1 AND ub.uf = ne.dest_uf
     LEFT JOIN LATERAL (
-        -- G1: filtro por uf_estado evita aplicar regra de PE em nota destinada à BA/CE
+        -- G1: filtra pela UF de destino real da nota — cada UF só casa com suas
+        -- próprias regras (sem fallback silencioso para outra UF quando nula).
         SELECT r.aliquota_interna, r.mva_original,
                r.mva_ajustado_4pct, r.mva_ajustado_7pct, r.mva_ajustado_12pct,
                r.reducao_bc_pct
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
-          AND r.uf_estado = COALESCE(ne.dest_uf, 'PE')
+          AND r.uf_estado = ne.dest_uf
           AND nii.ncm IS NOT NULL
           AND LEFT(nii.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
         ORDER BY r.company_id NULLS LAST, LENGTH(r.ncm_prefixo) DESC
@@ -147,13 +154,14 @@ WITH sped_class AS (
 ), computed AS (
     SELECT
         chave_nfe, data_emissao, numero_nfe, forn_cnpj, forn_nome, forn_uf,
+        dest_uf,
         forn_simples, cfop, regime,
         n_item, c_prod, x_prod, ncm, cest,
         v_prod_item, v_ipi_item, v_outro_rateado, v_frete_rateado,
         -- G4: v_operacao agora inclui v_frete rateado
         (v_prod_item + v_ipi_item + v_outro_rateado + v_frete_rateado)  AS v_operacao,
         v_icms_item, aliq_inter, aliq_interna, mva_original,
-        reducao_bc_pct,
+        reducao_bc_pct, base_por_dentro,
         -- G2: MVA efetivo: preferência por mva_ajustado pré-calculado; fallback fórmula Convênio 110/07; último fallback mva_original
         COALESCE(
             CASE
@@ -167,10 +175,12 @@ WITH sped_class AS (
             END,
             mva_original
         )                                                                AS mva_efetivo,
-        -- BC: PE antecipação usa preço presumido (gross-up) APENAS quando fornecedor NÃO é Simples Nacional (G5).
-        -- BA/CE, DIFAL e Simples Nacional usam v_operacao direta. G3: aplicar redução de BC sobre o resultado.
+        -- BC: antecipação usa preço presumido (gross-up) quando a UF de DESTINO tem
+        -- base_por_dentro=true (uf_beneficios_fiscais) e o fornecedor NÃO é Simples
+        -- Nacional (G5). Demais casos (UF sem gross-up, DIFAL, Simples) usam
+        -- v_operacao direta. G3: aplicar redução de BC sobre o resultado.
         CASE
-            WHEN regime = 'ANTECIPACAO' AND forn_uf_raw NOT IN ('BA','CE') AND NOT forn_simples
+            WHEN regime = 'ANTECIPACAO' AND base_por_dentro AND NOT forn_simples
                 THEN GREATEST(0,
                     (v_prod_item + v_ipi_item + v_outro_rateado + v_frete_rateado - v_icms_item)
                     / NULLIF(1.0 - aliq_interna / 100.0, 0))
@@ -241,6 +251,7 @@ SELECT
     ) OVER ()                                                           AS total_full
 FROM computed
 WHERE ($2::text = 'todos' OR regime = $2::text)
+  AND ($4::text = '' OR dest_uf = $4::text)
 ORDER BY data_emissao DESC, chave_nfe, n_item
 `
 
@@ -273,8 +284,9 @@ func IcmsFronteiraItensHandler(db *sql.DB) http.HandlerFunc {
 			regime = "todos"
 		}
 		periodo := r.URL.Query().Get("periodo")
+		uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
 
-		rows, err := db.Query(fronteiraItensQuery, companyID, regime, periodo)
+		rows, err := db.Query(fronteiraItensQuery, companyID, regime, periodo, uf)
 		if err != nil {
 			log.Printf("IcmsFronteiraItens error: %v", err)
 			jsonErr(w, http.StatusInternalServerError, "Erro ao consultar itens ICMS Fronteira")

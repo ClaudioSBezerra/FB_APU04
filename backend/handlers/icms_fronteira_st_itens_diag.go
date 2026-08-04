@@ -454,7 +454,7 @@ func runSTItensDiag(db *sql.DB, companyID, periodo string) {
 	{
 		var empUF string
 		_ = db.QueryRow(`
-			SELECT COALESCE(MAX(uf) FILTER (WHERE uf IS NOT NULL AND uf <> ''), 'PE') AS uf
+			SELECT COALESCE(MAX(uf) FILTER (WHERE uf IS NOT NULL AND uf <> ''), '') AS uf
 			FROM import_jobs WHERE company_id = $1`, companyID).Scan(&empUF)
 		dl("(8b) emp_uf fallback (último recurso, MAX uf)=%s", empUF)
 	}

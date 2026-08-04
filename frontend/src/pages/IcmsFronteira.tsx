@@ -219,6 +219,7 @@ interface SegmentoUFOption {
 interface ExtratoRow {
   id: number
   periodo: string
+  uf: string
   registro_nota: string
   cnpj_emitente: string
   nome_emitente: string
@@ -320,6 +321,7 @@ interface DivergenciasResponse {
 
 interface ContestacaoRow {
   id: number
+  uf: string
   chave_nfe: string
   numero_nf: string
   forn_cnpj: string
@@ -3316,7 +3318,23 @@ function LegislacaoTab({ token }: { token: string | null }) {
   const queryClient = useQueryClient()
   const [openId, setOpenId] = useState<string | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [uf, setUf] = useState('BA')
+  // UF de upload não é mais fixa em 'BA' nem restrita a PE/BA/CE — a lista de
+  // opções vem das UFs onde a empresa tem SPED importado (/api/uf-hub, mesma
+  // fonte já usada em Administrativo > UFs e em RegrasTab). Semeada a partir
+  // da UF selecionada no módulo, mas o usuário pode trocar para subir
+  // legislação de outra UF sem depender do seletor global.
+  const ufSelecionadaGlobal = useFronteiraUF()
+  const [uf, setUf] = useState(ufSelecionadaGlobal || 'PE')
+  const { data: ufHubData } = useQuery<{ ufs: { uf: string; uf_nome: string }[] }>({
+    queryKey: ['uf-hub'],
+    queryFn: async () => {
+      const res = await fetch('/api/uf-hub', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: !!token,
+  })
+  const ufsDisponiveis = ufHubData?.ufs ?? []
   const [titulo, setTitulo] = useState('')
   const [texto, setTexto] = useState('')
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -3584,9 +3602,13 @@ function LegislacaoTab({ token }: { token: string | null }) {
                 <Select value={uf} onValueChange={setUf}>
                   <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PE">PE</SelectItem>
-                    <SelectItem value="BA">BA</SelectItem>
-                    <SelectItem value="CE">CE</SelectItem>
+                    {ufsDisponiveis.length > 0 ? (
+                      ufsDisponiveis.map(u => (
+                        <SelectItem key={u.uf} value={u.uf}>{u.uf}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value={uf}>{uf}</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -4981,13 +5003,31 @@ export function RegrasTab({ token }: { token: string | null }) {
 // Extrato SEFAZ tab
 // ---------------------------------------------------------------------------
 function ExtratoTab({ token }: { token: string | null }) {
+  const uf = useFronteiraUF()
   const queryClient = useQueryClient()
   // month input gives YYYY-MM, convert to MM/YYYY for API
   const [monthInput, setMonthInput] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importPeriodo, setImportPeriodo] = useState('')
+  const [importUF, setImportUF] = useState('')
   const [importLoading, setImportLoading] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  const { data: ufHubData } = useQuery<{ ufs: { uf: string; uf_nome: string }[] }>({
+    queryKey: ['uf-hub'],
+    queryFn: async () => {
+      const res = await fetch('/api/uf-hub', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
+    enabled: !!token,
+  })
+  const ufsDisponiveis = ufHubData?.ufs ?? []
+  useEffect(() => {
+    if (importUF) return
+    if (uf) { setImportUF(uf); return }
+    if (ufsDisponiveis.length > 0) setImportUF(ufsDisponiveis[0].uf)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uf, ufsDisponiveis])
 
   function monthToPeriodo(m: string): string {
     if (!m) return ''
@@ -5000,11 +5040,13 @@ function ExtratoTab({ token }: { token: string | null }) {
   const periodo = monthToPeriodo(monthInput)
 
   const { data, isLoading, isError } = useQuery<ExtratoResponse>({
-    queryKey: ['icms-fronteira/extrato', periodo],
+    queryKey: ['icms-fronteira/extrato', periodo, uf],
     queryFn: async () => {
-      const url = periodo
-        ? `/api/icms-fronteira/extrato?periodo=${encodeURIComponent(periodo)}`
-        : '/api/icms-fronteira/extrato'
+      const params = new URLSearchParams()
+      if (periodo) params.set('periodo', periodo)
+      if (uf) params.set('uf', uf)
+      const qs = params.toString()
+      const url = `/api/icms-fronteira/extrato${qs ? `?${qs}` : ''}`
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -5016,11 +5058,13 @@ function ExtratoTab({ token }: { token: string | null }) {
 
   async function handleImport() {
     if (!importFile) return
+    if (!importUF) { toast.error('Selecione a UF do extrato'); return }
     setImportLoading(true)
     try {
       const fd = new FormData()
       fd.append('file', importFile)
       fd.append('periodo', importPeriodo)
+      fd.append('uf_estado', importUF)
       const res = await fetch('/api/icms-fronteira/extrato/importar', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -5028,7 +5072,7 @@ function ExtratoTab({ token }: { token: string | null }) {
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       const result = await res.json()
-      toast.success(`${result.imported} registros importados para ${result.periodo}`)
+      toast.success(`${result.imported} registros importados para ${result.periodo} (${result.uf})`)
       queryClient.invalidateQueries({ queryKey: ['icms-fronteira/extrato'] })
       setImportFile(null)
     } catch {
@@ -5041,7 +5085,9 @@ function ExtratoTab({ token }: { token: string | null }) {
   async function handleClearPeriodo() {
     if (!periodo) return
     try {
-      const res = await fetch(`/api/icms-fronteira/extrato?periodo=${encodeURIComponent(periodo)}`, {
+      const clearParams = new URLSearchParams({ periodo })
+      if (uf) clearParams.set('uf', uf)
+      const res = await fetch(`/api/icms-fronteira/extrato?${clearParams.toString()}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -5084,10 +5130,25 @@ function ExtratoTab({ token }: { token: string | null }) {
                 className="w-32 text-xs"
               />
             </div>
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs whitespace-nowrap">UF:</Label>
+              <Select value={importUF} onValueChange={setImportUF}>
+                <SelectTrigger className="w-20 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ufsDisponiveis.length > 0 ? (
+                    ufsDisponiveis.map(u => (
+                      <SelectItem key={u.uf} value={u.uf}>{u.uf}</SelectItem>
+                    ))
+                  ) : (
+                    importUF && <SelectItem value={importUF}>{importUF}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
             <Button
               size="sm"
               onClick={handleImport}
-              disabled={!importFile || !importPeriodo || importLoading}
+              disabled={!importFile || !importPeriodo || !importUF || importLoading}
             >
               <Upload className="h-3.5 w-3.5 mr-1" />
               {importLoading ? 'Importando...' : 'Importar'}
@@ -5209,6 +5270,7 @@ function ExtratoTab({ token }: { token: string | null }) {
 // Contestações tab
 // ---------------------------------------------------------------------------
 function ContestacoesTab({ token }: { token: string | null }) {
+  const uf = useFronteiraUF()
   const queryClient = useQueryClient()
   const [filterStatus, setFilterStatus] = useState('todos')
   const [filterPeriodo, setFilterPeriodo] = useState('')
@@ -5231,9 +5293,10 @@ function ContestacoesTab({ token }: { token: string | null }) {
   const qParams = new URLSearchParams()
   if (filterStatus && filterStatus !== 'todos') qParams.set('status', filterStatus)
   if (filterPeriodo) qParams.set('periodo', filterPeriodo)
+  if (uf) qParams.set('uf', uf)
 
   const { data, isLoading, isError } = useQuery<ContestacaoResponse>({
-    queryKey: ['icms-fronteira/contestacoes', filterStatus, filterPeriodo],
+    queryKey: ['icms-fronteira/contestacoes', filterStatus, filterPeriodo, uf],
     queryFn: async () => {
       const res = await fetch(`/api/icms-fronteira/contestacoes?${qParams.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -5585,6 +5648,7 @@ function StatusDivBadge({ status }: { status: string }) {
 }
 
 function DivergenciasTab({ token }: { token: string | null }) {
+  const uf = useFronteiraUF()
   const queryClient = useQueryClient()
   const [monthInput, setMonthInput] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
@@ -5604,11 +5668,13 @@ function DivergenciasTab({ token }: { token: string | null }) {
   const periodo = monthToPeriodo(monthInput)
 
   const { data, isLoading, isError } = useQuery<DivergenciasResponse>({
-    queryKey: ['icms-fronteira/divergencias', periodo],
+    queryKey: ['icms-fronteira/divergencias', periodo, uf],
     queryFn: async () => {
-      const url = periodo
-        ? `/api/icms-fronteira/divergencias?periodo=${encodeURIComponent(periodo)}`
-        : '/api/icms-fronteira/divergencias'
+      const params = new URLSearchParams()
+      if (periodo) params.set('periodo', periodo)
+      if (uf) params.set('uf', uf)
+      const qs = params.toString()
+      const url = `/api/icms-fronteira/divergencias${qs ? `?${qs}` : ''}`
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       return res.json()
@@ -5689,7 +5755,11 @@ function DivergenciasTab({ token }: { token: string | null }) {
         <div className="flex items-center gap-2 ml-auto">
           <Button size="sm" variant="outline" onClick={async () => {
             try {
-              const url = `/api/icms-fronteira/divergencias/exportar/csv${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ''}`
+              const expParams = new URLSearchParams()
+              if (periodo) expParams.set('periodo', periodo)
+              if (uf) expParams.set('uf', uf)
+              const expQs = expParams.toString()
+              const url = `/api/icms-fronteira/divergencias/exportar/csv${expQs ? `?${expQs}` : ''}`
               const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
               if (!res.ok) throw new Error(`Erro ${res.status}`)
               const blob = await res.blob()
@@ -5705,7 +5775,11 @@ function DivergenciasTab({ token }: { token: string | null }) {
           </Button>
           <Button size="sm" variant="outline" onClick={async () => {
             try {
-              const url = `/api/icms-fronteira/divergencias/exportar/xlsx${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ''}`
+              const expParams = new URLSearchParams()
+              if (periodo) expParams.set('periodo', periodo)
+              if (uf) expParams.set('uf', uf)
+              const expQs = expParams.toString()
+              const url = `/api/icms-fronteira/divergencias/exportar/xlsx${expQs ? `?${expQs}` : ''}`
               const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
               if (!res.ok) throw new Error(`Erro ${res.status}`)
               const blob = await res.blob()
@@ -5882,15 +5956,17 @@ function DivergenciasTab({ token }: { token: string | null }) {
 // Planilha tab — item-level view
 // ---------------------------------------------------------------------------
 function PlanilhaTab({ token }: { token: string | null }) {
+  const uf = useFronteiraUF()
   const [regimeFilter, setRegimeFilter] = useState('todos')
   const [monthInput, setMonthInput] = useState('')
   const periodo = monthToPeriodo(monthInput)
 
   const { data, isLoading, isError } = useQuery<FronteiraItensResponse>({
-    queryKey: ['icms-fronteira/itens', regimeFilter, periodo],
+    queryKey: ['icms-fronteira/itens', regimeFilter, periodo, uf],
     queryFn: async () => {
       const params = new URLSearchParams({ regime: regimeFilter })
       if (periodo) params.set('periodo', periodo)
+      if (uf) params.set('uf', uf)
       const res = await fetch(`/api/icms-fronteira/itens?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -5945,6 +6021,7 @@ function PlanilhaTab({ token }: { token: string | null }) {
             try {
               const params = new URLSearchParams({ regime: regimeFilter })
               if (periodo) params.set('periodo', periodo)
+              if (uf) params.set('uf', uf)
               const res = await fetch(`/api/icms-fronteira/itens/exportar/csv?${params}`, {
                 headers: { Authorization: `Bearer ${token}` },
               })
@@ -5964,6 +6041,7 @@ function PlanilhaTab({ token }: { token: string | null }) {
             try {
               const params = new URLSearchParams({ regime: regimeFilter })
               if (periodo) params.set('periodo', periodo)
+              if (uf) params.set('uf', uf)
               const res = await fetch(`/api/icms-fronteira/itens/exportar/xlsx?${params}`, {
                 headers: { Authorization: `Bearer ${token}` },
               })
@@ -6717,10 +6795,24 @@ export default function IcmsFronteira() {
     enabled: !!token,
   })
   const ufs = ufsData?.ufs ?? []
-  const [uf, setUf] = useState('')
+  // UF selecionada persiste entre reloads (localStorage) — sem isso, o estado
+  // reiniciava a cada F5/nova aba e recaía em ufs[0], que é a primeira em
+  // ordem ALFABÉTICA (ex.: "BA" antes de "PA"), não a que o usuário escolheu.
+  const [uf, setUfState] = useState<string>(() => {
+    try { return localStorage.getItem('fronteira_uf') || '' } catch { return '' }
+  })
+  const setUf = (v: string) => {
+    setUfState(v)
+    try { localStorage.setItem('fronteira_uf', v) } catch { /* ignore */ }
+  }
   useEffect(() => {
-    if (!uf && ufs.length > 0) setUf(ufs[0])
-  }, [ufs, uf])
+    if (ufs.length === 0) return
+    // Se não há UF persistida, ou a persistida não existe mais para esta
+    // empresa (trocou de empresa, ou perdeu acesso àquela UF), cai para a
+    // primeira disponível — mas nunca sobrescreve uma seleção ainda válida.
+    if (!uf || !ufs.includes(uf)) setUf(ufs[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ufs])
 
   // Períodos com SPED (mais recente primeiro). O primeiro vira o período default
   // das abas, evitando varredura de todos os meses no carregamento do módulo.

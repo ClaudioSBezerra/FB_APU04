@@ -150,7 +150,7 @@ sped_itens AS (
             NULLIF(ROUND((xi.v_st * COALESCE(ci.vl_item, 0)
                 / NULLIF(SUM(COALESCE(ci.vl_item,0)) OVER (PARTITION BY ci.c100_id, p.cod_ncm), 0))::numeric, 2), 0),
             ci.vl_icms_st, 0)                               AS icms_retido,
-        COALESCE(j.uf, 'PE')                                AS uf_filial,
+        COALESCE(j.uf, '')                                AS uf_filial,
         -- tem_xml: a NOTA do SPED possui XML importado nesta empresa? Usado para
         -- o Bloco D (SPED sem XML / "Faltante"). Nível NOTA (ne.id), não item.
         (ne.id IS NOT NULL)                                 AS tem_xml
@@ -167,7 +167,7 @@ sped_itens AS (
     WHERE j.company_id = $1
       AND ci.cfop IN ('2403','2409','2651','2652')
       AND c100.cod_sit NOT IN ('02','03','04','05')
-      AND ($3::text = '' OR COALESCE(j.uf,'PE') = $3)
+      AND ($3::text = '' OR j.uf = $3)
       AND ($2::text = '' OR j.mes_ano = $2
           OR (j.mes_ano IS NULL AND (
               EXTRACT(MONTH FROM j.dt_ini)::int = SPLIT_PART($2::text,'/',1)::int
@@ -204,7 +204,7 @@ xml_itens AS (
              ELSE 12.0 END                                  AS aliq_inter,
         COALESCE(nii.v_icms, 0)                             AS icms_debitado,
         COALESCE(nii.v_st, 0)                               AS icms_retido,
-        COALESCE(ne.dest_uf,'PE')                           AS uf_filial,
+        COALESCE(ne.dest_uf, '')                           AS uf_filial,
         true                                                AS tem_xml
     FROM nfe_entradas_itens nii
     JOIN nfe_entradas ne ON ne.id = nii.nfe_id
@@ -226,9 +226,9 @@ xml_itens AS (
                   JOIN company_segmentos cs
                     ON cs.company_id = $1::uuid
                    AND cs.segmento_codigo = r.segmento_codigo
-                   AND cs.uf = COALESCE(ne.dest_uf,'PE')
+                   AND cs.uf = ne.dest_uf
                   WHERE (r.company_id = $1 OR r.company_id IS NULL)
-                    AND r.uf_estado = COALESCE(ne.dest_uf,'PE')
+                    AND r.uf_estado = ne.dest_uf
                     AND r.segmento_codigo IS NOT NULL
                     AND LENGTH(r.ncm_prefixo) >= 4
                     AND LEFT(LEFT(regexp_replace(COALESCE(nii.ncm,''),'[^0-9]','','g'),8),
@@ -240,7 +240,7 @@ xml_itens AS (
       -- EXTRACT(data_emissao), que não usa índice e varria TODAS as entradas
       -- da empresa (mesmo gargalo do Bloco C, 2026-07-10). Vazio = todos.
       AND ($2::text = '' OR ne.mes_ano = $2)
-      AND ($3::text = '' OR COALESCE(ne.dest_uf,'PE') = $3)
+      AND ($3::text = '' OR ne.dest_uf = $3)
       AND NOT EXISTS (
           SELECT 1 FROM reg_c100 c100 JOIN import_jobs j ON j.id = c100.job_id
           WHERE j.company_id = $1 AND c100.chv_nfe = ne.chave_nfe

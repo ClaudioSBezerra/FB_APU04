@@ -223,7 +223,7 @@ classified AS (
                           SELECT 1 FROM company_segmentos cs
                           WHERE cs.company_id = $1::uuid
                             AND cs.segmento_codigo = regra.segmento_codigo
-                            AND cs.uf = COALESCE(j.uf, 'PE')
+                            AND cs.uf = j.uf
                       )
                     THEN 'ST'
                     ELSE 'ANTECIPACAO'
@@ -286,7 +286,7 @@ classified AS (
                           SELECT 1 FROM company_segmentos cs
                           WHERE cs.company_id = $1::uuid
                             AND cs.segmento_codigo = regra.segmento_codigo
-                            AND cs.uf = COALESCE(j.uf, 'PE')
+                            AND cs.uf = j.uf
                       )
                     THEN CASE
                         -- MVA efetivo: ajustado pré-calc por alíquota interestadual real,
@@ -364,7 +364,7 @@ classified AS (
                 END
             ELSE 0
         END                                                 AS valor_devido,
-        COALESCE(j.uf, 'PE')                                AS uf_filial,
+        COALESCE(j.uf, '')                                AS uf_filial,
         -- Campos crus expostos para o relatório "Incentivo" recalcular o
         -- icms_que_seria_devido (sem o branch PRODEPE) e fazer JOIN por CNPJ.
         -- Nenhum SELECT atual referencia estas colunas — adição inócua.
@@ -404,7 +404,7 @@ classified AS (
                r.segmento_codigo
         FROM icms_fronteira_regras_ncm r
         WHERE (r.company_id = $1 OR r.company_id IS NULL)
-          AND r.uf_estado = COALESCE(j.uf, 'PE')
+          AND r.uf_estado = j.uf
           AND ncm_eff.ncm IS NOT NULL
           AND LEFT(ncm_eff.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
           AND LENGTH(r.ncm_prefixo) >= 4
@@ -412,7 +412,7 @@ classified AS (
         LIMIT 1
     ) regra ON true
     LEFT JOIN uf_beneficios_fiscais ufb
-        ON ufb.company_id = $1 AND ufb.uf = COALESCE(j.uf, 'PE')
+        ON ufb.company_id = $1 AND ufb.uf = j.uf
     WHERE l.company_id = $1
       AND c100.cod_sit NOT IN ('02','03','04','05')
       AND ($2::text = '' OR j.mes_ano = $2

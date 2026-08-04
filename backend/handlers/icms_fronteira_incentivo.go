@@ -233,7 +233,7 @@ SELECT
                       SELECT 1 FROM company_segmentos cs
                       WHERE cs.company_id = $1::uuid
                         AND cs.segmento_codigo = regra.segmento_codigo
-                        AND cs.uf = COALESCE(m.dest_uf, 'PE')
+                        AND cs.uf = m.dest_uf
                   )
                 THEN 'ST'
                 ELSE 'ANTECIPACAO'
@@ -256,7 +256,7 @@ SELECT
              SELECT 1 FROM company_segmentos cs
              WHERE cs.company_id = $1::uuid
                AND cs.segmento_codigo = regra.segmento_codigo
-               AND cs.uf = COALESCE(m.dest_uf, 'PE')
+               AND cs.uf = m.dest_uf
          )
         THEN CASE WHEN COALESCE(regra.mva_original, regra.mva_ajustado_12pct) IS NOT NULL
             THEN GREATEST(0,
@@ -289,7 +289,7 @@ LEFT JOIN LATERAL (
            r.segmento_codigo
     FROM icms_fronteira_regras_ncm r
     WHERE (r.company_id = $1 OR r.company_id IS NULL)
-      AND r.uf_estado = COALESCE(m.dest_uf, 'PE')
+      AND r.uf_estado = m.dest_uf
       AND m.ncm IS NOT NULL
       AND LEFT(m.ncm, LENGTH(r.ncm_prefixo)) = r.ncm_prefixo
       AND LENGTH(r.ncm_prefixo) >= 4
@@ -297,7 +297,7 @@ LEFT JOIN LATERAL (
 ) regra ON true
 LEFT JOIN cte_por_nfe cte ON cte.chave_nfe = m.chave_nfe
 LEFT JOIN uf_beneficios_fiscais ufb
-    ON ufb.company_id = $1 AND ufb.uf = COALESCE(m.dest_uf, 'PE')
+    ON ufb.company_id = $1 AND ufb.uf = m.dest_uf
 JOIN prodepe_enquadramentos pe
   ON pe.company_id = $1::uuid
  AND pe.ativo = true
@@ -308,7 +308,7 @@ JOIN prodepe_enquadramentos pe
  AND (pe.vigencia_fim    IS NULL OR m.data_emissao <= pe.vigencia_fim)
 WHERE m.cfop_entrada NOT IN ('2551','2556')
   AND m.cfop_entrada IN ('2101','2102','2152','2403','2409','2651','2652')
-  AND ($3::text = '' OR COALESCE(m.dest_uf, 'PE') = $3)
+  AND ($3::text = '' OR m.dest_uf = $3)
 ORDER BY m.data_emissao DESC, m.chave_nfe
 `
 

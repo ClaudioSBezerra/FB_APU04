@@ -17,6 +17,7 @@ import (
 
 type ContestacaoRow struct {
 	ID              string  `json:"id"`
+	UF              string  `json:"uf"`
 	ChaveNFe        string  `json:"chave_nfe"`
 	NumeroNF        string  `json:"numero_nf"`
 	FornCNPJ        string  `json:"forn_cnpj"`
@@ -73,6 +74,7 @@ func IcmsFronteiraContestacaoListHandler(db *sql.DB) http.HandlerFunc {
 
 		status := strings.TrimSpace(r.URL.Query().Get("status"))
 		periodo := strings.TrimSpace(r.URL.Query().Get("periodo"))
+		uf := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("uf")))
 
 		// Build dynamic WHERE
 		args := []interface{}{companyID}
@@ -86,10 +88,15 @@ func IcmsFronteiraContestacaoListHandler(db *sql.DB) http.HandlerFunc {
 			args = append(args, periodo)
 			where = append(where, "periodo = $"+itoa(len(args)))
 		}
+		if uf != "" {
+			args = append(args, uf)
+			where = append(where, "uf = $"+itoa(len(args)))
+		}
 
 		query := `
 			SELECT
 				id::text,
+				COALESCE(uf, ''),
 				COALESCE(chave_nfe, ''),
 				COALESCE(numero_nf, ''),
 				COALESCE(forn_cnpj, ''),
@@ -121,6 +128,7 @@ func IcmsFronteiraContestacaoListHandler(db *sql.DB) http.HandlerFunc {
 			var dataResposta sql.NullString
 			if err := rows.Scan(
 				&row.ID,
+				&row.UF,
 				&row.ChaveNFe,
 				&row.NumeroNF,
 				&row.FornCNPJ,
@@ -190,18 +198,28 @@ func IcmsFronteiraContestacaoCreateHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// UF derivada da própria nota (chave_nfe), quando disponível — a
+		// contestação é sobre uma nota de uma filial/UF específica.
+		var ufDerivada sql.NullString
+		if strings.TrimSpace(body.ChaveNFe) != "" {
+			_ = db.QueryRow(`
+				SELECT dest_uf FROM nfe_entradas WHERE company_id = $1::uuid AND chave_nfe = $2
+			`, companyID, body.ChaveNFe).Scan(&ufDerivada)
+		}
+
 		var row ContestacaoRow
 		var respostaSefaz sql.NullString
 		var dataResposta sql.NullString
 
 		err = db.QueryRow(`
 			INSERT INTO icms_fronteira_contestacoes
-				(company_id, chave_nfe, numero_nf, forn_cnpj, forn_nome, periodo,
+				(company_id, uf, chave_nfe, numero_nf, forn_cnpj, forn_nome, periodo,
 				 valor_contestado, motivo, status, data_registro)
 			VALUES
-				($1::uuid, $2, $3, $4, $5, $6, $7, $8, 'pendente', now())
+				($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, 'pendente', now())
 			RETURNING
 				id::text,
+				COALESCE(uf, ''),
 				COALESCE(chave_nfe, ''),
 				COALESCE(numero_nf, ''),
 				COALESCE(forn_cnpj, ''),
@@ -213,10 +231,11 @@ func IcmsFronteiraContestacaoCreateHandler(db *sql.DB) http.HandlerFunc {
 				resposta_sefaz,
 				COALESCE(data_registro::text, ''),
 				data_resposta::text
-		`, companyID, body.ChaveNFe, body.NumeroNF, body.FornCNPJ, body.FornNome,
+		`, companyID, ufDerivada, body.ChaveNFe, body.NumeroNF, body.FornCNPJ, body.FornNome,
 			body.Periodo, body.ValorContestado, body.Motivo,
 		).Scan(
 			&row.ID,
+			&row.UF,
 			&row.ChaveNFe,
 			&row.NumeroNF,
 			&row.FornCNPJ,
