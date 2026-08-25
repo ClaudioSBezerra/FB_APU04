@@ -28,7 +28,10 @@ services:
       - fb_net
 
   watchtower:
-    image: containrrr/watchtower
+    # containrrr/watchtower foi arquivado (dez/2025) e não recebe mais atualizações —
+    # ficou preso num cliente Docker que fala uma API antiga demais pro Docker Engine
+    # atual do host. nickfedor/watchtower é o fork mantido, compatível (mesmas env vars).
+    image: nickfedor/watchtower
     container_name: fbtax-watchtower-apu04
     restart: always
     volumes:
