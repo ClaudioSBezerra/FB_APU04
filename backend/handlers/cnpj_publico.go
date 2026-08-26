@@ -161,6 +161,15 @@ func processarEnriquecimentoCNPJ(db *sql.DB, jobID string, cnpjs []string) {
 	for _, cnpj := range cnpjs {
 		<-ticker.C
 
+		if jobCancelado(db, jobID) {
+			db.Exec(`
+				UPDATE cnpj_consulta_jobs
+				SET mensagem=$1, updated_at=now()
+				WHERE id=$2::uuid AND status='cancelled'
+			`, "Cancelado pelo usuário — "+strconv.Itoa(processados)+"/"+strconv.Itoa(len(cnpjs))+" processados antes de parar", jobID)
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		result, err := client.Consultar(ctx, cnpj)
 		cancel()
@@ -229,12 +238,24 @@ func processarEnriquecimentoCNPJ(db *sql.DB, jobID string, cnpjs []string) {
 	db.Exec(`
 		UPDATE cnpj_consulta_jobs
 		SET status='completed', mensagem=$1, updated_at=now()
-		WHERE id=$2::uuid
+		WHERE id=$2::uuid AND status <> 'cancelled'
 	`, "Concluído: "+strconv.Itoa(encontrados)+" encontrados, "+strconv.Itoa(erros)+" com erro", jobID)
 }
 
+// jobCancelado verifica se o usuário pediu cancelamento (CNPJPublicoCancelarJobHandler)
+// desde a última iteração. Consultado a cada CNPJ — como já há um rate limit
+// de 1 req/s, esse SELECT extra é irrelevante no tempo total.
+func jobCancelado(db *sql.DB, jobID string) bool {
+	var status string
+	if err := db.QueryRow(`SELECT status FROM cnpj_consulta_jobs WHERE id=$1::uuid`, jobID).Scan(&status); err != nil {
+		return false
+	}
+	return status == "cancelled"
+}
+
 // ---------------------------------------------------------------------------
-// GET /api/fornecedores-clientes/jobs/{id}
+// GET  /api/fornecedores-clientes/jobs/{id}            — status (poll)
+// POST /api/fornecedores-clientes/jobs/{id}/cancelar   — cancela um job em andamento
 // ---------------------------------------------------------------------------
 
 type CNPJConsultaJobStatus struct {
@@ -247,20 +268,54 @@ type CNPJConsultaJobStatus struct {
 	Mensagem    string `json:"mensagem"`
 }
 
+// CNPJPublicoJobStatusHandler atende tanto o polling de status (GET) quanto
+// o cancelamento (POST .../cancelar) — registrados sob o mesmo prefixo em
+// main.go, já que o ID do job é um segmento dinâmico no meio do path.
 func CNPJPublicoJobStatusHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method != http.MethodGet {
-			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
-			return
-		}
 		if _, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims); !ok {
 			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
-		jobID := strings.TrimPrefix(r.URL.Path, "/api/fornecedores-clientes/jobs/")
-		jobID = strings.TrimSpace(jobID)
+		path := strings.TrimPrefix(r.URL.Path, "/api/fornecedores-clientes/jobs/")
+
+		if strings.HasSuffix(path, "/cancelar") {
+			if r.Method != http.MethodPost {
+				jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+				return
+			}
+			jobID := strings.TrimSpace(strings.TrimSuffix(path, "/cancelar"))
+			if jobID == "" {
+				jsonErr(w, http.StatusBadRequest, "ID do job não informado")
+				return
+			}
+			res, err := db.Exec(`
+				UPDATE cnpj_consulta_jobs SET status='cancelled', updated_at=now()
+				WHERE id=$1::uuid AND status IN ('pending','processing')
+			`, jobID)
+			if err != nil {
+				log.Printf("CNPJPublicoCancelarJob error: %v", err)
+				jsonErr(w, http.StatusInternalServerError, "Erro ao cancelar job")
+				return
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				jsonErr(w, http.StatusConflict, "Job não está em andamento (já concluído, cancelado ou inexistente)")
+				return
+			}
+			// A rotina em background lê o status a cada CNPJ (até 1s de atraso
+			// pelo rate limit) e para sozinha ao ver 'cancelled'.
+			json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			jsonErr(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		jobID := strings.TrimSpace(path)
 		if jobID == "" {
 			jsonErr(w, http.StatusBadRequest, "ID do job não informado")
 			return
@@ -291,24 +346,28 @@ func CNPJPublicoJobStatusHandler(db *sql.DB) http.HandlerFunc {
 // ---------------------------------------------------------------------------
 
 type FornecedorClienteRow struct {
-	CNPJ              string  `json:"cnpj"`
-	Tipo              string  `json:"tipo"` // "fornecedor" | "cliente"
-	NomeNota          string  `json:"nome_nota"`
-	RazaoSocialRFB    string  `json:"razao_social_rfb"`
-	NomeFantasia      string  `json:"nome_fantasia"`
-	SituacaoCadastral string  `json:"situacao_cadastral"`
-	NaturezaJuridica  string  `json:"natureza_juridica"`
-	Porte             string  `json:"porte"`
-	CNAECodigo        string  `json:"cnae_codigo"`
-	CNAEDescricao     string  `json:"cnae_descricao"`
-	UF                string  `json:"uf"`
-	Municipio         string  `json:"municipio"`
-	SimplesNacional   *bool   `json:"simples_nacional"`
-	MEI               *bool   `json:"mei"`
-	Ano               int     `json:"ano"`
-	ValorAcumulado    float64 `json:"valor_acumulado"`
-	QtdNotas          int     `json:"qtd_notas"`
-	ConsultadoRFB     bool    `json:"consultado_rfb"`
+	CNPJ              string `json:"cnpj"`
+	Tipo              string `json:"tipo"` // "fornecedor" | "cliente"
+	NomeNota          string `json:"nome_nota"`
+	RazaoSocialRFB    string `json:"razao_social_rfb"`
+	NomeFantasia      string `json:"nome_fantasia"`
+	SituacaoCadastral string `json:"situacao_cadastral"`
+	// DataSituacaoCadastral é a data do evento da situação cadastral atual —
+	// ex.: data da baixa quando situacao_cadastral = "BAIXADA", data de
+	// abertura quando "ATIVA". Nula quando o CNPJ ainda não foi consultado.
+	DataSituacaoCadastral *string `json:"data_situacao_cadastral"`
+	NaturezaJuridica      string  `json:"natureza_juridica"`
+	Porte                 string  `json:"porte"`
+	CNAECodigo            string  `json:"cnae_codigo"`
+	CNAEDescricao         string  `json:"cnae_descricao"`
+	UF                    string  `json:"uf"`
+	Municipio             string  `json:"municipio"`
+	SimplesNacional       *bool   `json:"simples_nacional"`
+	MEI                   *bool   `json:"mei"`
+	Ano                   int     `json:"ano"`
+	ValorAcumulado        float64 `json:"valor_acumulado"`
+	QtdNotas              int     `json:"qtd_notas"`
+	ConsultadoRFB         bool    `json:"consultado_rfb"`
 }
 
 type FornecedorClienteRelatorioResponse struct {
@@ -368,7 +427,7 @@ func CNPJPublicoRelatorioHandler(db *sql.DB) http.HandlerFunc {
 			SELECT
 				u.cnpj, u.tipo, u.nome_nota, u.ano, u.valor_acumulado, u.qtd_notas,
 				COALESCE(c.razao_social, ''), COALESCE(c.nome_fantasia, ''),
-				COALESCE(c.situacao_cadastral, ''), COALESCE(c.natureza_juridica, ''),
+				COALESCE(c.situacao_cadastral, ''), c.data_situacao_cadastral::text, COALESCE(c.natureza_juridica, ''),
 				COALESCE(c.porte, ''), COALESCE(c.cnae_codigo, ''), COALESCE(c.cnae_descricao, ''),
 				COALESCE(c.uf, ''), COALESCE(c.municipio, ''),
 				c.simples_nacional, c.mei, (c.cnpj IS NOT NULL AND c.erro IS NULL)
@@ -388,16 +447,20 @@ func CNPJPublicoRelatorioHandler(db *sql.DB) http.HandlerFunc {
 		result := []FornecedorClienteRow{}
 		for rows.Next() {
 			var row FornecedorClienteRow
+			var dataSituacao sql.NullString
 			if err := rows.Scan(
 				&row.CNPJ, &row.Tipo, &row.NomeNota, &row.Ano, &row.ValorAcumulado, &row.QtdNotas,
 				&row.RazaoSocialRFB, &row.NomeFantasia,
-				&row.SituacaoCadastral, &row.NaturezaJuridica,
+				&row.SituacaoCadastral, &dataSituacao, &row.NaturezaJuridica,
 				&row.Porte, &row.CNAECodigo, &row.CNAEDescricao,
 				&row.UF, &row.Municipio,
 				&row.SimplesNacional, &row.MEI, &row.ConsultadoRFB,
 			); err != nil {
 				log.Printf("CNPJPublicoRelatorio scan error: %v", err)
 				continue
+			}
+			if dataSituacao.Valid {
+				row.DataSituacaoCadastral = &dataSituacao.String
 			}
 			result = append(result, row)
 		}

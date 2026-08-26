@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { RefreshCw, Loader2, Search } from 'lucide-react'
+import { RefreshCw, Loader2, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
@@ -40,6 +40,7 @@ interface FornecedorClienteRow {
   razao_social_rfb: string
   nome_fantasia: string
   situacao_cadastral: string
+  data_situacao_cadastral: string | null
   natureza_juridica: string
   porte: string
   cnae_codigo: string
@@ -61,7 +62,7 @@ interface RelatorioResponse {
 
 interface JobStatus {
   id: string
-  status: 'pending' | 'processing' | 'completed' | 'error'
+  status: 'pending' | 'processing' | 'completed' | 'error' | 'cancelled'
   total: number
   processados: number
   encontrados: number
@@ -69,12 +70,27 @@ interface JobStatus {
   mensagem: string
 }
 
-function situacaoBadge(situacao: string) {
+function formatDataSituacao(data: string | null) {
+  if (!data) return null
+  const [ano, mes, dia] = data.split('-')
+  if (!ano || !mes || !dia) return data
+  return `${dia}/${mes}/${ano}`
+}
+
+function situacaoBadge(situacao: string, dataSituacao: string | null) {
   if (!situacao) return <span className="text-muted-foreground text-xs">—</span>
   const cls = situacao === 'ATIVA'
     ? 'bg-green-50 text-green-700 border-green-200'
     : 'bg-red-50 text-red-700 border-red-200'
-  return <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${cls}`}>{situacao}</Badge>
+  const dataFormatada = formatDataSituacao(dataSituacao)
+  return (
+    <div className="flex flex-col gap-0.5">
+      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 w-fit ${cls}`}>{situacao}</Badge>
+      {dataFormatada && (
+        <span className="text-[10px] text-muted-foreground">desde {dataFormatada}</span>
+      )}
+    </div>
+  )
 }
 
 function boolBadge(value: boolean | null, labelTrue: string, labelFalse: string) {
@@ -121,10 +137,12 @@ export default function FornecedoresClientesRFB() {
 
   useEffect(() => {
     if (!jobStatus) return
-    if (jobStatus.status === 'completed' || jobStatus.status === 'error') {
+    if (jobStatus.status === 'completed' || jobStatus.status === 'error' || jobStatus.status === 'cancelled') {
       setEnriquecendo(false)
       if (jobStatus.status === 'completed') {
         toast.success(jobStatus.mensagem || 'Enriquecimento concluído')
+      } else if (jobStatus.status === 'cancelled') {
+        toast.info(jobStatus.mensagem || 'Enriquecimento cancelado')
       } else {
         toast.error(jobStatus.mensagem || 'Erro no enriquecimento')
       }
@@ -154,6 +172,22 @@ export default function FornecedoresClientesRFB() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erro ao iniciar enriquecimento')
       setEnriquecendo(false)
+    }
+  }
+
+  async function handleCancelar() {
+    if (!jobId) return
+    try {
+      const res = await fetch(`/api/fornecedores-clientes/jobs/${jobId}/cancelar`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `Erro ${res.status}`)
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao cancelar')
     }
   }
 
@@ -193,6 +227,12 @@ export default function FornecedoresClientesRFB() {
             {enriquecendo ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
             {enriquecendo ? 'Consultando...' : 'Enriquecer com dados da Receita Federal'}
           </Button>
+          {enriquecendo && (
+            <Button size="sm" variant="outline" onClick={handleCancelar}>
+              <X className="h-3.5 w-3.5 mr-1.5" />
+              Cancelar
+            </Button>
+          )}
           {enriquecendo && jobStatus && (
             <span className="text-xs text-muted-foreground">
               {jobStatus.processados}/{jobStatus.total} processados — {jobStatus.encontrados} encontrados, {jobStatus.erros} com erro
@@ -283,7 +323,7 @@ export default function FornecedoresClientesRFB() {
                           <span className="text-[10px] text-amber-700">não consultado na RFB</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs">{situacaoBadge(row.situacao_cadastral)}</TableCell>
+                      <TableCell className="text-xs">{situacaoBadge(row.situacao_cadastral, row.data_situacao_cadastral)}</TableCell>
                       <TableCell className="text-xs max-w-[220px]">
                         {row.cnae_codigo && (
                           <div className="truncate" title={row.cnae_descricao}>
