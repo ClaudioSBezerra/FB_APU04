@@ -22,6 +22,7 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Dashboard Reforma',           path: '/dashboards' },
       { label: 'Resumo Executivo IA',         path: '/relatorios/resumo-executivo' },
       { label: 'Consulta Inteligente',        path: '/relatorios/consulta-inteligente' },
+      { label: 'Fornecedores/Clientes RFB',   path: '/relatorios/fornecedores-clientes-rfb' },
     ],
   },
   notas: {

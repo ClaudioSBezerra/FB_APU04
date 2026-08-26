@@ -14,6 +14,7 @@ const OperacoesSimplesNacional = lazy(() => import('./pages/OperacoesSimplesNaci
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const ExecutiveSummary = lazy(() => import('./pages/ExecutiveSummary'))
 const ConsultaInteligente = lazy(() => import('./pages/ConsultaInteligente'))
+const FornecedoresClientesRFB = lazy(() => import('./pages/FornecedoresClientesRFB'))
 const TabelaAliquotas = lazy(() => import('./pages/TabelaAliquotas'))
 const TabelaCFOP = lazy(() => import('./pages/TabelaCFOP'))
 const TabelaFornSimples = lazy(() => import('./pages/TabelaFornSimples'))
@@ -239,6 +240,7 @@ function AppLayout() {
               <Route path="/dashboards"                        element={<Dashboard />} />
               <Route path="/relatorios/resumo-executivo"       element={<ExecutiveSummary />} />
               <Route path="/relatorios/consulta-inteligente"   element={<ConsultaInteligente />} />
+              <Route path="/relatorios/fornecedores-clientes-rfb" element={<FornecedoresClientesRFB />} />
 
               {/* Notas Importadas */}
               <Route path="/apuracao/entrada/notas"            element={<ConsultaNFesEntradas />} />

@@ -642,6 +642,13 @@ func main() {
 		}
 	}, ""))
 
+	// ── Fornecedores/Clientes — enriquecimento com CNPJ público (BrasilAPI) ──
+	// Não confundir com a integração RFB da Reforma Tributária (rfb_apuracao.go) —
+	// isto é consulta pública de cadastro de CNPJ, sem credencial.
+	http.HandleFunc("/api/fornecedores-clientes/enriquecer", withAuth(handlers.CNPJPublicoEnriquecerHandler, ""))
+	http.HandleFunc("/api/fornecedores-clientes/jobs/", withAuth(handlers.CNPJPublicoJobStatusHandler, ""))
+	http.HandleFunc("/api/fornecedores-clientes/relatorio", withAuth(handlers.CNPJPublicoRelatorioHandler, ""))
+
 	// ── Hub por UF — benefícios fiscais (manual) + status da legislação (IA) ──
 	http.HandleFunc("/api/uf-hub", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
