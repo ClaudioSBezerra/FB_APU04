@@ -425,7 +425,7 @@ func CNPJPublicoRelatorioHandler(db *sql.DB) http.HandlerFunc {
 				SELECT * FROM clientes
 			)
 			SELECT
-				u.cnpj, u.tipo, u.nome_nota, u.ano, u.valor_acumulado, u.qtd_notas,
+				u.cnpj, u.tipo, COALESCE(u.nome_nota, ''), u.ano, COALESCE(u.valor_acumulado, 0), u.qtd_notas,
 				COALESCE(c.razao_social, ''), COALESCE(c.nome_fantasia, ''),
 				COALESCE(c.situacao_cadastral, ''), c.data_situacao_cadastral::text, COALESCE(c.natureza_juridica, ''),
 				COALESCE(c.porte, ''), COALESCE(c.cnae_codigo, ''), COALESCE(c.cnae_descricao, ''),
