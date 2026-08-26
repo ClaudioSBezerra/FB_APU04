@@ -10,21 +10,26 @@ package handlers
 // da Receita Federal para a Reforma Tributária (IBS/CBS). Isto aqui é
 // consulta pública de cadastro de CNPJ, sem credencial.
 //
-// Fonte dos fornecedores/clientes e valores: SPED EFD ICMS/IPI já importado
-// (não XML) — registro 0150 (cadastro de participantes, tabela participants)
-// cruzado com C100 (NF de mercadoria) e D100 (CT-e de frete) via job_id+
-// cod_part, já que cod_part só é único dentro do mesmo job/período.
+// Fonte dos fornecedores/clientes e valores: nfe_entradas/nfe_saidas (XML já
+// importado). O ideal seria SPED EFD ICMS/IPI (0150 cruzado com C100/D100,
+// por job_id+cod_part) — mesma fonte usada no módulo ICMS Fronteira — mas em
+// 2026-08-26 confirmamos que a base de produção da Ferreira Costa ainda não
+// tem NENHUM SPED ICMS/IPI importado (import_jobs/reg_c100/reg_d100/
+// participants zerados), só XML. Quando o SPED for importado, trocar para a
+// fonte 0150/C100/D100 (ver commit 4d518e3, revertido aqui pelo mesmo
+// motivo).
 //
 // Fluxo:
 //  1. POST /api/fornecedores-clientes/enriquecer — lê CNPJs distintos de
-//     participantes referenciados em C100/D100 (só os de 14 dígitos — CPF
-//     fica de fora) da empresa ativa, filtra os que faltam ou estão
-//     desatualizados no cache (> 30 dias), e dispara um job em background
-//     que consulta a BrasilAPI com rate limit conservador (1 req/s — API
-//     pública gratuita compartilhada, não é nossa para saturar).
+//     fornecedores (nfe_entradas.forn_cnpj) e clientes (nfe_saidas.
+//     dest_cnpj_cpf, só os de 14 dígitos — CPF de consumidor final fica de
+//     fora) da empresa ativa, filtra os que faltam ou estão desatualizados
+//     no cache (> 30 dias), e dispara um job em background que consulta a
+//     BrasilAPI com rate limit conservador (1 req/s — API pública gratuita
+//     compartilhada, não é nossa para saturar).
 //  2. GET /api/fornecedores-clientes/jobs/{id} — progresso do job (poll).
 //  3. GET /api/fornecedores-clientes/relatorio — fornecedores/clientes com
-//     valor acumulado (mercadoria + frete) por ano, cruzado com o cache de CNPJ.
+//     valor de compra/venda acumulado por ano, cruzado com o cache de CNPJ.
 
 import (
 	"context"
@@ -64,21 +69,18 @@ func CNPJPublicoEnriquecerHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// CNPJs distintos de fornecedores/clientes/transportadoras — fonte é o
-		// SPED EFD ICMS/IPI já importado (0150 = cadastro de participantes,
-		// C100 = NF de mercadoria, D100 = CT-e de frete), não o XML. cod_part
-		// só é único dentro do mesmo job/período, então o cruzamento com 0150
-		// tem que ser por job_id+cod_part — não dá pra guardar só o CNPJ.
+		// CNPJs distintos de fornecedores (entradas) e clientes (saídas, só
+		// quando o destinatário é PJ — length 14; CPF de consumidor final fica
+		// de fora, não faz sentido consultar situação cadastral de um CPF aqui).
 		rows, err := db.Query(`
-			SELECT DISTINCT p.cnpj
-			FROM (
-				SELECT job_id, cod_part FROM reg_c100 WHERE cod_sit NOT IN ('02','03','04','05')
+			SELECT DISTINCT cnpj FROM (
+				SELECT forn_cnpj AS cnpj FROM nfe_entradas
+				WHERE company_id = $1::uuid AND cancelado = 'N' AND length(forn_cnpj) = 14
 				UNION
-				SELECT job_id, cod_part FROM reg_d100 WHERE cod_sit NOT IN ('02','03','04','05')
+				SELECT dest_cnpj_cpf AS cnpj FROM nfe_saidas
+				WHERE company_id = $1::uuid AND cancelado = 'N' AND length(dest_cnpj_cpf) = 14
 			) t
-			JOIN import_jobs j ON j.id = t.job_id AND j.company_id = $1::uuid
-			JOIN participants p ON p.job_id = t.job_id AND p.cod_part = t.cod_part
-			WHERE p.cnpj IS NOT NULL AND p.cnpj <> '' AND length(p.cnpj) = 14
+			WHERE cnpj IS NOT NULL AND cnpj <> ''
 		`, companyID)
 		if err != nil {
 			log.Printf("CNPJPublicoEnriquecer: erro ao listar CNPJs: %v", err)
@@ -404,47 +406,31 @@ func CNPJPublicoRelatorioHandler(db *sql.DB) http.HandlerFunc {
 		tipoFiltro := r.URL.Query().Get("tipo")         // "" | "fornecedor" | "cliente"
 		situacaoFiltro := r.URL.Query().Get("situacao") // "" | "ATIVA" | "BAIXADA" | ... | "NAO_CONSULTADO"
 
-		// Fonte: SPED EFD ICMS/IPI já importado — participante (0150) cruzado
-		// com os documentos que o referenciam (C100 = mercadoria, D100 = frete/
-		// CT-e), por job_id+cod_part (cod_part só é único dentro do mesmo job).
-		// ind_oper '0' = entrada (fornecedor), '1' = saída (cliente) — mesma
-		// convenção usada no resto do módulo ICMS Fronteira. cod_sit exclui
-		// documento cancelado/denegado, igual aos outros relatórios do SPED.
+		// Fonte: nfe_entradas/nfe_saidas (XML já importado) — ver comentário no
+		// topo do arquivo sobre por que não é SPED (0150/C100/D100) ainda.
 		const query = `
-			WITH docs AS (
-				SELECT job_id, cod_part, ind_oper, dt_doc, vl_doc FROM reg_c100
-				WHERE cod_sit NOT IN ('02','03','04','05')
-				UNION ALL
-				SELECT job_id, cod_part, ind_oper, dt_doc, vl_doc FROM reg_d100
-				WHERE cod_sit NOT IN ('02','03','04','05')
-			), docs_empresa AS (
-				SELECT d.ind_oper, d.dt_doc, d.vl_doc, p.cnpj, p.nome
-				FROM docs d
-				JOIN import_jobs j ON j.id = d.job_id AND j.company_id = $1::uuid
-				JOIN participants p ON p.job_id = d.job_id AND p.cod_part = d.cod_part
-				WHERE p.cnpj IS NOT NULL AND p.cnpj <> '' AND length(p.cnpj) = 14
-			), fornecedores AS (
+			WITH fornecedores AS (
 				SELECT
-					cnpj                                    AS cnpj,
+					forn_cnpj                              AS cnpj,
 					'fornecedor'                            AS tipo,
-					MAX(nome)                                AS nome_nota,
-					EXTRACT(YEAR FROM dt_doc)::int          AS ano,
-					SUM(vl_doc)                              AS valor_acumulado,
-					COUNT(*)                                 AS qtd_notas
-				FROM docs_empresa
-				WHERE ind_oper = '0'
-				GROUP BY cnpj, EXTRACT(YEAR FROM dt_doc)
+					MAX(forn_nome)                          AS nome_nota,
+					EXTRACT(YEAR FROM data_emissao)::int    AS ano,
+					SUM(v_nf)                               AS valor_acumulado,
+					COUNT(*)                                AS qtd_notas
+				FROM nfe_entradas
+				WHERE company_id = $1::uuid AND cancelado = 'N' AND length(forn_cnpj) = 14
+				GROUP BY forn_cnpj, EXTRACT(YEAR FROM data_emissao)
 			), clientes AS (
 				SELECT
-					cnpj                                    AS cnpj,
+					dest_cnpj_cpf                           AS cnpj,
 					'cliente'                                AS tipo,
-					MAX(nome)                                AS nome_nota,
-					EXTRACT(YEAR FROM dt_doc)::int           AS ano,
-					SUM(vl_doc)                              AS valor_acumulado,
+					MAX(dest_nome)                           AS nome_nota,
+					EXTRACT(YEAR FROM data_emissao)::int     AS ano,
+					SUM(v_nf)                                AS valor_acumulado,
 					COUNT(*)                                 AS qtd_notas
-				FROM docs_empresa
-				WHERE ind_oper = '1'
-				GROUP BY cnpj, EXTRACT(YEAR FROM dt_doc)
+				FROM nfe_saidas
+				WHERE company_id = $1::uuid AND cancelado = 'N' AND length(dest_cnpj_cpf) = 14
+				GROUP BY dest_cnpj_cpf, EXTRACT(YEAR FROM data_emissao)
 			), uniao AS (
 				SELECT * FROM fornecedores
 				UNION ALL
