@@ -104,15 +104,19 @@ export default function FornecedoresClientesRFB() {
   const { token, companyId } = useAuth()
   const queryClient = useQueryClient()
   const [tipoFiltro, setTipoFiltro] = useState<'todos' | 'fornecedor' | 'cliente'>('todos')
+  const [situacaoFiltro, setSituacaoFiltro] = useState<
+    'todas' | 'ATIVA' | 'BAIXADA' | 'INAPTA' | 'SUSPENSA' | 'NULA' | 'NAO_CONSULTADO'
+  >('todas')
   const [busca, setBusca] = useState('')
   const [jobId, setJobId] = useState<string | null>(null)
   const [enriquecendo, setEnriquecendo] = useState(false)
 
   const { data, isLoading, isError } = useQuery<RelatorioResponse>({
-    queryKey: ['fornecedores-clientes/relatorio', tipoFiltro, companyId],
+    queryKey: ['fornecedores-clientes/relatorio', tipoFiltro, situacaoFiltro, companyId],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (tipoFiltro !== 'todos') params.set('tipo', tipoFiltro)
+      if (situacaoFiltro !== 'todas') params.set('situacao', situacaoFiltro)
       const res = await fetch(`/api/fornecedores-clientes/relatorio?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -255,6 +259,20 @@ export default function FornecedoresClientesRFB() {
             <SelectItem value="todos">Fornecedores e Clientes</SelectItem>
             <SelectItem value="fornecedor">Só Fornecedores</SelectItem>
             <SelectItem value="cliente">Só Clientes</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={situacaoFiltro} onValueChange={(v) => setSituacaoFiltro(v as typeof situacaoFiltro)}>
+          <SelectTrigger className="w-48 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todas">Todas as situações</SelectItem>
+            <SelectItem value="ATIVA">Ativa</SelectItem>
+            <SelectItem value="BAIXADA">Baixada</SelectItem>
+            <SelectItem value="INAPTA">Inapta</SelectItem>
+            <SelectItem value="SUSPENSA">Suspensa</SelectItem>
+            <SelectItem value="NULA">Nula</SelectItem>
+            <SelectItem value="NAO_CONSULTADO">Não consultado na RFB</SelectItem>
           </SelectContent>
         </Select>
         <div className="relative w-64">
