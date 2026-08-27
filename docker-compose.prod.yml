@@ -1,3 +1,19 @@
+# Este compose corresponde ao deploy no Coolify/Hostinger (srv1306085,
+# 76.13.171.196) — domínio simulador.fbtax.cloud, banco Postgres dedicado
+# (fiscal_apu04_db, isolado por design: cada app no Coolify tem seu próprio
+# serviço `db`, nunca compartilhado entre projetos).
+#
+# NÃO é o compose usado no deploy AWS (simu.fcxlabs.com, servidor
+# 172.16.249.77, job "deploy-fcxlabs" em .github/workflows/deploy-production.yml).
+# Aquele deploy roda via self-hosted runner direto em
+# /opt/apps/fbtax/simu-apu04/docker-compose.yml — um arquivo mantido fora
+# deste repositório, com estrutura mais simples (sem a stack de observabilidade
+# abaixo) e historicamente configurado (até 2026-08-27) pra reusar o Postgres
+# compartilhado do projeto irmão FB_APU02 (container cliente-db, banco
+# fbtax_cloud) — causa de um incidente de TRUNCATE cruzado entre os dois
+# apps. Corrigido isolando um Postgres próprio (cliente-db-simulador,
+# fbtax_cloud_simulador) só pro lado AWS; este arquivo aqui nunca teve esse
+# problema.
 services:
   api:
     build:
