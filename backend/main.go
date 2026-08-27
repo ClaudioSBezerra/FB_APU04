@@ -648,6 +648,7 @@ func main() {
 	http.HandleFunc("/api/fornecedores-clientes/enriquecer", withAuth(handlers.CNPJPublicoEnriquecerHandler, ""))
 	http.HandleFunc("/api/fornecedores-clientes/jobs/", withAuth(handlers.CNPJPublicoJobStatusHandler, ""))
 	http.HandleFunc("/api/fornecedores-clientes/relatorio", withAuth(handlers.CNPJPublicoRelatorioHandler, ""))
+	http.HandleFunc("/api/fornecedores-clientes/importar-excel", withAuth(handlers.CNPJPublicoImportarExcelHandler, ""))
 
 	// ── Hub por UF — benefícios fiscais (manual) + status da legislação (IA) ──
 	http.HandleFunc("/api/uf-hub", func(w http.ResponseWriter, r *http.Request) {

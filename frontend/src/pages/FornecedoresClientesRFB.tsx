@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { RefreshCw, Loader2, Search, X } from 'lucide-react'
+import { RefreshCw, Loader2, Search, X, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
@@ -53,6 +53,7 @@ interface FornecedorClienteRow {
   valor_acumulado: number
   qtd_notas: number
   consultado_rfb: boolean
+  fonte: 'xml' | 'excel'
 }
 
 interface RelatorioResponse {
@@ -93,6 +94,12 @@ function situacaoBadge(situacao: string, dataSituacao: string | null) {
   )
 }
 
+function fonteBadge(fonte: 'xml' | 'excel') {
+  return fonte === 'excel'
+    ? <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-purple-50 text-purple-700 border-purple-200">Excel</Badge>
+    : <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-50 text-slate-600 border-slate-200">XML</Badge>
+}
+
 function boolBadge(value: boolean | null, labelTrue: string, labelFalse: string) {
   if (value === null || value === undefined) return <span className="text-muted-foreground text-xs">—</span>
   return value
@@ -110,6 +117,8 @@ export default function FornecedoresClientesRFB() {
   const [busca, setBusca] = useState('')
   const [jobId, setJobId] = useState<string | null>(null)
   const [enriquecendo, setEnriquecendo] = useState(false)
+  const [importandoExcel, setImportandoExcel] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data, isLoading, isError } = useQuery<RelatorioResponse>({
     queryKey: ['fornecedores-clientes/relatorio', tipoFiltro, situacaoFiltro, companyId],
@@ -195,6 +204,35 @@ export default function FornecedoresClientesRFB() {
     }
   }
 
+  async function handleImportarExcel(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // permite reenviar o mesmo arquivo depois
+    if (!file) return
+    setImportandoExcel(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/fornecedores-clientes/importar-excel', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+      const result = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(result.error || `Erro ${res.status}`)
+      }
+      toast.success(`${result.importados} registro(s) importado(s)${result.ignorados ? `, ${result.ignorados} ignorado(s)` : ''}`)
+      if (result.erros?.length) {
+        toast.warning(`Primeiros avisos: ${result.erros.slice(0, 3).join(' | ')}`)
+      }
+      queryClient.invalidateQueries({ queryKey: ['fornecedores-clientes/relatorio'] })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao importar planilha')
+    } finally {
+      setImportandoExcel(false)
+    }
+  }
+
   const rows = data?.rows ?? []
   const filtered = useMemo(() => {
     const q = busca.trim().toLowerCase()
@@ -247,6 +285,34 @@ export default function FornecedoresClientesRFB() {
               {naoConsultados} CNPJ(s) na lista ainda sem consulta RFB
             </span>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold">Importar planilha de fornecedores (Excel)</CardTitle>
+          <CardDescription className="text-xs">
+            Ponte temporária enquanto o SPED não é reimportado — planilha .xlsx com colunas CNPJ, Ano e Valor.
+            Aparece no relatório como linha separada (badge "Excel"), sem se misturar com o valor calculado via XML.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx"
+            className="hidden"
+            onChange={handleImportarExcel}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={importandoExcel}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {importandoExcel ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+            {importandoExcel ? 'Importando...' : 'Selecionar planilha .xlsx'}
+          </Button>
         </CardContent>
       </Card>
 
@@ -315,12 +381,13 @@ export default function FornecedoresClientesRFB() {
                   <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Ano</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Valor Acumulado</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wide text-right">Notas</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide">Fonte</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center text-xs text-muted-foreground py-6">
+                    <TableCell colSpan={12} className="text-center text-xs text-muted-foreground py-6">
                       Nenhum registro encontrado
                     </TableCell>
                   </TableRow>
@@ -355,6 +422,7 @@ export default function FornecedoresClientesRFB() {
                       <TableCell className="text-xs text-right font-mono">{row.ano}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{formatCurrency(row.valor_acumulado)}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{row.qtd_notas}</TableCell>
+                      <TableCell className="text-xs">{fonteBadge(row.fonte)}</TableCell>
                     </TableRow>
                   ))
                 )}
