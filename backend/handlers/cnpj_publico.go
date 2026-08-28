@@ -10,32 +10,34 @@ package handlers
 // da Receita Federal para a Reforma Tributária (IBS/CBS). Isto aqui é
 // consulta pública de cadastro de CNPJ, sem credencial.
 //
-// Fonte dos fornecedores/clientes e valores: nfe_entradas/nfe_saidas (XML já
-// importado). O ideal seria SPED EFD ICMS/IPI (0150 cruzado com C100/D100,
-// por job_id+cod_part) — mesma fonte usada no módulo ICMS Fronteira — mas em
-// 2026-08-26 confirmamos que a base de produção da Ferreira Costa ainda não
-// tem NENHUM SPED ICMS/IPI importado (import_jobs/reg_c100/reg_d100/
-// participants zerados), só XML. Quando o SPED for importado, trocar para a
-// fonte 0150/C100/D100 (ver commit 4d518e3, revertido aqui pelo mesmo
-// motivo).
+// Fonte dos fornecedores/clientes e valores: SPED EFD ICMS/IPI já importado
+// — registro 0150 (cadastro de participantes, tabela participants) cruzado
+// com C100 (NF de mercadoria) e D100 (CT-e de frete) via job_id+cod_part
+// (cod_part só é único dentro do mesmo job/período) — mesma fonte usada no
+// módulo ICMS Fronteira. Histórico: em 2026-08-26 a base ainda não tinha
+// SPED importado, então essa tela rodou temporariamente sobre nfe_entradas/
+// nfe_saidas (XML — commit dedf89d); em 2026-08-28 a Ferreira Costa importou
+// o SPED de jan/2026 e voltamos pra fonte oficial (commit atual). Se um dia
+// faltar SPED de novo, nfe_entradas/nfe_saidas continuam existindo como
+// fallback — só não são mais a fonte default.
 //
 // Fluxo:
 //  1. POST /api/fornecedores-clientes/enriquecer — lê CNPJs distintos de
-//     fornecedores (nfe_entradas.forn_cnpj) e clientes (nfe_saidas.
-//     dest_cnpj_cpf, só os de 14 dígitos — CPF de consumidor final fica de
-//     fora) da empresa ativa, filtra os que faltam ou estão desatualizados
-//     no cache (> 30 dias), e dispara um job em background que consulta a
-//     BrasilAPI com rate limit conservador (1 req/s — API pública gratuita
-//     compartilhada, não é nossa para saturar).
+//     participantes referenciados em C100/D100 (só os de 14 dígitos — CPF
+//     fica de fora) da empresa ativa, filtra os que faltam ou estão
+//     desatualizados no cache (> 30 dias), e dispara um job em background
+//     que consulta a BrasilAPI com rate limit conservador (1 req/s — API
+//     pública gratuita compartilhada, não é nossa para saturar).
 //  2. GET /api/fornecedores-clientes/jobs/{id} — progresso do job (poll).
 //  3. GET /api/fornecedores-clientes/relatorio — fornecedores/clientes com
-//     valor de compra/venda acumulado por ano, cruzado com o cache de CNPJ.
-//  4. POST /api/fornecedores-clientes/importar-excel — ponte temporária
-//     (2026-08-27): planilha CNPJ|Ano|Valor de compra de fornecedores,
-//     enquanto o SPED não é reimportado. Grava em fornecedores_valores_excel
-//     (migration 164) e aparece no relatório como linha adicional, tipo
-//     'fornecedor', com fonte='excel' — nunca somada/substituída sobre o
-//     valor calculado via XML, pra não mascarar divergência entre as fontes.
+//     valor acumulado (mercadoria + frete) por ano, cruzado com o cache de
+//     CNPJ. fonte='sped' pra essas linhas.
+//  4. POST /api/fornecedores-clientes/importar-excel — ponte manual (2026-
+//     08-27): planilha CNPJ|Ano|Valor de compra de fornecedores. Grava em
+//     fornecedores_valores_excel (migration 164) e aparece no relatório
+//     como linha adicional, tipo 'fornecedor', fonte='excel' — nunca
+//     somada/substituída sobre o valor calculado via SPED, pra não mascarar
+//     divergência entre as fontes.
 
 import (
 	"bytes"
@@ -80,21 +82,24 @@ func CNPJPublicoEnriquecerHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// CNPJs distintos de fornecedores (entradas) e clientes (saídas, só
-		// quando o destinatário é PJ — length 14; CPF de consumidor final fica
-		// de fora, não faz sentido consultar situação cadastral de um CPF aqui).
+		// CNPJs distintos de participantes referenciados em C100/D100 (SPED) +
+		// CNPJs vindos do import manual de Excel — só os de 14 dígitos, CPF de
+		// consumidor final fica de fora.
 		rows, err := db.Query(`
-			SELECT DISTINCT cnpj FROM (
-				SELECT forn_cnpj AS cnpj FROM nfe_entradas
-				WHERE company_id = $1::uuid AND cancelado = 'N' AND length(forn_cnpj) = 14
+			SELECT DISTINCT p.cnpj
+			FROM (
+				SELECT job_id, cod_part FROM reg_c100 WHERE cod_sit NOT IN ('02','03','04','05')
 				UNION
-				SELECT dest_cnpj_cpf AS cnpj FROM nfe_saidas
-				WHERE company_id = $1::uuid AND cancelado = 'N' AND length(dest_cnpj_cpf) = 14
-				UNION
-				SELECT cnpj FROM fornecedores_valores_excel
-				WHERE company_id = $1::uuid
+				SELECT job_id, cod_part FROM reg_d100 WHERE cod_sit NOT IN ('02','03','04','05')
 			) t
-			WHERE cnpj IS NOT NULL AND cnpj <> ''
+			JOIN import_jobs j ON j.id = t.job_id AND j.company_id = $1::uuid
+			JOIN participants p ON p.job_id = t.job_id AND p.cod_part = t.cod_part
+			WHERE p.cnpj IS NOT NULL AND p.cnpj <> '' AND length(p.cnpj) = 14
+
+			UNION
+
+			SELECT cnpj FROM fornecedores_valores_excel
+			WHERE company_id = $1::uuid AND cnpj IS NOT NULL AND cnpj <> ''
 		`, companyID)
 		if err != nil {
 			log.Printf("CNPJPublicoEnriquecer: erro ao listar CNPJs: %v", err)
@@ -391,10 +396,11 @@ type FornecedorClienteRow struct {
 	ValorAcumulado        float64 `json:"valor_acumulado"`
 	QtdNotas              int     `json:"qtd_notas"`
 	ConsultadoRFB         bool    `json:"consultado_rfb"`
-	// Fonte: 'xml' (calculado de nfe_entradas/nfe_saidas) ou 'excel' (import
-	// manual, fornecedores_valores_excel — migration 164). Deliberadamente
-	// NÃO mesclado/somado entre fontes: linhas separadas pro mesmo CNPJ+ano
-	// pra não mascarar divergência entre o que o sistema calcula e a planilha.
+	// Fonte: 'sped' (calculado de reg_c100/reg_d100 + participants) ou
+	// 'excel' (import manual, fornecedores_valores_excel — migration 164).
+	// Deliberadamente NÃO mesclado/somado entre fontes: linhas separadas pro
+	// mesmo CNPJ+ano pra não mascarar divergência entre o que o sistema
+	// calcula e a planilha.
 	Fonte string `json:"fonte"`
 }
 
@@ -425,23 +431,39 @@ func CNPJPublicoRelatorioHandler(db *sql.DB) http.HandlerFunc {
 		tipoFiltro := r.URL.Query().Get("tipo")         // "" | "fornecedor" | "cliente"
 		situacaoFiltro := r.URL.Query().Get("situacao") // "" | "ATIVA" | "BAIXADA" | ... | "NAO_CONSULTADO"
 
-		// Fonte: nfe_entradas/nfe_saidas (XML já importado) — ver comentário no
-		// topo do arquivo sobre por que não é SPED (0150/C100/D100) ainda.
-		// fornecedores_excel (migration 164) é uma ponte manual em paralelo,
-		// nunca mesclada com o valor XML — ver comentário em Fonte no struct.
+		// Fonte: SPED EFD ICMS/IPI já importado — participante (0150) cruzado
+		// com os documentos que o referenciam (C100 = mercadoria, D100 = frete/
+		// CT-e), por job_id+cod_part (cod_part só é único dentro do mesmo job).
+		// ind_oper '0' = entrada (fornecedor), '1' = saída (cliente) — mesma
+		// convenção usada no resto do módulo ICMS Fronteira. cod_sit exclui
+		// documento cancelado/denegado. fornecedores_excel (migration 164) é
+		// uma ponte manual em paralelo, nunca mesclada com o valor SPED — ver
+		// comentário em Fonte no struct.
 		const query = `
-			WITH fornecedores AS (
+			WITH docs AS (
+				SELECT job_id, cod_part, ind_oper, dt_doc, vl_doc FROM reg_c100
+				WHERE cod_sit NOT IN ('02','03','04','05')
+				UNION ALL
+				SELECT job_id, cod_part, ind_oper, dt_doc, vl_doc FROM reg_d100
+				WHERE cod_sit NOT IN ('02','03','04','05')
+			), docs_empresa AS (
+				SELECT d.ind_oper, d.dt_doc, d.vl_doc, p.cnpj, p.nome
+				FROM docs d
+				JOIN import_jobs j ON j.id = d.job_id AND j.company_id = $1::uuid
+				JOIN participants p ON p.job_id = d.job_id AND p.cod_part = d.cod_part
+				WHERE p.cnpj IS NOT NULL AND p.cnpj <> '' AND length(p.cnpj) = 14
+			), fornecedores AS (
 				SELECT
-					forn_cnpj                              AS cnpj,
+					cnpj                                    AS cnpj,
 					'fornecedor'                            AS tipo,
-					MAX(forn_nome)                          AS nome_nota,
-					EXTRACT(YEAR FROM data_emissao)::int    AS ano,
-					SUM(v_nf)                               AS valor_acumulado,
-					COUNT(*)                                AS qtd_notas,
-					'xml'                                    AS fonte
-				FROM nfe_entradas
-				WHERE company_id = $1::uuid AND cancelado = 'N' AND length(forn_cnpj) = 14
-				GROUP BY forn_cnpj, EXTRACT(YEAR FROM data_emissao)
+					MAX(nome)                                AS nome_nota,
+					EXTRACT(YEAR FROM dt_doc)::int          AS ano,
+					SUM(vl_doc)                              AS valor_acumulado,
+					COUNT(*)                                 AS qtd_notas,
+					'sped'                                   AS fonte
+				FROM docs_empresa
+				WHERE ind_oper = '0'
+				GROUP BY cnpj, EXTRACT(YEAR FROM dt_doc)
 			), fornecedores_excel AS (
 				SELECT
 					cnpj                                    AS cnpj,
@@ -455,16 +477,16 @@ func CNPJPublicoRelatorioHandler(db *sql.DB) http.HandlerFunc {
 				WHERE company_id = $1::uuid
 			), clientes AS (
 				SELECT
-					dest_cnpj_cpf                           AS cnpj,
+					cnpj                                    AS cnpj,
 					'cliente'                                AS tipo,
-					MAX(dest_nome)                           AS nome_nota,
-					EXTRACT(YEAR FROM data_emissao)::int     AS ano,
-					SUM(v_nf)                                AS valor_acumulado,
+					MAX(nome)                                AS nome_nota,
+					EXTRACT(YEAR FROM dt_doc)::int           AS ano,
+					SUM(vl_doc)                              AS valor_acumulado,
 					COUNT(*)                                 AS qtd_notas,
-					'xml'                                    AS fonte
-				FROM nfe_saidas
-				WHERE company_id = $1::uuid AND cancelado = 'N' AND length(dest_cnpj_cpf) = 14
-				GROUP BY dest_cnpj_cpf, EXTRACT(YEAR FROM data_emissao)
+					'sped'                                   AS fonte
+				FROM docs_empresa
+				WHERE ind_oper = '1'
+				GROUP BY cnpj, EXTRACT(YEAR FROM dt_doc)
 			), uniao AS (
 				SELECT * FROM fornecedores
 				UNION ALL

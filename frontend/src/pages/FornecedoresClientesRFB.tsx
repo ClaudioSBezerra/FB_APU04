@@ -53,7 +53,7 @@ interface FornecedorClienteRow {
   valor_acumulado: number
   qtd_notas: number
   consultado_rfb: boolean
-  fonte: 'xml' | 'excel'
+  fonte: 'sped' | 'excel'
 }
 
 interface RelatorioResponse {
@@ -94,10 +94,10 @@ function situacaoBadge(situacao: string, dataSituacao: string | null) {
   )
 }
 
-function fonteBadge(fonte: 'xml' | 'excel') {
+function fonteBadge(fonte: 'sped' | 'excel') {
   return fonte === 'excel'
     ? <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-purple-50 text-purple-700 border-purple-200">Excel</Badge>
-    : <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-50 text-slate-600 border-slate-200">XML</Badge>
+    : <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-50 text-slate-600 border-slate-200">SPED</Badge>
 }
 
 function boolBadge(value: boolean | null, labelTrue: string, labelFalse: string) {
