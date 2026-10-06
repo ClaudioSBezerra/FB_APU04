@@ -76,6 +76,7 @@ export const modules: Record<string, ModuleConfig> = {
       { label: 'Importar XML', path: '/pacote-fiscal/importar', adminOnly: true },
       { label: 'Comparação Fiscal', path: '/pacote-fiscal/comparacao' },
       { label: 'Relatório Diagnóstico', path: '/pacote-fiscal/diagnostico' },
+      { label: 'Simulação 2027', path: '/pacote-fiscal/simulacao-2027' },
     ],
   },
   efdcontrib: {

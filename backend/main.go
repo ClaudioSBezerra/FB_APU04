@@ -26,8 +26,8 @@ import (
 
 // Version information for backend deployment validation
 const (
-	BackendVersion = "2.5.1"
-	FeatureSet     = "Escrituração de Entradas EFD, Importação ERP Bridge, NF-e Entradas, CT-e Entradas, Enriquecimento PIS/COFINS/IPI, Malha Fina, Apuração IBS/CBS, Créditos em Risco, SPED layout 020, Módulo Teste Pacote Fiscal, Personas por Módulo, Simulação IBS/CBS na Base do ICMS"
+	BackendVersion = "2.7.0"
+	FeatureSet     = "Escrituração de Entradas EFD, Importação ERP Bridge, NF-e Entradas, CT-e Entradas, Enriquecimento PIS/COFINS/IPI, Malha Fina, Apuração IBS/CBS, Créditos em Risco, SPED layout 020, Módulo Teste Pacote Fiscal, Personas por Módulo, Simulação IBS/CBS na Base do ICMS, Simulação 2027 (IBS/CBS pleno)"
 )
 
 func GetVersionInfo() string {
@@ -562,6 +562,16 @@ func main() {
 	// módulo, não compartilhadas com o Painel XMLs/Conciliação/Auditoria.
 	http.HandleFunc("/api/pacotefiscal/xml/upload", withAuth(handlers.PacoteFiscalXMLUploadHandler, "admin"))
 	http.HandleFunc("/api/pacotefiscal/xml/upload/status", withAuth(handlers.PacoteFiscalXMLUploadStatusHandler, "admin"))
+
+	// "Simulação 2027" (2026-10, 4ª funcionalidade do módulo): lê um XML de
+	// NF-e (modelo 55) ou CT-e já emitido e gera uma versão simulada como se
+	// já estivesse sob as regras plenas da Reforma Tributária — PIS/COFINS/IPI
+	// zerados, IBS/CBS recalculado com alíquotas de teste globais e editáveis.
+	// Stateless (não grava os documentos em banco, só os parâmetros).
+	http.HandleFunc("/api/pacotefiscal/sim2027/parametros", withAuth(handlers.GetPacoteFiscalSim2027ParametrosHandler, ""))
+	http.HandleFunc("/api/pacotefiscal/sim2027/parametros/salvar", withAuth(handlers.PutPacoteFiscalSim2027ParametrosHandler, "admin"))
+	http.HandleFunc("/api/pacotefiscal/sim2027/analisar", withAuth(handlers.PacoteFiscalSim2027AnalisarHandler, ""))
+	http.HandleFunc("/api/pacotefiscal/sim2027/gerar", withAuth(handlers.PacoteFiscalSim2027GerarHandler, ""))
 
 	// Configuration Endpoints
 	http.HandleFunc("/api/config/aliquotas", withAuth(handlers.GetTaxRatesHandler, ""))

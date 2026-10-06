@@ -52,6 +52,7 @@ const IcmsFronteira = lazy(() => import('./pages/IcmsFronteira'))
 const ComparacaoFiscal = lazy(() => import('./pages/ComparacaoFiscal'))
 const ImportarXMLPacoteFiscal = lazy(() => import('./pages/ImportarXMLPacoteFiscal'))
 const DiagnosticoPacoteFiscal = lazy(() => import('./pages/DiagnosticoPacoteFiscal'))
+const Sim2027PacoteFiscal = lazy(() => import('./pages/Sim2027PacoteFiscal'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
@@ -234,6 +235,7 @@ function AppLayout() {
               <Route path="/pacote-fiscal/importar"            element={<AdminRoute><ImportarXMLPacoteFiscal /></AdminRoute>} />
               <Route path="/pacote-fiscal/comparacao"          element={<ComparacaoFiscal />} />
               <Route path="/pacote-fiscal/diagnostico"         element={<DiagnosticoPacoteFiscal />} />
+              <Route path="/pacote-fiscal/simulacao-2027"      element={<Sim2027PacoteFiscal />} />
               <Route path="/mercadorias/xml"                   element={<MercadoriasXML />} />
               <Route path="/mercadorias"                       element={<Mercadorias />} />
               <Route path="/operacoes/simples"                 element={<OperacoesSimplesNacional />} />
