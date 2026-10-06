@@ -6,11 +6,23 @@
 // xml.Marshal — assim é impossível "esquecer" de copiar um campo que não está
 // na lista de exceção: tudo que não bate numa regra passa inalterado.
 //
-// Namespaces (xmlns) são removidos do resultado (mesma convenção já usada
-// pelos parsers deste módulo, que sempre leem documentos sem namespace) —
-// o XML gerado é um artefato interno de simulação, não é reenviado à SEFAZ.
-// A assinatura digital original (<Signature>) é removida: qualquer alteração
-// de valor já invalida a assinatura original, mantê-la seria enganoso.
+// Namespaces são removidos de todo o processamento interno (Name.Space fica
+// sempre vazio — evita o problema conhecido de encoding/xml reencodar tokens
+// com Name.Space preenchido gerando prefixos sintéticos/errados) e
+// reinjetados manualmente como atributo literal "xmlns" só no elemento raiz
+// (NFe/CTe herda por escopo — não precisa repetir em cada filho).
+//
+// O <Signature> original é MANTIDO (não removido): o XSD da NF-e/CT-e exige
+// estruturalmente que Signature seja o último filho — removê-lo quebra a
+// validação de schema antes mesmo de chegar à checagem da assinatura em si
+// (achado em teste real na homologação SEFAZ 2026-10-06: rejeição 225 "NFe
+// has incomplete content... expected infNFeSupl/Signature"). A assinatura
+// mantida fica desatualizada/criptograficamente inválida em relação ao novo
+// conteúdo — isso é esperado: este XML é uma simulação, não um documento
+// pronto para transmissão. Para efetivamente transmitir/validar como
+// documento real seria necessário reassiná-lo com um certificado ICP-Brasil
+// válido — fora do escopo desta ferramenta (não lidamos com material
+// criptográfico do cliente).
 package handlers
 
 import (
@@ -22,10 +34,20 @@ import (
 	"time"
 )
 
+const (
+	pfsNamespaceNFe = "http://www.portalfiscal.inf.br/nfe"
+	pfsNamespaceCTe = "http://www.portalfiscal.inf.br/cte"
+)
+
 // pfsGerarXMLSimulado aplica a transformação completa sobre os bytes
-// originais e devolve o novo XML (UTF-8, sem assinatura, com comentário de
-// marcação de simulação logo após a tag raiz).
+// originais e devolve o novo XML (UTF-8, com xmlns e Signature originais
+// preservados, e comentário de marcação de simulação logo após a tag raiz).
 func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Time) ([]byte, error) {
+	rootNamespace := pfsNamespaceNFe
+	if pfsDetectTipoDoc(original) == pfsTipoCTe {
+		rootNamespace = pfsNamespaceCTe
+	}
+
 	data := pfsStripNamespaces(original)
 
 	dec := xml.NewDecoder(bytes.NewReader(data))
@@ -70,21 +92,24 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 
 		switch t := tok.(type) {
 		case xml.StartElement:
-			if t.Name.Local == "Signature" {
-				if err := pfsSkipElement(dec); err != nil {
-					return nil, fmt.Errorf("erro ao remover assinatura original: %w", err)
-				}
-				continue
-			}
 			t.Name.Space = ""
 			for i := range t.Attr {
 				t.Attr[i].Name.Space = ""
+			}
+			isRoot := !commentWritten
+			if t.Name.Local == "Signature" {
+				// Namespace próprio do xmldsig, preservado mesmo com o
+				// restante do documento sem prefixo/namespace.
+				t.Attr = append(t.Attr, xml.Attr{Name: xml.Name{Local: "xmlns"}, Value: "http://www.w3.org/2000/09/xmldsig#"})
+			}
+			if isRoot {
+				t.Attr = append([]xml.Attr{{Name: xml.Name{Local: "xmlns"}, Value: rootNamespace}}, t.Attr...)
 			}
 			path = append(path, t.Name.Local)
 			if err := enc.EncodeToken(t); err != nil {
 				return nil, err
 			}
-			if !commentWritten {
+			if isRoot {
 				commentWritten = true
 				msg := fmt.Sprintf(
 					" SIMULACAO 2027 (NAO VALIDO PARA TRANSMISSAO/SEFAZ) - PIS, COFINS e IPI zerados;"+
@@ -130,25 +155,6 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-// pfsSkipElement consome (sem reemitir) toda a subárvore de um elemento cuja
-// tag de abertura já foi lida (e descartada) pelo chamador.
-func pfsSkipElement(dec *xml.Decoder) error {
-	depth := 1
-	for depth > 0 {
-		tok, err := dec.Token()
-		if err != nil {
-			return err
-		}
-		switch tok.(type) {
-		case xml.StartElement:
-			depth++
-		case xml.EndElement:
-			depth--
-		}
-	}
-	return nil
 }
 
 // pfsComputeReplacement decide, para um nó-folha identificado por

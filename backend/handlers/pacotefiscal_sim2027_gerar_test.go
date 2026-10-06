@@ -25,9 +25,17 @@ func TestPfsGerarXMLSimulado_NFe(t *testing.T) {
 		t.Fatalf("XML gerado não é bem-formado: %v", err)
 	}
 
-	// Assinatura removida
-	if strings.Contains(outStr, "<Signature") {
-		t.Error("o XML gerado não deveria conter <Signature>")
+	// Assinatura original MANTIDA (removê-la quebra o schema — rejeição real
+	// 225 na homologação SEFAZ 2026-10-06) e com o namespace xmldsig restaurado
+	if !strings.Contains(outStr, `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">`) {
+		t.Error("o XML gerado deveria manter <Signature> com o namespace xmldsig")
+	}
+	if !strings.Contains(outStr, "<DigestValue>C8hXkDh2THS33NWTE7EwVQh6+cs=</DigestValue>") {
+		t.Error("o conteúdo original da assinatura deveria ser preservado (mesmo desatualizado)")
+	}
+	// xmlns da NF-e restaurado na raiz
+	if !strings.Contains(outStr, `xmlns="http://www.portalfiscal.inf.br/nfe"`) {
+		t.Error("esperava xmlns da NF-e na raiz do XML gerado")
 	}
 	// Marcador de simulação presente
 	if !strings.Contains(outStr, "SIMULACAO 2027") {
@@ -93,8 +101,11 @@ func TestPfsGerarXMLSimulado_CTe(t *testing.T) {
 	}
 	outStr := string(out)
 
-	if strings.Contains(outStr, "<Signature") {
-		t.Error("o XML gerado não deveria conter <Signature>")
+	if !strings.Contains(outStr, `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">`) {
+		t.Error("o XML gerado deveria manter <Signature> com o namespace xmldsig")
+	}
+	if !strings.Contains(outStr, `xmlns="http://www.portalfiscal.inf.br/cte"`) {
+		t.Error("esperava xmlns do CT-e na raiz do XML gerado")
 	}
 	if !strings.Contains(outStr, "<vTPrest>2747.18</vTPrest>") || !strings.Contains(outStr, "<vDup>2747.18</vDup>") {
 		t.Error("vTPrest/duplicata do CT-e não deveriam mudar")

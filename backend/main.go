@@ -26,7 +26,7 @@ import (
 
 // Version information for backend deployment validation
 const (
-	BackendVersion = "2.7.0"
+	BackendVersion = "2.7.1"
 	FeatureSet     = "Escrituração de Entradas EFD, Importação ERP Bridge, NF-e Entradas, CT-e Entradas, Enriquecimento PIS/COFINS/IPI, Malha Fina, Apuração IBS/CBS, Créditos em Risco, SPED layout 020, Módulo Teste Pacote Fiscal, Personas por Módulo, Simulação IBS/CBS na Base do ICMS, Simulação 2027 (IBS/CBS pleno)"
 )
 
