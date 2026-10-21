@@ -69,6 +69,32 @@ services:
       - fb_net
       - coolify
 
+  # Cloudflare Tunnel (21/10, migração de segurança) — scaffold DORMENTE,
+  # mesmo padrão já aplicado em FB_APU05/FB_FAROL/FB_SMARTPICK/FB_APU02.
+  # Sem CLOUDFLARE_TUNNEL_TOKEN setado no Coolify, este container só
+  # reinicia sozinho, sem afetar `api`/`web`/`db`.
+  #
+  # Passo a passo (manual, painel Cloudflare):
+  #   1. Zero Trust -> Networks -> Tunnels -> Create a tunnel, nome ex.
+  #      "fb-apu04-prod".
+  #   2. Copiar o token gerado e setar CLOUDFLARE_TUNNEL_TOKEN no Coolify.
+  #   3. Public Hostname: Subdomain=simulador, Domain=fbtax.cloud,
+  #      Service=http://web:80.
+  #   4. Confirmar que simulador.fbtax.cloud responde via o túnel —
+  #      diferente de FB_FAROL/FB_APU02, este app não tem labels
+  #      `traefik.*` commitados (Coolify gera a rota sozinho), então não
+  #      há nada pra remover depois de validar — só trocar o domínio
+  #      público no painel do Coolify pra apontar pro túnel.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: fb_apu04-cloudflared-prod
+    restart: always
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - fb_net
+    depends_on:
+      - web
+
   db:
     image: postgres:15-alpine
     container_name: fb_apu04-db-prod

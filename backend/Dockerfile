@@ -24,9 +24,20 @@ FROM alpine:latest
 # poppler-utils:    fornece pdftotext, usado para extrair NCMs de PDFs do decreto
 #                   PRODEPE/PROIND (ver icms_fronteira_prodepe.go).
 RUN apk add --no-cache postgresql-client poppler-utils
+# Usuário sem privilégio (21/10, migração de segurança) — o backend grava
+# em disco de verdade: uploads/ relativo ao WORKDIR (upload.go, worker.go,
+# admin.go, efd_contribuicoes_upload.go) e /backups (admin_reset_helpers.go,
+# BackupDir() — volume nomeado api_backups, path absoluto FORA do WORKDIR,
+# por isso precisa do próprio mkdir+chown aqui: mesmo princípio já
+# documentado no stockflow — um volume nomeado NOVO herda o dono de quem
+# criou o diretório na imagem na primeira montagem).
+RUN adduser -D -u 1000 appuser && \
+    chown appuser:appuser /root && \
+    mkdir -p /backups && chown appuser:appuser /backups
 WORKDIR /root/
-COPY --from=builder /app/server .
-COPY --from=builder /app/migrations ./migrations
+COPY --from=builder --chown=appuser:appuser /app/server .
+COPY --from=builder --chown=appuser:appuser /app/migrations ./migrations
+USER appuser
 EXPOSE 8084
 CMD ["./server"]
 # Force Rebuild v5.5.0 - Z.AI Migration
