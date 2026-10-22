@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -606,9 +607,10 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		ip := GetClientIP(r)
+		accountKey := strings.ToLower(strings.TrimSpace(req.Email))
 
 		// Block early if already over limit from previous failures
-		if LoginRL.IsLimited(ip) {
+		if LoginRL.IsLimited(ip) || LoginByAccountRL.IsLimited(accountKey) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
 			json.NewEncoder(w).Encode("Muitas tentativas de login. Tente novamente em 15 minutos.")
@@ -629,6 +631,7 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 		if err == sql.ErrNoRows {
 			log.Printf("[Login] User not found: %s", req.Email)
 			LoginRL.RecordFailure(ip) // count only failed attempts
+			LoginByAccountRL.RecordFailure(accountKey)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode("E-mail não encontrado ou senha inválida")
@@ -644,6 +647,7 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 		if !CheckPasswordHash(req.Password, hash) {
 			log.Printf("[Login] Invalid password for: %s", req.Email)
 			LoginRL.RecordFailure(ip) // count only failed attempts
+			LoginByAccountRL.RecordFailure(accountKey)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode("E-mail não encontrado ou senha inválida")
@@ -666,8 +670,9 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Login successful — reset failure counter for this IP
+		// Login successful — reset failure counters for this IP and conta
 		LoginRL.Reset(ip)
+		LoginByAccountRL.Reset(accountKey)
 
 		// Módulos liberados pelas personas (nil para admin = sem restrição)
 		user.Modules, err = GetUserModules(db, user.ID, user.Role)

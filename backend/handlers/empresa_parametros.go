@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -15,6 +16,16 @@ import (
 // ---------------------------------------------------------------------------
 
 const maxLogoSize = 5 << 20 // 5 MB
+
+// logoMimePermitidos restringe o content_type aceito no upload de logo —
+// sem isto, qualquer content_type enviado pelo cliente era aceito e
+// devolvido como Content-Type ao servir o logo de volta.
+var logoMimePermitidos = map[string]bool{
+	"image/jpeg":    true,
+	"image/png":     true,
+	"image/webp":    true,
+	"image/svg+xml": true,
+}
 
 // resolveCompanyIDParam resolve a empresa-alvo priorizando o query param
 // ?company_id (usado pelo Administrativo para gerenciar empresa específica) e,
@@ -162,9 +173,13 @@ func UploadEmpresaLogoHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		mime := header.Header.Get("Content-Type")
+		mime := strings.ToLower(strings.TrimSpace(header.Header.Get("Content-Type")))
 		if mime == "" {
 			mime = "image/jpeg"
+		}
+		if !logoMimePermitidos[mime] {
+			jsonErr(w, http.StatusBadRequest, "Tipo de arquivo não permitido (aceito: JPEG, PNG, WEBP, SVG)")
+			return
 		}
 		log.Printf("[LOGO-UP] campo=%s arquivo=%q bytes=%d mime=%s -> UPDATE companyID=%s",
 			campo, header.Filename, len(data), mime, companyID)
