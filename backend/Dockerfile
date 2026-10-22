@@ -1,5 +1,11 @@
 # Build Stage
-FROM golang:1.24-alpine AS builder
+# Pinado em patch exato (22/10, migração de segurança) — Go 1.24 saiu de
+# suporte (só 1.25/1.26 recebem patch de segurança hoje; a tag
+# "golang:1.24-alpine" está congelada desde fev/2026, sem nenhum fix
+# novo possível nela). Subir pra 1.26.10 corrige 15 vulnerabilidades de
+# biblioteca padrão achadas via `govulncheck` (net/http, crypto/tls,
+# crypto/x509, net/url) — acompanha o bump do go.mod (go 1.24.1 -> 1.26.1).
+FROM golang:1.26.10-alpine AS builder
 RUN apk add --no-cache git
 WORKDIR /app
 
