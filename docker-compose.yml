@@ -38,7 +38,11 @@ services:
         aliases:
           - apu04-api
 
-  # Frontend (React)
+  # Frontend (React) — label Traefik restrito a simu.fcxlabs.com (22/10):
+  # domínio administrado pela equipe de Segurança da Ferreira Costa (AWS),
+  # fora do nosso controle — continua exposto direto até eles migrarem pro
+  # Cloudflare. simulador.fbtax.cloud (nosso domínio) saiu daqui porque já
+  # está 100% no Cloudflare Tunnel desde 21/10.
   web:
     build:
       context: ./frontend
@@ -51,7 +55,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=coolify"
-      - "traefik.http.routers.simu.rule=Host(`simu.fcxlabs.com`) || Host(`simulador.fbtax.cloud`)"
+      - "traefik.http.routers.simu.rule=Host(`simu.fcxlabs.com`)"
       - "traefik.http.routers.simu.entrypoints=https"
       - "traefik.http.routers.simu.tls=true"
       - "traefik.http.routers.simu.tls.certresolver=letsencrypt"
@@ -186,24 +190,11 @@ services:
     depends_on:
       - db
 
-  # Cloudflare Tunnel (21/10, migração de segurança) — scaffold DORMENTE,
-  # também presente em docker-compose.prod.yml (não ficou claro ainda qual
-  # dos dois arquivos o Coolify usa de verdade pra este app — ver achado no
-  # FB_FAROL/FB_APU02, onde só docker-compose.yml era real — por segurança,
-  # duplicado nos dois aqui; inofensivo, só um vale). Sem
-  # CLOUDFLARE_TUNNEL_TOKEN setado no Coolify, este container só reinicia
-  # sozinho, sem afetar os demais.
-  #
-  # Passo a passo (manual, painel Cloudflare):
-  #   1. Zero Trust -> Networks -> Tunnels -> Create a tunnel, nome ex.
-  #      "fb-apu04-prod".
-  #   2. Copiar o token gerado e setar CLOUDFLARE_TUNNEL_TOKEN no Coolify.
-  #   3. Public Hostname/Route: Subdomain=simulador, Domain=fbtax.cloud,
-  #      Service=http://web:80.
-  #   4. Apagar o registro DNS A antigo de simulador.fbtax.cloud ANTES de
-  #      criar a rota (senão o Cloudflare não cria o CNAME do túnel sozinho
-  #      — erro 1016 "Origin DNS error" se isso já tiver acontecido; aí só
-  #      criar o CNAME manual pra <tunnel-id>.cfargotunnel.com).
+  # Cloudflare Tunnel (21/10, ativado e validado em 22/10) — caminho público
+  # pra simulador.fbtax.cloud (rota no painel: hostname raiz -> http://web:80).
+  # Confirmado neste app que docker-compose.yml (este arquivo) é o real —
+  # docker-compose.prod.yml não tem label de `web` nenhum. simu.fcxlabs.com
+  # continua fora, via Traefik (ver comentário em `web` acima).
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: fb_apu04-cloudflared-prod
