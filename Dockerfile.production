@@ -13,7 +13,11 @@ COPY frontend/ ./
 RUN npm run build
 
 # Backend stage
-FROM golang:1.24-alpine AS backend-builder
+# Pinado em patch exato (22/10, migração de segurança) — acompanha o
+# bump do go.mod (go 1.24.1 -> 1.26.1, 1.24 saiu de suporte) feito em
+# backend/Dockerfile — esse build (GitHub Actions -> GHCR) quebrava com
+# a tag antiga porque go.mod passou a exigir >= 1.26.1.
+FROM golang:1.26.10-alpine AS backend-builder
 WORKDIR /app/backend
 
 RUN apk add --no-cache git
