@@ -754,55 +754,70 @@ func finishLogin(db *sql.DB, w http.ResponseWriter, r *http.Request, user User, 
 	}
 
 	if err == sql.ErrNoRows {
-		log.Printf("[Login] No company context found for user: %s. Auto-provisioning...", user.Email)
+		// No company found at all - Auto-provisioning
+		log.Printf("[Login] No company context found for user: %s. Auto-provisioning isolated context...", user.Email)
 
-		var envID string
-		errEnv := db.QueryRowContext(ctx, "SELECT id, name FROM environments WHERE name = 'Ambiente de Testes' LIMIT 1").Scan(&envID, &envName)
-		if errEnv == sql.ErrNoRows {
-			errEnv = db.QueryRowContext(ctx, "INSERT INTO environments (name, description) VALUES ('Ambiente de Testes', 'Ambiente auto-gerado') RETURNING id, name").Scan(&envID, &envName)
+		// Achado de auditoria de segurança (CRITICAL, 06/11): a versão anterior fazia
+		// "SELECT ... WHERE name = 'Ambiente de Testes'" antes de inserir — um get-or-create
+		// por NOME LITERAL FIXO, compartilhado por TODO usuário órfão do deployment inteiro
+		// (e pré-semeado pela migration 016). Dois usuários não-relacionados que caíssem
+		// nesse branch viravam admin mútuo do mesmo ambiente/grupo — cada um conseguia
+		// listar, ler e apagar a empresa do outro. Corrigido espelhando exatamente o
+		// RegisterHandler (já correto): sempre INSERT um ambiente+grupo NOVOS e isolados por
+		// usuário (nunca um SELECT por nome compartilhado), tudo numa única transação pra
+		// não deixar o usuário com ambiente criado e empresa não-criada em caso de erro
+		// no meio do caminho.
+		nomeBase := user.FullName
+		if nomeBase == "" {
+			nomeBase = "Usuário " + user.ID
 		}
+		companyName = "Empresa de " + nomeBase
+		envNameNovo := "Ambiente de " + nomeBase
+		groupNameNovo := "Grupo de " + nomeBase
 
-		if errEnv != nil {
-			log.Printf("[Login] Auto-provision failed at Environment: %v", errEnv)
-			envName = "Sem Ambiente"
-			groupName = "Sem Grupo"
-			companyName = "Sem Empresa"
-			companyID = ""
+		tx, errTx := db.BeginTx(ctx, nil)
+		if errTx != nil {
+			log.Printf("[Login] Auto-provision failed to start transaction: %v", errTx)
+			envName, groupName, companyName, companyID = "Sem Ambiente", "Sem Grupo", "Sem Empresa", ""
 		} else {
-			var groupID string
-			errGroup := db.QueryRowContext(ctx, "SELECT id, name FROM enterprise_groups WHERE environment_id = $1 AND name = 'Grupo de Empresas Testes' LIMIT 1", envID).Scan(&groupID, &groupName)
-			if errGroup == sql.ErrNoRows {
-				errGroup = db.QueryRowContext(ctx, "INSERT INTO enterprise_groups (environment_id, name, description) VALUES ($1, 'Grupo de Empresas Testes', 'Grupo auto-gerado') RETURNING id, name", envID).Scan(&groupID, &groupName)
+			var envID, groupID string
+			errProv := tx.QueryRowContext(ctx,
+				"INSERT INTO environments (name, description) VALUES ($1, 'Ambiente Padrão do Usuário') RETURNING id",
+				envNameNovo,
+			).Scan(&envID)
+			if errProv == nil {
+				errProv = tx.QueryRowContext(ctx,
+					"INSERT INTO enterprise_groups (environment_id, name, description) VALUES ($1, $2, 'Grupo Padrão do Usuário') RETURNING id",
+					envID, groupNameNovo,
+				).Scan(&groupID)
 			}
-
-			if errGroup != nil {
-				log.Printf("[Login] Auto-provision failed at Group: %v", errGroup)
-				groupName = "Sem Grupo"
-				companyName = "Sem Empresa"
-				companyID = ""
-			} else {
-				_, _ = db.ExecContext(ctx, "INSERT INTO user_environments (user_id, environment_id, role) VALUES ($1, $2, 'admin') ON CONFLICT DO NOTHING", user.ID, envID)
-
-				companyName = "Empresa de " + user.FullName
-				if user.FullName == "" {
-					companyName = "Minha Empresa"
-				}
-
-				errComp := db.QueryRowContext(ctx, `
+			if errProv == nil {
+				_, errProv = tx.ExecContext(ctx,
+					"INSERT INTO user_environments (user_id, environment_id, role) VALUES ($1, $2, 'admin')",
+					user.ID, envID,
+				)
+			}
+			if errProv == nil {
+				errProv = tx.QueryRowContext(ctx, `
 					INSERT INTO companies (group_id, name, trade_name, owner_id)
 					VALUES ($1, $2, $2, $3)
 					RETURNING id
 				`, groupID, companyName, user.ID).Scan(&companyID)
+			}
 
-				if errComp != nil {
-					log.Printf("[Login] Auto-provision failed at Company: %v", errComp)
-					companyName = "Sem Empresa"
-					companyID = ""
-				} else {
-					log.Printf("[Login] Auto-provision success: Created %s (%s)", companyName, companyID)
-				}
+			if errProv != nil {
+				tx.Rollback()
+				log.Printf("[Login] Auto-provision failed: %v", errProv)
+				envName, groupName, companyName, companyID = "Sem Ambiente", "Sem Grupo", "Sem Empresa", ""
+			} else if errCommit := tx.Commit(); errCommit != nil {
+				log.Printf("[Login] Auto-provision commit failed: %v", errCommit)
+				envName, groupName, companyName, companyID = "Sem Ambiente", "Sem Grupo", "Sem Empresa", ""
+			} else {
+				envName, groupName = envNameNovo, groupNameNovo
+				log.Printf("[Login] Auto-provision success: Created isolated %s / %s / %s (%s)", envName, groupName, companyName, companyID)
 			}
 		}
+		// Reset error to nil so we don't trigger the next error block
 		err = nil
 
 	} else if err != nil {

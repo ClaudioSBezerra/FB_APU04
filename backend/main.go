@@ -309,6 +309,53 @@ func onDBConnected() {
 			log.Println("Background: Initial view refresh completed successfully.")
 		}
 	}()
+
+	bootstrapInitialAdmin(database)
+}
+
+// bootstrapInitialAdmin cria a primeira conta admin a partir de INITIAL_ADMIN_EMAIL/
+// INITIAL_ADMIN_PASSWORD (achado de auditoria de segurança, 06/11/2026: substitui a conta
+// admin de senha fixa "123456" semeada por migration — 021b_ensure_admin_user.sql fica como
+// está, documentando a história, mas 139_invalida_admin_seed_comprometido.sql já neutraliza
+// aquele hash). Sem as duas variáveis definidas, não faz nada — nenhuma conta é criada por
+// padrão em nenhum deployment. Idempotente: só cria se não existir usuário com esse e-mail,
+// nunca sobrescreve senha de uma conta já existente em reinícios subsequentes.
+func bootstrapInitialAdmin(database *sql.DB) {
+	email := strings.TrimSpace(os.Getenv("INITIAL_ADMIN_EMAIL"))
+	password := os.Getenv("INITIAL_ADMIN_PASSWORD")
+	if email == "" || password == "" {
+		return
+	}
+	if len(password) < 8 {
+		log.Printf("[BootstrapAdmin] INITIAL_ADMIN_PASSWORD tem menos de 8 caracteres — ignorando bootstrap por segurança")
+		return
+	}
+
+	var exists bool
+	if err := database.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE LOWER(email) = LOWER($1))", email).Scan(&exists); err != nil {
+		log.Printf("[BootstrapAdmin] Erro ao verificar usuário existente: %v", err)
+		return
+	}
+	if exists {
+		// Já existe (seja desta execução anterior, seja criado manualmente depois) — nunca
+		// sobrescreve senha de conta existente só porque a env var continua setada.
+		return
+	}
+
+	hash, err := handlers.HashPassword(password)
+	if err != nil {
+		log.Printf("[BootstrapAdmin] Erro ao gerar hash de senha: %v", err)
+		return
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (email, password_hash, full_name, trial_ends_at, is_verified, role)
+		VALUES ($1, $2, 'Administrador', NOW() + INTERVAL '3650 days', true, 'admin')
+	`, email, hash)
+	if err != nil {
+		log.Printf("[BootstrapAdmin] Erro ao criar admin inicial: %v", err)
+		return
+	}
+	log.Printf("[BootstrapAdmin] Conta admin inicial criada: %s — remova INITIAL_ADMIN_EMAIL/INITIAL_ADMIN_PASSWORD do ambiente após o primeiro login.", email)
 }
 
 // Middleware to check if DB is ready
