@@ -731,6 +731,9 @@ func PromoteUserHandler(db *sql.DB) http.HandlerFunc {
 				http.Error(w, "Failed to update role", http.StatusInternalServerError)
 				return
 			}
+			// Achado de segurança (pentest): revoga sessões ativas — sem isto, uma conta
+			// rebaixada mantinha o role antigo até o refresh token expirar (até 7 dias).
+			revokeUserSessions(userID)
 		}
 
 		if req.Personas != nil {
@@ -905,6 +908,12 @@ func BlockUserHandler(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			http.Error(w, "Failed to update user", http.StatusInternalServerError)
 			return
+		}
+
+		// Achado de segurança (pentest): ao bloquear, revoga sessões ativas — sem isto, a
+		// conta bloqueada continuava renovando o access token por até 7 dias.
+		if req.Blocked {
+			revokeUserSessions(userID)
 		}
 
 		w.WriteHeader(http.StatusOK)

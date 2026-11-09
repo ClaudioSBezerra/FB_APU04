@@ -127,6 +127,27 @@ func init() {
 	}()
 }
 
+// revokeUserSessions apaga toda entrada de refreshTokenStore pertencente a userID — achado
+// HIGH da auditoria de segurança (pentest; mesma correção do FB_APU02): troca/reset de senha, mudança de role e
+// bloqueio de conta não tocavam o refreshTokenStore/tokenBlacklist em memória, então um
+// token emitido antes dessas ações continuava válido depois (access token até expirar,
+// refresh token indefinidamente via renovação deslizante de 7 dias, inclusive mantendo um
+// role que o banco já revogou). Chamada por ChangePasswordHandler/ResetPasswordHandler/
+// PromoteUserHandler/BlockUserHandler após a ação de banco ter sucesso.
+//
+// Não blacklista o access token já emitido (exigiria guardar token→userID, que hoje não
+// existe) — RefreshHandler agora revalida role/is_blocked direto do banco a cada uso (ver
+// comentário lá), então o pior caso residual é o access token em uso continuar válido pelo
+// resto da janela de 30min already em curso, nunca mais que isso.
+func revokeUserSessions(userID string) {
+	refreshTokenStore.Range(func(k, v interface{}) bool {
+		if d, ok := v.(refreshTokenData); ok && d.UserID == userID {
+			refreshTokenStore.Delete(k)
+		}
+		return true
+	})
+}
+
 // --- Utils ---
 
 func getEnv(key, fallback string) string {
@@ -1019,6 +1040,10 @@ func ResetPasswordHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Achado de segurança (pentest): revoga sessões ativas — reset de senha deve
+		// encerrar qualquer sessão que ainda esteja usando a senha antiga.
+		revokeUserSessions(userID)
+
 		log.Printf("[ResetPassword] Password reset successfully for user %s", userID)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1085,6 +1110,10 @@ func ChangePasswordHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Achado de segurança (pentest): revoga sessões ativas — troca de senha deve
+		// encerrar qualquer sessão que ainda esteja usando a senha antiga.
+		revokeUserSessions(userID)
+
 		log.Printf("[ChangePassword] Password changed for user %s", userID)
 		json.NewEncoder(w).Encode(map[string]string{"message": "Senha alterada com sucesso"})
 	}
@@ -1118,23 +1147,42 @@ func RefreshHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Achado de segurança (pentest): revalida role/is_blocked DIRETO NO BANCO a cada
+		// refresh, em vez de reusar data.Role (snapshot congelado desde o login). Antes, uma
+		// mudança de role ou um bloqueio só valiam quando o refresh token expirasse (até 7
+		// dias, com renovação deslizante). Agora o pior caso é a janela do access token (30min).
+		var currentRole string
+		var isBlocked bool
+		if err := db.QueryRow("SELECT COALESCE(role, 'user'), is_blocked FROM users WHERE id = $1", data.UserID).Scan(&currentRole, &isBlocked); err != nil {
+			refreshTokenStore.Delete(cookie.Value)
+			clearRefreshCookie(w, r)
+			http.Error(w, "Usuário não encontrado", http.StatusUnauthorized)
+			return
+		}
+		if isBlocked {
+			refreshTokenStore.Delete(cookie.Value)
+			clearRefreshCookie(w, r)
+			http.Error(w, "Usuário bloqueado", http.StatusForbidden)
+			return
+		}
+
 		// Rotate refresh token
 		refreshTokenStore.Delete(cookie.Value)
 		newRefreshToken := generateRefreshTokenString()
 		refreshTokenStore.Store(newRefreshToken, refreshTokenData{
 			UserID:    data.UserID,
-			Role:      data.Role,
+			Role:      currentRole,
 			ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 		})
 		setRefreshCookie(w, r, newRefreshToken)
 
 		// Issue new access token — módulos re-consultados do banco para que
 		// mudanças de persona valham no próximo refresh, sem exigir novo login
-		userModules, mErr := GetUserModules(db, data.UserID, data.Role)
+		userModules, mErr := GetUserModules(db, data.UserID, currentRole)
 		if mErr != nil {
 			log.Printf("[Refresh] Warning: failed to fetch modules: %v", mErr)
 		}
-		accessToken, err := GenerateToken(data.UserID, data.Role, userModules)
+		accessToken, err := GenerateToken(data.UserID, currentRole, userModules)
 		if err != nil {
 			http.Error(w, "Error generating token", http.StatusInternalServerError)
 			return
