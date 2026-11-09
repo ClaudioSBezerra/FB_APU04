@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -74,6 +75,24 @@ type batchResult struct {
 var modelosNFeEntrada = map[string]bool{"55": true, "62": true, "65": true}
 var modelosCTeEntrada = map[string]bool{"57": true, "66": true, "67": true}
 
+// maxBatchDocuments limita quantos itens um único POST do ERP Bridge pode trazer. Achado
+// HIGH do pentest (mesma correção do FB_APU02): os endpoints autenticados por X-API-Key não
+// tinham limite de tamanho/contagem, e import/batch mantém uma transação aberta pelo lote
+// inteiro — uma chave de qualquer empresa podia esgotar o pool de conexões de todos os
+// tenants. 2x o BATCH_SIZE=1000 do bridge.py (e 4x o chunk_size=500 de parceiros).
+const maxBatchDocuments = 2000
+
+// maxUploadBytes é o teto do corpo da requisição dos endpoints do ERP Bridge (512 MB por
+// padrão, ajustável via MAX_UPLOAD_BYTES) — mesmo helper do FB_APU02.
+func maxUploadBytes() int64 {
+	if v := os.Getenv("MAX_UPLOAD_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 512 << 20
+}
+
 func ERPBridgeBatchImportHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -112,9 +131,21 @@ func ERPBridgeBatchImportHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		// ── Parse body ────────────────────────────────────────────────────────
+		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes())
+
 		var req batchRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			if strings.Contains(err.Error(), "http: request body too large") {
+				jsonErr(w, http.StatusRequestEntityTooLarge, "Lote excede o tamanho máximo permitido")
+				return
+			}
 			http.Error(w, `{"error":"JSON inválido: `+err.Error()+`"}`, http.StatusBadRequest)
+			return
+		}
+
+		if len(req.Documents) > maxBatchDocuments {
+			jsonErr(w, http.StatusRequestEntityTooLarge,
+				"Lote excede o máximo de "+strconv.Itoa(maxBatchDocuments)+" documentos por chamada — divida em lotes menores")
 			return
 		}
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -68,13 +69,26 @@ func ERPBridgeParceirosSyncHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		// ── Parse body ────────────────────────────────────────────────────────
+		// Mesmo limite do import/batch (achado-irmão do pentest).
+		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes())
+
 		var req parceirosSyncRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			if strings.Contains(err.Error(), "http: request body too large") {
+				jsonErr(w, http.StatusRequestEntityTooLarge, "Lote excede o tamanho máximo permitido")
+				return
+			}
 			http.Error(w, `{"error":"JSON inválido"}`, http.StatusBadRequest)
 			return
 		}
 
 		upserted := 0
+		if len(req.Parceiros) > maxBatchDocuments {
+			jsonErr(w, http.StatusRequestEntityTooLarge,
+				"Lote excede o máximo de "+strconv.Itoa(maxBatchDocuments)+" parceiros por chamada — divida em lotes menores")
+			return
+		}
+
 		for _, p := range req.Parceiros {
 			cnpj := strings.TrimSpace(p.CNPJ)
 			nome := strings.TrimSpace(p.Nome)
