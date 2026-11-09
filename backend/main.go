@@ -644,7 +644,11 @@ func main() {
 	// Configuration Endpoints
 	http.HandleFunc("/api/config/aliquotas", withAuth(handlers.GetTaxRatesHandler, ""))
 	http.HandleFunc("/api/config/cfop", withAuth(handlers.ListCFOPsHandler, ""))
-	http.HandleFunc("/api/config/cfop/import", withAuth(handlers.ImportCFOPsHandler, ""))
+	// cfop e forn_simples são tabelas GLOBAIS (sem company_id) usadas por todos os tenants.
+	// Achado HIGH do pentest (mesma correção do FB_APU02): as rotas de escrita aceitavam
+	// qualquer usuário autenticado (role ""), permitindo que uma conta comum corrompesse a
+	// classificação tributária de todos. Escrita agora exige admin; leitura segue aberta.
+	http.HandleFunc("/api/config/cfop/import", withAuth(handlers.ImportCFOPsHandler, "admin"))
 
 	http.HandleFunc("/api/config/forn-simples", func(w http.ResponseWriter, r *http.Request) {
 		database := getDB()
@@ -656,14 +660,14 @@ func main() {
 		case http.MethodGet:
 			handlers.AuthMiddleware(handlers.ListFornSimplesHandler(database), "")(w, r)
 		case http.MethodPost:
-			handlers.AuthMiddleware(handlers.CreateFornSimplesHandler(database), "")(w, r)
+			handlers.AuthMiddleware(handlers.CreateFornSimplesHandler(database), "admin")(w, r)
 		case http.MethodDelete:
-			handlers.AuthMiddleware(handlers.DeleteFornSimplesHandler(database), "")(w, r)
+			handlers.AuthMiddleware(handlers.DeleteFornSimplesHandler(database), "admin")(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	http.HandleFunc("/api/config/forn-simples/import", withAuth(handlers.ImportFornSimplesHandler, ""))
+	http.HandleFunc("/api/config/forn-simples/import", withAuth(handlers.ImportFornSimplesHandler, "admin"))
 
 	http.HandleFunc("/api/config/filial-apelidos", withAuth(handlers.FilialApelidosHandler, ""))
 	http.HandleFunc("/api/config/filial-apelidos/import", withAuth(handlers.ImportFilialApelidosHandler, ""))
