@@ -185,6 +185,17 @@ jobs:
     runs-on: [self-hosted, cliente-aws]
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Mesmo padrão do FB_APU02 (deploy-cliente-aws): o compose do repositório é a fonte
+      # da verdade e sobrescreve o do servidor. Qualquer env var nova precisa ser commitada
+      # em installer/fcxlabs/docker-compose.yml — edição manual no servidor é apagada aqui.
+      # ATENÇÃO: o banco usa container cliente-db-simulador / volume postgres_data_simulador;
+      # renomear isso no compose sobe o app com um banco VAZIO.
+      - name: Sync docker-compose.yml para o deploy
+        run: cp installer/fcxlabs/docker-compose.yml /opt/apps/fbtax/simu-apu04/docker-compose.yml
+
       - name: Deploy simu.fcxlabs.com
         env:
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}

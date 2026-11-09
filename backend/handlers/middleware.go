@@ -146,6 +146,8 @@ var (
 	LoginByAccountRL = newRateLimiter(5, 15*time.Minute)
 	RegisterRL       = newRateLimiter(10, time.Hour)
 	ForgotPasswordRL = newRateLimiter(3, time.Hour)
+	// SSOKeycloakRL limita a troca de token Keycloak→sessão por IP (mesmo limite de LoginRL).
+	SSOKeycloakRL = newRateLimiter(5, 15*time.Minute)
 	// ResetDBRateLimiter limita 1 reset/hora/usuário (STAB-05).
 	ResetDBRateLimiter = newRateLimiter(1, time.Hour)
 )

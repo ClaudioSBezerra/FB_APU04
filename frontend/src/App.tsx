@@ -54,6 +54,8 @@ const ImportarXMLPacoteFiscal = lazy(() => import('./pages/ImportarXMLPacoteFisc
 const DiagnosticoPacoteFiscal = lazy(() => import('./pages/DiagnosticoPacoteFiscal'))
 const Sim2027PacoteFiscal = lazy(() => import('./pages/Sim2027PacoteFiscal'))
 const Login = lazy(() => import('./pages/Login'))
+const AuthCallback = lazy(() => import('./pages/AuthCallback'))
+const AuthError = lazy(() => import('./pages/AuthError'))
 const Register = lazy(() => import('./pages/Register'))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
@@ -326,6 +328,8 @@ function App() {
           <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login"           element={<Login />} />
+            <Route path="/auth/callback"   element={<AuthCallback />} />
+            <Route path="/auth/error"      element={<AuthError />} />
             <Route path="/register"        element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-senha"     element={<ResetPassword />} />

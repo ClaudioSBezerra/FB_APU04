@@ -82,3 +82,18 @@ METRICS_ENABLED=true
 #    (/opt/apps/fbtax/erp-bridge-aws/config-apu04.yaml) NAO e o arquivo do repositorio.
 #    Edite diretamente no servidor e restaure as senhas Oracle reais nos campos senha: "CHANGE_ME".
 #    O repositorio contem apenas CHANGE_ME como placeholder — os valores reais ficam so no servidor.
+#
+# ─── SSO Keycloak (Ferreira Costa) — somente no servidor simu.fcxlabs.com ───────
+# Onde: /opt/apps/fbtax/simu-apu04/.env no servidor aws-fc (172.16.249.77).
+# Vazio/ausente = SSO desligado (tela de login por senha, sem botão de SSO).
+# Pré-requisito: client "fb-apu04" cadastrado pelo time de TI da Ferreira Costa no
+# realm ferreiracosta (client público, PKCE S256), com:
+#   Valid Redirect URIs:              https://simu.fcxlabs.com/auth/callback
+#   Valid Post Logout Redirect URIs:  https://simu.fcxlabs.com/login
+#   Web Origins:                      https://simu.fcxlabs.com
+# IAM_BASE_URL=https://iam.fcxlabs.com/realms/ferreiracosta
+# IAM_CLIENT_ID=fb-apu04
+# IAM_ALLOWED_CLIENT_IDS=fb-apu04
+# IAM_REDIRECT_URI=https://simu.fcxlabs.com/auth/callback
+# IAM_SCOPES=openid profile email
+# Login por senha continua disponível em https://simu.fcxlabs.com/login?password

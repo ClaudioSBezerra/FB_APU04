@@ -620,13 +620,7 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 		log.Printf("[Login] Attempting login for: %s", req.Email)
 
 		// Get User
-		var user User
-		var hash string
-		var isBlocked bool
-		err := db.QueryRow(`
-			SELECT id, email, full_name, password_hash, is_verified, COALESCE(trial_ends_at, NOW()), COALESCE(role, 'user'), created_at, is_blocked
-			FROM users WHERE email = $1
-		`, req.Email).Scan(&user.ID, &user.Email, &user.FullName, &hash, &user.IsVerified, &user.TrialEndsAt, &user.Role, &user.CreatedAt, &isBlocked)
+		user, hash, isBlocked, err := fetchUserByEmail(db, req.Email)
 
 		if err == sql.ErrNoRows {
 			log.Printf("[Login] User not found: %s", req.Email)
@@ -654,159 +648,183 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		if isBlocked {
-			log.Printf("[Login] Blocked user attempted login: %s", req.Email)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode("Usuário bloqueado. Entre em contato com o administrador.")
-			return
-		}
-
-		if user.Role != "admin" && user.TrialEndsAt.Before(time.Now()) {
-			log.Printf("[Login] Trial expired for: %s", req.Email)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode("Período de teste expirado. Entre em contato para assinar.")
-			return
-		}
-
-		// Login successful — reset failure counters for this IP and conta
-		LoginRL.Reset(ip)
-		LoginByAccountRL.Reset(accountKey)
-
-		// Módulos liberados pelas personas (nil para admin = sem restrição)
-		user.Modules, err = GetUserModules(db, user.ID, user.Role)
-		if err != nil {
-			log.Printf("[Login] Warning: failed to fetch modules for %s: %v", req.Email, err)
-		}
-
-		// Generate access token
-		token, err := GenerateToken(user.ID, user.Role, user.Modules)
-		if err != nil {
-			log.Printf("[Login] Error generating token: %v", err)
-			http.Error(w, "Error generating token", http.StatusInternalServerError)
-			return
-		}
-
-		// Set httpOnly refresh cookie
-		refreshToken := generateRefreshTokenString()
-		refreshTokenStore.Store(refreshToken, refreshTokenData{
-			UserID:    user.ID,
-			Role:      user.Role,
-			ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+		finishLogin(db, w, r, user, isBlocked, start, func() {
+			// Login successful — reset failure counters for this IP and conta
+			LoginRL.Reset(ip)
+			LoginByAccountRL.Reset(accountKey)
 		})
-		setRefreshCookie(w, r, refreshToken)
+	}
+}
 
-		// Get Environment, Group, and Company Context
-		var envName, groupName, companyName, companyID string
+// fetchUserByEmail busca o usuário por e-mail, sem diferenciar maiúsculas/minúsculas
+// (compartilhado entre login por senha e SSO Keycloak — e-mail do IdP vem com caixa arbitrária).
+func fetchUserByEmail(db *sql.DB, email string) (user User, passwordHash string, isBlocked bool, err error) {
+	err = db.QueryRow(`
+		SELECT id, email, full_name, password_hash, is_verified, COALESCE(trial_ends_at, NOW()), COALESCE(role, 'user'), created_at, is_blocked
+		FROM users WHERE LOWER(email) = LOWER($1)
+	`, email).Scan(&user.ID, &user.Email, &user.FullName, &passwordHash, &user.IsVerified, &user.TrialEndsAt, &user.Role, &user.CreatedAt, &isBlocked)
+	return
+}
 
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
+// finishLogin é a parte do login posterior à autenticação (senha OU SSO Keycloak):
+// checa bloqueio/trial, emite os tokens próprios (access + refresh cookie), resolve
+// ambiente/grupo/empresa e responde no formato AuthResponse. onAuthorized (opcional)
+// roda depois das checagens de bloqueio/trial e antes de emitir os tokens.
+func finishLogin(db *sql.DB, w http.ResponseWriter, r *http.Request, user User, isBlocked bool, start time.Time, onAuthorized func()) {
+	if isBlocked {
+		log.Printf("[Login] Blocked user attempted login: %s", user.Email)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode("Usuário bloqueado. Entre em contato com o administrador.")
+		return
+	}
 
-		// Strategy A: Check if user OWNS a company
+	if user.Role != "admin" && user.TrialEndsAt.Before(time.Now()) {
+		log.Printf("[Login] Trial expired for: %s", user.Email)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode("Período de teste expirado. Entre em contato para assinar.")
+		return
+	}
+
+	// Autorizado (não bloqueado, trial válido) — hook do chamador (ex: reset do rate limit)
+	if onAuthorized != nil {
+		onAuthorized()
+	}
+
+	// Módulos liberados pelas personas (nil para admin = sem restrição)
+	var err error
+	user.Modules, err = GetUserModules(db, user.ID, user.Role)
+	if err != nil {
+		log.Printf("[Login] Warning: failed to fetch modules for %s: %v", user.Email, err)
+	}
+
+	// Generate access token
+	token, err := GenerateToken(user.ID, user.Role, user.Modules)
+	if err != nil {
+		log.Printf("[Login] Error generating token: %v", err)
+		http.Error(w, "Error generating token", http.StatusInternalServerError)
+		return
+	}
+
+	// Set httpOnly refresh cookie
+	refreshToken := generateRefreshTokenString()
+	refreshTokenStore.Store(refreshToken, refreshTokenData{
+		UserID:    user.ID,
+		Role:      user.Role,
+		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+	})
+	setRefreshCookie(w, r, refreshToken)
+
+	// Get Environment, Group, and Company Context
+	var envName, groupName, companyName, companyID string
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	// Strategy A: Check if user OWNS a company
+	err = db.QueryRowContext(ctx, `
+		SELECT e.name, eg.name, c.name, c.id
+		FROM companies c
+		JOIN enterprise_groups eg ON c.group_id = eg.id
+		JOIN environments e ON eg.environment_id = e.id
+		LEFT JOIN user_environments ue ON ue.environment_id = eg.environment_id AND ue.user_id = $1
+		WHERE c.owner_id = $1
+		ORDER BY
+			(ue.preferred_company_id IS NOT NULL AND ue.preferred_company_id = c.id) DESC,
+			c.created_at ASC
+		LIMIT 1
+	`, user.ID).Scan(&envName, &groupName, &companyName, &companyID)
+
+	if err == sql.ErrNoRows {
+		log.Printf("[Login] User %s owns no company, checking memberships...", user.Email)
 		err = db.QueryRowContext(ctx, `
 			SELECT e.name, eg.name, c.name, c.id
-			FROM companies c
-			JOIN enterprise_groups eg ON c.group_id = eg.id
-			JOIN environments e ON eg.environment_id = e.id
-			LEFT JOIN user_environments ue ON ue.environment_id = eg.environment_id AND ue.user_id = $1
-			WHERE c.owner_id = $1
+			FROM user_environments ue
+			JOIN environments e ON ue.environment_id = e.id
+			JOIN enterprise_groups eg ON eg.environment_id = e.id
+			JOIN companies c ON c.group_id = eg.id
+			WHERE ue.user_id = $1
 			ORDER BY
 				(ue.preferred_company_id IS NOT NULL AND ue.preferred_company_id = c.id) DESC,
+				(c.owner_id = $1) DESC,
 				c.created_at ASC
 			LIMIT 1
 		`, user.ID).Scan(&envName, &groupName, &companyName, &companyID)
+	}
 
-		if err == sql.ErrNoRows {
-			log.Printf("[Login] User %s owns no company, checking memberships...", req.Email)
-			err = db.QueryRowContext(ctx, `
-				SELECT e.name, eg.name, c.name, c.id
-				FROM user_environments ue
-				JOIN environments e ON ue.environment_id = e.id
-				JOIN enterprise_groups eg ON eg.environment_id = e.id
-				JOIN companies c ON c.group_id = eg.id
-				WHERE ue.user_id = $1
-				ORDER BY
-					(ue.preferred_company_id IS NOT NULL AND ue.preferred_company_id = c.id) DESC,
-					(c.owner_id = $1) DESC,
-					c.created_at ASC
-				LIMIT 1
-			`, user.ID).Scan(&envName, &groupName, &companyName, &companyID)
+	if err == sql.ErrNoRows {
+		log.Printf("[Login] No company context found for user: %s. Auto-provisioning...", user.Email)
+
+		var envID string
+		errEnv := db.QueryRowContext(ctx, "SELECT id, name FROM environments WHERE name = 'Ambiente de Testes' LIMIT 1").Scan(&envID, &envName)
+		if errEnv == sql.ErrNoRows {
+			errEnv = db.QueryRowContext(ctx, "INSERT INTO environments (name, description) VALUES ('Ambiente de Testes', 'Ambiente auto-gerado') RETURNING id, name").Scan(&envID, &envName)
 		}
 
-		if err == sql.ErrNoRows {
-			log.Printf("[Login] No company context found for user: %s. Auto-provisioning...", req.Email)
-
-			var envID string
-			errEnv := db.QueryRowContext(ctx, "SELECT id, name FROM environments WHERE name = 'Ambiente de Testes' LIMIT 1").Scan(&envID, &envName)
-			if errEnv == sql.ErrNoRows {
-				errEnv = db.QueryRowContext(ctx, "INSERT INTO environments (name, description) VALUES ('Ambiente de Testes', 'Ambiente auto-gerado') RETURNING id, name").Scan(&envID, &envName)
+		if errEnv != nil {
+			log.Printf("[Login] Auto-provision failed at Environment: %v", errEnv)
+			envName = "Sem Ambiente"
+			groupName = "Sem Grupo"
+			companyName = "Sem Empresa"
+			companyID = ""
+		} else {
+			var groupID string
+			errGroup := db.QueryRowContext(ctx, "SELECT id, name FROM enterprise_groups WHERE environment_id = $1 AND name = 'Grupo de Empresas Testes' LIMIT 1", envID).Scan(&groupID, &groupName)
+			if errGroup == sql.ErrNoRows {
+				errGroup = db.QueryRowContext(ctx, "INSERT INTO enterprise_groups (environment_id, name, description) VALUES ($1, 'Grupo de Empresas Testes', 'Grupo auto-gerado') RETURNING id, name", envID).Scan(&groupID, &groupName)
 			}
 
-			if errEnv != nil {
-				log.Printf("[Login] Auto-provision failed at Environment: %v", errEnv)
-				envName = "Sem Ambiente"
+			if errGroup != nil {
+				log.Printf("[Login] Auto-provision failed at Group: %v", errGroup)
 				groupName = "Sem Grupo"
 				companyName = "Sem Empresa"
 				companyID = ""
 			} else {
-				var groupID string
-				errGroup := db.QueryRowContext(ctx, "SELECT id, name FROM enterprise_groups WHERE environment_id = $1 AND name = 'Grupo de Empresas Testes' LIMIT 1", envID).Scan(&groupID, &groupName)
-				if errGroup == sql.ErrNoRows {
-					errGroup = db.QueryRowContext(ctx, "INSERT INTO enterprise_groups (environment_id, name, description) VALUES ($1, 'Grupo de Empresas Testes', 'Grupo auto-gerado') RETURNING id, name", envID).Scan(&groupID, &groupName)
+				_, _ = db.ExecContext(ctx, "INSERT INTO user_environments (user_id, environment_id, role) VALUES ($1, $2, 'admin') ON CONFLICT DO NOTHING", user.ID, envID)
+
+				companyName = "Empresa de " + user.FullName
+				if user.FullName == "" {
+					companyName = "Minha Empresa"
 				}
 
-				if errGroup != nil {
-					log.Printf("[Login] Auto-provision failed at Group: %v", errGroup)
-					groupName = "Sem Grupo"
+				errComp := db.QueryRowContext(ctx, `
+					INSERT INTO companies (group_id, name, trade_name, owner_id)
+					VALUES ($1, $2, $2, $3)
+					RETURNING id
+				`, groupID, companyName, user.ID).Scan(&companyID)
+
+				if errComp != nil {
+					log.Printf("[Login] Auto-provision failed at Company: %v", errComp)
 					companyName = "Sem Empresa"
 					companyID = ""
 				} else {
-					_, _ = db.ExecContext(ctx, "INSERT INTO user_environments (user_id, environment_id, role) VALUES ($1, $2, 'admin') ON CONFLICT DO NOTHING", user.ID, envID)
-
-					companyName = "Empresa de " + user.FullName
-					if user.FullName == "" {
-						companyName = "Minha Empresa"
-					}
-
-					errComp := db.QueryRowContext(ctx, `
-						INSERT INTO companies (group_id, name, trade_name, owner_id)
-						VALUES ($1, $2, $2, $3)
-						RETURNING id
-					`, groupID, companyName, user.ID).Scan(&companyID)
-
-					if errComp != nil {
-						log.Printf("[Login] Auto-provision failed at Company: %v", errComp)
-						companyName = "Sem Empresa"
-						companyID = ""
-					} else {
-						log.Printf("[Login] Auto-provision success: Created %s (%s)", companyName, companyID)
-					}
+					log.Printf("[Login] Auto-provision success: Created %s (%s)", companyName, companyID)
 				}
 			}
-			err = nil
-
-		} else if err != nil {
-			log.Printf("[Login] Warning: Error fetching context (timeout?): %v. Proceeding without context.", err)
-			envName = "Carregando..."
-			groupName = "Carregando..."
-			companyName = "Carregando..."
-			companyID = ""
 		}
+		err = nil
 
-		log.Printf("[Login] Success for %s. Duration: %v", req.Email, time.Since(start))
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(AuthResponse{
-			Token:       token,
-			User:        user,
-			Environment: envName,
-			Group:       groupName,
-			Company:     companyName,
-			CompanyID:   companyID,
-			CNPJ:        "",
-		})
+	} else if err != nil {
+		log.Printf("[Login] Warning: Error fetching context (timeout?): %v. Proceeding without context.", err)
+		envName = "Carregando..."
+		groupName = "Carregando..."
+		companyName = "Carregando..."
+		companyID = ""
 	}
+
+	log.Printf("[Login] Success for %s. Duration: %v", user.Email, time.Since(start))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(AuthResponse{
+		Token:       token,
+		User:        user,
+		Environment: envName,
+		Group:       groupName,
+		Company:     companyName,
+		CompanyID:   companyID,
+		CNPJ:        "",
+	})
 }
 
 type ForgotPasswordRequest struct {

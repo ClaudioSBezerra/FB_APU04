@@ -1,4 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import {
+  SESSION_KEY_AUTH_VIA_SSO,
+  SESSION_KEY_LOGOUT_SUPPRESS_REDIRECT,
+  fetchIAMConfig,
+} from '@/lib/keycloak/buildLoginUrl';
 
 interface User {
   id: string;
@@ -20,7 +25,7 @@ interface AuthContextType {
   companyId: string | null;
   cnpj: string | null;
   loading: boolean;
-  login: (data: any) => void;
+  login: (data: any, opts?: { viaSSO?: boolean }) => void;
   logout: () => void;
   switchCompany: (id: string, name: string, cnpj: string) => void;
   isAuthenticated: boolean;
@@ -41,6 +46,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Refs para o interceptor de fetch (sem stale closure)
   const tokenRef = useRef<string | null>(null);
+  // Guarda contra dupla-invocação de logout() (duplo clique, 2 componentes de navegação)
+  const loggingOutRef = useRef(false);
   // Inicializa do localStorage de forma síncrona para evitar race condition:
   // effects de filhos rodam ANTES do useEffect de AuthProvider, então se o ref
   // começar null o primeiro fetch de qualquer página filha vai sem X-Company-ID.
@@ -135,7 +142,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, []);
 
-  const login = (data: any) => {
+  const login = (data: any, opts?: { viaSSO?: boolean }) => {
     // Store access token in memory only — never in localStorage
     setToken(data.token);
     tokenRef.current = data.token;
@@ -172,9 +179,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     localStorage.setItem('company', companyName || '');
     localStorage.setItem('companyId', companyIdVal || '');
     localStorage.setItem('cnpj', cnpjVal || '');
+    // Marca de origem SSO em localStorage (mesmo storage da sessão neste projeto, então
+    // vale em todas as abas). Sempre reescrita — nunca herda resíduo de sessão anterior.
+    localStorage.setItem(SESSION_KEY_AUTH_VIA_SSO, opts?.viaSSO ? '1' : '0');
+    loggingOutRef.current = false;
   };
 
   const logout = () => {
+    // Evita que uma segunda chamada concorrente vença a navegação já em curso da primeira.
+    if (loggingOutRef.current) return;
+    loggingOutRef.current = true;
+
+    // Captura a marca de origem SSO antes do .clear() — decide o destino do redirect.
+    const wasSSO = localStorage.getItem(SESSION_KEY_AUTH_VIA_SSO) === '1';
+
     // Tell server to revoke the access token and clear the refresh cookie
     const currentToken = tokenRef.current;
     fetch('/api/auth/logout', {
@@ -202,7 +220,47 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setCompany(null);
     setCompanyId(null);
     setCnpj(null);
-    window.location.href = '/login';
+
+    if (!wasSSO) {
+      window.location.href = '/login';
+      return;
+    }
+
+    // Sessão via SSO: encerra também a sessão no Keycloak (RP-Initiated Logout); sem
+    // isso, o auto-redirect da tela de login reautenticaria o usuário silenciosamente.
+    // A flag suprime esse auto-redirect caso Login.tsx monte (via ProtectedRoute) antes
+    // de fetchIAMConfig() resolver — e também na volta do Keycloak pra /login.
+    sessionStorage.setItem(SESSION_KEY_LOGOUT_SUPPRESS_REDIRECT, '1');
+
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      window.location.href = '/login';
+    }, 5000);
+
+    fetchIAMConfig().then((config) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+
+      if (config.enabled && config.base_url && config.client_id) {
+        // post_logout_redirect_uri precisa bater EXATAMENTE com o cadastrado no client
+        // do Keycloak ("Valid Post Logout Redirect URIs") — por isso /login puro.
+        const params = new URLSearchParams({
+          client_id: config.client_id,
+          post_logout_redirect_uri: `${window.location.origin}/login`,
+        });
+        window.location.href = `${config.base_url}/protocol/openid-connect/logout?${params.toString()}`;
+      } else {
+        window.location.href = '/login';
+      }
+    }).catch(() => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      window.location.href = '/login';
+    });
   };
 
   const switchCompany = (id: string, name: string, newCnpj: string) => {

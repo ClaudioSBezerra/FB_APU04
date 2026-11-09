@@ -22,6 +22,11 @@ services:
       - APP_URL=${APP_URL:-https://simulador.fbtax.cloud}
       - ZAI_API_KEY=${ZAI_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET}
+      - IAM_BASE_URL=${IAM_BASE_URL}
+      - IAM_ALLOWED_CLIENT_IDS=${IAM_ALLOWED_CLIENT_IDS}
+      - IAM_CLIENT_ID=${IAM_CLIENT_ID}
+      - IAM_REDIRECT_URI=${IAM_REDIRECT_URI}
+      - IAM_SCOPES=${IAM_SCOPES}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - APP_MODULE=${APP_MODULE:-}
       - ALLOWED_DESTRUCTIVE_DBS=${ALLOWED_DESTRUCTIVE_DBS:-fiscal_apu04_db}

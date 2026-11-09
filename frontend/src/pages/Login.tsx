@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
+import { buildLoginUrl, fetchIAMConfig, SESSION_KEY_LOGOUT_SUPPRESS_REDIRECT } from "@/lib/keycloak/buildLoginUrl";
 
 const FEATURES = [
   "Importação de várias fontes: EFD ICMS, XMLs e planilhas",
@@ -26,6 +27,75 @@ const Login = () => {
   const [apiVersion, setApiVersion] = useState<string>("...");
   const navigate = useNavigate();
   const { login } = useAuth();
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+
+  // SSO Keycloak (Ferreira Costa): quando habilitado neste servidor, redireciona direto
+  // pro login corporativo. `/login?password` desliga o auto-redirect (fallback por senha).
+  const hasPasswordFallback = new URLSearchParams(window.location.search).has("password");
+  const [autoRedirecting, setAutoRedirecting] = useState(!hasPasswordFallback);
+
+  // Guarda a leitura destrutiva da flag de supressão contra o duplo-invoke de efeitos do
+  // React.StrictMode em dev (mount→cleanup→mount).
+  const suppressRedirectRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    // Leitura única: se logout() acabou de suprimir o auto-redirect (sessão SSO saindo),
+    // trata como hasPasswordFallback nesta montagem — evita reautenticação silenciosa.
+    if (suppressRedirectRef.current === null) {
+      const flag = sessionStorage.getItem(SESSION_KEY_LOGOUT_SUPPRESS_REDIRECT) === "1";
+      if (flag) sessionStorage.removeItem(SESSION_KEY_LOGOUT_SUPPRESS_REDIRECT);
+      suppressRedirectRef.current = flag;
+    }
+    const skipAutoRedirect = hasPasswordFallback || suppressRedirectRef.current;
+
+    let mounted = true;
+    let settled = false;
+
+    // Fail-safe: se a config nunca chegar, mostra o formulário em 5s.
+    const timeoutId = window.setTimeout(() => {
+      if (!settled && mounted) {
+        settled = true;
+        setAutoRedirecting(false);
+      }
+    }, 5000);
+
+    fetchIAMConfig().then(async (config) => {
+      if (!mounted) return;
+      setSsoEnabled(config.enabled);
+      if (settled) return;
+
+      if (skipAutoRedirect || !config.enabled) {
+        settled = true;
+        setAutoRedirecting(false);
+        return;
+      }
+
+      try {
+        const url = await buildLoginUrl();
+        if (settled) return;
+        settled = true;
+        if (mounted) window.location.href = url;
+      } catch (error) {
+        console.error("[Login] Falha ao montar URL do Keycloak:", error);
+        settled = true;
+        if (mounted) setAutoRedirecting(false);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      window.clearTimeout(timeoutId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSSOLogin = async () => {
+    try {
+      window.location.href = await buildLoginUrl();
+    } catch (error: any) {
+      toast.error(error.message || "SSO não configurado");
+    }
+  };
 
   // Fetch backend version to confirm which build is running
   useState(() => {
@@ -64,6 +134,19 @@ const Login = () => {
       setIsLoading(false);
     }
   };
+
+  if (autoRedirecting) {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center gap-3 bg-gray-100"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="h-8 w-8 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
+        <p className="text-sm text-gray-500">Redirecionando para login corporativo...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex">
@@ -190,6 +273,19 @@ const Login = () => {
               <Button type="submit" className="w-full text-2xl h-16" disabled={isLoading}>
                 {isLoading ? "Entrando..." : "Entrar"}
               </Button>
+              {ssoEnabled && (
+                <>
+                  <div className="relative py-1">
+                    <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                    <div className="relative flex justify-center text-sm uppercase">
+                      <span className="bg-white px-2 text-gray-400">ou</span>
+                    </div>
+                  </div>
+                  <Button type="button" variant="outline" className="w-full text-2xl h-16" onClick={handleSSOLogin}>
+                    Entrar com SSO Ferreira Costa
+                  </Button>
+                </>
+              )}
               <div className="text-center text-lg text-gray-500 mt-2">
                 Não tem uma conta?{" "}
                 <Link to="/register" className="text-blue-600 hover:underline">
