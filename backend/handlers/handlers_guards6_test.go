@@ -276,6 +276,7 @@ func TestCreateEnvironmentHandler_InvalidBody(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/environments",
 		strings.NewReader("not-json"))
 	req.Header.Set("Content-Type", "application/json")
+	req = comClaims(req, "u1", "admin") // criar ambiente exige administrador
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -288,6 +289,7 @@ func TestUpdateEnvironmentHandler_InvalidBody(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/environments/123",
 		strings.NewReader("not-json"))
 	req.Header.Set("Content-Type", "application/json")
+	req = comClaims(req, "u1", "admin") // editar ambiente exige administrador
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 	if rr.Code != http.StatusBadRequest {

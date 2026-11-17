@@ -18,6 +18,7 @@ import (
 // ─── RegisterHandler ─────────────────────────────────────────────────────────
 
 func TestRegisterHandler_InvalidBody(t *testing.T) {
+	t.Setenv("REGISTRO_PUBLICO", "true")
 	handler := RegisterHandler(nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/register", strings.NewReader("not-json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -29,6 +30,7 @@ func TestRegisterHandler_InvalidBody(t *testing.T) {
 }
 
 func TestRegisterHandler_MissingFields(t *testing.T) {
+	t.Setenv("REGISTRO_PUBLICO", "true")
 	handler := RegisterHandler(nil)
 	body := `{"email":"test@example.com","password":"secret123"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/register", strings.NewReader(body))
@@ -41,6 +43,7 @@ func TestRegisterHandler_MissingFields(t *testing.T) {
 }
 
 func TestRegisterHandler_ShortPassword(t *testing.T) {
+	t.Setenv("REGISTRO_PUBLICO", "true")
 	handler := RegisterHandler(nil)
 	body := `{"email":"test@example.com","password":"short","full_name":"Test User","company_name":"Acme"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/register", strings.NewReader(body))
@@ -118,6 +121,7 @@ func TestCreateGroupHandler_InvalidBody(t *testing.T) {
 	handler := CreateGroupHandler(nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/groups", strings.NewReader("{bad"))
 	req.Header.Set("Content-Type", "application/json")
+	req = comClaims(req, "u1", "user")
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 	if rr.Code != http.StatusBadRequest {

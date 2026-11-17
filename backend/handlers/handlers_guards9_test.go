@@ -86,6 +86,7 @@ func TestSecurityMiddleware_WritePath(t *testing.T) {
 // ─── RegisterHandler — rate limit path ───────────────────────────────────────
 
 func TestRegisterHandler_RateLimitPath(t *testing.T) {
+	t.Setenv("REGISTRO_PUBLICO", "true")
 	// RegisterRL limits by IP (max 10/hour). Use a unique IP and exhaust it.
 	// We call Allow() directly to pre-exhaust the rate limiter for this IP.
 	uniqueIP := "203.0.113.55"

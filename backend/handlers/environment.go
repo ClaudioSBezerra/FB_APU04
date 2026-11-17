@@ -80,7 +80,7 @@ func GetEnvironmentsHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 		defer rows.Close()
@@ -89,13 +89,13 @@ func GetEnvironmentsHandler(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var e Environment
 			if err := rows.Scan(&e.ID, &e.Name, &e.Description, &e.CreatedAt); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				erroInterno(w, "config", err)
 				return
 			}
 			envs = append(envs, e)
 		}
 		if err := rows.Err(); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 
@@ -109,11 +109,22 @@ func GetEnvironmentsHandler(db *sql.DB) http.HandlerFunc {
 func CreateEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		var e Environment
-		if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		// Ambiente é a raiz do isolamento entre clientes: só administrador cria/edita/apaga.
+		if !exigirAdmin(w, r) {
 			return
 		}
+		var e Environment
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&e); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		nome, errNome := NomeSeguro("name", e.Name, maxNome)
+		if errNome != nil {
+			http.Error(w, errNome.Error(), http.StatusBadRequest)
+			return
+		}
+		e.Name = nome
+		e.Description = SanitizarNome(e.Description, 500)
 
 		err := db.QueryRow(
 			"INSERT INTO environments (name, description) VALUES ($1, $2) RETURNING id, created_at",
@@ -121,7 +132,7 @@ func CreateEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 		).Scan(&e.ID, &e.CreatedAt)
 
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 
@@ -133,11 +144,21 @@ func UpdateEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// Expects ID in URL or Body. For simplicity, we take from body now or just update based on ID
-		var e Environment
-		if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if !exigirAdmin(w, r) {
 			return
 		}
+		var e Environment
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&e); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		nome, errNome := NomeSeguro("name", e.Name, maxNome)
+		if errNome != nil || e.ID == "" {
+			http.Error(w, "name e id são obrigatórios e o nome não pode conter < > nem caracteres de controle", http.StatusBadRequest)
+			return
+		}
+		e.Name = nome
+		e.Description = SanitizarNome(e.Description, 500)
 
 		_, err := db.Exec(
 			"UPDATE environments SET name = $1, description = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3",
@@ -145,7 +166,7 @@ func UpdateEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 		)
 
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 
@@ -162,30 +183,14 @@ func DeleteEnvironmentHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		claims, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims)
-		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		// Apagar um ambiente leva junto grupos, empresas e todos os dados: só administrador.
+		if !exigirAdmin(w, r) {
 			return
-		}
-		userID, _ := claims["user_id"].(string)
-		role, _ := claims["role"].(string)
-
-		// Non-admin users may only delete environments they are assigned to.
-		if role != "admin" {
-			var count int
-			err := db.QueryRow(`
-				SELECT COUNT(*) FROM user_environments
-				WHERE user_id = $1 AND environment_id = $2
-			`, userID, id).Scan(&count)
-			if err != nil || count == 0 {
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
 		}
 
 		_, err := db.Exec("DELETE FROM environments WHERE id = $1", id)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -209,7 +214,7 @@ func GetGroupsHandler(db *sql.DB) http.HandlerFunc {
 
 		rows, err := db.Query(query, args...)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 		defer rows.Close()
@@ -218,13 +223,13 @@ func GetGroupsHandler(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var g EnterpriseGroup
 			if err := rows.Scan(&g.ID, &g.EnvironmentID, &g.Name, &g.Description, &g.CreatedAt); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				erroInterno(w, "config", err)
 				return
 			}
 			groups = append(groups, g)
 		}
 		if err := rows.Err(); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 
@@ -238,9 +243,26 @@ func GetGroupsHandler(db *sql.DB) http.HandlerFunc {
 func CreateGroupHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		userID, role, okc := claimsDe(r)
+		if !okc {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 		var g EnterpriseGroup
-		if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&g); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		nome, errNome := NomeSeguro("name", g.Name, maxNome)
+		if errNome != nil {
+			http.Error(w, errNome.Error(), http.StatusBadRequest)
+			return
+		}
+		g.Name = nome
+		g.Description = SanitizarNome(g.Description, 500)
+		// só em ambiente a que o usuário tem acesso (antes aceitava qualquer environment_id)
+		if !podeAcessarAmbiente(db, userID, role, g.EnvironmentID) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
@@ -250,7 +272,7 @@ func CreateGroupHandler(db *sql.DB) http.HandlerFunc {
 		).Scan(&g.ID, &g.CreatedAt)
 
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 
@@ -266,24 +288,36 @@ func UpdateGroupHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "Missing id parameter", http.StatusBadRequest)
 			return
 		}
+		userID, role, okc := claimsDe(r)
+		if !okc {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !podeAcessarGrupo(db, userID, role, id) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
 		var body struct {
 			Name        string `json:"name"`
 			Description string `json:"description"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
-		if body.Name == "" {
-			http.Error(w, "name is required", http.StatusBadRequest)
+		nome, errNome := NomeSeguro("name", body.Name, maxNome)
+		if errNome != nil {
+			http.Error(w, errNome.Error(), http.StatusBadRequest)
 			return
 		}
+		body.Name = nome
+		body.Description = SanitizarNome(body.Description, 500)
 		_, err := db.Exec(
 			"UPDATE enterprise_groups SET name=$1, description=$2 WHERE id=$3",
 			body.Name, body.Description, id,
 		)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -322,7 +356,7 @@ func DeleteGroupHandler(db *sql.DB) http.HandlerFunc {
 
 		_, err := db.Exec("DELETE FROM enterprise_groups WHERE id = $1", id)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -357,7 +391,7 @@ func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 
 		rows, err := db.Query(query, args...)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 		defer rows.Close()
@@ -374,7 +408,7 @@ func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 				&inc,
 				&c.CreatedAt,
 			); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				erroInterno(w, "config", err)
 				return
 			}
 			if inc.Valid && inc.String != "" {
@@ -384,7 +418,7 @@ func GetCompaniesHandler(db *sql.DB) http.HandlerFunc {
 			companies = append(companies, c)
 		}
 		if err := rows.Err(); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 
@@ -412,13 +446,30 @@ func CreateCompanyHandler(db *sql.DB) http.HandlerFunc {
 			IncentivosFiscais *json.RawMessage `json:"incentivos_fiscais"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
 		// Basic validation
 		if payload.Name == "" || payload.GroupID == "" {
 			http.Error(w, "Missing required fields (name, group_id)", http.StatusBadRequest)
+			return
+		}
+		nomeEmp, errNome := NomeSeguro("name", payload.Name, maxNome)
+		if errNome != nil {
+			http.Error(w, errNome.Error(), http.StatusBadRequest)
+			return
+		}
+		payload.Name = nomeEmp
+		payload.TradeName = SanitizarNome(payload.TradeName, maxNome)
+		// só em grupo de ambiente a que o usuário tem acesso
+		userIDc, roleC, okc := claimsDe(r)
+		if !okc {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !podeAcessarGrupo(db, userIDc, roleC, payload.GroupID) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
@@ -468,7 +519,7 @@ func CreateCompanyHandler(db *sql.DB) http.HandlerFunc {
 		).Scan(&c.ID, &c.CreatedAt)
 
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 
@@ -513,7 +564,7 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 			IncentivosFiscais *json.RawMessage `json:"incentivos_fiscais"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
@@ -586,7 +637,7 @@ func UpdateCompanyHandler(db *sql.DB) http.HandlerFunc {
 		)
 		if err != nil {
 			log.Printf("UpdateCompany error: %v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 		n, err := res.RowsAffected()
@@ -632,7 +683,7 @@ func DeleteCompanyHandler(db *sql.DB) http.HandlerFunc {
 
 		_, err := db.Exec("DELETE FROM companies WHERE id = $1", id)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			erroInterno(w, "config", err)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
