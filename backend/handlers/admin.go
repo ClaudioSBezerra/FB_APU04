@@ -604,7 +604,7 @@ func CreateUserHandler(db *sql.DB) http.HandlerFunc {
 		} else {
 			// Auto-provision new hierarchy (original behavior)
 			var envID string
-			err = db.QueryRow("INSERT INTO environments (name, description) VALUES ($1, 'Ambiente Padrão') RETURNING id", "Ambiente de "+req.FullName).Scan(&envID)
+			err = db.QueryRow("INSERT INTO environments (name, description) VALUES ($1, 'Ambiente Padrão') RETURNING id", "Ambiente de "+SanitizarNome(req.FullName, maxNome)).Scan(&envID)
 			if err == nil {
 				var groupID string
 				db.QueryRow("INSERT INTO enterprise_groups (environment_id, name, description) VALUES ($1, 'Grupo Padrão', 'Grupo Inicial') RETURNING id", envID).Scan(&groupID)

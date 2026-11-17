@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -207,11 +208,24 @@ func (rl *rateLimiter) Reset(key string) {
 
 // GetClientIP extracts the real client IP from reverse proxy headers.
 // Uses the LAST entry in X-Forwarded-For (set by trusted proxy) to prevent spoofing.
+// GetClientIP devolve o IP do cliente. O X-Forwarded-For é preenchido por cada proxy da
+// cadeia (o último valor é o do proxy mais próximo daqui). TRUSTED_PROXY_HOPS diz quantos
+// proxies confiáveis existem entre a internet e a API (padrão 1): o IP do cliente é o
+// N-ésimo da direita para a esquerda. Com 1 (padrão) o comportamento é o de antes.
+// Atrás de ALB + nginx do servidor + nginx do frontend são 3 saltos — com 1, todos os
+// clientes pareceriam o mesmo IP e os rate limits (login/cadastro) ficariam inúteis.
 func GetClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
-		// Use rightmost IP (added by our trusted reverse proxy, not spoofable by client)
-		return strings.TrimSpace(parts[len(parts)-1])
+		hops := 1
+		if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("TRUSTED_PROXY_HOPS"))); err == nil && v >= 1 {
+			hops = v
+		}
+		idx := len(parts) - hops
+		if idx < 0 {
+			idx = 0
+		}
+		return strings.TrimSpace(parts[idx])
 	}
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
 		return xri

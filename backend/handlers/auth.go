@@ -468,6 +468,15 @@ func GetUserCompaniesHandler(db *sql.DB) http.HandlerFunc {
 
 func RegisterHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Cadastro público desligado por padrão (REGISTRO_PUBLICO=true para ligar): foi a porta
+		// por onde o pentest criou ambientes/grupos/empresas de lixo.
+		if !RegistroPublicoAtivo() {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode("O cadastro público está desativado. Solicite acesso ao administrador.")
+			return
+		}
+
 		// Rate limiting
 		if !RegisterRL.Allow(GetClientIP(r)) {
 			w.Header().Set("Content-Type", "application/json")
@@ -477,13 +486,33 @@ func RegisterHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		var req RegisterRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
 		if req.Email == "" || req.Password == "" || req.FullName == "" || req.CompanyName == "" {
 			http.Error(w, "Missing required fields", http.StatusBadRequest)
+			return
+		}
+
+		// Nomes viram "Ambiente de <nome>"/"Grupo de <nome>" e aparecem em telas: sem HTML/controle.
+		var errNome error
+		if req.FullName, errNome = NomeSeguro("full_name", req.FullName, maxNome); errNome != nil {
+			http.Error(w, errNome.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.CompanyName, errNome = NomeSeguro("company_name", req.CompanyName, maxNome); errNome != nil {
+			http.Error(w, errNome.Error(), http.StatusBadRequest)
+			return
+		}
+		req.Email = strings.TrimSpace(req.Email)
+		if !EmailValido(req.Email) {
+			http.Error(w, "E-mail inválido", http.StatusBadRequest)
+			return
+		}
+		if len(req.Password) > 72 { // limite do bcrypt
+			http.Error(w, "Password must be at most 72 bytes", http.StatusBadRequest)
 			return
 		}
 
@@ -788,7 +817,7 @@ func finishLogin(db *sql.DB, w http.ResponseWriter, r *http.Request, user User, 
 		// usuário (nunca um SELECT por nome compartilhado), tudo numa única transação pra
 		// não deixar o usuário com ambiente criado e empresa não-criada em caso de erro
 		// no meio do caminho.
-		nomeBase := user.FullName
+		nomeBase := SanitizarNome(user.FullName, maxNome)
 		if nomeBase == "" {
 			nomeBase = "Usuário " + user.ID
 		}
