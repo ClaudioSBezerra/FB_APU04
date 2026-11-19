@@ -31,7 +31,6 @@ const CONTROLLED_MODULES: { id: string; label: string }[] = [
   { id: 'fronteira',    label: 'ICMS Fronteira' },
   { id: 'auditoria',    label: 'Auditoria Fiscal' },
   { id: 'pacotefiscal', label: 'Teste Pacote Fiscal' },
-  { id: 'efdcontrib',   label: 'EFD Contribuições' },
 ];
 
 export default function AdminPersonas() {
