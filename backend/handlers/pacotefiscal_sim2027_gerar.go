@@ -50,6 +50,18 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 
 	data := pfsStripNamespaces(original)
 
+	// NT 2026.008: se for NF-e e o XML ainda não traz as tags de valor líquido, o gerador
+	// as adiciona (ver pacotefiscal_sim2027_liquido.go). Passe prévio porque o ICMS vem
+	// depois do <prod>.
+	var pre pfsPrescanLiquido
+	inserirLiquido := false
+	if pfsDetectTipoDoc(original) == pfsTipoNFe {
+		if p, err := pfsPrescanItensLiquido(data); err == nil && p.deveAdicionar() {
+			pre, inserirLiquido = p, true
+		}
+	}
+	detIdx := -1
+
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	dec.CharsetReader = nfeCharsetReader
 
@@ -109,12 +121,26 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 			if err := enc.EncodeToken(t); err != nil {
 				return nil, err
 			}
+			if t.Name.Local == "det" && parent() == "infNFe" {
+				detIdx++
+			}
+			// vProdLiqTot é o 1º filho de <total> (XSD PL_010h), antes de ICMSTot.
+			if inserirLiquido && t.Name.Local == "total" && parent() == "infNFe" {
+				if err := pfsEmitLeaf(enc, "vProdLiqTot", pfsFmtCents(pre.totalLiquidoCents())); err != nil {
+					return nil, err
+				}
+			}
 			if isRoot {
 				commentWritten = true
+				extra := ""
+				if inserirLiquido {
+					extra = " valor liquido (NT 2026.008) adicionado;"
+				}
 				msg := fmt.Sprintf(
 					" SIMULACAO 2027 (NAO VALIDO PARA TRANSMISSAO/SEFAZ) - PIS, COFINS e IPI zerados;"+
-						" IBS/CBS recalculado com IBS-UF=%s%%, IBS-Mun=%s%%, CBS=%s%% - gerado em %s ",
+						" IBS/CBS recalculado com IBS-UF=%s%%, IBS-Mun=%s%%, CBS=%s%%;%s vNFTot recalculado - gerado em %s ",
 					pfsFmtPct(params.AliqIbsUfPct), pfsFmtPct(params.AliqIbsMunPct), pfsFmtPct(params.AliqCbsPct),
+					extra,
 					geradoEm.Format("2006-01-02 15:04:05 -0700"),
 				)
 				if err := enc.EncodeToken(xml.Comment(msg)); err != nil {
@@ -129,6 +155,16 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 			t.Name.Space = ""
 			if err := enc.EncodeToken(t); err != nil {
 				return nil, err
+			}
+			// [vUnComLiq, vProdLiq] logo depois do vProd do item (XSD PL_010h).
+			if inserirLiquido && t.Name.Local == "vProd" && top() == "prod" && detIdx >= 0 && detIdx < len(pre.itens) {
+				it := pre.itens[detIdx]
+				if err := pfsEmitLeaf(enc, "vUnComLiq", it.vUnComLiqStr()); err != nil {
+					return nil, err
+				}
+				if err := pfsEmitLeaf(enc, "vProdLiq", pfsFmtCents(it.liquidoCents())); err != nil {
+					return nil, err
+				}
 			}
 
 		case xml.CharData:
@@ -266,6 +302,17 @@ func pfsComputeReplacement(tp, p, gp, orig string, params pfsParametros, curVBC,
 	}
 	if p == "gCBS" && gp == "IBSCBSTot" && tp == "vCBS" {
 		return pfsFmtMoney(totals.VCBS), true
+	}
+
+	// vNF do ICMSTot (intocado pela simulação) e vNFTot: "valor total da NF considerando os
+	// impostos por fora IBS, CBS e IS" (XSD) = vNF + vIBS + vCBS (ISTot ainda não tem campos
+	// no leiaute). O vNFTot original ficava desatualizado em relação ao IBS/CBS recalculado.
+	if p == "ICMSTot" && tp == "vNF" {
+		totals.VNF = toDecimal(orig)
+		return orig, false
+	}
+	if p == "total" && tp == "vNFTot" {
+		return pfsFmtMoney(totals.VNF + totals.VIBS + totals.VCBS), true
 	}
 
 	return orig, false

@@ -207,7 +207,9 @@ export default function Sim2027PacoteFiscal() {
           Gera, a partir de uma NF-e (modelo 55) ou CT-e já emitidos, uma versão simulada como se já
           estivessem sob as regras plenas da Reforma Tributária: PIS, COFINS e IPI zerados, e IBS/CBS
           recalculado com as alíquotas de teste abaixo, usando a base de cálculo que já existe no bloco
-          IBSCBS do próprio XML. O XML gerado não é válido para transmissão — é só um artefato de teste.
+          IBSCBS do próprio XML. Nas NF-e, também adiciona as tags de valor líquido da NT 2026.008
+          (vUnComLiq, vProdLiq e vProdLiqTot) quando o XML original ainda não as traz, e recalcula o
+          vNFTot. O XML gerado não é válido para transmissão — é só um artefato de teste.
         </p>
       </div>
 
@@ -351,7 +353,8 @@ export default function Sim2027PacoteFiscal() {
             </div>
             <p className="text-xs text-muted-foreground">
               ICMSTot e a duplicata/título (cobr/dup) do documento original não são alterados — a
-              simulação altera apenas PIS, COFINS, IPI e IBS/CBS.
+              simulação altera PIS, COFINS, IPI e IBS/CBS, recalcula o vNFTot (vNF + IBS + CBS) e, nas
+              NF-e, adiciona o valor líquido de cada item (vProd menos ICMS, PIS e COFINS originais).
             </p>
           </CardContent>
         </Card>

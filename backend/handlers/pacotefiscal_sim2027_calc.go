@@ -112,6 +112,7 @@ type pfsTotaisIBSCBS struct {
 	VIbsMun float64
 	VIBS    float64
 	VCBS    float64
+	VNF     float64 // vNF do ICMSTot (original), base do vNFTot recalculado
 }
 
 func (t *pfsTotaisIBSCBS) Somar(d pfsItemDepois) {
