@@ -8,6 +8,14 @@
 // Posições conforme o XSD oficial (PL_010g/PL_010h): em <prod>, o bloco [vUnComLiq,
 // vProdLiq] vem logo depois de vProd; vProdLiqTot é o 1º filho de <total>.
 //
+// vItem / vNFTot (decisão do usuário, 2026-11-19): a NT 2026.008 define vNFTot como a SOMA dos
+// vItem, e vItem (regra VB01-10, modo 2027) como vProd - vDesc - vICMSDeson(se indDeduzDeson=1)
+// + vICMSST + vICMSMonoReten + vFCPST + vFrete + vSeg + vOutro + vII + vIPI + vIPIDevol
+// + vPIS/vCOFINS de ST (se indSoma*=1) + vIBS + vCBS + vIS + vTotIBSMonoItem + vTotCBSMonoItem.
+// Na simulação o IPI dos itens é zerado, então vIPI não entra. O gerador passa a escrever
+// vItem em todo item e vNFTot = Σ vItem, usando o IBS/CBS JÁ recalculado pela simulação
+// (mesma conta do gerador: vBC * alíquota de teste, arredondada por parcela).
+//
 // Valor líquido do item (decisão do usuário, 2026-11-19): vProd menos os tributos
 // "por dentro" que estavam no preço da nota ORIGINAL — ICMS, PIS e COFINS do item
 // (vICMS, vPIS, vCOFINS, lidos do XML antes de a simulação zerar PIS/COFINS). Nunca fica
@@ -32,11 +40,25 @@ type pfsItemLiquido struct {
 	vProd                int64
 	vICMS, vPIS, vCOFINS int64
 	temLiq               bool // o XML original já traz vProdLiq/vUnComLiq neste item
+
+	// componentes do vItem (VB01-10)
+	vDesc, vFrete, vSeg, vOutro   int64
+	vICMSDeson                    int64
+	indDeduzDeson                 bool
+	vICMSST, vFCPST, vICMSMonoRet int64 // vICMSMonoReten
+	vII, vIPIDevol                int64
+	vPISST, vCOFINSST             int64
+	indSomaPISST, indSomaCOFINSST bool
+	vIS, vTotMono                 int64
+	vBCIBS                        float64 // gIBSCBS/vBC (base mantida pela simulação)
+	temIBSCBS                     bool
+	temVItem                      bool // o XML original já traz <vItem> neste item
 }
 
 type pfsPrescanLiquido struct {
 	itens          []pfsItemLiquido
 	temVProdLiqTot bool
+	temVNFTot      bool
 }
 
 // deveAdicionar: só adiciona as tags se há itens e o XML original não traz nenhuma delas
@@ -63,7 +85,54 @@ func (it pfsItemLiquido) liquidoCents() int64 {
 	return v
 }
 
-func pfsFmtCents(c int64) string { return fmt.Sprintf("%d.%02d", c/100, c%100) }
+func pfsFmtCents(c int64) string {
+	if c < 0 {
+		c = 0
+	}
+	return fmt.Sprintf("%d.%02d", c/100, c%100)
+}
+
+// ibsCbsCents devolve o vIBS (UF+Mun, cada parcela arredondada) e o vCBS do item com as
+// alíquotas de teste — espelha exatamente o cálculo de pfsComputeReplacement.
+func (it pfsItemLiquido) ibsCbsCents(p pfsParametros) (ibs, cbs int64) {
+	if !it.temIBSCBS {
+		return 0, 0
+	}
+	uf := round2(it.vBCIBS * p.AliqIbsUfPct / 100)
+	mun := round2(it.vBCIBS * p.AliqIbsMunPct / 100)
+	ibs = int64(math.Round(round2(uf+mun) * 100))
+	cbs = int64(math.Round(round2(it.vBCIBS*p.AliqCbsPct/100) * 100))
+	return ibs, cbs
+}
+
+// vItemCents — regra VB01-10 da NT 2026.008 (modo 2027), ver o cabeçalho do arquivo.
+func (it pfsItemLiquido) vItemCents(p pfsParametros) int64 {
+	v := it.vProd - it.vDesc
+	if it.indDeduzDeson {
+		v -= it.vICMSDeson
+	}
+	v += it.vICMSST + it.vICMSMonoRet + it.vFCPST + it.vFrete + it.vSeg + it.vOutro + it.vII + it.vIPIDevol
+	if it.indSomaPISST {
+		v += it.vPISST
+	}
+	if it.indSomaCOFINSST {
+		v += it.vCOFINSST
+	}
+	ibs, cbs := it.ibsCbsCents(p)
+	v += ibs + cbs + it.vIS + it.vTotMono
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+func (pr pfsPrescanLiquido) totalVItemCents(p pfsParametros) int64 {
+	var t int64
+	for _, it := range pr.itens {
+		t += it.vItemCents(p)
+	}
+	return t
+}
 
 // vUnComLiq = valor líquido / quantidade comercial, com 10 casas (11v0-10), de modo que
 // vUnComLiq * qCom reproduz vProdLiq dentro da tolerância da regra I11c-20.
@@ -115,6 +184,10 @@ func pfsPrescanItensLiquido(data []byte) (pfsPrescanLiquido, error) {
 				res.itens = append(res.itens, pfsItemLiquido{})
 			case t.Name.Local == "vProdLiqTot" && at(1) == "total":
 				res.temVProdLiqTot = true
+			case t.Name.Local == "vNFTot" && at(1) == "total":
+				res.temVNFTot = true
+			case t.Name.Local == "vItem" && at(1) == "det" && len(res.itens) > 0:
+				res.itens[len(res.itens)-1].temVItem = true
 			case (t.Name.Local == "vProdLiq" || t.Name.Local == "vUnComLiq") && at(1) == "prod" && len(res.itens) > 0:
 				res.itens[len(res.itens)-1].temLiq = true
 			}
@@ -142,6 +215,48 @@ func pfsPrescanItensLiquido(data []byte) (pfsPrescanLiquido, error) {
 				it.vPIS += pfsCents(txt)
 			case top == "vCOFINS" && at(2) == "COFINS":
 				it.vCOFINS += pfsCents(txt)
+
+			// --- componentes do vItem ---
+			case (top == "vDesc" || top == "vFrete" || top == "vSeg" || top == "vOutro") && at(1) == "prod":
+				switch top {
+				case "vDesc":
+					it.vDesc = pfsCents(txt)
+				case "vFrete":
+					it.vFrete = pfsCents(txt)
+				case "vSeg":
+					it.vSeg = pfsCents(txt)
+				case "vOutro":
+					it.vOutro = pfsCents(txt)
+				}
+			case at(2) == "ICMS" && top == "vICMSDeson":
+				it.vICMSDeson += pfsCents(txt)
+			case at(2) == "ICMS" && top == "indDeduzDeson":
+				it.indDeduzDeson = txt == "1"
+			case at(2) == "ICMS" && top == "vICMSST":
+				it.vICMSST += pfsCents(txt)
+			case at(2) == "ICMS" && top == "vFCPST":
+				it.vFCPST += pfsCents(txt)
+			case at(2) == "ICMS" && top == "vICMSMonoReten":
+				it.vICMSMonoRet += pfsCents(txt)
+			case top == "vII" && at(1) == "II":
+				it.vII += pfsCents(txt)
+			case top == "vIPIDevol":
+				it.vIPIDevol += pfsCents(txt)
+			case top == "vPIS" && at(1) == "PISST":
+				it.vPISST += pfsCents(txt)
+			case top == "indSomaPISST":
+				it.indSomaPISST = txt == "1"
+			case top == "vCOFINS" && at(1) == "COFINSST":
+				it.vCOFINSST += pfsCents(txt)
+			case top == "indSomaCOFINSST":
+				it.indSomaCOFINSST = txt == "1"
+			case top == "vIS" && at(1) == "IS" && at(2) == "imposto":
+				it.vIS += pfsCents(txt)
+			case top == "vTotIBSMonoItem" || top == "vTotCBSMonoItem":
+				it.vTotMono += pfsCents(txt)
+			case top == "vBC" && at(1) == "gIBSCBS":
+				it.vBCIBS = toDecimal(txt)
+				it.temIBSCBS = true
 			}
 		}
 	}

@@ -21,6 +21,9 @@ type nt008Raiz struct {
 			VUnComLiq string `xml:"vUnComLiq"`
 			VProdLiq  string `xml:"vProdLiq"`
 		} `xml:"prod"`
+		VItem string `xml:"vItem"`
+		VIBS  string `xml:"imposto>IBSCBS>gIBSCBS>vIBS"`
+		VCBS  string `xml:"imposto>IBSCBS>gIBSCBS>gCBS>vCBS"`
 	} `xml:"NFe>infNFe>det"`
 	Total struct {
 		Filhos []struct {
@@ -101,19 +104,6 @@ func TestSim2027_AdicionaValorLiquido_FormulaPosicaoERegrasDaNT(t *testing.T) {
 	}
 }
 
-func TestSim2027_VNFTotRecalculado(t *testing.T) {
-	orig := strings.Replace(string(readTestdata(t, "sample_nfe55_sim2027.xml")),
-		`</IBSCBSTot>`, `</IBSCBSTot><vNFTot>3703.00</vNFTot>`, 1) // valor "velho" do emitente
-	_, r := nt008Gerar(t, []byte(orig))
-
-	if r.VNFTot == "3703.00" || r.VNFTot == "" {
-		t.Fatalf("vNFTot deveria ser recalculado, veio %q", r.VNFTot)
-	}
-	if want := r.vNFTotEsperado(); math.Abs(toDecimal(r.VNFTot)-want) > 0.001 {
-		t.Errorf("vNFTot = %s, esperava vNF %s + vIBS %s + vCBS %s = %.2f", r.VNFTot, r.VNF, r.VIBS, r.VCBS, want)
-	}
-}
-
 // Emitente do Simples (como o XML real de 31/08/2026): sem vICMS, PISOutr/COFINSOutr com
 // vPIS/vCOFINS zerados, vNFTot já presente. Nada a abater: vProdLiq = vProd.
 const nt008XMLSimples = `<?xml version="1.0" encoding="UTF-8"?>
@@ -130,8 +120,9 @@ func TestSim2027_Simples_ValorLiquidoIgualAoVProdEVNFTot(t *testing.T) {
 	if r.VNFTot == "563.58" || r.VNFTot == "" {
 		t.Fatalf("vNFTot deveria ser recalculado (era o valor original 563.58), veio %q", r.VNFTot)
 	}
+	// Simples sem IPI/frete: Σ vItem = Σ vProd + IBS + CBS (= vNF + IBS + CBS, que aqui coincide)
 	if want := r.vNFTotEsperado(); math.Abs(toDecimal(r.VNFTot)-want) > 0.001 {
-		t.Errorf("vNFTot = %s, esperava vNF %s + vIBS %s + vCBS %s = %.2f", r.VNFTot, r.VNF, r.VIBS, r.VCBS, want)
+		t.Errorf("vNFTot = %s, esperava %.2f", r.VNFTot, want)
 	}
 	if !strings.Contains(saida, "valor liquido (NT 2026.008) adicionado") {
 		t.Error("o comentário de simulação deveria avisar que o valor líquido foi adicionado")
@@ -153,5 +144,98 @@ func TestSim2027_CTeNaoRecebeTagsDaNT(t *testing.T) {
 	}
 	if strings.Contains(string(out), "vProdLiq") || strings.Contains(string(out), "vUnComLiq") {
 		t.Error("CT-e não faz parte da NT 2026.008: não deve receber vProdLiq/vUnComLiq")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// vItem por item e vNFTot = Σ vItem (NT 2026.008, decisão do usuário 2026-11-19)
+// ---------------------------------------------------------------------------
+
+func TestSim2027_VItemPorItem_VNFTotEhSomaDosItens_SemOIPIOriginal(t *testing.T) {
+	_, r := nt008Gerar(t, readTestdata(t, "sample_nfe55_sim2027.xml"))
+	if len(r.Dets) != 4 {
+		t.Fatalf("esperava 4 itens, veio %d", len(r.Dets))
+	}
+	var somaVItem, somaVProd, somaIBS, somaCBS float64
+	for i, d := range r.Dets {
+		vp, ibs, cbs := toDecimal(d.Prod.VProd), toDecimal(d.VIBS), toDecimal(d.VCBS)
+		// a simulação zera o IPI do item; sem frete/seguro/desconto/ST: vItem = vProd + IBS + CBS
+		if want := math.Round((vp+ibs+cbs)*100) / 100; math.Abs(toDecimal(d.VItem)-want) > 0.001 {
+			t.Errorf("item %d: vItem = %q, esperava %.2f (= %v + %v + %v)", i+1, d.VItem, want, vp, ibs, cbs)
+		}
+		somaVItem += toDecimal(d.VItem)
+		somaVProd += vp
+		somaIBS += ibs
+		somaCBS += cbs
+	}
+	if math.Abs(toDecimal(r.VNFTot)-somaVItem) > 0.001 {
+		t.Errorf("vNFTot = %s, esperava a soma dos vItem = %.2f", r.VNFTot, somaVItem)
+	}
+	// O IPI original (181,01) continua no ICMSTot/vNF, mas NÃO entra no vNFTot: o item foi
+	// simulado sem IPI. O valor "vNF + IBS + CBS" (fórmula antiga) ficaria 181,01 acima.
+	antiga := toDecimal(r.VNF) + toDecimal(r.VIBS) + toDecimal(r.VCBS)
+	if got := antiga - toDecimal(r.VNFTot); math.Abs(got-181.01) > 0.011 {
+		t.Errorf("a diferença para a fórmula antiga deveria ser o IPI original 181,01, veio %.2f", got)
+	}
+	// totais do IBS/CBS do documento batem com a soma dos itens
+	if math.Abs(somaIBS-toDecimal(r.VIBS)) > 0.011 || math.Abs(somaCBS-toDecimal(r.VCBS)) > 0.011 {
+		t.Errorf("Σ IBS/CBS dos itens (%.2f/%.2f) ≠ totais do documento (%s/%s)", somaIBS, somaCBS, r.VIBS, r.VCBS)
+	}
+}
+
+func TestSim2027_VItemSubstituiValorExistente_ENaoDuplica(t *testing.T) {
+	orig := strings.Replace(string(readTestdata(t, "sample_nfe55_sim2027.xml")),
+		`</imposto></det><det nItem="2">`, `</imposto><vItem>1.00</vItem></det><det nItem="2">`, 1)
+	saida, r := nt008Gerar(t, []byte(orig))
+	if n := strings.Count(saida, "<vItem>"); n != 4 {
+		t.Fatalf("esperava exatamente 4 <vItem> (1 substituído + 3 adicionados), veio %d", n)
+	}
+	if r.Dets[0].VItem == "1.00" || r.Dets[0].VItem == "" {
+		t.Errorf("o vItem desatualizado do item 1 deveria ser recalculado, veio %q", r.Dets[0].VItem)
+	}
+}
+
+func TestSim2027_VItemSomaOsComponentesDaRegraVB0110(t *testing.T) {
+	// item 1 do XML do Simples (vProd 450,00) com frete 10,00 e desconto 4,00 no <prod>
+	orig := strings.Replace(nt008XMLSimples, `<vProd>450.00</vProd>`, `<vProd>450.00</vProd><vFrete>10.00</vFrete><vDesc>4.00</vDesc>`, 1)
+	_, r := nt008Gerar(t, []byte(orig))
+	vp := 450.00 + 10.00 - 4.00
+	want := math.Round((vp+toDecimal(r.Dets[0].VIBS)+toDecimal(r.Dets[0].VCBS))*100) / 100
+	if math.Abs(toDecimal(r.Dets[0].VItem)-want) > 0.001 {
+		t.Errorf("vItem = %s, esperava %.2f (vProd + frete - desconto + IBS + CBS)", r.Dets[0].VItem, want)
+	}
+}
+
+func TestSim2027_VItemFicaDepoisDoImpostoEAntesDeDFeReferenciado(t *testing.T) {
+	orig := strings.Replace(string(readTestdata(t, "sample_nfe55_sim2027.xml")),
+		`</imposto></det><det nItem="2">`,
+		`</imposto><DFeReferenciado><chaveAcesso>32260612449448000176550010001815821291031700</chaveAcesso></DFeReferenciado></det><det nItem="2">`, 1)
+	saida, _ := nt008Gerar(t, []byte(orig))
+	iImposto := strings.Index(saida, "</imposto>")
+	iVItem := strings.Index(saida, "<vItem>")
+	iDFe := strings.Index(saida, "<DFeReferenciado>")
+	if !(iImposto >= 0 && iImposto < iVItem && iVItem < iDFe) {
+		t.Errorf("ordem esperada </imposto> < <vItem> < <DFeReferenciado>, veio %d, %d, %d", iImposto, iVItem, iDFe)
+	}
+}
+
+func TestSim2027_AliquotaEfetivaComGRedSegueAAliquotaDaTelaDeTeste(t *testing.T) {
+	orig := nt008XMLSimples
+	// item 1 com redução: pAliqEfet "antigo" nos três grupos
+	orig = strings.Replace(orig, `<pIBSUF>0.1000</pIBSUF><vIBSUF>0.45</vIBSUF>`,
+		`<pIBSUF>0.1000</pIBSUF><gRed><pRedAliq>60.0000</pRedAliq><pAliqEfet>0.0400</pAliqEfet></gRed><vIBSUF>0.45</vIBSUF>`, 1)
+	orig = strings.Replace(orig, `<pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun>`,
+		`<pIBSMun>0.0000</pIBSMun><gRed><pRedAliq>60.0000</pRedAliq><pAliqEfet>0.0000</pAliqEfet></gRed><vIBSMun>0.00</vIBSMun>`, 1)
+	orig = strings.Replace(orig, `<pCBS>0.9000</pCBS><vCBS>4.05</vCBS>`,
+		`<pCBS>0.9000</pCBS><gRed><pRedAliq>60.0000</pRedAliq><pAliqEfet>0.3600</pAliqEfet></gRed><vCBS>4.05</vCBS>`, 1)
+	saida, _ := nt008Gerar(t, []byte(orig)) // parâmetros do teste: UF 0,05 / Mun 0,05 / CBS 9,90
+	for _, want := range []string{
+		`<gIBSUF><pIBSUF>0.0500</pIBSUF><gRed><pRedAliq>60.0000</pRedAliq><pAliqEfet>0.0500</pAliqEfet></gRed>`,
+		`<gIBSMun><pIBSMun>0.0500</pIBSMun><gRed><pRedAliq>60.0000</pRedAliq><pAliqEfet>0.0500</pAliqEfet></gRed>`,
+		`<gCBS><pCBS>9.9000</pCBS><gRed><pRedAliq>60.0000</pRedAliq><pAliqEfet>9.9000</pAliqEfet></gRed>`,
+	} {
+		if !strings.Contains(saida, want) {
+			t.Errorf("não achei %q no XML simulado", want)
+		}
 	}
 }

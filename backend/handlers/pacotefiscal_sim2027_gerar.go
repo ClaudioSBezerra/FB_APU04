@@ -54,13 +54,17 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 	// as adiciona (ver pacotefiscal_sim2027_liquido.go). Passe prévio porque o ICMS vem
 	// depois do <prod>.
 	var pre pfsPrescanLiquido
-	inserirLiquido := false
+	inserirLiquido := false // [vUnComLiq, vProdLiq] por item + vProdLiqTot
+	calcItens := false      // vItem por item + vNFTot = Σ vItem (NT 2026.008, só NF-e)
 	if pfsDetectTipoDoc(original) == pfsTipoNFe {
-		if p, err := pfsPrescanItensLiquido(data); err == nil && p.deveAdicionar() {
-			pre, inserirLiquido = p, true
+		if p, err := pfsPrescanItensLiquido(data); err == nil && len(p.itens) > 0 {
+			pre, calcItens = p, true
+			inserirLiquido = p.deveAdicionar()
 		}
 	}
 	detIdx := -1
+	vItemFeito := false  // <vItem> do det corrente já escrito (ou já presente no original)
+	vNFTotFeito := false // <vNFTot> do total já escrito
 
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	dec.CharsetReader = nfeCharsetReader
@@ -118,11 +122,28 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 				t.Attr = append([]xml.Attr{{Name: xml.Name{Local: "xmlns"}, Value: rootNamespace}}, t.Attr...)
 			}
 			path = append(path, t.Name.Local)
+			// vItem vem antes de DFeReferenciado (XSD PL_010h: ... obsItem, vItem, DFeReferenciado)
+			if calcItens && t.Name.Local == "DFeReferenciado" && parent() == "det" && !vItemFeito &&
+				detIdx >= 0 && detIdx < len(pre.itens) {
+				path = path[:len(path)-1]
+				if err := pfsEmitLeaf(enc, "vItem", pfsFmtCents(pre.itens[detIdx].vItemCents(params))); err != nil {
+					return nil, err
+				}
+				vItemFeito = true
+				path = append(path, t.Name.Local)
+			}
 			if err := enc.EncodeToken(t); err != nil {
 				return nil, err
 			}
 			if t.Name.Local == "det" && parent() == "infNFe" {
 				detIdx++
+				vItemFeito = false
+			}
+			if t.Name.Local == "vItem" && parent() == "det" {
+				vItemFeito = true // já existe no original: será substituído no CharData
+			}
+			if t.Name.Local == "vNFTot" && parent() == "total" {
+				vNFTotFeito = true
 			}
 			// vProdLiqTot é o 1º filho de <total> (XSD PL_010h), antes de ICMSTot.
 			if inserirLiquido && t.Name.Local == "total" && parent() == "infNFe" {
@@ -134,11 +155,14 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 				commentWritten = true
 				extra := ""
 				if inserirLiquido {
-					extra = " valor liquido (NT 2026.008) adicionado;"
+					extra += " valor liquido (NT 2026.008) adicionado;"
+				}
+				if calcItens {
+					extra += " vItem/vNFTot (soma dos itens) recalculados;"
 				}
 				msg := fmt.Sprintf(
 					" SIMULACAO 2027 (NAO VALIDO PARA TRANSMISSAO/SEFAZ) - PIS, COFINS e IPI zerados;"+
-						" IBS/CBS recalculado com IBS-UF=%s%%, IBS-Mun=%s%%, CBS=%s%%;%s vNFTot recalculado - gerado em %s ",
+						" IBS/CBS recalculado com IBS-UF=%s%%, IBS-Mun=%s%%, CBS=%s%%;%s - gerado em %s ",
 					pfsFmtPct(params.AliqIbsUfPct), pfsFmtPct(params.AliqIbsMunPct), pfsFmtPct(params.AliqCbsPct),
 					extra,
 					geradoEm.Format("2006-01-02 15:04:05 -0700"),
@@ -153,6 +177,19 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 				path = path[:len(path)-1]
 			}
 			t.Name.Space = ""
+			// vItem: último filho do det quando não há DFeReferenciado; vNFTot: último filho do total.
+			if calcItens && t.Name.Local == "det" && top() == "infNFe" && !vItemFeito && detIdx >= 0 && detIdx < len(pre.itens) {
+				if err := pfsEmitLeaf(enc, "vItem", pfsFmtCents(pre.itens[detIdx].vItemCents(params))); err != nil {
+					return nil, err
+				}
+				vItemFeito = true
+			}
+			if calcItens && t.Name.Local == "total" && top() == "infNFe" && !vNFTotFeito {
+				if err := pfsEmitLeaf(enc, "vNFTot", pfsFmtCents(pre.totalVItemCents(params))); err != nil {
+					return nil, err
+				}
+				vNFTotFeito = true
+			}
 			if err := enc.EncodeToken(t); err != nil {
 				return nil, err
 			}
@@ -169,7 +206,15 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 
 		case xml.CharData:
 			tp, p, gp := top(), parent(), grand()
-			newText, changed := pfsComputeReplacement(tp, p, gp, string(t), params, &curVBC, &curVIbsUF, &curVIbsMun, &totals)
+			newText, changed := "", false
+			switch {
+			case calcItens && tp == "vItem" && p == "det" && detIdx >= 0 && detIdx < len(pre.itens):
+				newText, changed = pfsFmtCents(pre.itens[detIdx].vItemCents(params)), true
+			case calcItens && tp == "vNFTot" && p == "total":
+				newText, changed = pfsFmtCents(pre.totalVItemCents(params)), true
+			default:
+				newText, changed = pfsComputeReplacement(tp, p, gp, string(t), params, &curVBC, &curVIbsUF, &curVIbsMun, &totals)
+			}
 			if changed {
 				if err := enc.EncodeToken(xml.CharData([]byte(newText))); err != nil {
 					return nil, err
@@ -238,6 +283,22 @@ func pfsComputeReplacement(tp, p, gp, orig string, params pfsParametros, curVBC,
 		return pfsFmtMoney(0), true
 	}
 
+	// Redução de alíquota (NT 2026.010 / UB28, UB47, UB66): com gRed, o DANFE imprime a alíquota
+	// EFETIVA. A simulação aplica a alíquota da tela de teste sobre a base (vIBSUF = vBC * alíquota),
+	// então a efetiva é essa mesma alíquota — senão o pAliqEfet original ficaria desatualizado.
+	// pRedAliq não é alterado.
+	if p == "gRed" && tp == "pAliqEfet" {
+		switch gp {
+		case "gIBSUF":
+			return pfsFmtPct(params.AliqIbsUfPct), true
+		case "gIBSMun":
+			return pfsFmtPct(params.AliqIbsMunPct), true
+		case "gCBS":
+			return pfsFmtPct(params.AliqCbsPct), true
+		}
+		return orig, false
+	}
+
 	// IBS/CBS por item (NF-e) ou bloco único (CT-e): .../IBSCBS/gIBSCBS/...
 	if p == "gIBSCBS" {
 		if tp == "vBC" {
@@ -302,17 +363,6 @@ func pfsComputeReplacement(tp, p, gp, orig string, params pfsParametros, curVBC,
 	}
 	if p == "gCBS" && gp == "IBSCBSTot" && tp == "vCBS" {
 		return pfsFmtMoney(totals.VCBS), true
-	}
-
-	// vNF do ICMSTot (intocado pela simulação) e vNFTot: "valor total da NF considerando os
-	// impostos por fora IBS, CBS e IS" (XSD) = vNF + vIBS + vCBS (ISTot ainda não tem campos
-	// no leiaute). O vNFTot original ficava desatualizado em relação ao IBS/CBS recalculado.
-	if p == "ICMSTot" && tp == "vNF" {
-		totals.VNF = toDecimal(orig)
-		return orig, false
-	}
-	if p == "total" && tp == "vNFTot" {
-		return pfsFmtMoney(totals.VNF + totals.VIBS + totals.VCBS), true
 	}
 
 	return orig, false
