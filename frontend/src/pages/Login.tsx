@@ -117,10 +117,19 @@ const Login = () => {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      // Lê como texto e só então tenta JSON: um proxy/CDN na frente da API (ex: Cloudflare)
+      // pode responder 429/5xx em texto puro ("Too many requests"), e res.json() direto
+      // mostraria "Unexpected token 'T'..." em vez de uma mensagem útil.
+      const raw = await res.text();
+      let data: any = null;
+      try { data = raw ? JSON.parse(raw) : null; } catch { /* corpo não-JSON */ }
 
       if (!res.ok) {
-        throw new Error(typeof data === 'string' ? data : "Credenciais inválidas");
+        if (typeof data === 'string' && data) throw new Error(data);
+        if (res.status === 429) {
+          throw new Error("Muitas tentativas de login. Aguarde alguns minutos e tente novamente.");
+        }
+        throw new Error("Credenciais inválidas");
       }
 
       login(data);
