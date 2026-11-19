@@ -640,6 +640,7 @@ func main() {
 	http.HandleFunc("/api/pacotefiscal/sim2027/parametros/salvar", withAuth(handlers.PutPacoteFiscalSim2027ParametrosHandler, "admin"))
 	http.HandleFunc("/api/pacotefiscal/sim2027/analisar", withAuth(handlers.PacoteFiscalSim2027AnalisarHandler, ""))
 	http.HandleFunc("/api/pacotefiscal/sim2027/gerar", withAuth(handlers.PacoteFiscalSim2027GerarHandler, ""))
+	http.HandleFunc("/api/pacotefiscal/sim2027/danfe", withAuth(handlers.PacoteFiscalSim2027DanfeHandler, ""))
 
 	// Configuration Endpoints
 	http.HandleFunc("/api/config/aliquotas", withAuth(handlers.GetTaxRatesHandler, ""))

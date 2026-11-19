@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Upload, CloudUpload, Loader2, Download, Save } from 'lucide-react';
+import { Upload, CloudUpload, Loader2, Download, Save, FileText } from 'lucide-react';
 
 interface Parametros {
   aliq_ibs_uf_pct: number;
@@ -78,6 +78,7 @@ export default function Sim2027PacoteFiscal() {
   const [file, setFile] = useState<File | null>(null);
   const [analisando, setAnalisando] = useState(false);
   const [gerando, setGerando] = useState(false);
+  const [gerandoDanfe, setGerandoDanfe] = useState(false);
   const [preview, setPreview] = useState<AnalisarResponse | null>(null);
 
   const authHeaders = () => ({ Authorization: `Bearer ${token}`, 'X-Company-ID': companyId || '' });
@@ -148,26 +149,33 @@ export default function Sim2027PacoteFiscal() {
     }
   };
 
-  const gerar = async () => {
+  // Envia o XML carregado a um endpoint de geração e baixa o arquivo devolvido (XML ou PDF).
+  const baixarGerado = async (
+    endpoint: string,
+    sufixoPadrao: string,
+    msgOk: string,
+    msgErro: string,
+    setLoading: (v: boolean) => void,
+  ) => {
     if (!file) return;
-    setGerando(true);
+    setLoading(true);
     try {
       const formData = new FormData();
       formData.append('xml', file);
-      const res = await fetch('/api/pacotefiscal/sim2027/gerar', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: authHeaders(),
         body: formData,
       });
       if (!res.ok) {
         const text = await res.text();
-        toast.error('Erro ao gerar XML: ' + (text || res.statusText));
+        toast.error(msgErro + ': ' + (text || res.statusText));
         return;
       }
       const blob = await res.blob();
       const disposition = res.headers.get('Content-Disposition') || '';
       const match = /filename="?([^"]+)"?/.exec(disposition);
-      const filename = match ? match[1] : (file.name.replace(/\.xml$/i, '') + '-sim2027.xml');
+      const filename = match ? match[1] : (file.name.replace(/\.xml$/i, '') + sufixoPadrao);
 
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -177,13 +185,22 @@ export default function Sim2027PacoteFiscal() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-      toast.success('XML simulado gerado e baixado.');
+      toast.success(msgOk);
     } catch (err) {
-      toast.error('Erro inesperado ao gerar: ' + String(err));
+      toast.error('Erro inesperado: ' + String(err));
     } finally {
-      setGerando(false);
+      setLoading(false);
     }
   };
+
+  const gerar = () =>
+    baixarGerado('/api/pacotefiscal/sim2027/gerar', '-sim2027.xml',
+      'XML simulado gerado e baixado.', 'Erro ao gerar XML', setGerando);
+
+  // DANFE (PDF) da NF-e simulada, no leiaute da NT 2026.010 — itens já com os valores novos.
+  const gerarDanfe = () =>
+    baixarGerado('/api/pacotefiscal/sim2027/danfe', '-sim2027-danfe.pdf',
+      'DANFE da NF-e simulada gerado e baixado.', 'Erro ao gerar o DANFE', setGerandoDanfe);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: { 'text/xml': ['.xml'], 'application/xml': ['.xml'] },
@@ -209,7 +226,8 @@ export default function Sim2027PacoteFiscal() {
           recalculado com as alíquotas de teste abaixo, usando a base de cálculo que já existe no bloco
           IBSCBS do próprio XML. Nas NF-e, também adiciona as tags de valor líquido da NT 2026.008
           (vUnComLiq, vProdLiq e vProdLiqTot) quando o XML original ainda não as traz, e recalcula o
-          vNFTot. O XML gerado não é válido para transmissão — é só um artefato de teste.
+          vNFTot. Para NF-e também é possível baixar o DANFE (PDF) da nota simulada, no leiaute da
+          NT 2026.010. O XML gerado não é válido para transmissão — é só um artefato de teste.
         </p>
       </div>
 
@@ -296,10 +314,18 @@ export default function Sim2027PacoteFiscal() {
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">Chave: {preview.chave}</p>
             </div>
-            <Button onClick={gerar} disabled={gerando}>
-              {gerando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
-              Confirmar e baixar XML simulado
-            </Button>
+            <div className="flex flex-wrap gap-2 justify-end">
+              {preview.tipo_doc === 'nfe' && (
+                <Button variant="outline" onClick={gerarDanfe} disabled={gerandoDanfe || gerando}>
+                  {gerandoDanfe ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileText className="h-4 w-4 mr-2" />}
+                  Baixar DANFE (PDF)
+                </Button>
+              )}
+              <Button onClick={gerar} disabled={gerando || gerandoDanfe}>
+                {gerando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+                Confirmar e baixar XML simulado
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="overflow-auto">

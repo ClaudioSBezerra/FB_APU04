@@ -10,6 +10,8 @@ require (
 )
 
 require (
+	github.com/boombuler/barcode v1.0.1
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/joho/godotenv v1.5.1
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/nwaples/rardecode/v2 v2.2.2

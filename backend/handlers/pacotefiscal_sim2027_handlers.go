@@ -7,6 +7,10 @@
 //
 //	POST /api/pacotefiscal/sim2027/gerar — recebe o mesmo XML, devolve o novo
 //	XML "simulado 2027" como anexo para download.
+//
+//	POST /api/pacotefiscal/sim2027/danfe — recebe o mesmo XML (só NF-e), gera o XML
+//	simulado com as alíquotas da tela de teste e devolve o DANFE dele em PDF, no leiaute
+//	da NT 2026.010 (itens já com os valores novos).
 package handlers
 
 import (
@@ -256,5 +260,71 @@ func PacoteFiscalSim2027GerarHandler(db *sql.DB) http.HandlerFunc {
 		w.Header().Set("Content-Disposition", `attachment; filename="`+outName+`"`)
 		w.Header().Set("Content-Length", strconv.Itoa(len(novo)))
 		w.Write(novo)
+	}
+}
+
+// pfsLoadParamsDanfe: os testes trocam por um stub (a tabela de parâmetros exige o schema completo).
+var pfsLoadParamsDanfe = pfsCarregarParametros
+
+// PacoteFiscalSim2027DanfeHandler — POST /api/pacotefiscal/sim2027/danfe
+//
+// Mesmo fluxo de "gerar" (alíquotas globais da tela de teste), mas devolve o DANFE (PDF) do
+// XML simulado em vez do XML. Só NF-e modelo 55: o CT-e usa o DACTE, outro documento.
+func PacoteFiscalSim2027DanfeHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			jsonErr(w, http.StatusMethodNotAllowed, "Método não permitido")
+			return
+		}
+		if _, ok := r.Context().Value(ClaimsKey).(jwt.MapClaims); !ok {
+			w.Header().Set("Content-Type", "application/json")
+			jsonErr(w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+
+		data, filename, err := pfsReadUploadedXML(r)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			jsonErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if pfsDetectTipoDoc(data) != pfsTipoNFe {
+			w.Header().Set("Content-Type", "application/json")
+			jsonErr(w, http.StatusBadRequest, "O DANFE só existe para NF-e (modelo 55) — para CT-e o documento auxiliar é o DACTE")
+			return
+		}
+
+		p, err := pfsLoadParamsDanfe(db)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			jsonErr(w, http.StatusInternalServerError, "Erro ao carregar parâmetros: "+err.Error())
+			return
+		}
+
+		novo, err := pfsGerarXMLSimulado(data, p, time.Now())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			jsonErr(w, http.StatusBadRequest, "Erro ao gerar XML simulado: "+err.Error())
+			return
+		}
+		proc, err := dfeParseNFe(novo)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			jsonErr(w, http.StatusBadRequest, "Erro ao ler o XML simulado para o DANFE: "+err.Error())
+			return
+		}
+		pdf, err := dfeRenderPDF(proc, true)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			jsonErr(w, http.StatusInternalServerError, "Erro ao gerar o PDF do DANFE: "+err.Error())
+			return
+		}
+
+		outName := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)) + "-sim2027-danfe.pdf"
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+outName+`"`)
+		w.Header().Set("Content-Length", strconv.Itoa(len(pdf)))
+		w.Write(pdf)
 	}
 }
