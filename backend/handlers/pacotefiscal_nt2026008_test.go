@@ -12,8 +12,10 @@ import (
 // total e o grupo ICMSPrevistoPagtoAntecip/vICMSPrevisto (NB01/NB02) dentro de <ICMS>,
 // só para pagamento antecipado (tpNFDebito=06 / tpOperGov=4). Produção a partir de
 // 16/11/2026. Estes testes garantem que o módulo Teste Pacote Fiscal continua importando
-// e simulando XMLs que já trazem essas tags — a posição exata no XSD ainda precisa ser
-// conferida no schema oficial, então o parsing não pode depender da ordem dos elementos.
+// e simulando XMLs que já trazem essas tags. Posições conferidas nos schemas oficiais
+// (docs/Schemas/PL_010g e PL_010h): em <prod>, o bloco opcional [vUnComLiq, vProdLiq] vem
+// entre vProd e cEANTrib; vProdLiqTot é o 1º filho de <total>; ICMSPrevistoPagtoAntecip é
+// uma das alternativas do choice de <ICMS> (substitui o ICMSxx).
 
 const (
 	nt008ItemAntes   = `</vProd><cEANTrib>`
@@ -30,7 +32,8 @@ func xmlComTagsNT008(t *testing.T, pagtoAntecipado bool) []byte {
 		t.Fatalf("fixture mudou: esperava 4 itens com %q", nt008ItemAntes)
 	}
 	s = strings.ReplaceAll(s, nt008ItemAntes, nt008ItemDepois)
-	s = strings.Replace(s, `</ICMSTot>`, `</ICMSTot><vProdLiqTot>39.96</vProdLiqTot>`, 1)
+	// Posição conforme o XSD oficial (PL_010h): vProdLiqTot é o 1º filho de <total>, antes de ICMSTot.
+	s = strings.Replace(s, `<total>`, `<total><vProdLiqTot>39.96</vProdLiqTot>`, 1)
 	if pagtoAntecipado {
 		if !strings.Contains(s, nt008ICMS00Item1) {
 			t.Fatalf("fixture mudou: ICMS00 do item 1 não encontrado")
