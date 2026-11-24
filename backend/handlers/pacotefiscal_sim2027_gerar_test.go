@@ -132,3 +132,42 @@ func TestPfsGerarXMLSimulado_TipoInvalido(t *testing.T) {
 		t.Fatalf("não deveria falhar com XML genérico bem-formado: %v", err)
 	}
 }
+
+// XML em Latin-1 sem declaração de encoding (caso real: NF-e do CE com "GONÇALVES" no
+// transportador) dava "invalid UTF-8" na geração, embora a análise aceitasse.
+func TestPfsGerarXMLSimulado_Latin1SemDeclaracao(t *testing.T) {
+	original := readTestdata(t, "sample_nfe55_sim2027.xml")
+	latin1 := strings.Replace(string(original),
+		"<xNome>LEITE EXPRESS TRANSPORTES LTDA</xNome>",
+		"<xNome>LEITE EXPRESS GON\xc7ALVES LTDA</xNome>", 1)
+	if latin1 == string(original) {
+		t.Fatal("amostra mudou: ajuste o xNome do transportador no teste")
+	}
+	params := pfsParametros{AliqIbsUfPct: 0.05, AliqIbsMunPct: 0.05, AliqCbsPct: 9.90}
+
+	out, err := pfsGerarXMLSimulado([]byte(latin1), params, time.Now())
+	if err != nil {
+		t.Fatalf("erro ao gerar XML simulado de arquivo Latin-1: %v", err)
+	}
+	if !strings.Contains(string(out), "LEITE EXPRESS GONÇALVES LTDA") {
+		t.Error("o acento deveria sair convertido para UTF-8")
+	}
+	if !strings.Contains(string(out), "<vItem>") {
+		t.Error("o recálculo da NT 2026.008 (vItem) deveria ter rodado")
+	}
+}
+
+func TestPfsDeclaraEncodingNaoUTF8(t *testing.T) {
+	casos := map[string]bool{
+		`<nfeProc/>`:                      false,
+		`<?xml version="1.0"?><nfeProc/>`: false,
+		`<?xml version="1.0" encoding="UTF-8"?><nfeProc/>`:        false,
+		`<?xml version="1.0" encoding="ISO-8859-1"?><nfeProc/>`:   true,
+		`<?xml version='1.0' encoding='windows-1252'?><nfeProc/>`: true,
+	}
+	for in, want := range casos {
+		if got := pfsDeclaraEncodingNaoUTF8([]byte(in)); got != want {
+			t.Errorf("%s: got %v, want %v", in, got, want)
+		}
+	}
+}

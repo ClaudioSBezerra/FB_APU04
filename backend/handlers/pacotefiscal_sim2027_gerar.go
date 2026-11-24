@@ -31,7 +31,9 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -49,6 +51,17 @@ func pfsGerarXMLSimulado(original []byte, params pfsParametros, geradoEm time.Ti
 	}
 
 	data := pfsStripNamespaces(original)
+
+	// XML em Latin-1/Windows-1252 sem declarar o encoding (comum em XML exportado por ERP): o
+	// decoder supõe UTF-8 e para no 1º acento ("invalid UTF-8"). A análise (pfsParseNFe) já
+	// tolera esse caso; aqui convertemos antes dos dois passes. A saída sai sempre em UTF-8.
+	if !utf8.Valid(data) && !pfsDeclaraEncodingNaoUTF8(data) {
+		conv, err := convertWindows1252(data)
+		if err != nil {
+			return nil, fmt.Errorf("erro ao converter o encoding do XML: %w", err)
+		}
+		data = conv
+	}
 
 	// NT 2026.008: se for NF-e e o XML ainda não traz as tags de valor líquido, o gerador
 	// as adiciona (ver pacotefiscal_sim2027_liquido.go). Passe prévio porque o ICMS vem
@@ -374,4 +387,23 @@ func pfsFmtMoney(v float64) string {
 
 func pfsFmtPct(v float64) string {
 	return strconv.FormatFloat(v, 'f', 4, 64)
+}
+
+// pfsDeclaraEncodingNaoUTF8 diz se o prólogo declara um encoding diferente de UTF-8 (ex.:
+// ISO-8859-1). Nesse caso quem converte é o CharsetReader do decoder, e converter antes
+// trocaria os acentos duas vezes.
+func pfsDeclaraEncodingNaoUTF8(data []byte) bool {
+	t := bytes.TrimSpace(data)
+	if !bytes.HasPrefix(t, []byte("<?xml")) {
+		return false
+	}
+	fim := bytes.Index(t, []byte("?>"))
+	if fim < 0 {
+		return false
+	}
+	prologo := strings.ToLower(string(t[:fim]))
+	if !strings.Contains(prologo, "encoding") {
+		return false
+	}
+	return !strings.Contains(prologo, "utf-8") && !strings.Contains(prologo, "utf8")
 }
